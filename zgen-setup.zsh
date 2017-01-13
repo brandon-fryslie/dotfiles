@@ -15,6 +15,9 @@ zstyle ':prezto:module:terminal' auto-title 'yes'
 zstyle ':prezto:module:terminal:window-title' format '%n@%m'
 zstyle ':prezto:module:terminal:tab-title' format '%s'
 
+export CLICOLOR=1
+export LSCOLORS=gxfxcxdxbxegedabagacad
+
 # Use bash-style word delimiters
 autoload -U select-word-style
 select-word-style bash
@@ -31,25 +34,22 @@ if ! zgen saved; then
   zgen prezto fasd
   zgen prezto git
   zgen prezto history-substring-search
-  zgen prezto python
-  zgen prezto ruby
-  zgen prezto tmux
 
   # 3rd Party plugins
   zgen load robbyrussell/oh-my-zsh plugins/docker
-  zgen load robbyrussell/oh-my-zsh plugins/pip
 
   zgen load zsh-users/zaw
   zgen load zsh-users/zsh-autosuggestions
   zgen load zsh-users/zsh-completions
 
+  zgen load brandon-fryslie/rad-shell docker
   zgen load brandon-fryslie/rad-shell git
   zgen load brandon-fryslie/rad-shell nvm-lazy-load
   zgen load brandon-fryslie/rad-shell shell-tools
   zgen load brandon-fryslie/rad-shell zaw
 
   # Load these plugins last
-  zgen load zsh-users/zsh-syntax-highlighting
+  zgen load brandon-fryslie/zsh-syntax-highlighting
   zgen load brandon-fryslie/rad-shell shell-customize
 
   # This adds the oh-my-zsh-custom/bin folder to your $PATH
@@ -61,8 +61,6 @@ if ! zgen saved; then
   zgen load RallySoftware/oh-my-zsh-custom plugins/emacs
   zgen load RallySoftware/oh-my-zsh-custom plugins/git
   zgen load RallySoftware/oh-my-zsh-custom plugins/realtime
-
-  zgen load brandon-fryslie/rad-shell docker
 
   # Theme
   zgen load brandon-fryslie/rad-shell git-taculous-theme/git-taculous
