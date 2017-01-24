@@ -3,5 +3,3 @@
 source ~/.zgen-setup.zsh
 
 # Add customizations below
-
-ENABLE_DOCKER_PROMPT=true

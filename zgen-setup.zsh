@@ -7,16 +7,9 @@ ZGEN_AUTOLOAD_COMPINIT=1
 # Automatically regenerate zgen configuration when ~/.zgen-setup.zsh changes
 ZGEN_RESET_ON_CHANGE=~/.zgen-setup.zsh
 
-# We need to set some options before we load Prezto for them to take effect
-zstyle ':prezto:*:*' color 'yes'
-zstyle ':completion:*:default' list-colors ''
-
 zstyle ':prezto:module:terminal' auto-title 'yes'
 zstyle ':prezto:module:terminal:window-title' format '%n@%m'
 zstyle ':prezto:module:terminal:tab-title' format '%s'
-
-export CLICOLOR=1
-export LSCOLORS=gxfxcxdxbxegedabagacad
 
 # Use bash-style word delimiters
 autoload -U select-word-style
