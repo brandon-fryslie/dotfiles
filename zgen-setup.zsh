@@ -16,7 +16,7 @@ autoload -U select-word-style
 select-word-style bash
 
 source "${HOME}/.zgen/zgen.zsh"
-# if the init scipt doesn't exist
+# If we haven't yet generated our static initialization script
 if ! zgen saved; then
 
   # Loads prezto base and default plugins:
@@ -27,23 +27,22 @@ if ! zgen saved; then
   zgen prezto fasd
   zgen prezto git
   zgen prezto history-substring-search
+  zgen prezto ruby
 
   # 3rd Party plugins
   zgen load robbyrussell/oh-my-zsh plugins/docker
 
-  zgen load zsh-users/zaw
+  # Enhanced fork of zaw
+  zgen load brandon-fryslie/zaw
   zgen load zsh-users/zsh-autosuggestions
   zgen load zsh-users/zsh-completions
 
+  # The zaw plugin needs to be before the other plugins that provide zaw sources
+  zgen load brandon-fryslie/rad-shell zaw
   zgen load brandon-fryslie/rad-shell docker
   zgen load brandon-fryslie/rad-shell git
   zgen load brandon-fryslie/rad-shell nvm-lazy-load
   zgen load brandon-fryslie/rad-shell shell-tools
-  zgen load brandon-fryslie/rad-shell zaw
-
-  # Load these plugins last
-  zgen load brandon-fryslie/zsh-syntax-highlighting
-  zgen load brandon-fryslie/rad-shell shell-customize
 
   # This adds the oh-my-zsh-custom/bin folder to your $PATH
   zgen load RallySoftware/oh-my-zsh-custom plugins/set-script-path
@@ -54,6 +53,10 @@ if ! zgen saved; then
   zgen load RallySoftware/oh-my-zsh-custom plugins/emacs
   zgen load RallySoftware/oh-my-zsh-custom plugins/git
   zgen load RallySoftware/oh-my-zsh-custom plugins/realtime
+
+  # Load these plugins last
+  zgen load brandon-fryslie/zsh-syntax-highlighting
+  zgen load brandon-fryslie/rad-shell shell-customize
 
   # Theme
   zgen load brandon-fryslie/rad-shell git-taculous-theme/git-taculous
