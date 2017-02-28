@@ -19,3 +19,4 @@ export PATH="$PATH:$HOME/.rvm/bin"
 
 alias e.rc="atom ~/dotfiles"
 alias cd.rc="cd ~/dotfiles"
+alias git=hub
