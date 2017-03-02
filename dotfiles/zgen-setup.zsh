@@ -34,7 +34,7 @@ if ! zgen saved; then
 
   # Enhanced fork of zaw
   zgen load brandon-fryslie/zaw
-  zgen load zsh-users/zsh-autosuggestions
+  zgen load zsh-users/zsh-autosuggestions / develop
   zgen load zsh-users/zsh-completions
 
   # The zaw plugin needs to be before the other plugins that provide zaw sources
@@ -55,7 +55,7 @@ if ! zgen saved; then
   zgen load RallySoftware/oh-my-zsh-custom plugins/realtime
 
   # Load these plugins last
-  zgen load brandon-fryslie/zsh-syntax-highlighting
+  zgen load zsh-users/zsh-syntax-highlighting
   zgen load brandon-fryslie/rad-shell shell-customize
 
   # Theme
