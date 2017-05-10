@@ -6,7 +6,7 @@
 
 ########## Variables
 
-dir=~/dotfiles                    # dotfiles directory
+dir=~/dotfiles/dotfiles           # dotfiles directory
 olddir=~/dotfiles_old             # old dotfiles backup directory
 files="gemrc rvmrc zgen-setup.zsh zshrc tmux.shared.conf"    # list of files/folders to symlink in homedir
 
