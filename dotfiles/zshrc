@@ -15,8 +15,12 @@ export ALM_JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_25.jdk/Contents
 export SOLR_JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_25.jdk/Contents/Home"
 
 # Add RVM to PATH for scripting. Make sure this is the last PATH variable change.
-export PATH="$PATH:$HOME/.rvm/bin"
+export PATH="$HOME/.rvm/bin:$GOPATH/bin:$PATH"
 
 alias e.rc="atom ~/dotfiles"
 alias cd.rc="cd ~/dotfiles"
 alias git=hub
+
+export GOPATH=/Users/frybr02/golang
+export PATH="/usr/local/opt/e2fsprogs/bin:$PATH"
+export PATH="/usr/local/opt/e2fsprogs/sbin:$PATH"
