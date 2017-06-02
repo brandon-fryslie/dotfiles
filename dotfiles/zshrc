@@ -24,3 +24,6 @@ alias git=hub
 export GOPATH=/Users/frybr02/golang
 export PATH="/usr/local/opt/e2fsprogs/bin:$PATH"
 export PATH="/usr/local/opt/e2fsprogs/sbin:$PATH"
+
+VISUAL=atom
+alias e.="${VISUAL:-vi} ."
