@@ -27,7 +27,7 @@ if ! zgen saved; then
   zgen prezto fasd
   zgen prezto git
   zgen prezto history-substring-search
-  zgen prezto ruby
+  # zgen prezto ruby
 
   # 3rd Party plugins
   zgen load robbyrussell/oh-my-zsh plugins/docker
