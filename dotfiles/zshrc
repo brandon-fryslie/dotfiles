@@ -27,3 +27,7 @@ export PATH="/usr/local/opt/e2fsprogs/sbin:$PATH"
 
 VISUAL=atom
 alias e.="${VISUAL:-vi} ."
+
+[ -f /usr/local/opt/dvm/dvm.sh ] && . /usr/local/opt/dvm/dvm.sh
+[[ -r $DVM_DIR/bash_completion ]] && . $DVM_DIR/bash_completion
+source "$HOME/.sdkman/bin/sdkman-init.sh"
