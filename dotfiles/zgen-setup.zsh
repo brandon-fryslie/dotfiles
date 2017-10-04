@@ -47,13 +47,6 @@ if ! zgen saved; then
   # This adds the oh-my-zsh-custom/bin folder to your $PATH
   zgen load RallySoftware/oh-my-zsh-custom plugins/set-script-path
 
-  zgen load RallySoftware/oh-my-zsh-custom plugins/alm
-  zgen load RallySoftware/oh-my-zsh-custom plugins/appsdk
-  zgen load RallySoftware/oh-my-zsh-custom plugins/docker-alm
-  zgen load RallySoftware/oh-my-zsh-custom plugins/emacs
-  zgen load RallySoftware/oh-my-zsh-custom plugins/git
-  zgen load RallySoftware/oh-my-zsh-custom plugins/realtime
-
   # Load these plugins last
   zgen load zsh-users/zsh-syntax-highlighting
   zgen load brandon-fryslie/rad-shell shell-customize

@@ -33,3 +33,70 @@ alias dog='pygmentize -g'
 rm -f /Users/frybr02/.sdkman/var/candidates
 rm -f /Users/frybr02/.sdkman/var/version
 source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# --- Docker ALM
+
+# Configuration for the new Dhost
+# https://github.com/brandon-fryslie/rad-shell/tree/master/docker
+DHOST_INCLUDE_PATTERN="docker\|swarm"
+
+type dhost-alias &>/dev/null && {
+  dhost-alias testn bld-testn-01.f4tech.com
+  dhost-alias swarm bld-swarm-01.f4tech.com
+  dhost-alias magnum bld-magnumci-02.f4tech.com
+  dhost-alias almci bld-almci-01.f4tech.com
+  dhost-alias urroci bld-urroci-01.f4tech.com
+  dhost-alias tools bld-tools-01.f4tech.com
+  dhost-alias consul bld-consul-01.f4tech.com
+}
+
+dhost_custom_resolver() {
+  [ ! -z "${1##*[!0-9]*}" ] && echo bld-docker-${1}.f4tech.com:4243
+}
+
+PROJECTS_HOME=$HOME/projects
+
+# Still need to move these over
+if [ -d $PROJECTS_HOME/docker-common-scripts/bin ]; then
+    export PATH=$PATH:$PROJECTS_HOME/docker-common-scripts/bin
+fi
+
+alias ah='[ `pwd` = "${WEBAPP_HOME}" ] || cd "${WEBAPP_HOME}"'
+alias p="pair"
+
+killport() {
+  echo Killing anything listening on port $1\.\.\.
+  kill -9 $(lsof -t -iTCP:$1 -sTCP:LISTEN) 2>/dev/null
+}
+
+function cache-creds() {
+  echo doing: git config --global credential.helper cache \&\& git config --global credential.helper 'cache --timeout=3600000'
+  git config --global credential.helper cache && git config --global credential.helper 'cache --timeout=3600000'
+}
+
+function install-angular-js-git-commit-msg-hook() {
+  [[ -z $1 ]] && REPO_PATH=$PWD || REPO_PATH=$1
+
+  HOOK_PATH=$REPO_PATH/.git/hooks/commit-msg
+
+  if [[ -x $HOOK_PATH ]]; then
+    echo Remove existing commit msg hook at $HOOK_PATH first.  Exiting...
+    return 1
+  fi
+
+  if [[ -d $REPO_PATH/.git/hooks ]]; then
+  else
+    echo $REPO_PATH is not a repo.  Exiting...
+    return 1
+  fi
+
+  echo Copying angular-js-git-commit-msg-hook to $HOOK_PATH.  Boop...
+
+  cp $HOME/.oh-my-zsh-custom/plugins/git/angular-js-git-commit-msg-hook.rb $HOOK_PATH
+
+  chmod +x $HOOK_PATH
+
+  [[ -x $HOOK_PATH ]] && echo Success!
+}
+
+alias .rc="e ~/dotfiles"
