@@ -44,9 +44,6 @@ if ! zgen saved; then
   zgen load brandon-fryslie/rad-shell nvm-lazy-load
   zgen load brandon-fryslie/rad-shell shell-tools
 
-  # This adds the oh-my-zsh-custom/bin folder to your $PATH
-  zgen load RallySoftware/oh-my-zsh-custom plugins/set-script-path
-
   # Load these plugins last
   zgen load zsh-users/zsh-syntax-highlighting
   zgen load brandon-fryslie/rad-shell shell-customize

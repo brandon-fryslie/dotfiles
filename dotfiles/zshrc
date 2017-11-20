@@ -1,3 +1,7 @@
+# zmodload zsh/zprof
+
+setopt clobber
+
 # Source Zgen and create init file if necessary
 # Add custom Zsh plugins to .zgen-setup.zsh
 source ~/.zgen-setup.zsh
@@ -5,31 +9,23 @@ source ~/.zgen-setup.zsh
 # Add customizations below
 export ENABLE_DOCKER_PROMPT=true
 export LAZY_NODE_PROMPT=true
+export VISUAL=idea
+export GOPATH="$HOME/golang"
+export PROJECTS_DIR="$HOME/code"
 
-export JAVA8_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_25.jdk/Contents/Home"
-export JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_25.jdk/Contents/Home"
-export BUILDR_JAVA_OPTS="-Xmx2560m -Djava.security.egd=file:///dev/urandom -XX:ReservedCodeCacheSize=512m"
-export ALM_JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_25.jdk/Contents/Home"
-export SOLR_JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_25.jdk/Contents/Home"
-
-# Add RVM to PATH for scripting. Make sure this is the last PATH variable change.
-export PATH="$HOME/.rvm/bin:$GOPATH/bin:$PATH"
-
-alias e.rc="atom ~/dotfiles"
+alias e.="${VISUAL:-vi} ."
+alias e.rc="$VISUAL ~/dotfiles"
 alias cd.rc="cd ~/dotfiles"
 alias git=hub
+alias .rc="source ~/.zshrc"
 
-export GOPATH=/Users/frybr02/golang
-export PATH="/Users/frybr02/golang/bin:/usr/local/opt/e2fsprogs/bin:/usr/local/opt/e2fsprogs/sbin:$PATH"
-
-VISUAL=atom
-alias e.="${VISUAL:-vi} ."
-
-[ -f /usr/local/opt/dvm/dvm.sh ] && . /usr/local/opt/dvm/dvm.sh
-[[ -r $DVM_DIR/bash_completion ]] && . $DVM_DIR/bash_completion
+# Add RVM to PATH for scripting. Make sure this is the last PATH variable change.
+export PATH="/usr/local/bin:$GOPATH/bin:$HOME/.rvm/bin:$PATH"
 
 alias dog='pygmentize -g'
 
-rm -f /Users/frybr02/.sdkman/var/candidates
-rm -f /Users/frybr02/.sdkman/var/version
-source "$HOME/.sdkman/bin/sdkman-init.sh"
+[[ -f $HOME/.sdkman/var/candidates ]] && rm -f $HOME/.sdkman/var/candidates
+[[ -f $HOME/.sdkman/var/version ]] && rm -f $HOME/.sdkman/var/version
+[[ -f $HOME/.sdkman/bin/sdkman-init.sh ]] && source "$HOME/.sdkman/bin/sdkman-init.sh" || true
+
+# zprof
