@@ -1,6 +1,8 @@
+#@IgnoreInspection BashAddShebang
 # zmodload zsh/zprof
 
 setopt clobber
+setopt share_history
 
 # Source Zgen and create init file if necessary
 # Add custom Zsh plugins to .zgen-setup.zsh
@@ -10,6 +12,8 @@ source ~/.zgen-setup.zsh
 export ENABLE_DOCKER_PROMPT=true
 export LAZY_NODE_PROMPT=true
 export VISUAL=idea
+export EDITOR=vi
+export GIT_EDITOR=$EDITOR
 export GOPATH="$HOME/golang"
 export PROJECTS_DIR="$HOME/code"
 
@@ -18,14 +22,56 @@ alias e.rc="$VISUAL ~/dotfiles"
 alias cd.rc="cd ~/dotfiles"
 alias git=hub
 alias .rc="source ~/.zshrc"
+alias dog='pygmentize -g'
 
 # Add RVM to PATH for scripting. Make sure this is the last PATH variable change.
 export PATH="/usr/local/bin:$GOPATH/bin:$HOME/.rvm/bin:$PATH"
-
-alias dog='pygmentize -g'
 
 [[ -f $HOME/.sdkman/var/candidates ]] && rm -f $HOME/.sdkman/var/candidates
 [[ -f $HOME/.sdkman/var/version ]] && rm -f $HOME/.sdkman/var/version
 [[ -f $HOME/.sdkman/bin/sdkman-init.sh ]] && source "$HOME/.sdkman/bin/sdkman-init.sh" || true
 
 # zprof
+
+wdclone() {
+    org=$1
+    repo=$2
+    git clone git@ghe.megaleo.com:${org}/${repo}.git
+#    todo
+#   fork repo
+#   clone
+#   configure remotes
+}
+
+wdconfigremotes() {
+#    origin    git@ghe.megaleo.com:matt-bajor/cban-server.git (push)
+#upstream    git@ghe.megaleo.com:cban/cban-server.git (fetch)
+
+    git remote add
+
+#    todo
+# end state: we need to have origin point to username/repo
+# we need to have upstream point to the main org/repo
+
+#   info needed: repo name, username of fork, origin org
+}
+
+docker-clean() {
+  true
+
+}
+
+alias gup="git checkout master && git fetch upstream --prune && git rebase upstream/master && git push origin"
+
+git config --global alias.co checkout
+git config --global alias.st status
+alias gdstat="git diff --stat"
+alias local-ip="/sbin/ifconfig en0 | grep 'inet' | grep -v inet6 | awk '{print \$2}'"
+alias e.rad="idea $HOME/.zgen/brandon-fryslie/rad-shell-master"
+git config --global core.excludesfile ~/.gitignore_global
+
+jc-cli-open() {
+  open http://$(local-ip)/pt-webdev
+}
+
+PATH="/usr/local/opt/python/libexec/bin:$PATH"
