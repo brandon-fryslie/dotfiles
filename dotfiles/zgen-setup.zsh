@@ -29,6 +29,15 @@ if ! zgen saved; then
   zgen prezto history-substring-search
   # zgen prezto ruby
 
+  # Some common functions to share between plugins
+  zgen load brandon-fryslie/rad-shell plugin-shared
+
+  # Load Homebrew near the top
+  zgen load brandon-fryslie/rad-shell homebrew
+
+  # Load some dotfile aliases
+  zgen load brandon-fryslie/rad-shell dotfiles-plugin
+
   # 3rd Party plugins
   zgen load robbyrussell/oh-my-zsh plugins/docker
 

@@ -1,31 +1,89 @@
 # zmodload zsh/zprof
 
 setopt clobber
+setopt share_history
 
 # Source Zgen and create init file if necessary
 # Add custom Zsh plugins to .zgen-setup.zsh
 source ~/.zgen-setup.zsh
 
 # Add customizations below
+
+# Theme configuration
 export ENABLE_DOCKER_PROMPT=true
 export LAZY_NODE_PROMPT=true
+
+# Editor configuration
 export VISUAL=idea
-export GOPATH="$HOME/golang"
+export EDITOR=vi
+
+# Local code configuration
 export PROJECTS_DIR="$HOME/code"
 
-alias e.="${VISUAL:-vi} ."
-alias e.rc="$VISUAL ~/dotfiles"
-alias cd.rc="cd ~/dotfiles"
-alias git=hub
-alias .rc="source ~/.zshrc"
+# Language configuration
 
-# Add RVM to PATH for scripting. Make sure this is the last PATH variable change.
-export PATH="/usr/local/bin:$GOPATH/bin:$HOME/.rvm/bin:$PATH"
+# Go
+export GOPATH="$HOME/golang"
 
-alias dog='pygmentize -g'
+# Ruby
+export PATH="$GOPATH/bin:$HOME/.rvm/bin:$PATH"
 
+# Groovy (sdkman)
 [[ -f $HOME/.sdkman/var/candidates ]] && rm -f $HOME/.sdkman/var/candidates
 [[ -f $HOME/.sdkman/var/version ]] && rm -f $HOME/.sdkman/var/version
 [[ -f $HOME/.sdkman/bin/sdkman-init.sh ]] && source "$HOME/.sdkman/bin/sdkman-init.sh" || true
 
+# Python
+export PATH="/usr/local/opt/python/libexec/bin:$PATH"
+
+# ---
+
+# Misc
+alias e.="${VISUAL:-vi} ."
+alias dog='pygmentize -g'
+git config --global core.excludesfile ~/.gitignore_global
+
+# Wip (move to workday plugin)
+wdclone() {
+    org=$1
+    repo=$2
+    git clone git@ghe.megaleo.com:${org}/${repo}.git
+#    todo
+#   fork repo
+#   clone
+#   configure remotes
+}
+
+wdconfigremotes() {
+#    origin    git@ghe.megaleo.com:matt-bajor/cban-server.git (push)
+#upstream    git@ghe.megaleo.com:cban/cban-server.git (fetch)
+
+    git remote add
+
+#    todo
+# end state: we need to have origin point to username/repo
+# we need to have upstream point to the main org/repo
+
+#   info needed: repo name, username of fork, origin org
+}
+
+# Move to workday plugin
+alias gup="git checkout master && git fetch upstream --prune && git rebase upstream/master && git push origin"
+
+
+# Move to a rad-shell plugin
+# Try finding the first ethernet adapter that has a valid ipv4 address
+local-ip() {
+  for i in `seq 0 10`; do
+    res="$(/sbin/ifconfig en${i} | grep 'inet' | grep -v inet6 | awk '{print $2}')"
+    [[ -n $res ]] && echo $res && return
+  done
+}
+
+# Workday plugin
+jc-cli-open() {
+  open http://$(local-ip)/pt-webdev
+}
+
+# For profiling shell startup time
 # zprof
