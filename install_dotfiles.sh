@@ -8,7 +8,7 @@
 
 dir=~/dotfiles/dotfiles           # dotfiles directory
 olddir=~/dotfiles_old             # old dotfiles backup directory
-files="gemrc rvmrc zgen-setup.zsh zshrc tmux.shared.conf"    # list of files/folders to symlink in homedir
+files="gemrc rvmrc zgen-setup.zsh zshrc gitignore_global"    # list of files/folders to symlink in homedir
 
 ##########
 
@@ -29,14 +29,3 @@ for file in $files; do
     echo "Creating symlink to $file in home directory"
     ln -s $dir/$file ~/.$file
 done
-
-# Symlink platform-specific Tmux separately
-mv ~/.tmux.conf $olddir
-echo "Creating symlink to tmux.conf in home directory"
-if [ "$(uname)" == "Darwin" ]; then
-    echo "Symlinking OSX config for Tmux"
-    ln -s $dir/tmux.osx.conf ~/.tmux.conf
-else
-    echo "Symlinking Linux config for Tmux"
-    ln -s $dir/tmux.linux.conf ~/.tmux.conf
-fi
