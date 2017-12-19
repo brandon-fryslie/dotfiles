@@ -50,8 +50,13 @@ if ! zgen saved; then
   zgen load brandon-fryslie/rad-shell zaw
   zgen load brandon-fryslie/rad-shell docker
   zgen load brandon-fryslie/rad-shell git
+  zgen load brandon-fryslie/rad-shell golang
   zgen load brandon-fryslie/rad-shell nvm-lazy-load
+  zgen load brandon-fryslie/rad-shell sdkman
   zgen load brandon-fryslie/rad-shell shell-tools
+
+  # Workday Plugin
+  zgen load $HOME/code/rad-workday-plugin
 
   # Load these plugins last
   zgen load zsh-users/zsh-syntax-highlighting
