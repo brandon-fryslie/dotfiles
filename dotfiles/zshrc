@@ -22,19 +22,15 @@ export PROJECTS_DIR="$HOME/code"
 
 # Language configuration
 
-# Go
-export GOPATH="$HOME/golang"
 
 # Ruby
-export PATH="$GOPATH/bin:$HOME/.rvm/bin:$PATH"
-
-# Groovy (sdkman)
-[[ -f $HOME/.sdkman/var/candidates ]] && rm -f $HOME/.sdkman/var/candidates
-[[ -f $HOME/.sdkman/var/version ]] && rm -f $HOME/.sdkman/var/version
-[[ -f $HOME/.sdkman/bin/sdkman-init.sh ]] && source "$HOME/.sdkman/bin/sdkman-init.sh" || true
+export PATH="$HOME/.rvm/bin:$PATH"
 
 # Python
 export PATH="/usr/local/opt/python/libexec/bin:$PATH"
+
+# Github configuration
+export GITHUB_USERNAME=brandon-fryslie
 
 # ---
 
@@ -42,34 +38,6 @@ export PATH="/usr/local/opt/python/libexec/bin:$PATH"
 alias e.="${VISUAL:-vi} ."
 alias dog='pygmentize -g'
 git config --global core.excludesfile ~/.gitignore_global
-
-# Wip (move to workday plugin)
-wdclone() {
-    org=$1
-    repo=$2
-    git clone git@ghe.megaleo.com:${org}/${repo}.git
-#    todo
-#   fork repo
-#   clone
-#   configure remotes
-}
-
-wdconfigremotes() {
-#    origin    git@ghe.megaleo.com:matt-bajor/cban-server.git (push)
-#upstream    git@ghe.megaleo.com:cban/cban-server.git (fetch)
-
-    git remote add
-
-#    todo
-# end state: we need to have origin point to username/repo
-# we need to have upstream point to the main org/repo
-
-#   info needed: repo name, username of fork, origin org
-}
-
-# Move to workday plugin
-alias gup="git checkout master && git fetch upstream --prune && git rebase upstream/master && git push origin"
-
 
 # Move to a rad-shell plugin
 # Try finding the first ethernet adapter that has a valid ipv4 address
@@ -80,10 +48,29 @@ local-ip() {
   done
 }
 
-# Workday plugin
-jc-cli-open() {
-  open http://$(local-ip)/pt-webdev
+AUTO_MENU=true
+AUTO_LIST=true
+#unsetopt listambiguous
+setopt AUTO_MENU
+setopt AUTO_LIST
+setopt GLOB_COMPLETE
+setopt COMPLETE_ALIASES
+setopt AUTO_PARAM_SLASH
+
+drone-helper() {
+  for i in `seq 86 99 && seq 130 144 | egrep -v '85|130'`; do
+    dhost $i
+    eval "$1 2>&1 &"
+  done
 }
 
 # For profiling shell startup time
 # zprof
+
+# should tab complete to allow picing a sub folder of this dir
+# /Users/brandon.fryslie/.zgen
+zgen-edit() {
+  true
+}
+
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'

@@ -18,7 +18,6 @@ select-word-style bash
 source "${HOME}/.zgen/zgen.zsh"
 # If we haven't yet generated our static initialization script
 if ! zgen saved; then
-
   # Loads prezto base and default plugins:
   # environment terminal editor history directory spectrum utility completion prompt
   zgen prezto
@@ -35,35 +34,7 @@ if ! zgen saved; then
   # Load Homebrew near the top
   zgen load brandon-fryslie/rad-shell homebrew
 
-  # Load some dotfile aliases
-  zgen load brandon-fryslie/rad-shell dotfiles-plugin
-
-  # 3rd Party plugins
-  zgen load robbyrussell/oh-my-zsh plugins/docker
-
-  # Enhanced fork of zaw
-  zgen load brandon-fryslie/zaw
-  zgen load zsh-users/zsh-autosuggestions / develop
-  zgen load zsh-users/zsh-completions
-
-  # The zaw plugin needs to be before the other plugins that provide zaw sources
-  zgen load brandon-fryslie/rad-shell zaw
-  zgen load brandon-fryslie/rad-shell docker
-  zgen load brandon-fryslie/rad-shell git
-  zgen load brandon-fryslie/rad-shell golang
-  zgen load brandon-fryslie/rad-shell nvm-lazy-load
-  zgen load brandon-fryslie/rad-shell sdkman
-  zgen load brandon-fryslie/rad-shell shell-tools
-
-  # Workday Plugin
-  zgen load $HOME/code/rad-workday-plugin
-
-  # Load these plugins last
-  zgen load zsh-users/zsh-syntax-highlighting
-  zgen load brandon-fryslie/rad-shell shell-customize
-
-  # Theme
-  zgen load brandon-fryslie/rad-shell git-taculous-theme/git-taculous
+  source ~/.rad-plugins
 
   zgen save
 fi
