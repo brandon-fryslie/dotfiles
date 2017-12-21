@@ -52,6 +52,7 @@ if ! zgen saved; then
   zgen load brandon-fryslie/rad-shell nvm-lazy-load
   zgen load brandon-fryslie/rad-shell sdkman
   zgen load brandon-fryslie/rad-shell shell-tools
+  zgen load brandon-fryslie/rad-shell rad-dev
 
   # Workday Plugin
   zgen load git@ghe.megaleo.com:brandon-fryslie/rad-workday-plugin.git
