@@ -8,7 +8,7 @@
 
 dir=~/dotfiles/dotfiles           # dotfiles directory
 olddir=~/dotfiles_old             # old dotfiles backup directory
-files="gemrc rvmrc rad-plugins zgen-setup.zsh zshrc gitignore_global"    # list of files/folders to symlink in homedir
+files="gemrc rvmrc zgen-setup.zsh zshrc gitignore_global"    # list of files/folders to symlink in homedir
 
 ##########
 
