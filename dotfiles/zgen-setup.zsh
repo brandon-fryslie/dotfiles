@@ -57,7 +57,7 @@ if ! zgen saved; then
   zgen load git@ghe.megaleo.com:brandon-fryslie/rad-workday-plugin.git
 
   # Load these plugins last
-  zgen load zsh-users/zsh-syntax-highlighting
+  zgen load brandon-fryslie/zsh-syntax-highlighting
   zgen load brandon-fryslie/rad-shell shell-customize
 
   # Theme
