@@ -28,13 +28,13 @@ if ! zgen saved; then
   zgen prezto history-substring-search
 
   # Some common functions to share between plugins
-  zgen load brandon-fryslie/rad-shell plugin-shared
+  zgen load brandon-fryslie/rad-plugins plugin-shared
 
   # Load Homebrew near the top
-  zgen load brandon-fryslie/rad-shell homebrew
+  zgen load brandon-fryslie/rad-plugins homebrew
 
   # Load some dotfile aliases
-  zgen load brandon-fryslie/rad-shell dotfiles-plugin
+  zgen load brandon-fryslie/rad-plugins dotfiles
 
   # 3rd Party plugins
   zgen load robbyrussell/oh-my-zsh plugins/docker
@@ -45,24 +45,24 @@ if ! zgen saved; then
   zgen load zsh-users/zsh-completions
 
   # The zaw plugin needs to be before the other plugins that provide zaw sources
-  zgen load brandon-fryslie/rad-shell zaw
-  zgen load brandon-fryslie/rad-shell docker
-  zgen load brandon-fryslie/rad-shell git
-  zgen load brandon-fryslie/rad-shell golang
-  zgen load brandon-fryslie/rad-shell nvm-lazy-load
-  zgen load brandon-fryslie/rad-shell sdkman
-  zgen load brandon-fryslie/rad-shell shell-tools
-  zgen load brandon-fryslie/rad-shell rad-dev
+  zgen load brandon-fryslie/rad-plugins zaw
+  zgen load brandon-fryslie/rad-plugins docker
+  zgen load brandon-fryslie/rad-plugins git
+  zgen load brandon-fryslie/rad-plugins golang
+  zgen load brandon-fryslie/rad-plugins nvm-lazy-load
+  zgen load brandon-fryslie/rad-plugins sdkman
+  zgen load brandon-fryslie/rad-plugins shell-tools
+  zgen load brandon-fryslie/rad-plugins rad-dev
 
   # Workday Plugin
   zgen load git@ghe.megaleo.com:brandon-fryslie/rad-workday-plugin.git
 
   # Load these plugins last
   zgen load brandon-fryslie/zsh-syntax-highlighting
-  zgen load brandon-fryslie/rad-shell shell-customize
+  zgen load brandon-fryslie/rad-plugins shell-customize
 
   # Theme
-  zgen load brandon-fryslie/rad-shell git-taculous-theme/git-taculous
+  zgen load brandon-fryslie/rad-plugins git-taculous-theme/git-taculous
 
   zgen save
 fi
