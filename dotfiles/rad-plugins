@@ -1,0 +1,29 @@
+# Load Homebrew near the top
+brandon-fryslie/rad-plugins homebrew
+
+# Load some dotfile aliases
+brandon-fryslie/rad-plugins dotfiles
+
+# 3rd Party plugins
+robbyrussell/oh-my-zsh plugins/docker
+
+# Enhanced fork of zaw
+brandon-fryslie/zaw
+zsh-users/zsh-autosuggestions / develop
+zsh-users/zsh-completions
+
+brandon-fryslie/rad-plugins zaw
+brandon-fryslie/rad-plugins docker
+brandon-fryslie/rad-plugins git
+brandon-fryslie/rad-plugins golang
+brandon-fryslie/rad-plugins nvm-lazy-load
+brandon-fryslie/rad-plugins sdkman
+brandon-fryslie/rad-plugins shell-tools
+brandon-fryslie/rad-plugins rad-dev
+
+# Workday plugin
+git@ghe.megaleo.com:brandon-fryslie/rad-workday-plugin.git
+
+# Load these last
+brandon-fryslie/zsh-syntax-highlighting
+brandon-fryslie/rad-plugins shell-customize

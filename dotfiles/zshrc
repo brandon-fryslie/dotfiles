@@ -5,7 +5,7 @@ setopt share_history
 
 # Source Zgen and create init file if necessary
 # Add custom Zsh plugins to .zgen-setup.zsh
-source ~/.zgen-setup.zsh
+source ~/.rad-shell/rad-init.zsh
 
 # Add customizations below
 
