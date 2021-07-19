@@ -5,7 +5,7 @@ brandon-fryslie/rad-plugins homebrew
 brandon-fryslie/rad-plugins dotfiles
 
 # 3rd Party plugins
-robbyrussell/oh-my-zsh plugins/docker
+ohmyzsh/ohmyzsh plugins/docker
 
 # Enhanced fork of zaw
 brandon-fryslie/zaw
@@ -22,8 +22,10 @@ brandon-fryslie/rad-plugins sdkman
 brandon-fryslie/rad-plugins shell-tools
 brandon-fryslie/rad-plugins rad-dev
 
-# Workday plugin
-git@ghe.megaleo.com:brandon-fryslie/rad-workday-plugin.git
+### Themes
+brandon-fryslie/rad-plugins git-taculous-theme/git-taculous
+# denysdovhan/spaceship-prompt
+### / Themes
 
 # Load these last
 brandon-fryslie/zsh-syntax-highlighting
