@@ -6,8 +6,9 @@
 
 ########## Variables
 
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 dotfiles_profile=$1                                   # the profile to use for dotfiles.  dotfiles dir will be dotfiles-${dotfiles_profile}
-dotfiles_dir=~/dotfiles/dotfiles-${dotfiles_profile}  # dotfiles directory
+dotfiles_dir=${script_dir}/dotfiles-${dotfiles_profile}  # dotfiles directory
 olddir=~/dotfiles_old                                 # old dotfiles backup directory
 files="gemrc rvmrc zshrc gitignore_global rad-plugins"    # list of files/folders to symlink in homedir
 
@@ -34,7 +35,7 @@ echo "...done"
 # move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks
 echo "Moving any existing dotfiles from ~ to $olddir"
 for file in $files; do
-    mv ~/.$file ~/dotfiles_old/ 2>/dev/null
+    mv -f ~/.$file ~/dotfiles_old/ 2>/dev/null
     echo "Creating symlink to $file in home directory"
     ln -s $dotfiles_dir/$file ~/.$file
 done
