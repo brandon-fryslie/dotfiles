@@ -19,6 +19,7 @@ export EDITOR=vi
 
 # Local code configuration
 export PROJECTS_DIR="$HOME/code"
+export DOTFILES_DIR="$HOME/code/dotfiles"
 
 # Language configuration
 
