@@ -1,0 +1,99 @@
+# .zshrc file for development use at work
+
+# zmodload zsh/zprof
+setopt clobber
+setopt share_history
+
+# Source Zgen and create init file if necessary
+# Add custom Zsh plugins to .zgen-setup.zsh
+source ~/.rad-shell/rad-init.zsh
+
+# Add customizations below
+
+# Theme configuration
+export ENABLE_DOCKER_PROMPT=true
+export LAZY_NODE_PROMPT=true
+
+# Editor configuration
+export VISUAL=idea
+export EDITOR=vi
+
+# Local code configuration
+export PROJECTS_DIR="$HOME/code"
+
+# Language configuration
+
+# Ruby
+export PATH="$HOME/.rvm/bin:$PATH"
+
+# Github configuration
+export GHE_USERNAME=brandon-fryslie
+
+# ---
+
+# Misc
+alias e.="${VISUAL:-vi} ."
+alias dog='pygmentize -g'
+git config --global core.excludesfile ~/.gitignore_global
+
+AUTO_MENU=true
+AUTO_LIST=true
+#unsetopt listambiguous
+setopt AUTO_MENU
+setopt AUTO_LIST
+setopt GLOB_COMPLETE
+setopt COMPLETE_ALIASES
+setopt AUTO_PARAM_SLASH
+
+#export PATH="$PATH:$HOME/Library/Python/3.7/bin:$HOME/Library/Python/2.7/bin:$HOME/Library/Python/3.7/lib/python/site-packages:$HOME/.jx/bin"
+
+export LPASS_AGENT_TIMEOUT="28800"
+
+export OKTA2AWS_DUO_MFA_OPTION='Passcode'
+
+jcd() {
+  jc-cli --dev $HOME/code/jc-cli-py "$@"
+}
+
+# Completion engine
+# completion init...shouldn't this be loaded already?
+autoload -Uz compinit
+compinit
+source /Users/brandon.fryslie/.jfrog/jfrog_zsh_completion
+
+autoload -U +X bashcompinit && bashcompinit
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+
+# / Completion engine
+
+# Pyenv
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+
+if command -v pyenv 1>/dev/null 2>&1; then eval "$(pyenv init -)"; fi
+if which pyenv-virtualenv-init > /dev/null; then eval "$(pyenv virtualenv-init -)"; fi
+# / Pyenv
+
+# Terraform
+complete -o nospace -C /usr/local/Cellar/tfenv/1.0.2/versions/0.12.23/terraform terraform
+
+export PATH="$HOME/code/terraform-docker/bin:$PATH"
+# / Terraform
+
+export JAVA_HOME=`/usr/libexec/java_home -v 1.8.0_151`
+
+export PATH="/usr/local/opt/ansible@2.9/bin:$PATH"
+
+# ML DevOps / SuperCap
+
+export DEVOPS=true
+export PATH=~/bin:$PATH
+export GEM_HOME=~/.gem
+export GEM_PATH=~/.gem
+#source ~/development/PUBLIC-GITHUB-REPOS/git/contrib/completion/git-prompt.sh
+#source ~/development/PUBLIC-GITHUB-REPOS/git/contrib/completion/git-completion.zsh
+#setopt PROMPT_SUBST;PS1='[%n@%m %c$(__git_ps1 " (%s)")]\$ '
+eval "$(rbenv init -)"
+
+# / MLDevOps
+[[ /usr/local/bin/kubectl ]] && source <(kubectl completion zsh)
