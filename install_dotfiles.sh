@@ -9,7 +9,7 @@
 dotfiles_profile=$1                                   # the profile to use for dotfiles.  dotfiles dir will be dotfiles-${dotfiles_profile}
 dotfiles_dir=~/dotfiles/dotfiles-${dotfiles_profile}  # dotfiles directory
 olddir=~/dotfiles_old                                 # old dotfiles backup directory
-files="gemrc rvmrc zshrc gitignore_global"    # list of files/folders to symlink in homedir
+files="gemrc rvmrc zshrc gitignore_global rad-plugins"    # list of files/folders to symlink in homedir
 
 ##########
 
