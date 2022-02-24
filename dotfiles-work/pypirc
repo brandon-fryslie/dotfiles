@@ -1,0 +1,6 @@
+[distutils]
+index-servers =
+  python-release
+
+[python-virtual]
+repository: https://artifactory.workday.com/artifactory/api/pypi/python-virtual

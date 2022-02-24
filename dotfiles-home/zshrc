@@ -25,7 +25,7 @@ export DOTFILES_DIR="$HOME/code/dotfiles"
 
 
 # Ruby
-export PATH="$HOME/.rvm/bin:$PATH"
+#export PATH="$HOME/.rvm/bin:$PATH"
 
 # Python
 export PATH="/usr/local/opt/python/libexec/bin:$PATH"
