@@ -1,11 +1,16 @@
 # .zshrc file for development use at work
 
+# disable async
+SPACESHIP_PROMPT_ASYNC=false
+
+# Uncomment to enable profiling
 # zmodload zsh/zprof
+
 setopt clobber
 setopt share_history
 
 # Set path...dunno why this changed
-export PATH="$PATH:/usr/local/bin"
+export PATH="$PATH:/usr/local/bin:/usr/local/anaconda3/bin"
 
 # Source Zgen and create init file if necessary
 # Add custom Zsh plugins to .zgen-setup.zsh
@@ -54,21 +59,10 @@ jcd() {
   jc-cli --dev $HOME/code/jc-cli-py "$@"
 }
 
-# Completion engine
-# completion init...shouldn't this be loaded already?
-autoload -Uz compinit
-compinit
-[[ -f $HOME/.jfrog/jfrog_zsh_completion ]] && source $HOME/.jfrog/jfrog_zsh_completion
-
-autoload -U +X bashcompinit && bashcompinit
-zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
-
-# / Completion engine
-
 # Pyenv
 export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init -)"
+eval "$(pyenv init --path)"
 eval "$(pyenv virtualenv-init -)"
 # / Pyenv
 
@@ -80,9 +74,8 @@ complete -o nospace -C /usr/local/Cellar/tfenv/2.2.2/versions/0.15.3/terraform t
 
 # GoLang
 
-export GOROOT=/usr/local/go
 export GOPATH=$HOME/go-global
-export PATH=$GOPATH/bin:$GOROOT/bin:$PATH
+export PATH=$GOPATH/bin:/usr/local/Cellar/go/1.19.1/bin:$PATH
 
 # / GoLang
 
@@ -94,11 +87,71 @@ export PATH="$PATH:$HOME/code/ml-handy-scripts/bin"
 
 eval "$(rbenv init -)"
 
-export PATH="$PATH:$HOME/code/mlde-cloud-deploy/bin"
-
+export PATH="$HOME/.asdf/shims:$PATH"
 
 # / MLDevOps
 [[ /usr/local/bin/kubectl ]] && source <(kubectl completion zsh)
 
-export ENABLE_SCYLLA_PROMPT=true
+export ENABLE_SCYLLA_PROMPT=false
 
+
+# Added by serverless binary installer
+export PATH="$HOME/.serverless/bin:$PATH"
+
+# for sesh
+export PATH="$PATH:$HOME/bin"
+
+# MLDE
+export MLDE_ENVIRONMENTS=(compute-dev compute-prod compute-prod-eu datalake-dev datalake-prod datalake-prod-eu datalake-prod-sin datalake-prod-ca)
+export TF_EXEC_OKTA_TIMEOUT_MINUTES=30
+
+alias gbd="git co master && git branch -D"
+# / MLDE
+
+ulimit -n 10240
+
+export SDKMAN_DIR="$HOME/.sdkman"
+# export PATH="$HOME/.bin:$PATH"
+
+# Completion engine
+# completion init...shouldn't this be loaded already?  needs to be loaded whenever completion paths change...
+
+# pipx completions
+eval "$(register-python-argcomplete pipx)"
+
+eval "$(_POLICY_SENTRY_COMPLETE=source_zsh policy_sentry)"
+
+[[ -f $HOME/.jfrog/jfrog_zsh_completion ]] && source $HOME/.jfrog/jfrog_zsh_completion
+
+export PATH="$PATH:$HOME/code/mlde-cloud-deploy/bin"
+export PATH="$PATH:$HOME/.local/bin"
+fpath=($HOME/code/mlde-cloud-deploy/bin/completions $fpath)
+
+autoload -U +X bashcompinit && bashcompinit
+autoload -Uz compinit
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+compinit
+
+# / Completion engine
+
+#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
+[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# Uncomment to enable profiling
+# zprof
+
+# Navi widget zsh
+eval "$(navi widget zsh)"
+
+# The next line updates PATH for the Google Cloud SDK.
+if [ -f '/Users/brandon.fryslie/google-cloud-sdk/path.zsh.inc' ]; then . '/Users/brandon.fryslie/google-cloud-sdk/path.zsh.inc'; fi
+
+# The next line enables shell command completion for gcloud.
+if [ -f '/Users/brandon.fryslie/google-cloud-sdk/completion.zsh.inc' ]; then . '/Users/brandon.fryslie/google-cloud-sdk/completion.zsh.inc'; fi
+
+
+# STARSHIP crap
+
+
+
+# // STARSHIP crap

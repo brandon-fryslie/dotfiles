@@ -21,6 +21,11 @@ brandon-fryslie/rad-plugins nvm-lazy-load
 brandon-fryslie/rad-plugins sdkman
 brandon-fryslie/rad-plugins shell-tools
 brandon-fryslie/rad-plugins rad-dev
+mafredri/zsh-snap / main
+apachler/zsh-aws / main
+mafredri/zsh-async / main
+marlonrichert/zsh-snap / main
+
 
 # Workday plugins
 git@ghe.megaleo.com:brandon-fryslie/rad-workday-plugin.git
@@ -28,7 +33,7 @@ git@ghe.megaleo.com:brandon-fryslie/rad-workday-mldevops-plugin.git
 
 ### Themes
 brandon-fryslie/rad-plugins git-taculous-theme/git-taculous
-# denysdovhan/spaceship-prompt
+# brandon-fryslie/rad-plugins starship-prompt
 ### / Themes
 
 # Load these last

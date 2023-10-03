@@ -1,3 +1,4 @@
+# Uncomment to enable profiling
 # zmodload zsh/zprof
 
 setopt clobber
@@ -78,3 +79,6 @@ zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:
 
 export JAVA_HOME=`/usr/libexec/java_home -v 1.8.0_151`
 alias ap="~/code/workstation/docker-ansible/bin/docker-ansible-playbook -u brandon.fryslie"
+
+# Uncomment to enable profiling
+# zprof
