@@ -59,26 +59,31 @@ setopt GLOB_COMPLETE
 setopt COMPLETE_ALIASES
 setopt AUTO_PARAM_SLASH
 
-drone-helper() {
-  for i in `seq 86 99 && seq 130 144 | egrep -v '85|130'`; do
-    dhost $i
-    eval "$1 2>&1 &"
-  done
-}
-
-# For profiling shell startup time
-# zprof
-
-# should tab complete to allow picing a sub folder of this dir
-# /Users/brandon.fryslie/.zgen
-zgen-edit() {
-  true
-}
-
+# TODO: move this to a plugin
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
 
-export JAVA_HOME=`/usr/libexec/java_home -v 1.8.0_151`
-alias ap="~/code/workstation/docker-ansible/bin/docker-ansible-playbook -u brandon.fryslie"
+# TODO: move this to a plugin
+JAVA_VERSION="temurin-11"
+export JAVA_HOME="/Library/Java/JavaVirtualMachines/${JAVA_VERSION}.jdk/Contents/Home"
+PATH="/Library/Java/JavaVirtualMachines/${JAVA_VERSION}.jdk/Contents/Home/bin/:${PATH}"
 
-# Uncomment to enable profiling
+# what's this for?
+PATH="$PATH:/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/bin"
+
+# TODO: plugin
+export DOCKER_HOST="unix://$HOME/.lima/docker.sock"
+
+# pyenv (TODO: move this to a plugin)
+export PYENV_ROOT="$HOME/.pyenv"
+command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+eval "$(pyenv init --path)"
+which pyenv-virtualenv-init > /dev/null && eval "$(pyenv virtualenv-init -)"
+# /pyenv
+
+#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
+export SDKMAN_DIR="$HOME/.sdkman"
+[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
+
+# For profiling shell startup time
 # zprof
