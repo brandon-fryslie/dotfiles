@@ -85,5 +85,21 @@ which pyenv-virtualenv-init > /dev/null && eval "$(pyenv virtualenv-init -)"
 export SDKMAN_DIR="$HOME/.sdkman"
 [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
 
+# Crazy codesigning thing
+add-debug-entitlement() {
+  local executable_path=$1
+  rad-yellow "Adding debug entitlement to exec: ${executable_path}"
+  debug_plist=$(mktemp)
+  cat << EOF > $debug_plist
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>com.apple.security.get-task-allow</key><true/></dict></plist>
+EOF
+  rad-yellow "Wrote debug entitlement plist to ${debug_plist}.  Executing codesign..."
+  codesign -s - -v -f --entitlements ${debug_plist} ${executable_path}
+  rad-green "Done!"
+}
+
 # For profiling shell startup time
 # zprof
+export VOLTA_HOME="$HOME/.volta"
+export PATH="$VOLTA_HOME/bin:$PATH"
+export PATH="/usr/local/opt/libxml2/bin:$PATH"
