@@ -1,5 +1,5 @@
 # Load Homebrew near the top
-brandon-fryslie/rad-plugins homebrew
+# brandon-fryslie/rad-plugins homebrew
 
 # Load some dotfile aliases
 brandon-fryslie/rad-plugins dotfiles
