@@ -1,157 +1,34 @@
+# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
+# Initialization code that may require console input (password prompts, [y/n]
+# confirmations, etc.) must go above this block; everything else may go below.
+# if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
+#   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
+# fi
+
 # .zshrc file for development use at work
 
-# disable async
-SPACESHIP_PROMPT_ASYNC=false
+PROJECTS_DIR=~/code
+EDITOR=idea
+VISUAL=idea
+DOTFILES_DIR=$HOME/code/dotfiles
+POWERLEVEL9K_INSTANT_PROMPT=off
 
-# Uncomment to enable profiling
-# zmodload zsh/zprof
-
-setopt clobber
-setopt share_history
-
-# Set path...dunno why this changed
-export PATH="$PATH:/usr/local/bin:/usr/local/anaconda3/bin"
-
-# Source Zgen and create init file if necessary
-# Add custom Zsh plugins to .zgen-setup.zsh
 source ~/.rad-shell/rad-init.zsh
-
 # Add customizations below
 
-# Theme configuration
-# export ENABLE_DOCKER_PROMPT=true
-export LAZY_NODE_PROMPT=true
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
-# Editor configuration
-export VISUAL=idea
-export EDITOR=vi
-
-# Local code configuration
-export PROJECTS_DIR="$HOME/code"
-export DOTFILES_DIR="$HOME/code/dotfiles"
-
-# Language configuration
-
-# Github configuration
-export GHE_USERNAME=brandon-fryslie
-
-# ---
-
-# Misc
-alias e.="${VISUAL:-vi} ."
-alias dog='pygmentize -g'
-git config --global core.excludesfile ~/.gitignore_global
-
-AUTO_MENU=true
-AUTO_LIST=true
-#unsetopt listambiguous
-setopt AUTO_MENU
-setopt AUTO_LIST
-setopt GLOB_COMPLETE
-setopt COMPLETE_ALIASES
-setopt AUTO_PARAM_SLASH
-
-export LPASS_AGENT_TIMEOUT="28800"
-
-export OKTA2AWS_DUO_MFA_OPTION='Passcode'
-
-jcd() {
-  jc-cli --dev $HOME/code/jc-cli-py "$@"
+colormap() {
+  for i in {0..255}; do print -Pn "%K{$i}  %k%F{$i}${(l:3::0:)i}%f " ${${(M)$((i%6)):#3}:+$'\n'}; done
 }
 
-# Pyenv
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init --path)"
-eval "$(pyenv virtualenv-init -)"
-# / Pyenv
+alias ls=lsd
+alias l='ls -l'
+alias la='ls -a'
+alias lla='ls -la'
+alias lt='ls --tree'
 
-# Terraform
-complete -o nospace -C /usr/local/Cellar/tfenv/2.2.2/versions/0.15.3/terraform terraform
+zstyle ':autocomplete:*' min-input 3
+zstyle ':autocomplete:*' delay 2
 
-#export PATH="$HOME/code/terraform-docker/bin:$PATH"
-# / Terraform
-
-# GoLang
-
-export GOPATH=$HOME/go-global
-export PATH=$GOPATH/bin:/usr/local/Cellar/go/1.19.1/bin:$PATH
-
-# / GoLang
-
-#export JAVA_HOME=`/usr/libexec/java_home -v 1.8.0_151`
-
-#export PATH="/usr/local/opt/ansible@2.9/bin:$PATH"
-
-export PATH="$PATH:$HOME/code/ml-handy-scripts/bin"
-
-eval "$(rbenv init -)"
-
-export PATH="$HOME/.asdf/shims:$PATH"
-
-# / MLDevOps
-[[ /usr/local/bin/kubectl ]] && source <(kubectl completion zsh)
-
-export ENABLE_SCYLLA_PROMPT=false
-
-
-# Added by serverless binary installer
-export PATH="$HOME/.serverless/bin:$PATH"
-
-# for sesh
-export PATH="$PATH:$HOME/bin"
-
-# MLDE
-export MLDE_ENVIRONMENTS=(compute-dev compute-prod compute-prod-eu datalake-dev datalake-prod datalake-prod-eu datalake-prod-sin datalake-prod-ca)
-export TF_EXEC_OKTA_TIMEOUT_MINUTES=30
-
-alias gbd="git co master && git branch -D"
-# / MLDE
-
-ulimit -n 10240
-
-export SDKMAN_DIR="$HOME/.sdkman"
-# export PATH="$HOME/.bin:$PATH"
-
-# Completion engine
-# completion init...shouldn't this be loaded already?  needs to be loaded whenever completion paths change...
-
-# pipx completions
-eval "$(register-python-argcomplete pipx)"
-
-eval "$(_POLICY_SENTRY_COMPLETE=source_zsh policy_sentry)"
-
-[[ -f $HOME/.jfrog/jfrog_zsh_completion ]] && source $HOME/.jfrog/jfrog_zsh_completion
-
-export PATH="$PATH:$HOME/code/mlde-cloud-deploy/bin"
-export PATH="$PATH:$HOME/.local/bin"
-fpath=($HOME/code/mlde-cloud-deploy/bin/completions $fpath)
-
-autoload -U +X bashcompinit && bashcompinit
-autoload -Uz compinit
-zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
-compinit
-
-# / Completion engine
-
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-
-# Uncomment to enable profiling
-# zprof
-
-# Navi widget zsh
-eval "$(navi widget zsh)"
-
-# The next line updates PATH for the Google Cloud SDK.
-if [ -f '/Users/brandon.fryslie/google-cloud-sdk/path.zsh.inc' ]; then . '/Users/brandon.fryslie/google-cloud-sdk/path.zsh.inc'; fi
-
-# The next line enables shell command completion for gcloud.
-if [ -f '/Users/brandon.fryslie/google-cloud-sdk/completion.zsh.inc' ]; then . '/Users/brandon.fryslie/google-cloud-sdk/completion.zsh.inc'; fi
-
-
-# STARSHIP crap
-
-
-
-# // STARSHIP crap

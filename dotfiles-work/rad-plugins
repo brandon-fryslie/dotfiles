@@ -9,33 +9,31 @@ ohmyzsh/ohmyzsh plugins/docker
 
 # Enhanced fork of zaw
 brandon-fryslie/zaw
-zsh-users/zsh-autosuggestions / develop
+zsh-users/zsh-autosuggestions
+
 zsh-users/zsh-completions
+z-shell/zsh-navigation-tools
+romkatv/zsh-prompt-benchmark
 
 brandon-fryslie/rad-plugins zaw
 brandon-fryslie/rad-plugins docker
 brandon-fryslie/rad-plugins git
-brandon-fryslie/rad-plugins golang
+# brandon-fryslie/rad-plugins golang
 brandon-fryslie/rad-plugins iterm
 brandon-fryslie/rad-plugins nvm-lazy-load
 brandon-fryslie/rad-plugins sdkman
 brandon-fryslie/rad-plugins shell-tools
 brandon-fryslie/rad-plugins rad-dev
-mafredri/zsh-snap / main
-apachler/zsh-aws / main
-mafredri/zsh-async / main
-marlonrichert/zsh-snap / main
-
-
-# Workday plugins
-git@ghe.megaleo.com:brandon-fryslie/rad-workday-plugin.git
-git@ghe.megaleo.com:brandon-fryslie/rad-workday-mldevops-plugin.git
 
 ### Themes
-brandon-fryslie/rad-plugins git-taculous-theme/git-taculous
-# brandon-fryslie/rad-plugins starship-prompt
+# brandon-fryslie/rad-plugins git-taculous-theme/git-taculous
+# mafredri/zsh-async
+# spaceship-prompt/spaceship-prompt
+romkatv/powerlevel10k powerlevel10k
 ### / Themes
 
 # Load these last
 brandon-fryslie/zsh-syntax-highlighting
+marlonrichert/zsh-autocomplete
+jimhester/per-directory-history
 brandon-fryslie/rad-plugins shell-customize

@@ -9,7 +9,8 @@ ohmyzsh/ohmyzsh plugins/docker
 
 # Enhanced fork of zaw
 brandon-fryslie/zaw
-zsh-users/zsh-autosuggestions / develop
+zsh-users/zsh-autosuggestions
+marlonrichert/zsh-autocomplete
 zsh-users/zsh-completions
 
 brandon-fryslie/rad-plugins zaw
