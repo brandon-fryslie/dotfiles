@@ -12,8 +12,9 @@ brandon-fryslie/zaw
 zsh-users/zsh-autosuggestions
 
 zsh-users/zsh-completions
-z-shell/zsh-navigation-tools
+# z-shell/zsh-navigation-tools
 romkatv/zsh-prompt-benchmark
+willghatch/zsh-cdr
 
 brandon-fryslie/rad-plugins zaw
 brandon-fryslie/rad-plugins docker

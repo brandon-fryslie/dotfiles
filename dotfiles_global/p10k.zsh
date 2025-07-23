@@ -42,6 +42,7 @@
   # Zsh >= 5.1 is required.
   [[ $ZSH_VERSION == (5.<1->*|<6->.*) ]] || return
 
+  ### RAD-LEFT-ELEMENTS RAD-ELEMENTS
   # The list of segments shown on the left. Fill it with the most important segments.
   typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
     # =========================[ Line #1 ]=========================
@@ -52,8 +53,13 @@
     # =========================[ Line #2 ]=========================
     newline                 # \n
     prompt_char           # prompt symbol
+    # Transient Prompt
+#    newline
+#    status
+#    time
   )
 
+  ### RAD-RIGHT-ELEMENTS
   # The list of segments shown on the right. Fill it with less important segments.
   # Right prompt on the last prompt line (where you are typing your commands) gets
   # automatically hidden when the input line reaches it. Right prompt above the
@@ -1717,11 +1723,14 @@
   # If set to true, time will update when you hit enter. This way prompts for the past
   # commands will contain the start times of their commands as opposed to the default
   # behavior where they contain the end times of their preceding commands.
-  typeset -g POWERLEVEL9K_TIME_UPDATE_ON_COMMAND=false
+  typeset -g POWERLEVEL9K_TIME_UPDATE_ON_COMMAND=true
   # Custom icon.
   typeset -g POWERLEVEL9K_TIME_VISUAL_IDENTIFIER_EXPANSION=
   # Custom prefix.
   # typeset -g POWERLEVEL9K_TIME_PREFIX='%246Fat '
+
+  # rad-added https://github.com/romkatv/powerlevel10k/issues/1277#issuecomment-787415848
+  typeset -g POWERLEVEL9K_TIME_LEFT_RIGHT_WHITESPACE=' %k%234F\uE0B4'
 
   # Example of a user-defined prompt segment. Function prompt_example will be called on every
   # prompt if `example` prompt segment is added to POWERLEVEL9K_LEFT_PROMPT_ELEMENTS or
@@ -1755,14 +1764,87 @@
   # typeset -g POWERLEVEL9K_EXAMPLE_FOREGROUND=208
   # typeset -g POWERLEVEL9K_EXAMPLE_VISUAL_IDENTIFIER_EXPANSION='⭐'
 
-  # Transient prompt works similarly to the builtin transient_rprompt option. It trims down prompt
-  # when accepting a command line. Supported values:
-  #
+  ### RAD-TRANSIENT Prompt Config
+
   #   - off:      Don't change prompt when accepting a command line.
   #   - always:   Trim down prompt when accepting a command line.
   #   - same-dir: Trim down prompt when accepting a command line unless this is the first command
   #               typed after changing current working directory.
   typeset -g POWERLEVEL9K_TRANSIENT_PROMPT=always
+#  typeset -g POWERLEVEL9K_TRANSIENT_PROMPT=off
+  POWERLEVEL9K_TIME_UPDATE_ON_COMMAND=true
+
+
+  typeset -g RAD_TRANSIENT_GLOB_HIDE='1|2|3/left_frame|3/left/*'
+  typeset -g RAD_TRANSIENT_GLOB_SHOW='*/newline|3/left/(time|status)'
+  # Transient vars to backup and restore.  Makes transient prompt simpler
+  typeset -ga RAD_TRANSIENT_VARS=(
+#    POWERLEVEL9K_LEFT_PROMPT_ELEMENTS
+#    POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS
+    POWERLEVEL9K_PROMPT_CHAR_BACKGROUND
+    POWERLEVEL9K_PROMPT_CHAR_LEFT_PROMPT_LAST_SEGMENT_END_SYMBOL
+    POWERLEVEL9K_PROMPT_CHAR_LEFT_PROMPT_FIRST_SEGMENT_START_SYMBOL
+    POWERLEVEL9K_PROMPT_CHAR_LEFT_LEFT_WHITESPACE
+    POWERLEVEL9K_PROMPT_CHAR_LEFT_RIGHT_WHITESPACE
+  )
+
+  typeset -gA _RAD_P10K_ORIG_VALUES
+
+
+  function rad-p10k-set-transient-on() {
+    # save original values
+#    zle -M "Saving vars"
+    for var in "${RAD_TRANSIENT_VARS[@]}"; do
+      _RAD_P10K_ORIG_VALUES[$var]="${(P)var}"
+#      echo "Saved $var: ${_RAD_P10K_ORIG_VALUES[$var]}"
+    done
+
+#    POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(dir time)
+  }
+
+
+#    POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(dir newline prompt_char)
+#    POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS=(time newline time)
+#    POWERLEVEL9K_PROMPT_CHAR_BACKGROUND=
+#    POWERLEVEL9K_PROMPT_CHAR_LEFT_PROMPT_LAST_SEGMENT_END_SYMBOL=
+#    POWERLEVEL9K_PROMPT_CHAR_LEFT_PROMPT_FIRST_SEGMENT_START_SYMBOL=
+#    POWERLEVEL9K_PROMPT_CHAR_LEFT_LEFT_WHITESPACE=
+#    POWERLEVEL9K_PROMPT_CHAR_LEFT_RIGHT_WHITESPACE=
+
+#    p10k display $RAD_TRANSIENT_GLOB_HIDE=hide $RAD_TRANSIENT_GLOB_SHOW=show
+
+  rad-p10k-set-transient-off() {
+    # restore original values
+    for var in "${RAD_TRANSIENT_VARS[@]}"; do
+      # is array
+#      echo ${(t)${(P)var}}
+#      echo $_RAD_P10K_ORIG_VALUES
+      if [[ -v "_RAD_P10K_ORIG_VALUES[$var]" ]]; then
+        if [[ ${(t)${(P)var}} == "array" ]]; then
+#          echo "restoring element: "
+#          eval "echo \${_RAD_P10K_ORIG_VALUES[$var]}"
+          eval "${var}=(\${_RAD_P10K_ORIG_VALUES[$var]})"
+        else
+          typeset -g "$var=${_RAD_P10K_ORIG_VALUES[$var]}"
+        fi
+#        echo "Restored $var: ${(P)var}"
+      fi
+    done
+  }
+
+
+#    p10k display $RAD_TRANSIENT_GLOB_HIDE=show $RAD_TRANSIENT_GLOB_SHOW=hide;
+
+#  function p10k-on-post-prompt() { rad-p10k-set-transient-on }
+#  function p10k-on-pre-prompt() { rewrite_last_displayed_command 2 "farmer" }
+#  function p10k-on-post-prompt() { rad-p10k-set-transient-on }
+#  function p10k-on-pre-prompt() { rad-p10k-set-transient-off }
+#  function p10k-on-post-prompt() { p10k display $RAD_TRANSIENT_GLOB_HIDE=hide $RAD_TRANSIENT_GLOB_SHOW=show; }
+#  function p10k-on-pre-prompt()  { p10k display $RAD_TRANSIENT_GLOB_HIDE=show $RAD_TRANSIENT_GLOB_SHOW=hide; }
+#  p10k-on-post-prompt() { p10k display '1/(left|right_frame)'=hide '2/*'=hide '*/time'=show; }
+#  p10k-on-pre-prompt()  { p10k display '1/(left|right_frame)'=show '2/*'=show '*/time'=hide; }
+
+  # / RAD-TRANSIENT-PROMPT
 
   # Instant prompt mode.
   #
