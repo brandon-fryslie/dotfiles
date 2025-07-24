@@ -28,51 +28,53 @@ alias l='ls -l'
 alias la='ls -a'
 alias lla='ls -la'
 alias lt='ls --tree'
+#
+# zstyle ':autocomplete:*' min-input 3
+# zstyle ':autocomplete:*' delay 2
+#
+# # all Tab widgets
+# zstyle ':autocomplete:*complete*:*' insert-unambiguous yes
+#
+# # all history widgets
+# zstyle ':autocomplete:*history*:*' insert-unambiguous yes
+#
+# # ^S
+# zstyle ':autocomplete:menu-search:*' insert-unambiguous yes
 
-zstyle ':autocomplete:*' min-input 3
-zstyle ':autocomplete:*' delay 2
+# bindkey              '^I' menu-select
+# bindkey "$terminfo[kcbt]" menu-select
 
-# all Tab widgets
-zstyle ':autocomplete:*complete*:*' insert-unambiguous yes
-
-# all history widgets
-zstyle ':autocomplete:*history*:*' insert-unambiguous yes
-
-# ^S
-zstyle ':autocomplete:menu-search:*' insert-unambiguous yes
-
-bindkey              '^I' menu-select
-bindkey "$terminfo[kcbt]" menu-select
-
-bindkey -M menuselect              '^I'         menu-complete
-bindkey -M menuselect "$terminfo[kcbt]" reverse-menu-complete
+# bindkey -M menuselect              '^I'         menu-complete
+# bindkey -M menuselect "$terminfo[kcbt]" reverse-menu-complete
 
 alias l=nav
+#
+# bindkey -M emacs \
+#     "^[p"   .history-search-backward \
+#     "^[n"   .history-search-forward \
+#     "^P"    .up-line-or-history \
+#     "^[OA"  .up-line-or-history \
+#     "^[[A"  .up-line-or-history \
+#     "^N"    .down-line-or-history \
+#     "^[OB"  .down-line-or-history \
+#     "^[[B"  .down-line-or-history \
+#     "^R"    .history-incremental-search-backward \
+#     "^S"    .history-incremental-search-forward \
+#     #
+# bindkey -a \
+#     "^P"    .up-history \
+#     "^N"    .down-history \
+#     "k"     .up-line-or-history \
+#     "^[OA"  .up-line-or-history \
+#     "^[[A"  .up-line-or-history \
+#     "j"     .down-line-or-history \
+#     "^[OB"  .down-line-or-history \
+#     "^[[B"  .down-line-or-history \
+#     "/"     .vi-history-search-backward \
+#     "?"     .vi-history-search-forward \
+#     #
+#
 
-bindkey -M emacs \
-    "^[p"   .history-search-backward \
-    "^[n"   .history-search-forward \
-    "^P"    .up-line-or-history \
-    "^[OA"  .up-line-or-history \
-    "^[[A"  .up-line-or-history \
-    "^N"    .down-line-or-history \
-    "^[OB"  .down-line-or-history \
-    "^[[B"  .down-line-or-history \
-    "^R"    .history-incremental-search-backward \
-    "^S"    .history-incremental-search-forward \
-    #
-bindkey -a \
-    "^P"    .up-history \
-    "^N"    .down-history \
-    "k"     .up-line-or-history \
-    "^[OA"  .up-line-or-history \
-    "^[[A"  .up-line-or-history \
-    "j"     .down-line-or-history \
-    "^[OB"  .down-line-or-history \
-    "^[[B"  .down-line-or-history \
-    "/"     .vi-history-search-backward \
-    "?"     .vi-history-search-forward \
-    #
-
-
-
+#
+# bindkey '^I'   complete-word       # tab          | complete
+# bindkey '^[[Z' autosuggest-accept  # shift + tab  | autosuggest

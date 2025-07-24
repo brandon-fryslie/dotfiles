@@ -1,3 +1,5 @@
+romkatv/powerlevel10k powerlevel10k
+
 # Load Homebrew near the top
 brandon-fryslie/rad-plugins homebrew
 
@@ -25,16 +27,19 @@ brandon-fryslie/rad-plugins nvm-lazy-load
 brandon-fryslie/rad-plugins sdkman
 brandon-fryslie/rad-plugins shell-tools
 brandon-fryslie/rad-plugins rad-dev
+MichaelAquilina/zsh-you-should-use
+fdellwing/zsh-bat
+Aloxaf/fzf-tab
 
 ### Themes
 # brandon-fryslie/rad-plugins git-taculous-theme/git-taculous
 # mafredri/zsh-async
 # spaceship-prompt/spaceship-prompt
-romkatv/powerlevel10k powerlevel10k
+
 ### / Themes
 
 # Load these last
 brandon-fryslie/zsh-syntax-highlighting
-marlonrichert/zsh-autocomplete
+# marlonrichert/zsh-autocomplete
 jimhester/per-directory-history
 brandon-fryslie/rad-plugins shell-customize
