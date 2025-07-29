@@ -8,6 +8,10 @@ setopt share_history
 # Add custom Zsh plugins to .zgen-setup.zsh
 source ~/.rad-shell/rad-init.zsh
 
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
+
 # Add customizations below
 
 # Theme configuration

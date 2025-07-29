@@ -12,7 +12,7 @@ ohmyzsh/ohmyzsh plugins/docker
 # Enhanced fork of zaw
 brandon-fryslie/zaw
 zsh-users/zsh-autosuggestions
-
+# marlonrichert/zsh-autocomplete
 zsh-users/zsh-completions
 # z-shell/zsh-navigation-tools
 romkatv/zsh-prompt-benchmark
@@ -22,24 +22,24 @@ brandon-fryslie/rad-plugins zaw
 brandon-fryslie/rad-plugins docker
 brandon-fryslie/rad-plugins git
 # brandon-fryslie/rad-plugins golang
-brandon-fryslie/rad-plugins iterm
-brandon-fryslie/rad-plugins nvm-lazy-load
+# brandon-fryslie/rad-plugins nvm-lazy-load
 brandon-fryslie/rad-plugins sdkman
 brandon-fryslie/rad-plugins shell-tools
 brandon-fryslie/rad-plugins rad-dev
-MichaelAquilina/zsh-you-should-use
-fdellwing/zsh-bat
-Aloxaf/fzf-tab
+# MichaelAquilina/zsh-you-should-use
+# fdellwing/zsh-bat
+# Aloxaf/fzf-tab
+jimhester/per-directory-history
 
 ### Themes
 # brandon-fryslie/rad-plugins git-taculous-theme/git-taculous
 # mafredri/zsh-async
 # spaceship-prompt/spaceship-prompt
-
 ### / Themes
 
 # Load these last
 brandon-fryslie/zsh-syntax-highlighting
-# marlonrichert/zsh-autocomplete
-jimhester/per-directory-history
 brandon-fryslie/rad-plugins shell-customize
+
+# Must go at end
+brandon-fryslie/rad-plugins iterm
