@@ -11,7 +11,7 @@ source ~/.rad-shell/rad-init.zsh
 # Add customizations below
 
 # Theme configuration
-export ENABLE_DOCKER_PROMPT=true
+export ENABLE_DOCKER_PROMPT=false
 export LAZY_NODE_PROMPT=true
 
 # Editor configuration
@@ -19,8 +19,8 @@ export VISUAL=idea
 export EDITOR=vi
 
 # Local code configuration
-export PROJECTS_DIR="$HOME/code"
-export DOTFILES_DIR="$HOME/code/dotfiles"
+export PROJECTS_DIR="$HOME/icode"
+export DOTFILES_DIR="$HOME/icode/dotfiles"
 
 # Language configuration
 
@@ -29,7 +29,7 @@ export DOTFILES_DIR="$HOME/code/dotfiles"
 #export PATH="$HOME/.rvm/bin:$PATH"
 
 # Python
-export PATH="/usr/local/opt/python/libexec/bin:$PATH"
+export PATH="$PATH:/usr/local/opt/python/libexec/bin"
 
 # Github configuration
 export GHE_USERNAME=brandon-fryslie
@@ -70,21 +70,6 @@ PATH="/Library/Java/JavaVirtualMachines/${JAVA_VERSION}.jdk/Contents/Home/bin/:$
 # what's this for?
 PATH="$PATH:/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/bin"
 
-# TODO: plugin
-export DOCKER_HOST="unix://$HOME/.lima/docker.sock"
-
-# pyenv (TODO: move this to a plugin)
-export PYENV_ROOT="$HOME/.pyenv"
-command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init -)"
-eval "$(pyenv init --path)"
-which pyenv-virtualenv-init > /dev/null && eval "$(pyenv virtualenv-init -)"
-# /pyenv
-
-#THIS MUST BE AT THE END OF THE FILE FOR SDKMAN TO WORK!!!
-export SDKMAN_DIR="$HOME/.sdkman"
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-
 # Crazy codesigning thing
 add-debug-entitlement() {
   local executable_path=$1
@@ -101,5 +86,173 @@ EOF
 # For profiling shell startup time
 # zprof
 export VOLTA_HOME="$HOME/.volta"
-export PATH="$VOLTA_HOME/bin:$PATH"
-export PATH="/usr/local/opt/libxml2/bin:$PATH"
+export PATH="$PATH:$VOLTA_HOME/bin"
+export PATH="$PATH:/usr/local/opt/libxml2/bin:$HOME/.cargo/bin:/Users/bmf/.local/bin"
+export SSLKEYLOGFILE=$HOME/.sslkeys/sslkeylog.log
+
+fix_aider() {
+  setopt extended_glob
+  mkdir -p .aider
+  for file in .aider*; do [[ -f $file && $file != ".aider.conf.yml" ]] && mv "$file" ".aider/${file#.}"; done
+}
+
+cargo() {
+  echo "CARGO WRAPPER"
+  local WORKSPACE_ROOT PACKAGE_BASENAME TARGET_DIRECTORY
+  local cargo_bin="${HOME}/.cargo/bin/cargo"
+  export RUST_BUILD_BASE="$HOME/.cache/rust-builds"
+  WORKSPACE_ROOT="$("${cargo_bin}" metadata --no-deps --offline 2>/dev/null | jq -r ".workspace_root")"
+  PACKAGE_BASENAME="$(basename "${WORKSPACE_ROOT}")"
+  TARGET_DIRECTORY="$("${cargo_bin}" metadata --no-deps --offline 2>/dev/null | jq -r ".target_directory")"
+
+  # Check if target has default location
+  if [[ $TARGET_DIRECTORY == "$WORKSPACE_ROOT/target" ]]; then
+          # Run cargo with target set to $RUST_BUILD_BASE/$PACKAGE_BASENAME
+          CARGO_TARGET_DIR="$RUST_BUILD_BASE/$PACKAGE_BASENAME" $cargo_bin $@
+  else
+          # Do nothing, target dir is configured to smth non-default
+          $cargo_bin $@
+  fi
+}
+
+function ai_generate_command() {
+  echo "shl: running sgpt --shell: $*" >> ~/.shl.log
+  sgpt --shell --no-interaction "$*"
+  echo "shl: ran sgpt --shell: $@" >> ~/.shl.log
+}
+
+function zle_run_buffer_replace() {
+  BUFFER="$1"
+  CURSOR=${#BUFFER}
+}
+
+zle -N zle_run_buffer_replace
+
+function shl() {
+  echo "shl: running. args: $@" >> ~/.shl.log
+  local generated_output="$(ai_generate_command "$@")"
+  echo "shl: generated output. output: $generated_output" >> ~/.shl.log
+  local command_part="${generated_output%%\#*}"
+  echo "shl: command part: $command_part" >> ~/.shl.log
+  command_part="${command_part%"${command_part##*[![:space:]]}"}"
+  echo "shl: command part 2: $command_part" >> ~/.shl.log
+  vared -c "zle zle_run_buffer_replace -- \"$command_part\""
+}
+
+zle -N ai_wrapper
+
+
+export PLAYWRIGHT_SKIP_BROWSER_GC=1
+
+alias e-hass="$EDITOR /Volumes/config"
+
+alias aider="aiderw"
+
+sg() (
+  sgpt --shell "$*"
+)
+
+#### / layzsh
+
+# Pull command from buffer
+rad_pull_buffer() {
+    if [[ -n "$BUFFER" ]]; then
+        echo $BUFFER | pbcopy
+        BUFFER=""
+        zle -I && zle redisplay
+        zle end-of-line
+    fi
+}
+zle -N rad_pull_buffer
+bindkey '^[p' rad_pull_buffer
+# pull
+
+# source ~/esp/esp-idf/export.sh
+export JAVA_HOME=$(/usr/libexec/java_home)
+
+alias rad-plugin-dev="cd ~/.zgenom/sources/brandon-fryslie/rad-plugins/___ && idea ."
+
+# add check for espanso
+ESPANSO_DIR="$(espanso path | grep Config | sed s/Config:\ //g)"
+alias espanso-edit='idea "${ESPANSO_DIR}"'
+
+# move to plugin
+installdmg() {
+  local input=$1
+  [[ -z $input ]] && { echo "ERROR: Must provide path to .dmg or a directory containing one"; return 1; }
+
+  # Locate first .dmg (not in __MACOSX, not starting with _)
+  local dmg_path
+  if [[ -d $input ]]; then
+    dmg_path=$(find "$input" -type f -name '*.dmg' ! -path '*/__MACOSX/*' ! -name '_*' | head -n 1)
+  elif [[ -f $input && $input == *.dmg ]]; then
+    dmg_path=$input
+  else
+    echo "ERROR: Invalid input. Must be a .dmg file or directory containing one."
+    return 1
+  fi
+
+  [[ -z $dmg_path ]] && { echo "ERROR: No valid .dmg found in $input"; return 1; }
+
+  echo "Mounting outer DMG: $dmg_path"
+  local outer_mount=$(hdiutil attach "$dmg_path" -nobrowse -quiet | grep Volumes)
+  local outer_dev=$(echo "$outer_mount" | cut -f 1)
+  local outer_vol=$(echo "$outer_mount" | cut -f 3-)
+
+  # Look for nested .dmg inside mounted volume
+  local nested_dmg=$(find "$outer_vol" -type f -name '*.dmg' ! -name '_*' | head -n 1)
+  local mount_vol=""
+  local mount_dev=""
+
+  if [[ -n $nested_dmg ]]; then
+    echo "Found nested DMG: $nested_dmg"
+    local nested_mount=$(hdiutil attach "$nested_dmg" -nobrowse -quiet | grep Volumes)
+    mount_dev=$(echo "$nested_mount" | cut -f 1)
+    mount_vol=$(echo "$nested_mount" | cut -f 3-)
+  else
+    mount_dev=""
+    mount_vol="$outer_vol"
+  fi
+
+  # Install .app files (ignoring names starting with _)
+  local installed=false
+  for app in "$mount_vol"/*.app(N); do
+    [[ "$(basename "$app")" == _* ]] && continue
+    echo "Installing $(basename "$app")..."
+    sudo cp -R "$app" /Applications
+    sudo xattr -rd com.apple.quarantine "/Applications/$(basename "$app")"
+    installed=true
+  done
+
+  # If no .app installed, try .pkg (also ignore names starting with _)
+  if [[ $installed == false ]]; then
+    local pkg=$(find "$mount_vol" -type f -name '*.pkg' ! -name '_*' | head -n 1)
+    if [[ -n $pkg ]]; then
+      echo "Installing package: $(basename "$pkg")"
+      sudo installer -pkg "$pkg" -target /
+      installed=true
+    fi
+  fi
+
+  if [[ $installed == false ]]; then
+    echo "ERROR: No .app or .pkg found in $mount_vol"
+  fi
+
+  [[ -n $mount_dev ]] && hdiutil detach "$mount_dev" -quiet
+  hdiutil detach "$outer_dev" -quiet
+}
+
+# move to plugin
+function ha-builder() {
+	docker run \
+	  --rm \
+	  -it \
+	  --privileged \
+	  -v ${PWD}:/data \
+      ghcr.io/home-assistant/aarch64-builder:latest --test --target /data $@
+}
+
+
+if [[ -d $(readlink -f ~/icode)/layzsh2/layzsh.zsh ]]; then
+  source $(readlink -f ~/icode)/layzsh2/layzsh.zsh
+fi
