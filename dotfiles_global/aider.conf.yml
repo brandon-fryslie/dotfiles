@@ -19,6 +19,7 @@
 
 ## Specify the model to use for the main chat
 model: gpt-4o
+editor-model: gpt-4o
 
 ## Use claude-3-opus-20240229 model for the main chat
 #opus: false
@@ -57,7 +58,7 @@ model: gpt-4o
 # API Keys and settings:
 
 ## Specify the OpenAI API key
-#openai-api-key: 
+#openai-api-key:
 
 ## Specify the Anthropic API key
 #anthropic-api-key: xxx
@@ -100,10 +101,10 @@ model: gpt-4o
 #list-models: xxx
 
 ## Specify a file with aider model settings for unknown models
-#model-settings-file: .aider.model.settings.yml
+model-settings-file: .aider/aider.model.settings.yml
 
 ## Specify a file with context window and costs for unknown models
-#model-metadata-file: .aider.model.metadata.json
+model-metadata-file: .aider/aider.model.metadata.json
 
 ## Add a model alias (can be used multiple times)
 #alias: xxx
@@ -114,7 +115,7 @@ model: gpt-4o
 #  - zzz
 
 ## Verify the SSL cert when connecting to models (default: True)
-#verify-ssl: true
+verify-ssl: true
 
 ## Timeout in seconds for API calls (default: None)
 #timeout: xxx
@@ -126,7 +127,7 @@ model: gpt-4o
 architect: true
 
 ## Specify the model to use for commit messages and chat history summarization (default depends on --model)
-weak-model: gpt-4o-mini
+#weak-model: gpt-4o-mini
 
 ## Specify the model to use for editor tasks (default depends on --model)
 #editor-model: xxx
@@ -138,7 +139,7 @@ weak-model: gpt-4o-mini
 #show-model-warnings: true
 
 ## Soft limit on tokens for chat history, after which summarization begins. If unspecified, defaults to the model's max_chat_history_tokens.
-max-chat-history-tokens: 1000
+max-chat-history-tokens: 2000
 
 #################
 # Cache settings:
@@ -165,16 +166,16 @@ max-chat-history-tokens: 1000
 # History Files:
 
 ## Specify the chat input history file (default: .aider.input.history)
-#input-history-file: .aider.input.history
+input-history-file: .aider/aider.input.history
 
 ## Specify the chat history file (default: .aider.chat.history.md)
-#chat-history-file: .aider.chat.history.md
+chat-history-file: .aider/aider.chat.history.md
 
 ## Restore the previous chat history messages (default: False)
-#restore-chat-history: false
+restore-chat-history: true
 
 ## Log the conversation with the LLM to this file (for example, .aider.llm.history)
-#llm-history-file: xxx
+llm-history-file: .aider/aider.llm.history
 
 ##################
 # Output settings:
@@ -183,13 +184,13 @@ max-chat-history-tokens: 1000
 dark-mode: true
 
 ## Enable/disable streaming responses (default: True)
-#stream: true
+stream: true
 
 ## Set the markdown code theme (default: default, other options include monokai, solarized-dark, solarized-light, or a Pygments builtin style, see https://pygments.org/styles for available themes)
-#code-theme: default
+code-theme: monokai
 
 ## Show diffs when committing changes (default: False)
-#show-diffs: false
+show-diffs: false
 
 ###############
 # Git settings:
@@ -201,7 +202,7 @@ git: true
 gitignore: true
 
 ## Specify the aider ignore file (default: .aiderignore in git root)
-#aiderignore: .aiderignore
+aiderignore: .aider/aiderignore
 
 ## Only consider files in the current subtree of the git repository
 #subtree-only: false
@@ -243,7 +244,7 @@ watch-files: true
 # Fixing and committing:
 
 ## Lint and fix provided files, or dirty files if none provided
-#lint: true
+lint: false
 
 ## Specify lint commands to run for different languages, eg: "python: flake8 --select=..." (can be used multiple times)
 #lint-cmd: xxx
@@ -272,7 +273,7 @@ auto-test: true
 #analytics: xxx
 
 ## Specify a file to log analytics events
-analytics-log: .aider-analytics.log
+analytics-log: .aider/aider-analytics.log
 
 ## Permanently disable analytics
 analytics-disable: true
@@ -332,10 +333,10 @@ check-update: false
 # Voice settings:
 
 ## Audio format for voice recording (default: wav). webm and mp3 require ffmpeg
-#voice-format: wav
+voice-format: wav
 
 ## Specify the language for voice using ISO 639-1 code (default: auto)
-#voice-language: en
+voice-language: en
 
 ## Specify the input device name for voice recording
 #voice-input-device: xxx
@@ -366,7 +367,7 @@ check-update: false
 #chat-language: xxx
 
 ## Always say yes to every confirmation
-#yes-always: false
+yes-always: false
 
 ## Enable verbose output
 verbose: false
@@ -375,9 +376,9 @@ verbose: false
 #load: xxx
 
 ## Specify the encoding for input and output (default: utf-8)
-#encoding: utf-8
+encoding: utf-8
 
-## Line endings to use when wr`iting files (default: platform)
+## Line endings to use when writing files (default: platform)
 #line-endings: platform
 
 ## Specify the config file (default: search for .aider.conf.yml in git root, cwd or home directory)
@@ -400,3 +401,6 @@ detect-urls: true
 
 ## Specify which editor to use for the /editor command
 editor: idea
+
+# Always ask when using architect!
+auto-accept-architect: false
