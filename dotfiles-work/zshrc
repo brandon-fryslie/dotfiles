@@ -1,23 +1,22 @@
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-# if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-#   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-# fi
+RAD_DOTFILES_PROFILE=home
 
-# .zshrc file for development use at work
+# Detect and set DOTFILES_DIR
+for d in "$HOME/icode/dotfiles" "$HOME/code/dotfiles" "$HOME/projects/dotfiles"; do
+  [[ -d $d ]] && { DOTFILES_DIR=$d; break; }
+done
 
-PROJECTS_DIR=~/code
-EDITOR=idea
-VISUAL=idea
-DOTFILES_DIR=$HOME/code/dotfiles
-POWERLEVEL9K_INSTANT_PROMPT=off
+(
+  rad-realpath() { [ -d "$1" ] && cd "$1" 2>/dev/null && pwd || { cd "$(dirname "$1")" 2>/dev/null && echo "$(pwd)/$(basename "$1")"; }; }
+  RAD_ZSHRC_PATH="$(print -r -- "${(%):-%x}")"
+  DOTFILES_ZSHRC_PATH="$(rad-realpath "${(%):-%x}")"
+  if [[ "${RAD_ZSHRC_PATH}" == "${DOTFILES_ZSHRC_PATH}" ]]; then
+    cd $DOTFILES_DIR
+    ls -la
+    ./install_dotfiles.sh "${RAD_DOTFILES_PROFILE}"
+  fi
+)
 
-source ~/.rad-shell/rad-init.zsh
-# Add customizations below
-
-# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+source ~/.zshrc_global
 
 colormap() {
   for i in {0..255}; do print -Pn "%K{$i}  %k%F{$i}${(l:3::0:)i}%f " ${${(M)$((i%6)):#3}:+$'\n'}; done

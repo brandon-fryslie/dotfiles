@@ -1803,56 +1803,46 @@
   )
 
   typeset -gA _RAD_P10K_ORIG_VALUES
-
+  typeset -g RAD_PREV_PROMPT
 
   function rad-p10k-set-transient-on() {
-    # save original values
-#    zle -M "Saving vars"
+#    icons[LEFT_SEGMENT_END_SEPARATOR]="&"
+#    POWERLEVEL9K_LEFT_SEGMENT_END_SEPARATOR="&"
+
+#    p10k display '1|2'=show '3'=hide;
+
     for var in "${RAD_TRANSIENT_VARS[@]}"; do
       _RAD_P10K_ORIG_VALUES[$var]="${(P)var}"
-#      echo "Saved $var: ${_RAD_P10K_ORIG_VALUES[$var]}"
     done
-
-#    POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(dir time)
   }
 
-
-#    POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(dir newline prompt_char)
-#    POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS=(time newline time)
-#    POWERLEVEL9K_PROMPT_CHAR_BACKGROUND=
-#    POWERLEVEL9K_PROMPT_CHAR_LEFT_PROMPT_LAST_SEGMENT_END_SYMBOL=
-#    POWERLEVEL9K_PROMPT_CHAR_LEFT_PROMPT_FIRST_SEGMENT_START_SYMBOL=
-#    POWERLEVEL9K_PROMPT_CHAR_LEFT_LEFT_WHITESPACE=
-#    POWERLEVEL9K_PROMPT_CHAR_LEFT_RIGHT_WHITESPACE=
-
-#    p10k display $RAD_TRANSIENT_GLOB_HIDE=hide $RAD_TRANSIENT_GLOB_SHOW=show
-
   rad-p10k-set-transient-off() {
+
+    # show the transient prompt here
+#    p10k display '1|2'=hide '3'=show;
+
+
+    return
     # restore original values
     for var in "${RAD_TRANSIENT_VARS[@]}"; do
-      # is array
-#      echo ${(t)${(P)var}}
-#      echo $_RAD_P10K_ORIG_VALUES
       if [[ -v "_RAD_P10K_ORIG_VALUES[$var]" ]]; then
         if [[ ${(t)${(P)var}} == "array" ]]; then
-#          echo "restoring element: "
-#          eval "echo \${_RAD_P10K_ORIG_VALUES[$var]}"
           eval "${var}=(\${_RAD_P10K_ORIG_VALUES[$var]})"
         else
           typeset -g "$var=${_RAD_P10K_ORIG_VALUES[$var]}"
         fi
-#        echo "Restored $var: ${(P)var}"
       fi
     done
+    echo $PS1 >> /tmp/rad-prompt
+    RAD_PREV_PROMPT=$PS1
   }
-
 
 #    p10k display $RAD_TRANSIENT_GLOB_HIDE=show $RAD_TRANSIENT_GLOB_SHOW=hide;
 
 #  function p10k-on-post-prompt() { rad-p10k-set-transient-on }
 #  function p10k-on-pre-prompt() { rewrite_last_displayed_command 2 "farmer" }
-#  function p10k-on-post-prompt() { rad-p10k-set-transient-on }
-#  function p10k-on-pre-prompt() { rad-p10k-set-transient-off }
+  function p10k-on-post-prompt() { rad-p10k-set-transient-on }
+  function p10k-on-pre-prompt() { rad-p10k-set-transient-off }
 #  function p10k-on-post-prompt() { p10k display $RAD_TRANSIENT_GLOB_HIDE=hide $RAD_TRANSIENT_GLOB_SHOW=show; }
 #  function p10k-on-pre-prompt()  { p10k display $RAD_TRANSIENT_GLOB_HIDE=show $RAD_TRANSIENT_GLOB_SHOW=hide; }
 #  p10k-on-post-prompt() { p10k display '1/(left|right_frame)'=hide '2/*'=hide '*/time'=show; }
@@ -1881,6 +1871,42 @@
   # If p10k is already loaded, reload configuration.
   # This works even with POWERLEVEL9K_DISABLE_HOT_RELOAD=true.
   (( ! $+functions[p10k] )) || p10k reload
+
+  function rad-reconfigure-transient-prompt() {
+#    if [[ $_POWERLEVEL9K_TRANSIENT_PROMPT != off ]]; then
+#      local sep=$'\1'
+#      _p9k_transient_prompt='%b%k%s%u%(?'$sep
+#      _p9k_color prompt_prompt_char_OK_VIINS FOREGROUND 76
+#      _p9k_foreground $_p9k__ret
+#      _p9k_transient_prompt+=$_p9k__ret
+#      _p9k_transient_prompt+='${${P9K_CONTENT::="󱞽"}+}'
+#      _p9k_param prompt_prompt_char_OK_VIINS CONTENT_EXPANSION '${P9K_CONTENT}'
+#      _p9k_transient_prompt+='${:-"'$_p9k__ret'"}'
+#      _p9k_transient_prompt+=$sep
+#      _p9k_color prompt_prompt_char_ERROR_VIINS FOREGROUND 196
+#      _p9k_foreground $_p9k__ret
+#      _p9k_transient_prompt+=$_p9k__ret
+#      _p9k_transient_prompt+='${${P9K_CONTENT::="❯"}+}'
+#      _p9k_param prompt_prompt_char_ERROR_VIINS CONTENT_EXPANSION '${P9K_CONTENT}'
+#      _p9k_transient_prompt+='${:-"'$_p9k__ret'"}'
+#      _p9k_transient_prompt+=')%b%k%f%s%u'
+#      _p9k_get_icon '' LEFT_SEGMENT_END_SEPARATOR
+#      if [[ $_p9k__ret != (| ) ]]; then
+#        _p9k__ret+=%b%k%f
+#        # Not escaped for historical reasons.
+#        _p9k__ret='${:-"'$_p9k__ret'"}'
+#      fi
+#      _p9k_transient_prompt+=$_p9k__ret
+#      if (( _POWERLEVEL9K_TERM_SHELL_INTEGRATION )); then
+#        _p9k_transient_prompt=$'%{\e]133;A\a%}'$_p9k_transient_prompt$'%{\e]133;B\a%}'
+#        if (( $+_z4h_iterm_cmd && _z4h_can_save_restore_screen == 1 )); then
+#          _p9k_transient_prompt=$'%{\ePtmux;\e\e]133;A\a\e\\%}'$_p9k_transient_prompt$'%{\ePtmux;\e\e]133;B\a\e\\%}'
+#        fi
+#      fi
+#    fi
+#    echo "prompt ${_p9k_transient_prompt}"
+  }
+  rad-reconfigure-transient-prompt
 }
 
 # Tell `p10k configure` which file it should overwrite.
@@ -1888,3 +1914,16 @@ typeset -g POWERLEVEL9K_CONFIG_FILE=${${(%):-%x}:a}
 
 (( ${#p10k_config_opts} )) && setopt ${p10k_config_opts[@]}
 'builtin' 'unset' 'p10k_config_opts'
+
+_patched_transient_prompt=false
+
+function patch_transient_prompt_once() {
+  if [[ "$TRANSIENT" == 1 && $_patched_transient_prompt == false ]]; then
+    _p9k_transient_prompt="%{]133;A%}%b%k%s%u%(?%F{076}${${P9K_CONTENT::="󰅙󰅙󰅙󰅙󰅙󰅙"}+}${:-"󱞽"}%F{196}${${P9K_CONTENT::="󱞽"}+}${:-"󱞽"})%b%k%f%s%u %{]133;B%}"
+    _patched_transient_prompt=true󰅙
+  fi
+}
+
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd patch_transient_prompt_once
+
