@@ -436,7 +436,9 @@
       local   modified='%178F'  # yellow foreground
       local   staged='%40F'
       local   unstaged='%160F'
-      local  untracked='%196F'
+      local   vcs_ahead='%039F'
+      local  vcs_behind='%178F'
+      local  vcs_remote='%028F'
       local conflicted='%196F'  # red foreground
     else
       # Styling for incomplete and stale Git status.
@@ -447,18 +449,36 @@
       local conflicted='%244F'  # grey foreground
     fi
 
-    local res
+    local vcs_reset="%b%u${meta}"
 
-    if [[ -n $VCS_STATUS_LOCAL_BRANCH ]]; then
-      local branch=${(V)VCS_STATUS_LOCAL_BRANCH}
-      # If local branch name is at most 32 characters long, show it in full.
-      # Otherwise show the first 12 … the last 12.
-      # Tip: To always show local branch name in full without truncation, delete the next line.
-      (( $#branch > 32 )) && branch[13,-13]="…"  # <-- this line
-      res+="${clean}${(g::)POWERLEVEL9K_VCS_BRANCH_ICON}${branch//\%/%%}"
-    fi
+    # staged unstaged ahead behind
+    function _staged_ahead_commits() {
+      local res
 
-    if [[ -n $VCS_STATUS_TAG
+      # Display staged/unstaged changes, commits ahead/behind
+      if (( VCS_STATUS_COMMITS_AHEAD || VCS_STATUS_COMMITS_BEHIND )); then
+        (( VCS_STATUS_COMMITS_BEHIND )) && res+="%B${vcs_behind}-%U${VCS_STATUS_COMMITS_BEHIND}%u${vcs_reset}"
+        (( VCS_STATUS_COMMITS_AHEAD && VCS_STATUS_COMMITS_BEHIND )) && res+=" "
+        (( VCS_STATUS_COMMITS_AHEAD  )) && res+="%B${vcs_ahead}+%U${VCS_STATUS_COMMITS_AHEAD}%u${vcs_reset}"
+        [[ "${res[-1]}" != " " ]] && res+=" "
+      fi
+
+      res+="%b%u"
+      echo $res
+    }
+
+    function _local_branch_tag() {
+      local res
+      if [[ -n $VCS_STATUS_LOCAL_BRANCH ]]; then
+        local branch=${(V)VCS_STATUS_LOCAL_BRANCH}
+        # If local branch name is at most 32 characters long, show it in full.
+        # Otherwise show the first 12 … the last 12.
+        # Tip: To always show local branch name in full without truncation, delete the next line.
+        (( $#branch > 32 )) && branch[13,-13]="…"  # <-- this line
+        res+="${clean}${branch//\%/%%}"
+      fi
+
+      if [[ -n $VCS_STATUS_TAG
           # Show tag only if not on a branch.
           # Tip: To always show tag, delete the next line.
           && -z $VCS_STATUS_LOCAL_BRANCH  # <-- this line
@@ -468,32 +488,24 @@
       # Otherwise show the first 12 … the last 12.
       # Tip: To always show tag name in full without truncation, delete the next line.
       (( $#tag > 32 )) && tag[13,-13]="…"  # <-- this line
-      res+="${meta}#${clean}${tag//\%/%%}"
+      res+=" ${meta}#${clean}${tag//\%/%%}"
     fi
+
 
     # Display the current Git commit if there is no branch and no tag.
     # Tip: To always display the current Git commit, delete the next line.
     [[ -z $VCS_STATUS_LOCAL_BRANCH && -z $VCS_STATUS_TAG ]] &&  # <-- this line
-      res+="${meta}@${clean}${VCS_STATUS_COMMIT[1,8]}"
+      res+=" ${meta}@${clean}${VCS_STATUS_COMMIT[1,8]}"
 
-    res+=" ${meta}["
+    echo $res
+  }
+
+  function _remote_branch() {
+    local res
+    res+=" ${meta}[${vcs_remote}"
     if [[ -n $VCS_STATUS_REMOTE_BRANCH ]]; then
-      if [[ -n $VCS_STATUS_REMOTE_BRANCH ]]; then
-        res+="${empty}${VCS_STATUS_REMOTE_NAME}/${(V)VCS_STATUS_REMOTE_BRANCH//\%/%%}"
-      fi
-#      res+=" ${clean}${(V)VCS_STATUS_REMOTE_BRANCH//\%/%%}"
-
-
-      if (( VCS_STATUS_COMMITS_AHEAD || VCS_STATUS_COMMITS_BEHIND )); then
-        (( VCS_STATUS_COMMITS_BEHIND )) && res+=" ${vcs_caution}-${VCS_STATUS_COMMITS_BEHIND}"
-        (( VCS_STATUS_COMMITS_AHEAD && !VCS_STATUS_COMMITS_BEHIND )) && res+=" "
-        (( VCS_STATUS_COMMITS_AHEAD  )) && res+="${vcs_good}+${VCS_STATUS_COMMITS_AHEAD}"
-
-      elif [[ -n $VCS_STATUS_REMOTE_BRANCH ]]; then
-        # Tip: Uncomment the next line to display '=' if up to date with the remote.
-        # res+=" ${clean}="
-      fi
-
+      res+="${empty}${VCS_STATUS_REMOTE_NAME}/${(V)VCS_STATUS_REMOTE_BRANCH//\%/%%}"
+      # Commits ahead/behind
       (( VCS_STATUS_NUM_STAGED || VCS_STATUS_NUM_UNSTAGED || VCS_STATUS_NUM_UNTRACKED )) && res+=" %B"
       (( VCS_STATUS_NUM_STAGED     )) && res+="${staged}S"
       (( VCS_STATUS_NUM_UNSTAGED   )) && res+="${unstaged}U"
@@ -501,15 +513,18 @@
       res+="%b"
 
     else
-      res+=" ${vcs_empty}(none)"
+      res+="${vcs_empty}(none)"
     fi
+
     res+="${meta}]"
-#
-#    # Show tracking branch name if it differs from local branch.
-#    if [[ -n ${VCS_STATUS_REMOTE_BRANCH:#$VCS_STATUS_LOCAL_BRANCH} ]]; then
-#      res+="${meta}:${clean}${(V)VCS_STATUS_REMOTE_BRANCH//\%/%%}"
-#    else
-#    fi
+    echo $res
+  }
+
+    local res
+
+    res+="$(_staged_ahead_commits)"
+    res+="$(_local_branch_tag)"
+    res+="$(_remote_branch)"
 
     # Display "wip" if the latest commit's summary contains "wip" or "WIP".
     if [[ $VCS_STATUS_COMMIT_SUMMARY == (|*[^[:alnum:]])(wip|WIP)(|[^[:alnum:]]*) ]]; then
