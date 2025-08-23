@@ -1,4 +1,4 @@
-RAD_DOTFILES_PROFILE=home
+RAD_DOTFILES_PROFILE=work
 
 # Detect and set DOTFILES_DIR
 for d in "$HOME/icode/dotfiles" "$HOME/code/dotfiles" "$HOME/projects/dotfiles"; do
@@ -6,79 +6,27 @@ for d in "$HOME/icode/dotfiles" "$HOME/code/dotfiles" "$HOME/projects/dotfiles";
 done
 
 (
-  rad-realpath() { [ -d "$1" ] && cd "$1" 2>/dev/null && pwd || { cd "$(dirname "$1")" 2>/dev/null && echo "$(pwd)/$(basename "$1")"; }; }
+  rad-realpath () {
+    local target=$1
+    # Resolve symlinks
+    while [ -L "$target" ]; do
+      dir=$(cd "$(dirname "$target")" && pwd -P) || return 1
+      link=$(readlink "$target") || return 1
+      case $link in /*) target=$link ;; *)  target="$dir/$link" ;; esac
+    done
+    # Resolve to absolute physical path
+    dir=$(cd "$(dirname "$target")" && pwd -P) || return 1; echo "$dir/$(basename "$target")"
+  }
   RAD_ZSHRC_PATH="$(print -r -- "${(%):-%x}")"
   DOTFILES_ZSHRC_PATH="$(rad-realpath "${(%):-%x}")"
   if [[ "${RAD_ZSHRC_PATH}" == "${DOTFILES_ZSHRC_PATH}" ]]; then
-    cd $DOTFILES_DIR
-    ls -la
-    ./install_dotfiles.sh "${RAD_DOTFILES_PROFILE}"
+    cd "${DOTFILES_DIR}"; ./install_dotfiles.sh "${RAD_DOTFILES_PROFILE}"
   fi
+
+  [[ ! -f ~/.zshrc_global.zsh ]] && cd $DOTFILES_DIR && git stash && git branch -u origin/master && git pull && git stash pop && ./install_dotfiles.sh "${RAD_DOTFILES_PROFILE}"
 )
 
-source ~/.zshrc_global
+source ~/.zshrc_global.zsh
 
-colormap() {
-  for i in {0..255}; do print -Pn "%K{$i}  %k%F{$i}${(l:3::0:)i}%f " ${${(M)$((i%6)):#3}:+$'\n'}; done
-}
-
-alias ls=lsd
-alias l='ls -l'
-alias la='ls -a'
-alias lla='ls -la'
-alias lt='ls --tree'
-#
-# zstyle ':autocomplete:*' min-input 3
-# zstyle ':autocomplete:*' delay 2
-#
-# # all Tab widgets
-# zstyle ':autocomplete:*complete*:*' insert-unambiguous yes
-#
-# # all history widgets
-# zstyle ':autocomplete:*history*:*' insert-unambiguous yes
-#
-# # ^S
-# zstyle ':autocomplete:menu-search:*' insert-unambiguous yes
-
-# bindkey              '^I' menu-select
-# bindkey "$terminfo[kcbt]" menu-select
-
-# bindkey -M menuselect              '^I'         menu-complete
-# bindkey -M menuselect "$terminfo[kcbt]" reverse-menu-complete
-
-alias l=nav
-#
-# bindkey -M emacs \
-#     "^[p"   .history-search-backward \
-#     "^[n"   .history-search-forward \
-#     "^P"    .up-line-or-history \
-#     "^[OA"  .up-line-or-history \
-#     "^[[A"  .up-line-or-history \
-#     "^N"    .down-line-or-history \
-#     "^[OB"  .down-line-or-history \
-#     "^[[B"  .down-line-or-history \
-#     "^R"    .history-incremental-search-backward \
-#     "^S"    .history-incremental-search-forward \
-#     #
-# bindkey -a \
-#     "^P"    .up-history \
-#     "^N"    .down-history \
-#     "k"     .up-line-or-history \
-#     "^[OA"  .up-line-or-history \
-#     "^[[A"  .up-line-or-history \
-#     "j"     .down-line-or-history \
-#     "^[OB"  .down-line-or-history \
-#     "^[[B"  .down-line-or-history \
-#     "/"     .vi-history-search-backward \
-#     "?"     .vi-history-search-forward \
-#     #
-#
-
-#
-# bindkey '^I'   complete-word       # tab          | complete
-# bindkey '^[[Z' autosuggest-accept  # shift + tab  | autosuggest
-# The following lines have been added by Docker Desktop to enable Docker CLI completions.
-fpath=(/Users/brandonfryslie/.docker/completions $fpath)
-autoload -Uz compinit
+# just f'in call it
 compinit
-# End of Docker CLI completions

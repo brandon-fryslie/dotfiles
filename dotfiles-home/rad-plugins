@@ -23,6 +23,7 @@ brandon-fryslie/rad-plugins docker
 brandon-fryslie/rad-plugins git
 # brandon-fryslie/rad-plugins golang
 brandon-fryslie/rad-plugins nvm-lazy-load
+brandon-fryslie/rad-plugins kitty-tty
 
 brandon-fryslie/rad-plugins sdkman
 brandon-fryslie/rad-plugins shell-tools
