@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# install - Interactive Dotbot installation wrapper
+# Usage: ./install [home|work|global]
+
+set -euo pipefail
+
+BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOTBOT_DIR="dotbot"
+DOTBOT_BIN="bin/dotbot"
+
+cd "${BASEDIR}"
+
+PROFILE="${1:-}"
+
+if [[ -z "$PROFILE" ]]; then
+  echo "Usage: ./install [home|work|global]"
+  echo ""
+  echo "Profiles:"
+  echo "  home   - Personal development environment"
+  echo "  work   - Work environment"
+  echo "  global - Base configuration only"
+  exit 2
+fi
+
+case "$PROFILE" in
+  home)
+    echo "Installing home profile..."
+    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
+      -c install.conf.yaml -c install-home.conf.yaml
+    ;;
+  work)
+    echo "Installing work profile..."
+    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
+      -c install.conf.yaml -c install-work.conf.yaml
+    ;;
+  global)
+    echo "Installing global configuration..."
+    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
+      -c install.conf.yaml
+    ;;
+  *)
+    echo "Error: Unknown profile '$PROFILE'" >&2
+    echo "Valid profiles: home, work, global" >&2
+    exit 1
+    ;;
+esac
+
+echo "✓ Installation complete!"

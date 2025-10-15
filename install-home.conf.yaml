@@ -1,0 +1,10 @@
+- defaults:
+    link:
+      relink: true
+      force: true
+
+- link:
+    # Home profile overrides (these take precedence over global)
+    ~/.mackup.cfg: dotfiles-home/mackup.cfg
+    ~/.rad-plugins: dotfiles-home/rad-plugins
+    ~/.zshrc: dotfiles-home/zshrc

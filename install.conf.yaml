@@ -1,0 +1,13 @@
+- defaults:
+    link:
+      relink: true
+      force: true
+
+- link:
+    # Global dotfiles from dotfiles_global/
+    ~/.aider.conf.yml: dotfiles_global/aider.conf.yml
+    ~/.gemrc: dotfiles_global/gemrc
+    ~/.gitignore_global: dotfiles_global/gitignore_global
+    ~/.mackup.cfg: dotfiles_global/mackup.cfg
+    ~/.p10k.zsh: dotfiles_global/p10k.zsh
+    ~/.rvmrc: dotfiles_global/rvmrc

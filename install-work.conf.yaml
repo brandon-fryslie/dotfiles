@@ -1,0 +1,10 @@
+- defaults:
+    link:
+      relink: true
+      force: true
+
+- link:
+    # Work profile overrides (these take precedence over global)
+    ~/.pypirc: dotfiles-work/pypirc
+    ~/.rad-plugins: dotfiles-work/rad-plugins
+    ~/.zshrc: dotfiles-work/zshrc
