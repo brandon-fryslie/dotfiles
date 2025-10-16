@@ -1,0 +1,8 @@
+{
+  "editor": "idea",
+  "projectsDir": "~/icode",
+  "plugins": ["git", "docker", "python"],
+  "settings": {
+    "tabSize": 4
+  }
+}

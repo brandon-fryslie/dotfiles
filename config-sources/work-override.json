@@ -1,0 +1,9 @@
+{
+  "editor": "idea",
+  "projectsDir": "~/code",
+  "plugins": ["git", "docker", "java"],
+  "settings": {
+    "tabSize": 4,
+    "autoSave": false
+  }
+}

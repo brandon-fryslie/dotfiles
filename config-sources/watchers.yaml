@@ -1,0 +1,64 @@
+# Dotfiles Watchers Configuration
+# Version: 1.0
+#
+# This file defines automated file watchers that regenerate output files
+# when input files change. Managed by two launchd daemons:
+#
+# 1. com.user.dotfiles.watcher-reload - Watches THIS file, reloads daemon 2
+# 2. com.user.dotfiles.watcher-execute - Watches input files, runs commands
+#
+# See: docs/WATCHERS-ARCHITECTURE.md for full documentation
+
+version: "1.0"
+
+# List of watcher specifications
+watchers:
+  # Example: Merge Mackup configuration from base + profile
+  - name: "mackup-config"
+    description: "Merge global and profile-specific Mackup configs"
+    inputs:
+      - "~/icode/dotfiles/config-sources/mackup/base.yaml"
+      - "~/icode/dotfiles/config-sources/mackup/home.yaml"
+    command:
+      name: "merge-yaml"
+      args:
+        - "--output"
+        - "~/.mackup.cfg"
+        - "~/icode/dotfiles/config-sources/mackup/base.yaml"
+        - "~/icode/dotfiles/config-sources/mackup/home.yaml"
+    output: "~/.mackup.cfg"
+    enabled: true
+
+  # Example: Concatenate gitignore fragments
+  - name: "gitignore-global"
+    description: "Concatenate gitignore fragments into global ignore file"
+    inputs:
+      - "~/icode/dotfiles/config-sources/gitignore/global.gitignore"
+      - "~/icode/dotfiles/config-sources/gitignore/macos.gitignore"
+      - "~/icode/dotfiles/config-sources/gitignore/languages.gitignore"
+    command:
+      name: "cat"
+      args:
+        - "~/icode/dotfiles/config-sources/gitignore/global.gitignore"
+        - "~/icode/dotfiles/config-sources/gitignore/macos.gitignore"
+        - "~/icode/dotfiles/config-sources/gitignore/languages.gitignore"
+    output: "~/.gitignore_global"
+    enabled: true
+
+  # Example: Custom script with multiple inputs
+  # - name: "custom-processor"
+  #   description: "Run custom processing script"
+  #   inputs:
+  #     - "~/icode/dotfiles/config-sources/custom/input1.txt"
+  #     - "~/icode/dotfiles/config-sources/custom/input2.txt"
+  #   command:
+  #     name: "~/bin/custom-processor.sh"
+  #     args:
+  #       - "--input1"
+  #       - "~/icode/dotfiles/config-sources/custom/input1.txt"
+  #       - "--input2"
+  #       - "~/icode/dotfiles/config-sources/custom/input2.txt"
+  #       - "--output"
+  #       - "~/.customrc"
+  #   output: "~/.customrc"
+  #   enabled: false

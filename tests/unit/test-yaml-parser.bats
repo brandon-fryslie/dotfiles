@@ -42,7 +42,6 @@ teardown() {
 # 3. Verifies parser can extract watcher specs
 # 4. Checks output contains expected data
 @test "parser extracts version from valid config" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_test_watcher_config "$TEST_DIR")
 
@@ -61,7 +60,6 @@ teardown() {
 # 2. Parser must actually read and parse YAML
 # 3. Verifies extracted watcher name matches expected
 @test "parser extracts watcher names from valid config" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_test_watcher_config "$TEST_DIR")
 
@@ -77,7 +75,6 @@ teardown() {
 # 2. Parser must extract ALL watchers (not just one)
 # 3. Verifies count and names are correct
 @test "parser extracts all watchers from multi-watcher config" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_multi_watcher_config "$TEST_DIR")
 
@@ -102,7 +99,6 @@ teardown() {
 # 2. Parser must extract input file paths
 # 3. Verifies all inputs are extracted correctly
 @test "parser extracts input files from watcher spec" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_test_watcher_config "$TEST_DIR")
 
@@ -119,7 +115,6 @@ teardown() {
 # 2. Verifies exact command structure
 # 3. Must handle args array correctly
 @test "parser extracts command and args from watcher spec" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_test_watcher_config "$TEST_DIR")
 
@@ -139,7 +134,6 @@ teardown() {
 # 1. Parser must extract output file path
 # 2. Verifies exact path is returned
 @test "parser extracts output file from watcher spec" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_test_watcher_config "$TEST_DIR")
 
@@ -153,7 +147,6 @@ teardown() {
 # 1. Tests optional field parsing
 # 2. Verifies parser handles enabled flag correctly
 @test "parser extracts enabled flag from watcher spec" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_test_watcher_config "$TEST_DIR")
 
@@ -172,7 +165,6 @@ teardown() {
 # 2. Parser must expand ~ to actual home directory
 # 3. Verifies expanded path is correct (not literal ~)
 @test "parser expands tilde in input paths" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   # Create config with tilde paths
   cat > "$TEST_DIR/tilde-config.yaml" <<EOF
@@ -204,7 +196,6 @@ EOF
 # 2. Parser must recognize (and optionally expand) globs
 # 3. Verifies glob pattern is preserved or expanded correctly
 @test "parser handles glob patterns in input paths" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   # Create config with glob pattern
   cat > "$TEST_DIR/glob-config.yaml" <<EOF
@@ -235,7 +226,6 @@ EOF
 # 2. Parser must detect and reject invalid YAML
 # 3. Must return non-zero exit code
 @test "parser detects invalid YAML syntax" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_invalid_watcher_config "$TEST_DIR" "syntax-error")
 
@@ -253,7 +243,6 @@ EOF
 # 2. Parser must validate required fields exist
 # 3. Must fail with clear error
 @test "parser detects missing version field" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   # Create config without version
   cat > "$TEST_DIR/no-version.yaml" <<EOF
@@ -276,7 +265,6 @@ EOF
 # 2. Parser must detect no watchers defined
 # 3. Should warn or fail
 @test "parser handles empty watchers array" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   cat > "$TEST_DIR/empty-watchers.yaml" <<EOF
 version: "1.0"
@@ -298,7 +286,6 @@ EOF
 # 2. Parser must handle missing file gracefully
 # 3. Must return error exit code
 @test "parser handles non-existent config file" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   run "$DOTFILES_ROOT/watchers/lib/yaml-parser.sh" --validate "$TEST_DIR/does-not-exist.yaml"
 
@@ -311,7 +298,6 @@ EOF
 # 2. Parser must detect watcher doesn't exist in config
 # 3. Must fail appropriately
 @test "parser handles request for non-existent watcher" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   local config=$(create_test_watcher_config "$TEST_DIR")
 
@@ -330,7 +316,6 @@ EOF
 # 2. Times actual parser execution
 # 3. Verifies parser completes in reasonable time
 @test "parser completes in reasonable time for large config" {
-  skip "Implementation not started - will fail until yaml-parser.sh exists"
 
   # Create config with 10 watchers
   cat > "$TEST_DIR/large-config.yaml" <<EOF

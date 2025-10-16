@@ -1,0 +1,10 @@
+{
+  "editor": "vim",
+  "theme": "dark",
+  "plugins": ["git", "docker"],
+  "settings": {
+    "autoSave": true,
+    "lineNumbers": true,
+    "tabSize": 2
+  }
+}

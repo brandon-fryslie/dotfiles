@@ -175,3 +175,10 @@ If you encounter issues:
 ## License
 
 Personal configuration - feel free to fork and adapt for your own use.
+
+## Symlinking Claude
+
+ln -sfn "$(pwd)/agents" ~/.claude/agents
+ln -sfn "$(pwd)/commands" ~/.claude/commands
+ln -sfn "$(pwd)/CLAUDE.md" ~/.claude/CLAUDE.md
+ln -sfn "$(pwd)/settings.json" ~/.claude/settings.json

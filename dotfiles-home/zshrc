@@ -4,13 +4,17 @@
 setopt clobber
 setopt share_history
 
-# Source Zgen and create init file if necessary
-# Add custom Zsh plugins to .zgen-setup.zsh
-source ~/.rad-shell/rad-init.zsh
+is_claude() { [[ -n "${CLAUDECODE}" ]] && return 0 || return 1 }
+not_claude() { ! is_claude && return 0 || return 1 }
 
-# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+if not_claude; then
+  # Source Zgen and create init file if necessary
+  # Add custom Zsh plugins to .zgen-setup.zsh
+  not_claude && source ~/.rad-shell/rad-init.zsh
 
+  # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+  [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+fi
 
 # Add customizations below
 
@@ -23,8 +27,8 @@ export VISUAL=idea
 export EDITOR=vi
 
 # Local code configuration
-export PROJECTS_DIR="$HOME/code"
-export DOTFILES_DIR="$HOME/code/dotfiles"
+export PROJECTS_DIR="$HOME/icode"
+export DOTFILES_DIR="$HOME/icode/dotfiles"
 
 # Language configuration
 
@@ -104,6 +108,56 @@ EOF
 
 # For profiling shell startup time
 # zprof
-export VOLTA_HOME="$HOME/.volta"
-export PATH="$VOLTA_HOME/bin:$PATH"
+# export VOLTA_HOME="$HOME/.volta"
+# export PATH="$VOLTA_HOME/bin:$PATH"
 export PATH="/usr/local/opt/libxml2/bin:$PATH"
+
+# pnpm
+export PNPM_HOME="/Users/bmf/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PATH:$PNPM_HOME" ;;
+esac
+# pnpm end
+
+alias n4j="/opt/homebrew/opt/neo4j/bin/neo4j console"
+alias venv-direnv="echo 'source .venv/bin/activate' >> .envrc && direnv allow"
+eval "$(fnm env --use-on-cd --shell zsh)"
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
+export PATH="$PATH:/Applications/IDA Professional 9.2.app/Contents/MacOS/dbgsrv"
+
+# bun completions
+[ -s "/Users/bmf/.bun/_bun" ] && source "/Users/bmf/.bun/_bun"
+
+# bun
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+export PATH="/Users/bmf/.swiftpm/bin:$PATH"
+
+### Added by Zinit's installer
+if [[ ! -f $HOME/.local/share/zinit/zinit.git/zinit.zsh ]]; then
+    print -P "%F{33} %F{220}Installing %F{33}ZDHARMA-CONTINUUM%F{220} Initiative Plugin Manager (%F{33}zdharma-continuum/zinit%F{220})…%f"
+    command mkdir -p "$HOME/.local/share/zinit" && command chmod g-rwX "$HOME/.local/share/zinit"
+    command git clone https://github.com/zdharma-continuum/zinit "$HOME/.local/share/zinit/zinit.git" && \
+        print -P "%F{33} %F{34}Installation successful.%f%b" || \
+        print -P "%F{160} The clone has failed.%f%b"
+fi
+
+source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
+autoload -Uz _zinit
+(( ${+_comps} )) && _comps[zinit]=_zinit
+
+# Load a few important annexes, without Turbo
+# (this is currently required for annexes)
+zinit light-mode for \
+    zdharma-continuum/zinit-annex-as-monitor \
+    zdharma-continuum/zinit-annex-bin-gem-node \
+    zdharma-continuum/zinit-annex-patch-dl \
+    zdharma-continuum/zinit-annex-rust
+
+### End of Zinit's installer chunk
+alias claude-dange="claude --dangerously-skip-permissions"

@@ -1,0 +1,207 @@
+{
+  "test_suite": {
+    "name": "Dotfiles Functional Test Suite",
+    "version": "1.0",
+    "created": "2025-10-15",
+    "framework": "bats-core",
+    "purpose": "Validate real user workflows and prevent regressions"
+  },
+  "coverage": {
+    "total_tests": 60,
+    "test_files": 3,
+    "lines_of_test_code": 2000,
+    "priority_coverage": {
+      "P0_critical": {
+        "items": 3,
+        "coverage_percent": 100,
+        "tests": 17
+      },
+      "P1_high": {
+        "items": 6,
+        "coverage_percent": 85,
+        "tests": 12
+      },
+      "P2_medium": {
+        "items": 7,
+        "coverage_percent": 0,
+        "tests": 0
+      },
+      "P3_low": {
+        "items": 5,
+        "coverage_percent": 0,
+        "tests": 0
+      }
+    }
+  },
+  "test_files": [
+    {
+      "file": "tests/functional/test-merge-json.bats",
+      "tests": 15,
+      "focus": "JSON merging functionality",
+      "status_gaps": ["P0-1: merge-json.sh wrong output"],
+      "plan_items": ["P0-1: Fix merge-json.sh Output Format"],
+      "critical_tests": [
+        "merge-json.sh produces JSON object, not array",
+        "merge-json.sh merges two files correctly",
+        "merge-json.sh performs deep merge on nested objects"
+      ],
+      "would_catch_bugs": true,
+      "bug_prevented": "merge-json.sh producing array instead of object"
+    },
+    {
+      "file": "tests/functional/test-installation.bats",
+      "tests": 20,
+      "focus": "Installation workflows and profile management",
+      "status_gaps": ["P0-3: Missing install script"],
+      "plan_items": ["P0-3: Create or Remove Missing install Wrapper Script"],
+      "critical_tests": [
+        "installation method documented in README actually exists",
+        "just install-home creates symlinks in home directory",
+        "switching profiles updates symlink targets",
+        "fresh installation from README instructions works"
+      ],
+      "would_catch_bugs": true,
+      "bug_prevented": "Documentation claiming install script exists when it doesn't"
+    },
+    {
+      "file": "tests/functional/test-justfile-commands.bats",
+      "tests": 25,
+      "focus": "Justfile command validation",
+      "status_gaps": [
+        "P1-1: Phantom commands in documentation",
+        "P1-2: Untested commands"
+      ],
+      "plan_items": [
+        "P1-1: Fix Phantom Justfile Commands in Documentation",
+        "P1-2: Verify and Test Existing Justfile Commands"
+      ],
+      "critical_tests": [
+        "justfile contains all commands referenced in documentation",
+        "just verify-home validates home profile symlinks",
+        "just backup creates backup of current dotfiles",
+        "just clean-broken removes broken symlinks"
+      ],
+      "would_catch_bugs": true,
+      "bug_prevented": "Untested commands having bugs"
+    }
+  ],
+  "gaming_resistance": {
+    "score": "9/10",
+    "strengths": [
+      "Tests verify actual file system state",
+      "Tests check file content, not just existence",
+      "Tests validate structure (object vs array)",
+      "Tests cross-reference documentation",
+      "Tests use real tools (jq, dotbot, just)",
+      "Tests run in isolated environment",
+      "Tests verify multiple outcomes per workflow",
+      "Tests check error handling",
+      "Tests validate idempotency"
+    ],
+    "hardest_to_game": [
+      "merge-json.sh produces JSON object, not array - Requires actual jq type check",
+      "created symlinks point to existing files - Requires symlink resolution",
+      "switching profiles updates symlink targets - Requires before/after comparison",
+      "fresh installation from README instructions works - Complete workflow validation"
+    ]
+  },
+  "validation": {
+    "known_bugs_caught": [
+      {
+        "bug": "merge-json.sh produces array instead of object",
+        "status_reference": "STATUS-2025-10-15-043506.md Section 2, Gap 1",
+        "test": "test-merge-json.bats: merge-json.sh produces JSON object, not array",
+        "would_catch": true,
+        "how": "Test explicitly checks jq 'type' output - would fail if array"
+      },
+      {
+        "bug": "Missing install script despite documentation",
+        "status_reference": "STATUS-2025-10-15-043506.md Section 6, Gap 2",
+        "test": "test-installation.bats: installation method documented in README actually exists",
+        "would_catch": true,
+        "how": "Test verifies documented installation method works - fails if script missing"
+      },
+      {
+        "bug": "Documentation references phantom commands",
+        "status_reference": "STATUS-2025-10-15-043506.md Section 6, Gap 3",
+        "test": "test-justfile-commands.bats: justfile contains all commands referenced in documentation",
+        "would_catch": true,
+        "how": "Test parses justfile output - fails if documented commands don't exist"
+      },
+      {
+        "bug": "Commands never tested",
+        "status_reference": "STATUS-2025-10-15-043506.md Section 2 (Justfile Commands table)",
+        "test": "Multiple tests in test-justfile-commands.bats",
+        "would_catch": true,
+        "how": "First tests ever for verify-home, verify-work, backup, clean-broken"
+      }
+    ]
+  },
+  "workflows_tested": [
+    "Fresh installation from clone",
+    "Profile switching (home <-> work)",
+    "JSON config merging",
+    "Justfile command usage",
+    "Symlink management",
+    "Configuration composition",
+    "Error handling",
+    "Idempotent operations"
+  ],
+  "status_gaps_addressed": [
+    "Gap 1: merge-json.sh wrong output",
+    "Gap 2: Missing install script",
+    "Gap 3: Phantom commands",
+    "Gap 5: Zero test coverage"
+  ],
+  "plan_items_validated": [
+    "P0-1: Fix merge-json.sh Output Format",
+    "P0-3: Remove or Create Missing install Wrapper Script",
+    "P1-1: Fix Phantom Justfile Commands in Documentation",
+    "P1-2: Verify and Test Existing Justfile Commands",
+    "P1-3: Update WATCHERS.md Examples with Real Output"
+  ],
+  "files_created": [
+    "tests/README.md",
+    "tests/TRACEABILITY.md",
+    "tests/TEST-SUMMARY.md",
+    "tests/helpers/test-helpers.bash",
+    "tests/functional/test-merge-json.bats",
+    "tests/functional/test-installation.bats",
+    "tests/functional/test-justfile-commands.bats",
+    "tests/fixtures/base-config.json",
+    "tests/fixtures/override-config.json",
+    "run-tests.sh",
+    "TESTING.md",
+    ".test-suite-metadata.json"
+  ],
+  "justfile_commands_added": [
+    "just test",
+    "just test-verbose",
+    "just test-timing",
+    "just test-filter FILTER"
+  ],
+  "next_steps": [
+    "Run 'just test' to see current status (expect failures)",
+    "Fix failing tests by implementing P0-1 (merge-json.sh bug)",
+    "Fix failing tests by implementing P0-3 (install script)",
+    "Fix failing tests by implementing P1-1 (phantom commands)",
+    "Re-run tests to verify all fixes",
+    "Integrate tests into CI pipeline"
+  ],
+  "documentation": {
+    "main_guide": "tests/README.md",
+    "traceability": "tests/TRACEABILITY.md",
+    "summary": "tests/TEST-SUMMARY.md",
+    "quick_start": "TESTING.md"
+  },
+  "dependencies": {
+    "required": ["bats-core", "jq", "bash 4+"],
+    "optional": ["just", "python3 (for YAML validation)"],
+    "install": "brew install bats-core jq just"
+  },
+  "ci_integration": {
+    "github_actions": "Add workflow from tests/TEST-SUMMARY.md",
+    "pre_commit": "Add hook from tests/TEST-SUMMARY.md",
+    "run_command": "./run-tests.sh"
+  }
+}

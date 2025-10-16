@@ -1,0 +1,28 @@
+- defaults:
+    link:
+      relink: true
+      force: true
+
+- clean: ['~']
+
+- create:
+    - ~/.config
+    - ~/Library/Logs
+
+- link:
+    # Link the merge scripts so they're accessible
+    ~/bin/merge-json.sh:
+      path: scripts/merge-json.sh
+      create: true
+    ~/bin/setup-watchers.sh:
+      path: scripts/setup-watchers.sh
+      create: true
+
+- shell:
+    - [chmod +x scripts/merge-json.sh, Make merge script executable]
+    - [chmod +x scripts/setup-watchers.sh, Make watcher setup script executable]
+    -
+      command: ./scripts/setup-watchers.sh
+      description: Setup launchd file watchers
+      stdout: true
+      stderr: true

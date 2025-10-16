@@ -1,0 +1,8 @@
+{
+  "editor": "vim",
+  "theme": "dark",
+  "settings": {
+    "tabSize": 2,
+    "autoSave": false
+  }
+}
