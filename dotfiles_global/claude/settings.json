@@ -50,7 +50,7 @@
       "Grep(*)",
       "KillShell(*)",
       "Ls(*)",
-      "mcp__*",
+      "mcp__chrome-devtools",
       "MultiEdit(*)",
       "NotebookEdit(*)",
       "Read(*)",
@@ -59,16 +59,28 @@
       "TodoRead(*)",
       "TodoWrite(*)",
       "Update(*)",
-      "WebSearch(*)",
       "Write(*)"
     ]
   },
-  "enabledPlugins": {
-    "production-agents-suite@claude-code-marketplace": true
-  },
-  "alwaysThinkingEnabled": true,
+  "model": "sonnet",
   "statusLine": {
     "type": "command",
     "command": "bash /Users/bmf/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "production-agents-suite@claude-code-marketplace": [
+      "epti"
+    ]
+  },
+  "alwaysThinkingEnabled": true,
+  "mcpServers": {
+    "@scope/package-name": {
+      "command": "npx",
+      "args": [
+        "@scope/package-name"
+      ],
+      "env": {},
+      "type": "stdio"
+    }
   }
 }
