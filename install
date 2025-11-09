@@ -10,7 +10,7 @@ DOTBOT_BIN="bin/dotbot"
 
 cd "${BASEDIR}"
 
-PROFILE="${1:-}"
+PROFILE="${1:-home}"
 
 if [[ -z "$PROFILE" ]]; then
   echo "Usage: ./install [home|work|base]"
@@ -22,26 +22,34 @@ if [[ -z "$PROFILE" ]]; then
   exit 2
 fi
 
+# Run dotbot with the specified configuration files
+run_dotbot() {
+  local description="$1"
+  shift
+  local configs=("$@")
+
+  echo "Installing ${description}..."
+
+  local config_args=()
+  for config in "${configs[@]}"; do
+    config_args+=(-c "$config")
+  done
+
+  "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" "${config_args[@]}"
+}
+
 case "$PROFILE" in
   home)
-    echo "Installing home profile..."
-    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
-      -c install.conf.yaml -c install-home.conf.yaml
+    run_dotbot "home profile" install-base.conf.yaml install-claude.conf.yaml install-home.conf.yaml
     ;;
   work)
-    echo "Installing work profile..."
-    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
-      -c install.conf.yaml -c install-work.conf.yaml
+    run_dotbot "work profile" install-base.conf.yaml install-work.conf.yaml
     ;;
   base)
-    echo "Installing base configuration..."
-    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
-      -c install.conf.yaml
+    run_dotbot "base configuration" install-base.conf.yaml
     ;;
   *)
-    echo "Installing work profile..."
-    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
-      -c install.conf.yaml -c install-${PROFILE}.conf.yaml
+    run_dotbot "home profile" install-base.conf.yaml "install-${PROFILE}.conf.yaml"
     ;;
 esac
 
