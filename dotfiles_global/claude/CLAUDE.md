@@ -1,5 +1,5 @@
 - Always follow best practices
-- Focus on simplicy, reliability, and principle of least surprise
+- Focus on simplicity, reliability, and principle of least surprise
 - Always use the symlink at ~/icode to read files in /Users/bmf/Library/Mobile Documents/com~apple~CloudDocs/_mine/icode
 - There are no time constraints.  Doing it right the first time is far more efficient than redoing it later.  Focus on efficiency and correctness
 - Be creative when exploring ideas!  Think of things no one else has considered before.
@@ -7,10 +7,24 @@
 - Do NOT guess!  Search the web if you're unsure, or ASK
 - Do NOT skip steps or ignore work so you can move to the next task!  It's better to stop completely than to continue doing work that is incorrect.
 
+CRITICAL:
+- If you have doubts, ask me for input (plain text, NO tools until I
+  respond)
+- AskUserQuestion tool: If response is empty/only punctuation → re-ask in
+  plain text immediately, NO tools until I respond
+- Ask questions when:
+    - Unsure about goal or desired outcome
+    - Important tradeoffs to consider
+    - Input could dramatically change outcome
+    - Expensive/time-consuming to change later
+- MORE QUESTIONS ARE GOOD! DOING USELESS WORK IS BAD!
+
 Language specific rules:
 - Python
   - Always use 'uv' for package management
   - Favor designing a robust CLI over calling ad-hoc scripts
+  - CRITICAL: NEVER MODIFY SYS.PATH IN ANY .py FILE EVER!  EVER!
+  - CRITICAL: DO NOT SET PYTHONPATH ENV VAR, DO NOT IMPORT FILES FROM SEPARATE PROJECTS!
 - Shell
 
 MCPs
@@ -40,4 +54,6 @@ Dev Workflow
 
 Planning Structure
 - All planning docs should use the .agent_planning directory in the repo root
+- use the "bd" tool for tracking specific work items
 - Create initiatives for large pieces of work
+- please use pnpm rather than npm

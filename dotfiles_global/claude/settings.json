@@ -68,16 +68,17 @@
     "command": "bash /Users/bmf/.claude/statusline-command.sh"
   },
   "enabledPlugins": {
-    "production-agents-suite@claude-code-marketplace": [
-      "epti"
-    ]
+    "promptctl@loom99": false,
+    "testing-suite@claude-code-templates": true,
+    "beads@beads-marketplace": true
   },
   "alwaysThinkingEnabled": true,
   "mcpServers": {
-    "@scope/package-name": {
+    "context7": {
       "command": "npx",
       "args": [
-        "@scope/package-name"
+        "-y",
+        "@upstash/context7-mcp"
       ],
       "env": {},
       "type": "stdio"

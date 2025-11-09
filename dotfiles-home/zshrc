@@ -4,13 +4,18 @@
 setopt clobber
 setopt share_history
 
+# TODO: move this somewhere else, at minimum the helper fns
 is_claude() { [[ -n "${CLAUDECODE}" ]] && return 0 || return 1 }
 not_claude() { ! is_claude && return 0 || return 1 }
 
-if not_claude; then
+# We need to be able to define a set of plugins to load for human vs ai users
+if is_claude; then
+  # todo: source a subset of plugins
+  true
+else
   # Source Zgen and create init file if necessary
   # Add custom Zsh plugins to .zgen-setup.zsh
-  not_claude && source ~/.rad-shell/rad-init.zsh
+  source ~/.rad-shell/rad-init.zsh
 
   # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
   [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
@@ -106,11 +111,6 @@ EOF
   rad-green "Done!"
 }
 
-# For profiling shell startup time
-# zprof
-# export VOLTA_HOME="$HOME/.volta"
-# export PATH="$VOLTA_HOME/bin:$PATH"
-export PATH="/usr/local/opt/libxml2/bin:$PATH"
 
 # pnpm
 export PNPM_HOME="/Users/bmf/Library/pnpm"
@@ -160,4 +160,8 @@ zinit light-mode for \
     zdharma-continuum/zinit-annex-rust
 
 ### End of Zinit's installer chunk
-alias claude-dange="claude --dangerously-skip-permissions"
+alias danger-claude="claude --dangerously-skip-permissions"
+
+alias wb_dl="docker run -v .:/websites wayback_machine_downloader wayback_machine_downloader"
+eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
+export UV_PYTHON=3.12

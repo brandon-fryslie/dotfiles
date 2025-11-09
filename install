@@ -13,12 +13,12 @@ cd "${BASEDIR}"
 PROFILE="${1:-}"
 
 if [[ -z "$PROFILE" ]]; then
-  echo "Usage: ./install [home|work|global]"
+  echo "Usage: ./install [home|work|base]"
   echo ""
   echo "Profiles:"
   echo "  home   - Personal development environment"
   echo "  work   - Work environment"
-  echo "  global - Base configuration only"
+  echo "  base - Base configuration only"
   exit 2
 fi
 
@@ -33,15 +33,15 @@ case "$PROFILE" in
     "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
       -c install.conf.yaml -c install-work.conf.yaml
     ;;
-  global)
-    echo "Installing global configuration..."
+  base)
+    echo "Installing base configuration..."
     "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
       -c install.conf.yaml
     ;;
   *)
-    echo "Error: Unknown profile '$PROFILE'" >&2
-    echo "Valid profiles: home, work, global" >&2
-    exit 1
+    echo "Installing work profile..."
+    "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" \
+      -c install.conf.yaml -c install-${PROFILE}.conf.yaml
     ;;
 esac
 

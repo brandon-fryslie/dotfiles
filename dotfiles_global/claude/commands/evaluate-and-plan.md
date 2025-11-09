@@ -1,3 +1,8 @@
+---
+argument-hint: [area of focus]
+description: Evaluate the project and make an implementation plan.  Pass args to focus on something specific, or let Claude decide.  Designed to work with /test-and-implement
+---
+
 If specific areas of focus are defined below, focus entirely on those goals and architectural work to enable those goals.  If 'specific-areas-of-focus' is empty, use the PROJECT_SPEC.md file to evaluate the project as a whole.
 
 Specific areas of focus:
