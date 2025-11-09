@@ -33,6 +33,7 @@ export EDITOR=vi
 
 # Local code configuration
 export PROJECTS_DIR="$HOME/icode"
+PROJECTS_DIRS=(~/icode ~/projects)
 export DOTFILES_DIR="$HOME/icode/dotfiles"
 
 # Language configuration
@@ -162,6 +163,9 @@ zinit light-mode for \
 ### End of Zinit's installer chunk
 alias danger-claude="claude --dangerously-skip-permissions"
 
+alias clod="claude --dangerously-skip-permissions"
+
 alias wb_dl="docker run -v .:/websites wayback_machine_downloader wayback_machine_downloader"
-eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
+type mcpi &>/dev/null && eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
 export UV_PYTHON=3.12
+export ABDUCO_CMD=zsh

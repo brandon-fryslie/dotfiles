@@ -1,6 +1,7 @@
 # .zshrc file for development use at work
 
 PROJECTS_DIR=~/code
+PROJECTS_DIRS=(~/code)
 EDITOR=idea
 VISUAL=idea
 DOTFILES_DIR=$HOME/code/dotfiles
