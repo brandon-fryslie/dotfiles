@@ -19,6 +19,7 @@ install-home:
     @echo "Installing dotfiles with home profile..."
     {{DOTBOT}} {{DOTBOT_FLAGS}} -c install.conf.yaml
     {{DOTBOT}} {{DOTBOT_FLAGS}} -c install-home.conf.yaml
+    {{DOTBOT}} {{DOTBOT_FLAGS}} -c install-rad.conf.yaml
 
 # Install dotfiles with work profile
 install-work:
@@ -31,6 +32,7 @@ dry-run-home:
     @echo "Dry run for home profile..."
     {{DOTBOT}} {{DOTBOT_FLAGS}} --dry-run -c install.conf.yaml
     {{DOTBOT}} {{DOTBOT_FLAGS}} --dry-run -c install-home.conf.yaml
+    {{DOTBOT}} {{DOTBOT_FLAGS}} --dry-run -c install-rad.conf.yaml
 
 # Dry run - see what would be installed for work profile
 dry-run-work:
@@ -209,6 +211,81 @@ verify-home:
         echo "✓ All symlinks are correct!"
     fi
 
+# Verify rad-shell setup is correct
+verify-rad:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Verifying rad-shell setup..."
+
+    errors=0
+
+    # Check if rad-shell is installed
+    if [[ ! -e ~/.rad-plugins ]]; then
+        echo "  ✗ rad-shell not installed (missing ~/.rad-plugins)"
+        errors=$((errors + 1))
+    else
+        echo "  ✓ rad-shell installed"
+    fi
+
+    # Check if ~/icode repos exist
+    if [[ ! -d ~/icode/brandon-fryslie_rad-shell ]]; then
+        echo "  ✗ ~/icode/brandon-fryslie_rad-shell does not exist"
+        errors=$((errors + 1))
+    else
+        echo "  ✓ ~/icode/brandon-fryslie_rad-shell exists"
+    fi
+
+    if [[ ! -d ~/icode/brandon-fryslie_rad-plugins ]]; then
+        echo "  ✗ ~/icode/brandon-fryslie_rad-plugins does not exist"
+        errors=$((errors + 1))
+    else
+        echo "  ✓ ~/icode/brandon-fryslie_rad-plugins exists"
+    fi
+
+    # Check zgenom symlinks
+    ZGENOM_RAD_SHELL="$HOME/.zgenom/sources/brandon-fryslie/rad-shell"
+    ZGENOM_RAD_PLUGINS="$HOME/.zgenom/sources/brandon-fryslie/rad-plugins"
+
+    if [[ ! -e "$ZGENOM_RAD_SHELL" ]]; then
+        echo "  ✗ $ZGENOM_RAD_SHELL does not exist"
+        errors=$((errors + 1))
+    elif [[ ! -L "$ZGENOM_RAD_SHELL" ]]; then
+        echo "  ✗ $ZGENOM_RAD_SHELL is not a symlink (should link to ~/icode/rad-shell)"
+        errors=$((errors + 1))
+    else
+        target=$(readlink "$ZGENOM_RAD_SHELL")
+        if [[ "$target" == "$HOME/icode/brandon-fryslie_rad-shell" ]]; then
+            echo "  ✓ rad-shell correctly symlinked"
+        else
+            echo "  ✗ rad-shell symlink points to wrong location: $target"
+            errors=$((errors + 1))
+        fi
+    fi
+
+    if [[ ! -e "$ZGENOM_RAD_PLUGINS" ]]; then
+        echo "  ✗ $ZGENOM_RAD_PLUGINS does not exist"
+        errors=$((errors + 1))
+    elif [[ ! -L "$ZGENOM_RAD_PLUGINS" ]]; then
+        echo "  ✗ $ZGENOM_RAD_PLUGINS is not a symlink (should link to ~/icode/brandon-fryslie_rad-plugins)"
+        errors=$((errors + 1))
+    else
+        target=$(readlink "$ZGENOM_RAD_PLUGINS")
+        if [[ "$target" == "$HOME/icode/brandon-fryslie_rad-plugins" ]]; then
+            echo "  ✓ rad-plugins correctly symlinked"
+        else
+            echo "  ✗ rad-plugins symlink points to wrong location: $target"
+            errors=$((errors + 1))
+        fi
+    fi
+
+    echo ""
+    if [[ $errors -gt 0 ]]; then
+        echo "⚠ Found $errors issues. Run 'just install-home' to fix."
+        exit 1
+    else
+        echo "✓ rad-shell setup is correct!"
+    fi
+
 # Verify work profile symlinks are correct
 verify-work:
     #!/usr/bin/env bash
@@ -337,7 +414,7 @@ validate:
     set -euo pipefail
     echo "Validating YAML configuration files..."
 
-    for config in install.conf.yaml install-home.conf.yaml install-work.conf.yaml install-watchers.conf.yaml; do
+    for config in install.conf.yaml install-home.conf.yaml install-work.conf.yaml install-rad.conf.yaml install-watchers.conf.yaml; do
         if command -v python3 &> /dev/null; then
             if python3 -c "import yaml; yaml.safe_load(open('$config'))" 2>/dev/null; then
                 echo "  ✓ $config is valid"

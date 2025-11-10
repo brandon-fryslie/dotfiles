@@ -1,0 +1,14 @@
+- shell:
+  - description: Install rad-shell if needed
+    command: '[ -e ~/.rad-plugins ] || curl -o- https://raw.githubusercontent.com/brandon-fryslie/rad-shell/master/install.sh | bash'
+    stdin: true
+    stdout: true
+
+- defaults:
+    link:
+      relink: true
+      force: true
+
+- link:
+    ~/.zgenom/sources/brandon-fryslie/rad-shell/___: ~/icode/brandon-fryslie_rad-shell
+    ~/.zgenom/sources/brandon-fryslie/rad-plugins/___: ~/icode/brandon-fryslie_rad-plugins

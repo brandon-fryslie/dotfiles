@@ -72,7 +72,7 @@
     "testing-suite@claude-code-templates": true,
     "beads@beads-marketplace": true
   },
-  "alwaysThinkingEnabled": true,
+  "alwaysThinkingEnabled": false,
   "mcpServers": {
     "context7": {
       "command": "npx",
