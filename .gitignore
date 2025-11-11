@@ -1,3 +1,26 @@
+# IDE
 .idea
+.vscode
+
+# AI assistants
 .aider*
+.cursor
+
+# Dotbot submodule (managed separately)
 dotbot/
+
+# Planning/status docs (ephemeral)
+PLAN-*.md
+STATUS-*.md
+SPRINT-*.md
+.agent_planning/
+
+# Test metadata
+.test-suite-metadata.json
+
+# macOS
+.DS_Store
+
+# Backup files
+*.bak
+*~

@@ -5,13 +5,17 @@
 
 - create:
     - ~/.claude
+    - ~/.claude/plugins  # Create plugins dir but don't manage the repos inside
 
 - link:
-    ~/.claude/agents: dotfiles_global/claude/agents
-    ~/.claude/agents-disabled: dotfiles_global/claude/agents-disabled
-    ~/.claude/commands: dotfiles_global/claude/commands
-    ~/.claude/commands-disabled: dotfiles_global/claude/commands-disabled
-    ~/.claude/personal-synced: dotfiles_global/claude/personal-synced
-    ~/.claude/plugins: dotfiles_global/claude/plugins
-    ~/.claude/CLAUDE.md: dotfiles_global/claude/CLAUDE.md
-    ~/.claude/settings.json: dotfiles_global/claude/settings.json
+    ~/.claude/agents: config/claude/agents
+    ~/.claude/agents-disabled: config/claude/agents-disabled
+    ~/.claude/commands: config/claude/commands
+    ~/.claude/commands-disabled: config/claude/commands-disabled
+    ~/.claude/personal-synced: config/claude/personal-synced
+    ~/.claude/CLAUDE.md: config/claude/CLAUDE.md
+    ~/.claude/settings.json: config/claude/settings.json
+    # Plugin config files (not the repos themselves)
+    ~/.claude/plugins/config.json: config/claude/plugins-config/config.json
+    ~/.claude/plugins/installed_plugins.json: config/claude/plugins-config/installed_plugins.json
+    ~/.claude/plugins/known_marketplaces.json: config/claude/plugins-config/known_marketplaces.json

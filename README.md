@@ -4,7 +4,9 @@ Personal dotfiles configuration with profile support for home and work environme
 
 ## Overview
 
-This repository contains my personal development environment configuration, managed using [Dotbot](https://github.com/anishathalye/dotbot). This is a **standard Dotbot installation** using configuration composition to support multiple profiles (home and work).
+This repository contains my personal development environment configuration, managed using [Dotbot](https://github.com/anishathalye/dotbot). This is a **standard Dotbot installation** using configuration composition to support multiple profiles (home and work) and modular feature configurations.
+
+**Philosophy**: Boring, reliable, obvious. No clever hacks, just solid implementations that work consistently across machines.
 
 ## Quick Start
 
@@ -17,40 +19,42 @@ cd ~/icode/dotfiles
 just init
 
 # Install home profile
-just install-home
+just install home
 
 # Or install work profile
-just install-work
+just install work
 ```
 
-## Tools and Applications
+## What's Included
 
 ### Shell & Terminal
 - **Zsh** with custom configuration
 - **Powerlevel10k** theme for enhanced prompt
-- **rad-shell** custom plugin system
+- **rad-shell** custom plugin system by brandon-fryslie
 - **zsh-autosuggestions** for command suggestions
 - **zsh-completions** for enhanced tab completion
-- **zsh-syntax-highlighting** for command syntax highlighting
+- **zsh-syntax-highlighting** for visual feedback
+- **tmux** with full configuration directory
 
 ### Development Tools
 - **Aider** - AI pair programming tool (configured via `.aider.conf.yml`)
-- **Git** with global ignore file and custom configuration
-- **Docker** with custom aliases and completions
+- **Claude Code** - Full AI assistant integration with custom agents and commands
+- **Git** with global ignore file
+- **Docker** with custom aliases and completions via Lima
 - **IntelliJ IDEA** as primary editor/IDE
 
 ### Language & Runtime Management
-- **Python** with pyenv for version management
-- **Node.js** with fnm (preferred), NVM, and bun for version management
-- **Java** with SDKMAN for version management
-- **Ruby** with RVM support
-- **pnpm** for Node.js package management
+- **Python**: pyenv for version management
+- **Node.js**: fnm (preferred), NVM (legacy), and bun
+- **Java**: SDKMAN for version management
+- **Ruby**: RVM support
 
 ### Package Management
-- **Homebrew** for macOS package management
+- **Homebrew** for macOS packages
+- **pnpm** for Node.js packages
 - **Mackup** for application settings backup
 
-### Navigation & File Management
+### Navigation & Utilities
 - **lsd** (LSDeluxe) for enhanced `ls` command
 - **nav** for directory navigation
 - **zaw** for fuzzy searching
@@ -60,8 +64,7 @@ just install-work
 ### Prerequisites
 - macOS (Darwin)
 - Git
-- Homebrew (will be configured via rad-plugins)
-- [just](https://github.com/casey/just) command runner (install: `brew install just`)
+- [just](https://github.com/casey/just) command runner: `brew install just`
 
 ### Installation Steps
 
@@ -77,108 +80,195 @@ just init
 just backup
 
 # 4. Install with your chosen profile
-just install-home    # For personal setup
+just install home    # For personal setup
 # OR
-just install-work    # For work setup
+just install work    # For work setup
 
-# 5. Verify installation
+# 5. Restart your shell or source the config
+exec zsh
+
+# 6. Verify installation
 just status
 just verify-home     # or verify-work
 ```
 
-### Available Commands
+## Available Commands
 
-Run `just` to see all available commands:
+The `justfile` provides convenient commands for managing your dotfiles:
+
+### Installation
+```bash
+just install home        # Install base + home profile + features
+just install work        # Install base + work profile + features
+just install base        # Install only base configuration
+just dry-run-home        # Preview what would be installed (home)
+just dry-run-work        # Preview what would be installed (work)
+```
+
+### Management
+```bash
+just status              # Check current profile and symlink status
+just verify-home         # Verify all home profile symlinks are correct
+just verify-work         # Verify all work profile symlinks are correct
+just backup              # Backup current dotfiles before changes
+just clean-broken        # Remove broken symlinks in home directory
+```
+
+### Maintenance
+```bash
+just check-missing       # Find files not listed in configs
+just validate            # Validate YAML syntax (requires python3)
+just init                # Initialize/update dotbot submodule
+just update-dotbot       # Update dotbot to latest version
+```
+
+Run `just` without arguments to see all available commands.
+
+### Claude Code Configuration (`install-claude.conf.yaml`)
+- Custom agents for specialized workflows (testing, implementation, planning)
+- Slash commands for common operations
+- Plugin configuration (tracked separately from plugin repos)
+- Repository-specific AI instructions
+
+### Feature Configurations
+- **rad-shell** (`install-rad.conf.yaml`): Shell plugin system setup
+- **Watchers** (`install-watchers.conf.yaml`): File watcher system (planned)
+
+## How It Works
+
+### Configuration Composition
+
+Dotbot is run sequentially for each configuration file:
 
 ```bash
-just                    # Show all commands
-just install-home       # Install global + home profile
-just install-work       # Install global + work profile
-just dry-run-home       # See what would be installed
-just status             # Check current profile and symlinks
-just verify-home        # Verify all symlinks are correct
-just check-missing      # Find files not in configs
-just backup             # Backup current dotfiles
+# Home profile installation runs:
+dotbot -c install-base.conf.yaml      # Base configurations
+dotbot -c install-claude.conf.yaml    # Claude Code setup
+dotbot -c install-home.conf.yaml      # Home profile (overrides base)
+dotbot -c install-rad.conf.yaml       # rad-shell setup
 ```
 
-## Profile Configurations
+Later configurations override earlier ones, allowing clean separation between:
+- Shared base configurations
+- Profile-specific overrides
+- Optional feature additions
 
-### Home Profile (`dotfiles-home/`)
-- Personal project directories (`~/icode`)
-- Personal Git configuration
-- Full development tool suite
-
-### Work Profile (`dotfiles-work/`)
-- Work project directories (`~/code`)
-- Work-specific configurations
-- Corporate environment settings
-
-### Global Configuration (`dotfiles_global/`)
-- Aider configuration
-- Git global ignore patterns
-- Powerlevel10k theme settings
-- Mackup backup configuration
-- RVM and Gem configurations
-
-## File Structure
-
-```
-dotfiles/
-├── dotfiles-home/          # Home profile configurations
-├── dotfiles-work/          # Work profile configurations
-├── dotfiles_global/        # Global configurations
-├── install                 # Interactive installation script
-├── install.conf.yaml       # Global dotbot configuration
-├── install-home.conf.yaml  # Home profile dotbot configuration
-├── install-work.conf.yaml  # Work profile dotbot configuration
-└── dotbot/                 # Dotbot submodule
-```
-
-## Key Features
-
-- **Profile Support**: Separate configurations for home and work environments
-- **AI Development**: Pre-configured Aider setup for AI-assisted coding
-- **Modern Shell**: Enhanced Zsh with powerful plugins and theming
-- **Multi-language Support**: Ready-to-go setups for Python, Node.js, Java, Ruby
-- **Docker Integration**: Enhanced Docker workflow with custom aliases
-- **Backup Ready**: Mackup integration for application settings backup
-
+### Symlink Strategy
 ## Customization
 
-### Adding New Tools
-1. Add configuration files to the appropriate profile directory
-2. Update the corresponding `install-*.conf.yaml` file
-3. Add any required plugins to `rad-plugins` files
+**Adding shell plugins:**
+```bash
+# Add to dotfiles-home/rad-plugins:
+brandon-fryslie/rad-plugins git
+brandon-fryslie/rad-plugins docker
+zsh-users/zsh-autosuggestions
+```
 
-### Modifying Shell Configuration
-- Edit `dotfiles-home/zshrc` or `dotfiles-work/zshrc` for profile-specific changes
-- Edit files in `dotfiles_global/` for changes that apply to all profiles
-- Modify `rad-plugins` files to add or remove shell plugins
+### Working with Claude Code
 
-## Dependencies
+The repository includes full Claude Code integration:
 
-This configuration relies on several external tools that will be installed automatically:
-- Dotbot (included as submodule)
-- rad-shell plugin system
-- Various Zsh plugins
-- Development tools via Homebrew
+**Custom agents** in `config/claude/agents/`:
+- `test-driven-implementer.md` - TDD workflow
+- `functional-tester.md` - High-level test design
+- `project-evaluator.md` - Project assessment
+- `status-planner.md` - Planning and backlog generation
+
+**Slash commands** in `config/claude/commands/`:
+- `/test-and-implement` - Write tests first, then implement
+- `/evaluate-and-plan` - Evaluate project and create plans
+- `/setup-mcp-docs` - Setup MCP server for documentation
+
+**Plugin configuration** is tracked, plugin repos are not:
+- `~/.claude/plugins/*.json` are symlinked (tracked)
+- `~/.claude/plugins/marketplaces/*` are real directories (untracked)
 
 ## Troubleshooting
 
-If you encounter issues:
+### Symlinks not created
+```bash
+# Check dotbot output for errors
+just install home
 
-1. Ensure you have the latest version of Git and Homebrew
-2. Check that the Dotbot submodule is properly initialized
-3. Verify file permissions for the install script
-4. Run `just validate` to check YAML configuration files
+# Verify symlinks manually
+just verify-home
+
+# Check for broken symlinks
+just clean-broken
+```
+
+### Shell not loading correctly
+```bash
+# Check for syntax errors
+zsh -n ~/.zshrc
+
+# Source the config manually
+source ~/.zshrc
+
+# Check rad-shell is properly set up
+just verify-rad
+```
+
+### YAML validation errors
+```bash
+# Requires python3 with PyYAML
+pip3 install pyyaml
+just validate
+```
+
+### Profile switching not working
+```bash
+# Switching profiles requires re-running installation
+just install work    # Switch to work profile
+
+# Verify the switch
+just status
+readlink ~/.zshrc    # Should point to dotfiles-work/zshrc
+```
+
+## Advanced Usage
+
+### Direct Dotbot Invocation
+
+For debugging or custom workflows:
+
+```bash
+# Install specific config only
+./dotbot/bin/dotbot -d . -c install-base.conf.yaml
+
+# Dry run to see what would happen
+./dotbot/bin/dotbot -d . --dry-run -c install-home.conf.yaml
+
+# Verbose output for debugging
+./dotbot/bin/dotbot -d . -v -c install-home.conf.yaml
+```
+
+### Using the Install Script
+
+The `install` script provides an alternative interface:
+
+```bash
+./install home       # Install home profile
+./install work       # Install work profile
+./install base       # Install base only
+```
+
+This script runs dotbot sequentially with the appropriate configs for each profile.
+
+## Known Limitations
+
+1. **Profile switching** requires re-running installation (not live-switchable)
+2. **iCloud Drive paths** have limitations with launchd (workaround: copy scripts to ~/bin)
+3. **Git submodules** are not auto-initialized by dotbot (use `just init`)
+
+## Documentation
+
+- **[PROJECT_SPEC.md](PROJECT_SPEC.md)** - Technical overview, architecture, and vision
+- **[CLAUDE.md](CLAUDE.md)** - Repository-specific guidance for Claude Code
+- **[TESTING.md](TESTING.md)** - Test suite documentation and philosophy
+- **[tests/README.md](tests/README.md)** - Detailed testing guide
+- **[docs/WATCHERS-ARCHITECTURE.md](docs/WATCHERS-ARCHITECTURE.md)** - Watchers v2.0 design (planned feature)
 
 ## License
 
 Personal configuration - feel free to fork and adapt for your own use.
-
-## Symlinking Claude
-
-ln -sfn "$(pwd)/agents" ~/.claude/agents
-ln -sfn "$(pwd)/commands" ~/.claude/commands
-ln -sfn "$(pwd)/CLAUDE.md" ~/.claude/CLAUDE.md
-ln -sfn "$(pwd)/settings.json" ~/.claude/settings.json
