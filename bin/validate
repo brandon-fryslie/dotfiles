@@ -53,9 +53,9 @@ if [[ -L ~/.zshrc ]]; then
     zshrc_target=$(readlink ~/.zshrc)
     if [[ -f "$zshrc_target" ]]; then
         echo "✓ ~/.zshrc symlink is valid"
-        if echo "$zshrc_target" | grep -q "dotfiles-home"; then
+        if echo "$zshrc_target" | grep -q "zshrc.home"; then
             echo "  → Points to home profile"
-        elif echo "$zshrc_target" | grep -q "dotfiles-work"; then
+        elif echo "$zshrc_target" | grep -q "zshrc.work"; then
             echo "  → Points to work profile"
         fi
     else
@@ -67,25 +67,28 @@ else
     warnings=$((warnings + 1))
 fi
 
-# Check 5: Config directories exist
-if [[ -d "$DOTFILES_DIR/dotfiles_global" ]]; then
-    echo "✓ dotfiles_global directory exists"
-else
-    echo "✗ dotfiles_global directory missing"
-    errors=$((errors + 1))
-fi
+# Check 5: Config directory exists
+if [[ -d "$DOTFILES_DIR/config" ]]; then
+    echo "✓ config directory exists"
 
-if [[ -d "$DOTFILES_DIR/dotfiles-home" ]]; then
-    echo "✓ dotfiles-home directory exists"
-else
-    echo "✗ dotfiles-home directory missing"
-    errors=$((errors + 1))
-fi
+    # Check for key config files
+    key_files=(
+        "aider.conf.global.yml"
+        "zshrc.home"
+        "zshrc.work"
+        "p10k.global.zsh"
+    )
 
-if [[ -d "$DOTFILES_DIR/dotfiles-work" ]]; then
-    echo "✓ dotfiles-work directory exists"
+    for file in "${key_files[@]}"; do
+        if [[ -f "$DOTFILES_DIR/config/$file" ]]; then
+            echo "  ✓ config/$file exists"
+        else
+            echo "  ✗ config/$file missing"
+            errors=$((errors + 1))
+        fi
+    done
 else
-    echo "✗ dotfiles-work directory missing"
+    echo "✗ config directory missing"
     errors=$((errors + 1))
 fi
 
