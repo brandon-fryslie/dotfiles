@@ -2,43 +2,66 @@
 
 ## Overview
 
-This is a personal dotfiles repository that manages shell and development environment configurations across multiple profiles (home and work) using Dotbot for installation and symlinking.
+Personal dotfiles repository for managing shell and development environment configurations across multiple profiles (home and work) using Dotbot for installation and symlinking. This is a **standard Dotbot installation** using configuration composition to support clean separation between global, profile-specific, and feature-specific configurations.
+
+## Vision
+
+A bulletproof, boring, reliable dotfiles system that:
+- **Just works** - No surprises, no clever hacks, obvious implementations
+- **Scales elegantly** - Easy to add new configs without touching existing ones
+- **Stays in sync** - Configuration changes propagate automatically (via watchers)
+- **Travels well** - Works across multiple machines with different profiles
+- **Self-documents** - Structure and commands are self-explanatory
 
 ## Core Features
 
 ### 1. Profile-Based Dotfiles Management
 
-The repository uses Dotbot with configuration composition to support multiple profiles:
+The repository uses Dotbot with configuration composition to support multiple profiles. Each profile is a separate configuration file that gets applied sequentially:
 
-- **Global profile**: Base configurations shared across all profiles
-- **Home profile**: Personal development setup
-- **Work profile**: Work environment setup
+**Profiles:**
+- **Base** (`install-base.conf.yaml`): Core configurations shared across all profiles
+- **Home** (`install-home.conf.yaml`): Personal development setup
+- **Work** (`install-work.conf.yaml`): Work environment setup
+- **Claude** (`install-claude.conf.yaml`): Claude Code AI configuration
+- **Rad** (`install-rad.conf.yaml`): rad-shell plugin system setup
+- **Watchers** (`install-watchers.conf.yaml`): File watcher system (future)
 
-Profiles override global settings using Dotbot's sequential execution model.
+**Key Design Decision:**
+Profiles override global settings using Dotbot's sequential execution model. Run Dotbot multiple times (once per config) to ensure all symlinks are created correctly:
 
-### 2. Automated File Watchers System
+```bash
+dotbot -c install-base.conf.yaml      # Base first
+dotbot -c install-home.conf.yaml      # Profile overrides
+dotbot -c install-rad.conf.yaml       # Feature addons
+```
 
-**Version 2.0 Architecture**
+This maintains clean separation while ensuring proper override behavior.
 
-We need to completely change the 'watchers' functionality because it won't just be 'merging json'. We should have a YAML file that defines a 'watcher spec'. Each spec can define:
+### 3. File Watchers System (Planned)
 
+**Status:** Architecture designed, implementation pending
+
+**Vision:** Auto-regenerate configuration files when source fragments change.
+
+**Version 2.0 Architecture:**
+
+We'll have a YAML file that defines watcher specs. Each spec can define:
 - **One or more input files to watch** (or a glob pattern)
 - **A command** (command name + args) to run when they change
 - **A single output file** to write
 
 #### Two-Daemon Architecture
 
-We have 2 launchd daemons:
-
 1. **Config Watcher Daemon** (`com.user.dotfiles.watcher-reload`)
    - Watches the YAML config file that defines the watchers
-   - Auto-reloads the execute daemon whenever the YAML config file changes
+   - Auto-reloads the execute daemon whenever the YAML config changes
    - Validates new config before reloading
    - Keeps old daemon running if new config is invalid
 
 2. **Execute Daemon** (`com.user.dotfiles.watcher-execute`)
-   - Watches the dotfiles that are defined as input files in the watcher config file
-   - Regenerates the necessary files (only) whenever an input file changes
+   - Watches the dotfiles defined as input files in the watcher config
+   - Regenerates necessary files (only) whenever an input file changes
    - Executes the specified command to produce output
    - Handles multiple watchers independently
 
@@ -59,8 +82,8 @@ watchers:
       args:
         - "--output"
         - "~/.mackup.cfg"
-        - "~/icode/dotfiles/config-sources/mackup/base.yaml"
-        - "~/icode/dotfiles/config-sources/mackup/home.yaml"
+        - "base.yaml"
+        - "home.yaml"
     output: "~/.mackup.cfg"
     enabled: true
 ```
@@ -74,160 +97,103 @@ watchers:
 - **Logging**: Clear logs for debugging and monitoring
 - **iCloud compatible**: Works despite iCloud Drive launchd restrictions
 
-### 3. Shell Plugin System
+### 4. Shell Plugin System
 
-Both profiles use the `rad-shell` plugin system (custom by brandon-fryslie) with profile-specific plugin configurations.
+Both profiles use the `rad-shell` plugin system (custom by brandon-fryslie) with profile-specific plugin configurations via `.rad-plugins` files.
 
-### 4. Version Managers
+**Key shell features:**
+- Powerlevel10k theme for enhanced prompt
+- zsh-autosuggestions for command completion
+- zsh-syntax-highlighting for visual feedback
+- Custom aliases and functions
+- Claude Code detection (skips interactive features in Claude environment)
 
-Multiple language version managers configured:
-- **Python**: pyenv
-- **Node.js**: fnm (preferred), NVM, bun
-- **Java**: SDKMAN
-- **Ruby**: RVM
+### 5. Multi-Language Version Managers
+
+Configured version managers for multiple languages:
+- **Python**: pyenv (`$PYENV_ROOT`)
+- **Node.js**: fnm (preferred), NVM (legacy), bun
+- **Java**: SDKMAN (`$SDKMAN_DIR`)
+- **Ruby**: RVM support via `.rvmrc`
+
+### 6. Claude Code Integration
+
+Full integration with Claude Code AI assistant:
+- Custom agents for specialized workflows (test-driven development, implementation, planning)
+- Slash commands for common operations
+- Plugin system for extending functionality
+- Environment detection to skip interactive shell features when running in Claude
 
 ## Architecture
 
-### Directory Structure
-
-```
-dotfiles/
-├── install.conf.yaml              # Global configuration
-├── install-home.conf.yaml         # Home profile
-├── install-work.conf.yaml         # Work profile
-├── dotfiles_global/               # Global dotfile sources
-├── dotfiles-home/                 # Home profile sources
-├── dotfiles-work/                 # Work profile sources
-├── config-sources/                # Modular config sources
-│   ├── watchers.yaml             # Watcher definitions
-│   ├── mackup/                   # Mackup config fragments
-│   └── gitignore/                # Gitignore fragments
-├── watchers/                      # Watcher system components
-│   ├── bin/                      # Daemon scripts
-│   ├── lib/                      # Libraries (parser, validator)
-│   └── launchd/                  # launchd plist templates
-├── scripts/                       # Utility scripts
-│   ├── merge-json.sh             # JSON merging
-│   └── merge-yaml.sh             # YAML merging
-└── tests/                         # Test suite
-    ├── functional/               # Functional tests
-    ├── unit/                     # Unit tests
-    ├── e2e/                      # End-to-end tests
-    └── helpers/                  # Test utilities
-```
+TODO
 
 ### Installation Methods
 
 **Primary method (justfile):**
 ```bash
-just install-home    # Install global + home profile
-just install-work    # Install global + work profile
+just install home     # Install base + home profile + features
+just install work     # Install base + work profile + features
+just install base     # Install only base configuration
 ```
 
 **Alternative method (script):**
 ```bash
-./install home       # Wrapper script
-./install work
+./install home        # Calls dotbot with home profile configs
+./install work        # Calls dotbot with work profile configs
+./install base        # Base only
 ```
 
-**Direct dotbot:**
+**Direct dotbot (advanced):**
 ```bash
-./dotbot/bin/dotbot -d . -c install.conf.yaml
+./dotbot/bin/dotbot -d . -c install-base.conf.yaml
 ./dotbot/bin/dotbot -d . -c install-home.conf.yaml
+./dotbot/bin/dotbot -d . -c install-rad.conf.yaml
 ```
 
 ## Technical Decisions
 
 ### Dotbot Configuration Composition
 
-Originally attempted to use multiple `-c` flags with Dotbot:
+**Approach**: Run Dotbot sequentially for each configuration file.
+
 ```bash
-dotbot -c install.conf.yaml -c install-home.conf.yaml  # Didn't work
+dotbot -c install-base.conf.yaml       # Base configs
+dotbot -c install-home.conf.yaml       # Profile overrides
+dotbot -c install-rad.conf.yaml        # Feature addons
 ```
 
-**Issue**: Dotbot doesn't execute all link sections when multiple configs are combined.
+This ensures:
+- Clean separation between concerns
+- Proper override behavior (later configs win)
+- All symlinks are created correctly
+- Easy to add new feature configs without touching existing ones
 
-**Solution**: Run Dotbot twice sequentially:
+## Future Vision
+
+### Phase 1: Watchers System (Next)
+Implement the two-daemon watcher architecture to auto-regenerate config files from modular sources.
+
+### Phase 2: Multi-Machine Sync
+Use Mackup or similar to sync application settings across machines, with dotfiles managing the Mackup configuration.
+
+### Phase 3: Bootstrapping
+One-command fresh machine setup:
 ```bash
-dotbot -c install.conf.yaml              # Global first
-dotbot -c install-home.conf.yaml         # Profile second
+curl -fsSL https://raw.githubusercontent.com/user/dotfiles/master/bootstrap.sh | bash
 ```
 
-This maintains clean separation while ensuring all symlinks are created.
-
-### iCloud Drive Limitations
-
-**Problem**: launchd cannot execute scripts from iCloud Drive paths (`~/Library/Mobile Documents/`)
-
-**Solution**: Copy watcher scripts to `~/bin/` during installation:
-- Source scripts remain in `~/icode/dotfiles/` (iCloud, version controlled)
-- Runtime scripts copied to `~/bin/` (local, executable by launchd)
-- Update mechanism via justfile commands
-
-## Quality Standards
-
-### Testing Requirements
-
-- **Comprehensive test coverage**: All critical paths tested
-- **Un-gameable tests**: Verify actual behavior, not proxies
-- **Fast execution**: Test suite runs in < 1 minute
-- **Clear failure messages**: Tests explain what's wrong
-
-### Code Quality
-
-From CLAUDE.md user instructions:
-- **Simple, reliable**: Principle of least surprise
-- **Boring implementations**: "Obviously this is how it's done"
-- **No shortcuts**: Do it right the first time
-- **Thoroughly tested**: Run tests after every change
-
-### Documentation
-
-- **Accuracy**: Documentation matches implementation exactly
-- **No phantom commands**: All referenced commands exist
-- **Clear warnings**: Limitations prominently documented
-- **Examples work**: All examples are tested and functional
-
-## Known Limitations
-
-1. **Watchers system**: Currently being redesigned (v2.0 architecture)
-2. **iCloud Drive**: launchd cannot execute from iCloud paths (workaround implemented)
-3. **Profile switching**: Requires re-running installation (not live-switchable)
-
-## Success Criteria
-
-A successful dotfiles installation means:
-- ✅ User can follow README without errors
-- ✅ All documented commands work as written
-- ✅ Symlinks point to correct profile dotfiles
-- ✅ Shell starts without errors
-- ✅ Version managers load correctly
-- ✅ Watchers regenerate files automatically (when v2.0 complete)
-- ✅ Tests pass on fresh installation
-
-## Project Status
-
-**Current Completion**: ~85% (core functionality complete)
-
-**Completed**:
-- ✅ Dotbot installation with profiles
-- ✅ Profile switching (home/work)
-- ✅ Shell configuration
-- ✅ Version manager setup
-- ✅ Test suite (79 functional tests)
-- ✅ Documentation accuracy fixes
-
-**In Progress**:
-- 🔄 Watchers v2.0 implementation (16% complete)
-
-**Planned**:
-- ⏳ CI/CD pipeline
-- ⏳ Pre-commit hooks
-- ⏳ Troubleshooting guide
+### Phase 4: Configuration Validation
+Pre-commit hooks and CI to validate:
+- YAML syntax in all config files
+- Symlink targets exist
+- No broken references in documentation
+- Tests pass on clean install
 
 ## References
 
-- [Architecture Document](docs/WATCHERS-ARCHITECTURE.md) - Detailed watchers v2.0 design
-- [Testing Guide](tests/README.md) - Test suite documentation
-- [Migration Guide](MIGRATION.md) - Migrating from old system
-- [User Instructions](CLAUDE.md) - Repository-specific guidance
+- [README.md](README.md) - User-facing documentation and quick start
+- [CLAUDE.md](CLAUDE.md) - Repository-specific guidance for Claude Code
+- [tests/README.md](tests/README.md) - Test suite documentation
+- [docs/WATCHERS-ARCHITECTURE.md](docs/WATCHERS-ARCHITECTURE.md) - Detailed watchers v2.0 design
+- [PROJECT_SPEC.md](PROJECT_SPEC.md) - This document
