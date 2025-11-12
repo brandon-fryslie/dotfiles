@@ -1,0 +1,16 @@
+# SSH Configuration
+# This config automatically installs/updates dotfiles when connecting to remote hosts
+
+# Example: Auto-install dotfiles on remote host
+# Uncomment and customize for specific hosts:
+#
+# Host example.remote.host
+#     PermitLocalCommand yes
+#     LocalCommand ssh -o PermitLocalCommand=no %n "[[ ! -d ~/icode ]] && echo 'Dotfiles require ~/icode directory - skipping auto-install' && exit 0; [[ -d ~/icode/dotfiles ]] && (echo 'Installing dotfiles on %h ...' && cd ~/icode/dotfiles && ./install home >/dev/null) || echo 'Dotfiles repo not found at ~/icode/dotfiles - skipping'"
+
+# Apply auto-install to all hosts (use with caution):
+# Host *
+#     PermitLocalCommand yes
+#     LocalCommand ssh -o PermitLocalCommand=no %n "[[ ! -d ~/icode ]] && echo 'Dotfiles require ~/icode directory - skipping auto-install' && exit 0; [[ -d ~/icode/dotfiles ]] && (echo 'Installing dotfiles on %h ...' && cd ~/icode/dotfiles && ./install home >/dev/null) || echo 'Dotfiles repo not found at ~/icode/dotfiles - skipping'"
+
+# Add your custom SSH host configurations below:

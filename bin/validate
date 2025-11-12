@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Validate that dotfiles are actually installed and working correctly
+
+set -euo pipefail
+
+echo "Validating dotfiles installation..."
+echo "===================================="
+echo ""
+
+errors=0
+warnings=0
+
+# Check 1: Is zshrc symlinked and does it point to a real file?
+if [[ -L ~/.zshrc ]]; then
+    target=$(readlink ~/.zshrc)
+    if [[ -f "$target" ]]; then
+        echo "✓ ~/.zshrc → $target (valid)"
+
+        # Determine profile
+        if echo "$target" | grep -q "zshrc.home"; then
+            echo "  Profile: HOME"
+        elif echo "$target" | grep -q "zshrc.work"; then
+            echo "  Profile: WORK"
+        fi
+    else
+        echo "✗ ~/.zshrc → $target (BROKEN - target doesn't exist)"
+        errors=$((errors + 1))
+    fi
+else
+    echo "✗ ~/.zshrc is not a symlink"
+    echo "  Run: just install home"
+    errors=$((errors + 1))
+fi
+
+# Check 2: Can we actually read the zshrc?
+if [[ -r ~/.zshrc ]]; then
+    echo "✓ ~/.zshrc is readable"
+else
+    echo "✗ ~/.zshrc is not readable"
+    errors=$((errors + 1))
+fi
+
+# Check 3: tmux config
+if [[ -L ~/.config/tmux ]]; then
+    target=$(readlink ~/.config/tmux)
+    if [[ -d "$target" && -f "$target/tmux.conf" ]]; then
+        echo "✓ ~/.config/tmux → $target (valid)"
+    else
+        echo "✗ ~/.config/tmux → $target (BROKEN)"
+        errors=$((errors + 1))
+    fi
+else
+    echo "⚠ ~/.config/tmux not symlinked"
+    warnings=$((warnings + 1))
+fi
+
+# Check 4: Claude Code config
+if [[ -L ~/.claude/CLAUDE.md ]]; then
+    target=$(readlink ~/.claude/CLAUDE.md)
+    if [[ -f "$target" ]]; then
+        echo "✓ ~/.claude/CLAUDE.md → $target (valid)"
+    else
+        echo "✗ ~/.claude/CLAUDE.md → $target (BROKEN)"
+        errors=$((errors + 1))
+    fi
+else
+    echo "⚠ ~/.claude/CLAUDE.md not symlinked"
+    warnings=$((warnings + 1))
+fi
+
+# Check 5: rad-plugins
+if [[ -L ~/.rad-plugins ]]; then
+    target=$(readlink ~/.rad-plugins)
+    if [[ -f "$target" ]]; then
+        echo "✓ ~/.rad-plugins → $target (valid)"
+    else
+        echo "✗ ~/.rad-plugins → $target (BROKEN)"
+        errors=$((errors + 1))
+    fi
+else
+    echo "⚠ ~/.rad-plugins not symlinked"
+    warnings=$((warnings + 1))
+fi
+
+# Check 6: Find any broken symlinks in home directory
+echo ""
+echo "Checking for broken symlinks in ~/ ..."
+broken_count=0
+while IFS= read -r -d '' link; do
+    if [[ ! -e "$link" ]]; then
+        echo "  ✗ Broken: $link → $(readlink "$link")"
+        broken_count=$((broken_count + 1))
+    fi
+done < <(find ~ -maxdepth 1 -type l -print0 2>/dev/null)
+
+if [[ $broken_count -eq 0 ]]; then
+    echo "  ✓ No broken symlinks found"
+else
+    echo "  Found $broken_count broken symlinks"
+    warnings=$((warnings + broken_count))
+fi
+
+echo ""
+echo "===================================="
+echo "Summary: $errors errors, $warnings warnings"
+
+if [[ $errors -gt 0 ]]; then
+    echo "❌ Validation failed"
+    echo "   Run: just install home"
+    exit 1
+elif [[ $warnings -gt 0 ]]; then
+    echo "⚠️  Installation incomplete or has issues"
+    echo "   Run: just install home"
+    exit 0
+else
+    echo "✅ All checks passed!"
+    exit 0
+fi

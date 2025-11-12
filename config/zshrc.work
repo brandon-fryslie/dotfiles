@@ -1,0 +1,30 @@
+# .zshrc file for development use at work
+
+PROJECTS_DIR=~/code
+PROJECTS_DIRS=(~/code)
+EDITOR=idea
+VISUAL=idea
+DOTFILES_DIR=$HOME/code/dotfiles
+POWERLEVEL9K_INSTANT_PROMPT=off
+
+source ~/.rad-shell/rad-init.zsh
+# Add customizations below
+
+# To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+
+colormap() {
+  for i in {0..255}; do print -Pn "%K{$i}  %k%F{$i}${(l:3::0:)i}%f " ${${(M)$((i%6)):#3}:+$'\n'}; done
+}
+
+alias ls=lsd
+alias l='ls -l'
+alias la='ls -a'
+alias lla='ls -la'
+alias lt='ls --tree'
+alias l=nav
+# The following lines have been added by Docker Desktop to enable Docker CLI completions.
+fpath=(/Users/brandonfryslie/.docker/completions $fpath)
+autoload -Uz compinit
+compinit
+# End of Docker CLI completions

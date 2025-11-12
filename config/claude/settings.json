@@ -1,0 +1,87 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(cd:*)",
+      "Bash(chmod:*)",
+      "Bash(chmod:*)",
+      "Bash(cp:*)",
+      "Bash(curl:*)",
+      "Bash(diff:*)",
+      "Bash(docker:*)",
+      "Bash(du:*)",
+      "Bash(echo:*)",
+      "Bash(find:*)",
+      "Bash(gh:*)",
+      "Bash(git:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(img4tool:*)",
+      "Bash(less:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(node:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(pip3:*)",
+      "Bash(pip:*)",
+      "Bash(pwd:*)",
+      "Bash(pytest:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(rm:*)",
+      "Bash(sudo pfctl:*)",
+      "Bash(tail:*)",
+      "Bash(touch:*)",
+      "Bash(tree:*)",
+      "Bash(tree:*)",
+      "Bash(tsx:*)",
+      "Bash(uv run:*)",
+      "Bash(uv:*)",
+      "Bash(wc:*)",
+      "Bash(wget:*)",
+      "Bash(which:*)",
+      "BashOutput(*)",
+      "Edit(*)",
+      "ExitPlanMode(*)",
+      "Fetch(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "KillShell(*)",
+      "Ls(*)",
+      "mcp__chrome-devtools",
+      "MultiEdit(*)",
+      "NotebookEdit(*)",
+      "Read(*)",
+      "SlashCommand(*)",
+      "Task(*)",
+      "TodoRead(*)",
+      "TodoWrite(*)",
+      "Update(*)",
+      "Write(*)"
+    ]
+  },
+  "model": "sonnet",
+  "statusLine": {
+    "type": "command",
+    "command": "bash /Users/bmf/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "promptctl@loom99": false,
+    "testing-suite@claude-code-templates": true,
+    "beads@beads-marketplace": true
+  },
+  "alwaysThinkingEnabled": false,
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": {},
+      "type": "stdio"
+    }
+  }
+}
