@@ -7,8 +7,7 @@
       "Bash(just status:*)",
       "Bash(just validate)",
       "Read(//Users/bmf/Library/**)",
-      "Bash(bats:*)",
-      "Read(//Users/bmf/.local/share/uv/tools/**)"
+      "Bash(bats:*)"
     ],
     "deny": [],
     "ask": []

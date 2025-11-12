@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # install - Interactive Dotbot installation wrapper
-# Usage: ./install [home|work|global]
+# Usage: ./install [home|work|base]
 
 set -euo pipefail
 
@@ -18,7 +18,7 @@ if [[ -z "$PROFILE" ]]; then
   echo "Profiles:"
   echo "  home   - Personal development environment"
   echo "  work   - Work environment"
-  echo "  base - Base configuration only"
+  echo "  base   - Base configuration only"
   exit 2
 fi
 
@@ -40,16 +40,22 @@ run_dotbot() {
 
 case "$PROFILE" in
   home)
-    run_dotbot "home profile" install-base.conf.yaml install-claude.conf.yaml install-home.conf.yaml install-rad.conf.yaml
+    run_dotbot "base configuration" install-base.conf.yaml
+    run_dotbot "home profile" install-home.conf.yaml
+    run_dotbot "rad-shell configuration" install-rad.conf.yaml
+    run_dotbot "claude configuration" install-claude.conf.yaml
     ;;
   work)
-    run_dotbot "work profile" install-base.conf.yaml install-work.conf.yaml
+    run_dotbot "base configuration" install-base.conf.yaml
+    run_dotbot "work profile" install-work.conf.yaml
+    run_dotbot "claude configuration" install-claude.conf.yaml
     ;;
   base)
     run_dotbot "base configuration" install-base.conf.yaml
     ;;
   *)
-    run_dotbot "home profile" install-base.conf.yaml "install-${PROFILE}.conf.yaml"
+    run_dotbot "base configuration" install-base.conf.yaml
+    run_dotbot "${PROFILE} profile" "install-${PROFILE}.conf.yaml"
     ;;
 esac
 

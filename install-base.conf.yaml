@@ -5,11 +5,11 @@
 
 # Standard dotfiles
 - link:
-    # Global dotfiles from config/
-    ~/.aider.conf.yml: config/aider.conf.global.yml
-    ~/.gemrc: config/gemrc.global
-    ~/.gitignore_global: config/gitignore_global.global
-    ~/.mackup.cfg: config/mackup.global.cfg
-    ~/.p10k.zsh: config/p10k.global.zsh
-    ~/.rvmrc: config/rvmrc.global
-    ~/.config/tmux: config/tmux
+    # Global dotfiles from dotfiles_global/
+    ~/.aider.conf.yml: dotfiles_global/aider.conf.yml
+    ~/.gemrc: dotfiles_global/gemrc
+    ~/.gitignore_global: dotfiles_global/gitignore_global
+    ~/.mackup.cfg: dotfiles_global/mackup.cfg
+    ~/.p10k.zsh: dotfiles_global/p10k.zsh
+    ~/.rvmrc: dotfiles_global/rvmrc
+    ~/.tmux.conf: dotfiles_global/tmux.conf

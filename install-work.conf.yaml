@@ -5,6 +5,6 @@
 
 - link:
     # Work profile overrides (these take precedence over global)
-    ~/.pypirc: config/pypirc.work
-    ~/.rad-plugins: config/rad-plugins.work
-    ~/.zshrc: config/zshrc.work
+    ~/.pypirc: dotfiles-work/pypirc
+    ~/.rad-plugins: dotfiles-work/rad-plugins
+    ~/.zshrc: dotfiles-work/zshrc
