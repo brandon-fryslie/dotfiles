@@ -5,7 +5,7 @@
       "url": "https://github.com/davila7/claude-code-templates.git"
     },
     "installLocation": "/Users/bmf/.claude/plugins/marketplaces/claude-code-templates",
-    "lastUpdated": "2025-11-05T08:27:53.958Z"
+    "lastUpdated": "2025-11-13T00:01:38.113Z"
   },
   "loom99": {
     "source": {
@@ -21,6 +21,6 @@
       "repo": "steveyegge/beads"
     },
     "installLocation": "/Users/bmf/.claude/plugins/marketplaces/beads-marketplace",
-    "lastUpdated": "2025-11-05T14:28:49.307Z"
+    "lastUpdated": "2025-11-13T00:03:13.269Z"
   }
 }

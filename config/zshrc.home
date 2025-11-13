@@ -205,7 +205,7 @@ export PATH="/Users/bmf/.swiftpm/bin:$PATH"
 ### End of Zinit configuration
 alias danger-claude="claude --dangerously-skip-permissions"
 
-alias clod="claude --dangerously-skip-permissions"
+alias clod="SHELL=bash claude --dangerously-skip-permissions"
 
 alias wb_dl="docker run -v .:/websites wayback_machine_downloader wayback_machine_downloader"
 
