@@ -62,15 +62,27 @@
       "Write(*)"
     ]
   },
-  "model": "sonnet",
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.claude/personal-synced/bin/stop-hook.sh"
+          }
+        ]
+      }
+    ]
+  },
   "statusLine": {
     "type": "command",
-    "command": "bash /Users/bmf/.claude/statusline-command.sh"
+    "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
   },
   "enabledPlugins": {
-    "promptctl@loom99": false,
-    "testing-suite@claude-code-templates": true,
-    "beads@beads-marketplace": true
+    "beads@beads-marketplace": true,
+    "dev-loop@loom99": true,
+    "claude4claude@loom99": true
   },
   "alwaysThinkingEnabled": false,
   "mcpServers": {

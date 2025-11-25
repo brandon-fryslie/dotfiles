@@ -44,7 +44,7 @@ export EDITOR=vi
 
 # Local code configuration
 export PROJECTS_DIR="$HOME/icode"
-PROJECTS_DIRS=(~/icode ~/projects)
+PROJECTS_DIRS=(~/icode ~/projects ~/code)
 export DOTFILES_DIR="$HOME/icode/dotfiles"
 
 # Language configuration
