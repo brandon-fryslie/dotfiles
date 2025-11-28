@@ -21,8 +21,8 @@
 #   "stop_hook_active": true
 # }
 
-# don't loop forever right now
-exit 0
+# don't loop forever right now, unless CLOD_LOOP_FOREVER == 1
+[[ $CLOD_LOOP_FOREVER == 1 ]] || exit 0
 
 # Read JSON from stdin and parse with jq
 session_id=$(jq -r '.session_id')

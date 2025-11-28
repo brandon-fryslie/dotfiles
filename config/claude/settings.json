@@ -84,7 +84,7 @@
     "dev-loop@loom99": true,
     "claude4claude@loom99": true
   },
-  "alwaysThinkingEnabled": false,
+  "alwaysThinkingEnabled": true,
   "mcpServers": {
     "context7": {
       "command": "npx",
