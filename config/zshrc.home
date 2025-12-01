@@ -1,6 +1,9 @@
 # Uncomment to enable profiling
 # zmodload zsh/zprof
 
+export DOTFILES_DIR="$HOME/icode/dotfiles"
+
+
 # Automatically deduplicate PATH entries
 typeset -U path
 
@@ -24,8 +27,8 @@ else
   export ZGEN_INIT=~/.zgenom/sources/init.zsh
 fi
 
-# Source rad-shell with appropriate plugin set
-source ~/.rad-shell/rad-init.zsh
+# Source base zshrc
+source "${DOTFILES_DIR}/config/zshrc.base"
 
 # Load p10k theme (skip for Claude since we don't need fancy prompts)
 if not_claude; then
@@ -34,30 +37,12 @@ fi
 
 # Add customizations below
 
-# Theme configuration
-export ENABLE_DOCKER_PROMPT=true
-export LAZY_NODE_PROMPT=true
-
-# Editor configuration
-export VISUAL=idea
-export EDITOR=vi
-
 # Local code configuration
 export PROJECTS_DIR="$HOME/icode"
 PROJECTS_DIRS=(~/icode ~/projects ~/code)
-export DOTFILES_DIR="$HOME/icode/dotfiles"
-
-# Language configuration
-
-
-# Ruby
-#export PATH="$HOME/.rvm/bin:$PATH"
 
 # Python
 export PATH="/usr/local/opt/python/libexec/bin:$PATH"
-
-# Github configuration
-export GHE_USERNAME=brandon-fryslie
 
 # ---
 
@@ -77,17 +62,6 @@ local-ip() {
   done
 }
 
-AUTO_MENU=true
-AUTO_LIST=true
-#unsetopt listambiguous
-setopt AUTO_MENU
-setopt AUTO_LIST
-setopt GLOB_COMPLETE
-setopt COMPLETE_ALIASES
-setopt AUTO_PARAM_SLASH
-
-# TODO: move this to a plugin
-zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
 
 # TODO: move this to a plugin
 JAVA_VERSION="temurin-11"
@@ -96,9 +70,6 @@ PATH="/Library/Java/JavaVirtualMachines/${JAVA_VERSION}.jdk/Contents/Home/bin/:$
 
 # what's this for?
 PATH="$PATH:/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/bin"
-
-# TODO: plugin
-export DOCKER_HOST="unix://$HOME/.lima/docker.sock"
 
 # pyenv (lazy-loaded on first use)
 export PYENV_ROOT="$HOME/.pyenv"
@@ -205,7 +176,6 @@ export PATH="/Users/bmf/.swiftpm/bin:$PATH"
 ### End of Zinit configuration
 alias danger-claude="claude --dangerously-skip-permissions"
 
-alias clod="SHELL=bash claude --dangerously-skip-permissions"
 
 alias wb_dl="docker run -v .:/websites wayback_machine_downloader wayback_machine_downloader"
 

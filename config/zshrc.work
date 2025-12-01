@@ -1,14 +1,14 @@
 # .zshrc file for development use at work
 
 PROJECTS_DIR=~/code
-PROJECTS_DIRS=(~/code)
-EDITOR=idea
-VISUAL=idea
+PROJECTS_DIRS=(~/code ~/projects)
+
 DOTFILES_DIR=$HOME/code/dotfiles
 POWERLEVEL9K_INSTANT_PROMPT=off
 
-source ~/.rad-shell/rad-init.zsh
-# Add customizations below
+# Source base zshrc
+source "${DOTFILES_DIR}/zshrc.base"
+
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
