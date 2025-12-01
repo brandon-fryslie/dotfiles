@@ -1,0 +1,26 @@
+
+# Automatically deduplicate PATH entries
+typeset -U path
+
+setopt clobber
+setopt share_history
+
+# source rad-shell
+source ~/.rad-shell/rad-init.zsh
+
+# Editor configuration
+export VISUAL=idea
+export EDITOR=nvim
+
+AUTO_MENU=true
+AUTO_LIST=true
+#unsetopt listambiguous
+setopt AUTO_MENU
+setopt AUTO_LIST
+setopt GLOB_COMPLETE
+setopt COMPLETE_ALIASES
+setopt AUTO_PARAM_SLASH
+
+
+# TODO: move this to a plugin
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
