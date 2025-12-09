@@ -18,3 +18,4 @@
     ~/.rvmrc: config/rvmrc.global
     ~/.config/tmux: config/tmux
     ~/.config/tmux-powerline: config/tmux-powerline
+    ~/.config/nvim: config/nvim
