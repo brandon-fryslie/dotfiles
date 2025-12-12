@@ -192,3 +192,7 @@ export ABDUCO_CMD=zsh
 # Final PATH deduplication (removes duplicates added by plugins/tools)
 # This ensures PATH stays clean even when plugins add duplicate entries
 typeset -U path
+
+# Java 21 default (added by Claude)
+export JAVA_HOME="$HOME/.sdkman/candidates/java/current"
+export PATH="$JAVA_HOME/bin:$PATH"
