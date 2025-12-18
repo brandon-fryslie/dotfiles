@@ -60,7 +60,8 @@
       "TodoWrite(*)",
       "Update(*)",
       "Write(*)"
-    ]
+    ],
+    "defaultMode": "acceptEdits"
   },
   "hooks": {
     "Stop": [
@@ -80,9 +81,11 @@
     "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
   },
   "enabledPlugins": {
-    "beads@beads-marketplace": true,
+    "beads@beads-marketplace": false,
     "dev-loop@loom99": true,
-    "claude4claude@loom99": true
+    "claude4claude@loom99": true,
+    "do@loom99": true,
+    "example-skills@anthropic-agent-skills": true
   },
   "alwaysThinkingEnabled": true,
   "mcpServers": {
