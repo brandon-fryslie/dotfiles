@@ -192,3 +192,18 @@ export ABDUCO_CMD=zsh
 # Final PATH deduplication (removes duplicates added by plugins/tools)
 # This ensures PATH stays clean even when plugins add duplicate entries
 typeset -U path
+
+# Java 21 default
+export JAVA_HOME="$HOME/.sdkman/candidates/java/current"
+export PATH="$JAVA_HOME/bin:$PATH"
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+
+alias aclod="archgw cli-agent claude --path /Users/bmf/code/arch/demos/use_cases/claude_code_router"
+
+unalias zlod
+zlod() (
+    export ANTHROPIC_AUTH_TOKEN="6d4b127e65cb43baaf36f98203986a57.WXgDqIGNomsCUOw3"
+    export ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
+    export API_TIMEOUT_MS="3000000"
+    clod
+)
