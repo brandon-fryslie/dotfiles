@@ -28,5 +28,6 @@ SPRINT-*.md
 config/tmux/plugins
 config/claude/plugins-config/installed_plugins.json
 config/claude/plugins-config/known_marketplaces.json
+config/nvim/lazy-lock.json
 .beads
 .backup/

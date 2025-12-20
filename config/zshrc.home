@@ -4,6 +4,9 @@
 export DOTFILES_DIR="$HOME/icode/dotfiles"
 
 
+export DOTFILES_DIR="$HOME/icode/dotfiles"
+
+
 # Automatically deduplicate PATH entries
 typeset -U path
 
@@ -71,37 +74,18 @@ PATH="/Library/Java/JavaVirtualMachines/${JAVA_VERSION}.jdk/Contents/Home/bin/:$
 # what's this for?
 PATH="$PATH:/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/bin"
 
-# pyenv (lazy-loaded on first use)
 export PYENV_ROOT="$HOME/.pyenv"
 command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
 
-# Lazy-load pyenv to speed up shell startup
-pyenv() {
-  unfunction pyenv
+command -v pyenv >/dev/null && {
   eval "$(command pyenv init -)"
   eval "$(command pyenv init --path)"
-  which pyenv-virtualenv-init > /dev/null && eval "$(command pyenv virtualenv-init -)"
-  pyenv "$@"
+  eval "$(command pyenv virtualenv-init -)"
 }
 
-# Lazy-load python to trigger pyenv
-python() {
-  unfunction python
-  eval "$(command pyenv init -)"
-  eval "$(command pyenv init --path)"
-  which pyenv-virtualenv-init > /dev/null && eval "$(command pyenv virtualenv-init -)"
-  python "$@"
-}
-
-# SDKMAN (lazy-loaded on first use)
+# SDKMAN
 export SDKMAN_DIR="$HOME/.sdkman"
-
-# Lazy-load SDKMAN on first use
-sdk() {
-  unfunction sdk
-  [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-  sdk "$@"
-}
+[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
 
 # Crazy codesigning thing
 #add-debug-entitlement() {
@@ -128,12 +112,8 @@ esac
 alias n4j="/opt/homebrew/opt/neo4j/bin/neo4j console"
 alias venv-direnv="echo 'source .venv/bin/activate' >> .envrc && direnv allow"
 
-# Lazy-load fnm on first use
-fnm() {
-  unfunction fnm
-  eval "$(command fnm env --use-on-cd --shell zsh)"
-  fnm "$@"
-}
+# load fnm/node
+eval "$(command fnm env --use-on-cd --shell zsh)"
 
 # NVM removed - using fnm instead for faster Node.js version management
 export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
@@ -179,12 +159,7 @@ alias danger-claude="claude --dangerously-skip-permissions"
 
 alias wb_dl="docker run -v .:/websites wayback_machine_downloader wayback_machine_downloader"
 
-# Lazy-load mcpi completions
-mcpi() {
-  unfunction mcpi
-  type mcpi &>/dev/null && eval "$(_MCPI_COMPLETE=zsh_source command mcpi)"
-  mcpi "$@"
-}
+type mcpi &>/dev/null && eval "$(_MCPI_COMPLETE=zsh_source command mcpi)"
 
 export UV_PYTHON=3.12
 export ABDUCO_CMD=zsh
@@ -193,6 +168,13 @@ export ABDUCO_CMD=zsh
 # This ensures PATH stays clean even when plugins add duplicate entries
 typeset -U path
 
+# Set up fzf key bindings and fuzzy completion
+source <(fzf --zsh)
+eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
+# Set up fzf key bindings and fuzzy completion
+source <(fzf --zsh)
+eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
+
 # Java 21 default
 export JAVA_HOME="$HOME/.sdkman/candidates/java/current"
 export PATH="$JAVA_HOME/bin:$PATH"
@@ -200,7 +182,7 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 
 alias aclod="archgw cli-agent claude --path /Users/bmf/code/arch/demos/use_cases/claude_code_router"
 
-unalias zlod
+alias zlod &>/dev/null && unalias zlod
 zlod() (
     export ANTHROPIC_AUTH_TOKEN="6d4b127e65cb43baaf36f98203986a57.WXgDqIGNomsCUOw3"
     export ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
