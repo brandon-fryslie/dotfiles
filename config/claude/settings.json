@@ -83,9 +83,9 @@
   "enabledPlugins": {
     "beads@beads-marketplace": false,
     "dev-loop@loom99": true,
-    "claude4claude@loom99": true,
+    "claude4claude@loom99": false,
     "do@loom99": true,
-    "example-skills@anthropic-agent-skills": true
+    "example-skills@anthropic-agent-skills": false
   },
   "alwaysThinkingEnabled": true,
   "mcpServers": {
