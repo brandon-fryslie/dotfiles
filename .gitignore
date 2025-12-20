@@ -31,3 +31,4 @@ config/claude/plugins-config/known_marketplaces.json
 config/nvim/lazy-lock.json
 .beads
 .backup/
+.agent_logs/
