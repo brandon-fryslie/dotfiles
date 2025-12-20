@@ -1,10 +1,7 @@
 # Uncomment to enable profiling
 # zmodload zsh/zprof
 
-export DOTFILES_DIR="$HOME/icode/dotfiles"
-
-
-export DOTFILES_DIR="$HOME/icode/dotfiles"
+export DOTFILES_DIR="$HOME/code/dotfiles"
 
 
 # Automatically deduplicate PATH entries
