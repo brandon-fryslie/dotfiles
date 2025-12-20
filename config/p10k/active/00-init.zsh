@@ -1,14 +1,18 @@
-# p10k initialization
-# Option preservation, unset existing config, version check
+# Personal p10k initialization
+# Sources rad-p10k plugin and sets up personal overrides
+#
+# This file sources the shareable rad-p10k configuration from rad-plugins,
+# then applies personal customizations on top.
 
 emulate -L zsh -o extended_glob
 
-# Unset all configuration options. This allows you to apply configuration changes without
-# restarting zsh. Edit ~/.p10k.zsh and type `source ~/.p10k.zsh`.
-unset -m '(POWERLEVEL9K_*|DEFAULT_USER)~POWERLEVEL9K_GITSTATUS_DIR'
+# Source rad-p10k plugin for base configuration
+# rad-p10k provides: styling, segments, git formatter, transient prompt
+if [[ -f "${RAD_PLUGINS_DIR:-$HOME/code/brandon-fryslie_rad-plugins}/rad-p10k/rad-p10k.plugin.zsh" ]]; then
+  source "${RAD_PLUGINS_DIR:-$HOME/code/brandon-fryslie_rad-plugins}/rad-p10k/rad-p10k.plugin.zsh"
+fi
 
-# Zsh >= 5.1 is required.
-[[ $ZSH_VERSION == (5.<1->*|<6->.*) ]] || return
-
-# Disable gitstatusd (avoids spawning the gitstatus daemon; removes git info from prompt).
+# Personal override: Disable gitstatus daemon (use vcs_info instead)
+# This is a personal preference - gitstatus is faster but vcs_info integrates
+# with the git-taculous theme hooks
 typeset -g POWERLEVEL9K_DISABLE_GITSTATUS=true

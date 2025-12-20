@@ -1,5 +1,9 @@
 # Git-taculous git status (vcs_info-based)
-# Custom git status using vcs_info instead of gitstatus daemon
+# Personal custom git status using vcs_info instead of gitstatus daemon
+#
+# This is a personal preference that integrates with the git-taculous theme
+# from rad-plugins. It uses vcs_info hooks for git status instead of the
+# faster gitstatus daemon, providing consistent behavior with the theme.
 
 if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
   typeset -g GITTACULOUS_VCS_SETUP_DONE=true
