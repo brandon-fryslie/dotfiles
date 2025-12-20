@@ -1,24 +1,22 @@
-# Prompt elements configuration
-# LEFT and RIGHT prompt element arrays
+# Personal prompt elements configuration
+# Overrides the default prompt elements from rad-p10k
+#
+# These are personal preferences for which segments appear in the prompt.
+# The rad-p10k plugin provides defaults, but these are overridden here.
 
-### RAD-LEFT-ELEMENTS RAD-ELEMENTS
-# The list of segments shown on the left. Fill it with the most important segments.
+# Left prompt: directory, per-directory-history indicator, and custom git
 typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
   # =========================[ Line #1 ]=========================
   # os_icon               # os identifier
   dir                     # current directory
   per_directory_history_joined   # Oh My Zsh per-directory-history local/global indicator
-  custom_git_taculous     # git status (vcs_info-based, no daemon)
+  custom_git_taculous     # git status (vcs_info-based, no daemon) - personal preference
   # =========================[ Line #2 ]=========================
   newline                 # \n
-  prompt_char           # prompt symbol
+  prompt_char             # prompt symbol
 )
 
-### RAD-RIGHT-ELEMENTS
-# The list of segments shown on the right. Fill it with less important segments.
-# Right prompt on the last prompt line (where you are typing your commands) gets
-# automatically hidden when the input line reaches it. Right prompt above the
-# last prompt line gets hidden if it would overlap with left prompt.
+# Right prompt: common tools and status indicators
 typeset -g POWERLEVEL9K_RIGHT_PROMPT_ELEMENTS=(
   # =========================[ Line #1 ]=========================
   command_execution_time  # duration of the last command
