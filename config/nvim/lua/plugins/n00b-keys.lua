@@ -8,5 +8,8 @@ return {
     dir = use_local and local_dev_path or nil,
     lazy = false,
     opts = {},
+    keys = {
+      { "<leader>h", "<cmd>Noobkeys<cr>", desc = "n00bkeys" },
+    },
   },
 }
