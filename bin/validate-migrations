@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# validate-migrations - Lint migration scripts for required structure
+#
+# Validates:
+# - Required header fields (Author, Created, Problem, Fix, Safe to delete after)
+# - Required functions (migrate_check, migrate_apply)
+# - File naming convention (NNNN-name.sh)
+# - Functions are implemented (not just TODO placeholders)
+
+set -euo pipefail
+
+MIGRATIONS_DIR="${1:-$(dirname "$0")/../migrations}"
+errors=0
+warnings=0
+
+# Colors (disabled if not a terminal)
+if [[ -t 1 ]]; then
+    RED='\033[0;31m'
+    YELLOW='\033[0;33m'
+    GREEN='\033[0;32m'
+    NC='\033[0m'
+else
+    RED=''
+    YELLOW=''
+    GREEN=''
+    NC=''
+fi
+
+error() {
+    echo -e "${RED}ERROR${NC}: $1" >&2
+    errors=$((errors + 1))
+}
+
+warn() {
+    echo -e "${YELLOW}WARN${NC}: $1" >&2
+    warnings=$((warnings + 1))
+}
+
+ok() {
+    echo -e "${GREEN}OK${NC}: $1"
+}
+
+# Find all migration scripts (excluding template and runner)
+migration_files=$(find "$MIGRATIONS_DIR" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-*.sh' -type f 2>/dev/null | sort)
+
+if [[ -z "$migration_files" ]]; then
+    echo "No migration scripts found in $MIGRATIONS_DIR"
+    exit 0
+fi
+
+for migration in $migration_files; do
+    name=$(basename "$migration")
+    echo ""
+    echo "Checking: $name"
+    echo "---"
+
+    # Check file naming
+    if ! [[ "$name" =~ ^[0-9]{4}-[a-z0-9-]+\.sh$ ]]; then
+        error "$name: Invalid filename format (expected NNNN-kebab-case-name.sh)"
+    fi
+
+    # Check required header fields
+    required_headers=("Author:" "Created:" "Problem:" "Fix:" "Safe to delete after:")
+    for header in "${required_headers[@]}"; do
+        if ! grep -q "^# .*${header}" "$migration"; then
+            error "$name: Missing required header field: $header"
+        fi
+    done
+
+    # Check for TODO placeholders in headers (means not filled in)
+    if grep -q "^#.*TODO:" "$migration"; then
+        error "$name: Contains unfilled TODO placeholders in header"
+    fi
+
+    # Check required functions exist
+    if ! grep -q "^migrate_check()" "$migration"; then
+        error "$name: Missing required function: migrate_check()"
+    fi
+
+    if ! grep -q "^migrate_apply()" "$migration"; then
+        error "$name: Missing required function: migrate_apply()"
+    fi
+
+    # Check that functions have implementation (not just comments/return)
+    # Source the file in a subshell and check function bodies
+    if grep -q "^migrate_check()" "$migration"; then
+        # Extract function body and check it's not empty/placeholder
+        body=$(sed -n '/^migrate_check()/,/^}/p' "$migration" | grep -v "^#" | grep -v "^migrate_check" | grep -v "^}" | grep -v "^\s*$" || true)
+        if [[ -z "$body" ]] || [[ "$body" =~ "TODO: implement" ]]; then
+            error "$name: migrate_check() is not implemented"
+        fi
+    fi
+
+    if grep -q "^migrate_apply()" "$migration"; then
+        body=$(sed -n '/^migrate_apply()/,/^}/p' "$migration" | grep -v "^#" | grep -v "^migrate_apply" | grep -v "^}" | grep -v "^\s*$" || true)
+        if [[ -z "$body" ]] || [[ "$body" =~ "TODO: implement" ]]; then
+            error "$name: migrate_apply() is not implemented"
+        fi
+    fi
+
+    # Check script is executable
+    if [[ ! -x "$migration" ]]; then
+        warn "$name: Script is not executable (chmod +x)"
+    fi
+
+    # Check shebang
+    if ! head -1 "$migration" | grep -q "^#!/usr/bin/env bash"; then
+        warn "$name: Missing or incorrect shebang (expected #!/usr/bin/env bash)"
+    fi
+
+    # Syntax check
+    if ! bash -n "$migration" 2>/dev/null; then
+        error "$name: Bash syntax error"
+    fi
+
+    # If no errors for this file, mark as OK
+    if [[ $errors -eq 0 ]]; then
+        ok "$name passes all checks"
+    fi
+done
+
+echo ""
+echo "================================"
+echo "Migration validation: $errors errors, $warnings warnings"
+
+if [[ $errors -gt 0 ]]; then
+    exit 1
+fi
+
+exit 0
