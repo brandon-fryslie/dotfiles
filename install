@@ -5,8 +5,6 @@
 set -euo pipefail
 
 BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DOTBOT_DIR="dotbot"
-DOTBOT_BIN="bin/dotbot"
 
 cd "${BASEDIR}"
 
@@ -35,7 +33,7 @@ run_dotbot() {
     config_args+=(-c "$config")
   done
 
-  "${BASEDIR}/${DOTBOT_DIR}/${DOTBOT_BIN}" -d "${BASEDIR}" "${config_args[@]}"
+  uv run dotbot -d "${BASEDIR}" "${config_args[@]}"
 }
 
 case "$PROFILE" in
