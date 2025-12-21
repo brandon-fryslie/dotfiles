@@ -18,10 +18,10 @@ if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
   if ! zstyle -L ':vcs_info:git*:*' get-revision >/dev/null 2>&1; then
     zstyle ':vcs_info:git*:*' get-revision true
     zstyle ':vcs_info:git*:*' check-for-changes true
-    zstyle ':vcs_info:git*:*' stagedstr "%F{green}S%F{252}%B"
-    zstyle ':vcs_info:git*:*' unstagedstr "%F{red}U%F{252}%B"
-    zstyle ':vcs_info:git*' formats "%F{252}(%s) %12.12i %c%u %b%m%f"
-    zstyle ':vcs_info:git*' actionformats "%F{252}(%s|%F{white}%a%F{252}) %12.12i %c%u %b%m%f"
+    zstyle ':vcs_info:git*:*' stagedstr "%F{green}S%F{black}%B"
+    zstyle ':vcs_info:git*:*' unstagedstr "%F{red}U%F{black}%B"
+    zstyle ':vcs_info:git*' formats "%F{black}%B(%s) %12.12i %c%u %b%m%f"
+    zstyle ':vcs_info:git*' actionformats "%F{black}%B(%s|%F{white}%a%F{black}%B) %12.12i %c%u %b%m%f"
   fi
   if ! zstyle -L ':vcs_info:git*+set-message:*' hooks >/dev/null 2>&1; then
     zstyle ':vcs_info:git*+set-message:*' hooks git-st git-stash git-username
@@ -34,9 +34,9 @@ if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
     remote=${$(git rev-parse --verify ${hook_com[branch]}@{upstream} --symbolic-full-name --abbrev-ref 2>/dev/null)}
     if [[ -n ${remote} ]]; then
       ahead=$(git rev-list ${hook_com[branch]}@{upstream}..HEAD 2>/dev/null | wc -l | sed -e 's/^[[:blank:]]*//')
-      (( ahead )) && gitstatus+=( "%F{green}+${ahead}%F{252}" )
+      (( ahead )) && gitstatus+=( "%F{green}+${ahead}%F{black}%B" )
       behind=$(git rev-list HEAD..${hook_com[branch]}@{upstream} 2>/dev/null | wc -l | sed -e 's/^[[:blank:]]*//')
-      (( behind )) && gitstatus+=( "%F{red}-${behind}%F{252}" )
+      (( behind )) && gitstatus+=( "%F{red}-${behind}%F{black}%B" )
       [[ ${#gitstatus} -gt 0 ]] && gitstatus=" ${(j:/:)gitstatus}"
       hook_com[branch]="${hook_com[branch]} [${remote}${gitstatus}]"
     fi
