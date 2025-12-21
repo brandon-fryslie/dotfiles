@@ -9,6 +9,7 @@ brandon-fryslie/rad-plugins dotfiles
 # 3rd Party plugins
 ohmyzsh/ohmyzsh plugins/docker
 
+
 # Enhanced fork of zaw
 brandon-fryslie/zaw
 zsh-users/zsh-autosuggestions

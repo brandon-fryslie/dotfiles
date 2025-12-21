@@ -3,6 +3,8 @@
 
 export DOTFILES_DIR="$HOME/code/dotfiles"
 
+# Run dotfiles migrations (lightweight, idempotent)
+[[ -f "${DOTFILES_DIR}/migrations/run-migrations.sh" ]] && source "${DOTFILES_DIR}/migrations/run-migrations.sh"
 
 # Automatically deduplicate PATH entries
 typeset -U path
