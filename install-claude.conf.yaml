@@ -17,5 +17,4 @@
     ~/.claude/settings.json: config/claude/settings.json
     # Symlink individual files inside the plugins directory
     ~/.claude/plugins/config.json: config/claude/plugins-config/config.json
-    ~/.claude/plugins/installed_plugins.json: config/claude/plugins-config/installed_plugins.json
-    ~/.claude/plugins/known_marketplaces.json: config/claude/plugins-config/known_marketplaces.json
+

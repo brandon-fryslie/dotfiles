@@ -9,3 +9,4 @@
     ~/.rad-plugins: config/rad-plugins.home
     ~/.zshrc: config/zshrc.home
     ~/.config/tmux: config/tmux
+    ~/.config/codex: config/codex
