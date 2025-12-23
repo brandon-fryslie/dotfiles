@@ -81,11 +81,17 @@
     "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
   },
   "enabledPlugins": {
-    "beads@beads-marketplace": false,
+    "beads@beads-marketplace": true,
     "dev-loop@loom99": true,
     "claude4claude@loom99": false,
     "do@loom99": true,
-    "example-skills@anthropic-agent-skills": false
+    "example-skills@anthropic-agent-skills": true,
+    "claude-opus-4-5-migration@claude-code-plugins": true,
+    "feature-dev@claude-code-plugins": true,
+    "frontend-design@claude-code-plugins": true,
+    "document-skills@anthropic-agent-skills": true,
+    "ralph-wiggum@claude-code-plugins": true,
+    "lp@loom99": true
   },
   "alwaysThinkingEnabled": true,
   "mcpServers": {
