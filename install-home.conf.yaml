@@ -3,6 +3,9 @@
       relink: true
       force: true
 
+- create:
+    - ~/.codex
+
 - link:
     # Home profile overrides (these take precedence over global)
     ~/.mackup.cfg: config/mackup.home.cfg

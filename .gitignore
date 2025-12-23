@@ -32,3 +32,10 @@ config/nvim/lazy-lock.json
 .beads
 .backup/
 .agent_logs/
+config/codex/auth.json
+config/codex/history
+config/codex/auth.json
+config/codex/history.jsonl
+config/codex/log/codex-tui.log
+config/codex/sessions/
+config/codex/skills/.system/
