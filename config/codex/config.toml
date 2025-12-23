@@ -1,0 +1,9 @@
+[projects."/Users/bmf/code/oscilla-animator"]
+trust_level = "trusted"
+
+[projects."/Users/bmf/code/oscilla-animator_codex"]
+trust_level = "trusted"
+
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest"]
