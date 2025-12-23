@@ -10,6 +10,6 @@
       force: true
 
 - link:
-    ~/.zgenom/sources/brandon-fryslie/rad-shell/___: ~/icode/brandon-fryslie_rad-shell
-    ~/.zgenom/sources/brandon-fryslie/rad-plugins/___: ~/icode/brandon-fryslie_rad-plugins
+    ~/.zgenom/sources/brandon-fryslie/rad-shell/___: ~/code/brandon-fryslie_rad-shell
+    ~/.zgenom/sources/brandon-fryslie/rad-plugins/___: ~/code/brandon-fryslie_rad-plugins
     ~/.rad-shell: ~/.zgenom/sources/brandon-fryslie/rad-shell/___
