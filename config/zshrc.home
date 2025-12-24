@@ -188,3 +188,11 @@ zlod() (
     export API_TIMEOUT_MS="3000000"
     clod
 )
+
+proxod() (
+    export ANTHROPIC_BASE_URL="http://localhost:3001"
+    export API_TIMEOUT_MS="3000000"
+    clod
+)
+
+alias wt="yagwt"

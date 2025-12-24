@@ -15,6 +15,4 @@
     ~/.claude/personal-synced: config/claude/personal-synced
     ~/.claude/CLAUDE.md: config/claude/CLAUDE.md
     ~/.claude/settings.json: config/claude/settings.json
-    # Symlink individual files inside the plugins directory
-    ~/.claude/plugins/config.json: config/claude/plugins-config/config.json
 
