@@ -20,7 +20,7 @@
 #   "hook_event_name": "Stop",
 #   "stop_hook_active": true
 # }
-
+exit 0
 # don't loop forever right now, unless CLOD_LOOP_FOREVER == 1
 [[ $CLOD_LOOP_FOREVER == 1 ]] || exit 0
 
