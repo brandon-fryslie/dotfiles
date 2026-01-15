@@ -72,8 +72,6 @@
     "beads@beads-marketplace": false,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "code-review@claude-plugins-official": false,
-    "do-extra@loom99": true,
-    "do-more@loom99": true,
     "feature-dev@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": false,
     "playwright@claude-plugins-official": false,
@@ -87,8 +85,8 @@
     "typescript-lsp@claude-plugins-official": false,
     "figma@claude-plugins-official": false,
     "ralph-loop@claude-plugins-official": true,
-    "do@loom99": true,
-    "code-simplifier@claude-plugins-official": true
+    "code-simplifier@claude-plugins-official": true,
+    "do@loom99": true
   },
   "alwaysThinkingEnabled": false,
   "promptSuggestionEnabled": false
