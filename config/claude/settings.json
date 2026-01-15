@@ -63,22 +63,33 @@
     ],
     "defaultMode": "acceptEdits"
   },
+  "hooks": {},
   "statusLine": {
     "type": "command",
     "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
   },
   "enabledPlugins": {
-    "beads@beads-marketplace": true,
-    "dev-loop@loom99": true,
-    "claude4claude@loom99": false,
+    "beads@beads-marketplace": false,
+    "chrome-devtools-mcp@chrome-devtools-plugins": false,
+    "code-review@claude-plugins-official": false,
+    "do-extra@loom99": true,
+    "do-more@loom99": true,
+    "feature-dev@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "playwright@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": false,
+    "pyright-lsp@claude-plugins-official": false,
+    "ralph-wiggum@claude-plugins-official": false,
+    "repomix-commands@repomix": false,
+    "repomix-explorer@repomix": false,
+    "repomix-mcp@repomix": false,
+    "typescript-lsp@claude-plugins-official": false,
+    "figma@claude-plugins-official": false,
+    "ralph-loop@claude-plugins-official": true,
     "do@loom99": true,
-    "example-skills@anthropic-agent-skills": true,
-    "claude-opus-4-5-migration@claude-code-plugins": true,
-    "feature-dev@claude-code-plugins": true,
-    "frontend-design@claude-code-plugins": true,
-    "document-skills@anthropic-agent-skills": true,
-    "ralph-wiggum@claude-code-plugins": true,
-    "lp@loom99": true
+    "code-simplifier@claude-plugins-official": true
   },
-  "alwaysThinkingEnabled": true
+  "alwaysThinkingEnabled": false,
+  "promptSuggestionEnabled": false
 }
