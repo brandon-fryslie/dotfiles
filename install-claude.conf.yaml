@@ -16,3 +16,10 @@
     ~/.claude/CLAUDE.md: config/claude/CLAUDE.md
     ~/.claude/settings.json: config/claude/settings.json
 
+- create:
+    - ~/.copilot
+    - ~/.copilot/skills
+
+- link:
+    ~/.copilot/copilot-instructions.md: config/copilot/copilot-instructions.md
+    ~/.copilot/skills/claude-plugin-sync: config/copilot/skills/claude-plugin-sync
