@@ -30,6 +30,7 @@ config/nvim/lazy-lock.json
 .beads
 .backup/
 .agent_logs/
+.env.keys
 config/codex/auth.json
 config/codex/history
 config/codex/auth.json
