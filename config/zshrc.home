@@ -196,3 +196,7 @@ proxod() (
 )
 
 alias wt="yagwt"
+mlod() {
+  local claude_config_dir="$DOTFILES_DIR/config/claude"
+  SHELL=bash dotenvx run -f $claude_config_dir/.env.minimax -- claude --dangerously-skip-permissions --settings $claude_config_dir/settings.minimax.json
+}

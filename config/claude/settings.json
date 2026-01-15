@@ -63,19 +63,6 @@
     ],
     "defaultMode": "acceptEdits"
   },
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.claude/personal-synced/bin/stop-hook.sh"
-          }
-        ]
-      }
-    ]
-  },
   "statusLine": {
     "type": "command",
     "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
@@ -93,16 +80,5 @@
     "ralph-wiggum@claude-code-plugins": true,
     "lp@loom99": true
   },
-  "alwaysThinkingEnabled": true,
-  "mcpServers": {
-    "context7": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp"
-      ],
-      "env": {},
-      "type": "stdio"
-    }
-  }
+  "alwaysThinkingEnabled": true
 }
