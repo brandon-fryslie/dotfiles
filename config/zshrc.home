@@ -41,7 +41,7 @@ fi
 
 # Local code configuration
 export PROJECTS_DIR="$HOME/icode"
-PROJECTS_DIRS=(~/icode ~/projects ~/code)
+export PROJECTS_DIRS="~/icode ~/projects ~/code"
 
 # Python
 export PATH="/usr/local/opt/python/libexec/bin:$PATH"
@@ -153,15 +153,9 @@ export PATH="/Users/bmf/.swiftpm/bin:$PATH"
 #     OMZP::sudo
 
 ### End of Zinit configuration
-alias danger-claude="claude --dangerously-skip-permissions"
 
-
-alias wb_dl="docker run -v .:/websites wayback_machine_downloader wayback_machine_downloader"
-
-type mcpi &>/dev/null && eval "$(_MCPI_COMPLETE=zsh_source command mcpi)"
 
 export UV_PYTHON=3.12
-export ABDUCO_CMD=zsh
 
 # Final PATH deduplication (removes duplicates added by plugins/tools)
 # This ensures PATH stays clean even when plugins add duplicate entries
@@ -182,21 +176,39 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 21)
 alias aclod="archgw cli-agent claude --path /Users/bmf/code/arch/demos/use_cases/claude_code_router"
 
 alias zlod &>/dev/null && unalias zlod
+
 zlod() (
-    export ANTHROPIC_AUTH_TOKEN="6d4b127e65cb43baaf36f98203986a57.WXgDqIGNomsCUOw3"
     export ANTHROPIC_BASE_URL="https://api.z.ai/api/anthropic"
     export API_TIMEOUT_MS="3000000"
     clod
 )
 
-proxod() (
-    export ANTHROPIC_BASE_URL="http://localhost:3001"
-    export API_TIMEOUT_MS="3000000"
-    clod
-)
+alias wt="gfb"
 
 alias wt="yagwt"
 mlod() {
   local claude_config_dir="$DOTFILES_DIR/config/claude"
   SHELL=bash dotenvx run -f $claude_config_dir/.env.minimax -- claude --dangerously-skip-permissions --settings $claude_config_dir/settings.minimax.json
 }
+
+zlod() {
+  local claude_config_dir="$DOTFILES_DIR/config/claude"
+  SHELL=bash dotenvx run -f $claude_config_dir/.env.zai -- claude --dangerously-skip-permissions --settings $claude_config_dir/settings.zai.json
+}
+
+eval "$(gfb completion zsh)"
+export COLORTERM=truecolor
+
+### zsh plugin manager
+z() {
+  local plugin="$1" repo="${plugin%@*}" branch="${plugin#*@}" dir="${HOME}/.zsh/p/${repo}" name="${repo:t}"; [[ "${branch}" == "${plugin}" ]] && branch=HEAD
+  [[ -d "${dir}/.git" ]] || git clone -q --depth=1 ${branch!=HEAD:+--branch "${branch}"} "https://github.com/${repo}.git" "${dir}"
+  fpath=("${dir}" "${dir}/completions" "${dir}/functions" $fpath); shift; (( "$#" )) && source "${^dir}/$@" || source "${dir}/${name}"{.plugin,}.zsh(N[1])
+}
+
+
+## proj2 - project navigator
+source "/Users/bmf/.local/share/proj2/proj2.plugin.zsh"
+eval "$(git wt --init zsh)"
+eval "$(gfb --shell-init)"GOBIN=$HOME/.bin
+export GOBIN=$HOME/.local/bin
