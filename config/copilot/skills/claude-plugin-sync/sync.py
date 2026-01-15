@@ -107,6 +107,20 @@ def find_agents(plugin_path: Path) -> List[Tuple[str, Path]]:
     return agents
 
 
+def find_commands(plugin_path: Path) -> List[Tuple[str, Path]]:
+    """Find all commands in a plugin directory."""
+    commands = []
+    commands_dir = plugin_path / "commands"
+    
+    if not commands_dir.exists():
+        return commands
+    
+    for command_file in commands_dir.glob("*.md"):
+        commands.append((command_file.stem, command_file))
+    
+    return commands
+
+
 def load_manifest() -> Dict:
     """Load the previous sync manifest."""
     if not MANIFEST_FILE.exists():
@@ -178,29 +192,97 @@ def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, str]], int, int]
     return None, 0, 0
 
 
+def extract_frontmatter_and_body(content: str) -> Tuple[Optional[List[str]], List[str]]:
+    """Extract frontmatter lines and body lines from content.
+    
+    Returns:
+        (frontmatter_lines, body_lines) - frontmatter_lines is None if no frontmatter exists
+    """
+    lines = content.split('\n')
+    
+    if not lines or lines[0] != '---':
+        return None, lines
+    
+    # Find the end of frontmatter
+    for i in range(1, len(lines)):
+        if lines[i] == '---':
+            return lines[1:i], lines[i+1:]
+    
+    # Malformed frontmatter (no closing ---)
+    return None, lines
+
+
+def add_or_update_frontmatter_field(frontmatter_lines: List[str], field_name: str, field_value: str) -> List[str]:
+    """Add or update a field in frontmatter lines.
+    
+    If the field exists, it's updated. If not, it's added at the beginning.
+    """
+    new_lines = []
+    field_found = False
+    
+    for line in frontmatter_lines:
+        if line.strip().startswith(f'{field_name}:'):
+            new_lines.append(f'{field_name}: {field_value}')
+            field_found = True
+        else:
+            new_lines.append(line)
+    
+    if not field_found:
+        # Add at the beginning
+        new_lines.insert(0, f'{field_name}: {field_value}')
+    
+    return new_lines
+
+
+def reconstruct_with_frontmatter(frontmatter_lines: List[str], body_lines: List[str]) -> str:
+    """Reconstruct content from frontmatter and body lines."""
+    return '\n'.join(['---'] + frontmatter_lines + ['---'] + body_lines)
+
+
+def rewrite_plugin_references(content: str, plugin_name: str) -> str:
+    """Rewrite plugin:name references to plugin-name format in content body.
+    
+    Handles patterns like:
+    - /do:plan -> skill do-plan (command to skill invocation)
+    - do:iterative-implementer -> do-iterative-implementer (agent/skill references)
+    - Skill("do:beads") -> Skill("do-beads")
+    """
+    # First, convert command references: /plugin:name -> skill plugin-name
+    command_pattern = f'/({re.escape(plugin_name)}):([a-zA-Z0-9_-]+)'
+    content = re.sub(command_pattern, r'skill \1-\2', content)
+    
+    # Then, replace remaining plugin:name with plugin-name (for agent names, Skill() calls, etc.)
+    pattern = f'({re.escape(plugin_name)}):([a-zA-Z0-9_-]+)'
+    replacement = r'\1-\2'
+    return re.sub(pattern, replacement, content)
+
+
 def update_frontmatter_field(line: str, plugin_name: str) -> str:
     """Update a single frontmatter field line."""
-    # Update name field to include plugin namespace
+    # Update name field to include plugin namespace (using hyphen instead of colon)
     if line.startswith('name:'):
         match = re.match(r'name:\s*(.+)', line)
         if match:
             original_name = match.group(1).strip()
             
-            # Remove any duplicate prefixes (e.g., "plugin:plugin:name" -> "plugin:name")
-            parts = original_name.split(':')
+            # Replace colons with hyphens in the name
+            original_name = original_name.replace(':', '-')
+            
+            # Remove any duplicate prefixes (e.g., "plugin-plugin-name" -> "plugin-name")
+            parts = original_name.split('-')
             if len(parts) > 1:
                 # Remove consecutive duplicate parts
                 cleaned_parts = [parts[0]]
                 for part in parts[1:]:
                     if part != cleaned_parts[-1]:
                         cleaned_parts.append(part)
-                cleaned_name = ':'.join(cleaned_parts)
+                cleaned_name = '-'.join(cleaned_parts)
             else:
                 cleaned_name = original_name
             
             # Only add prefix if not already present
-            if not cleaned_name.startswith(f'{plugin_name}:'):
-                return f'name: {plugin_name}:{cleaned_name}'
+            if not cleaned_name.startswith(f'{plugin_name}-'):
+                return f'name: {plugin_name}-{cleaned_name}'
             return f'name: {cleaned_name}'
     
     # Convert tools field from comma-separated string to array
@@ -298,8 +380,12 @@ def rewrite_agent_frontmatter(content: str, plugin_name: str, agent_name: str) -
         new_frontmatter.append(update_frontmatter_field(line, plugin_name))
         i += 1
     
+    # Rewrite plugin:name references in the body
+    body_content = '\n'.join(lines[end_idx:])
+    body_content = rewrite_plugin_references(body_content, plugin_name)
+    
     # Reconstruct the content
-    return '\n'.join(['---'] + new_frontmatter + lines[end_idx:])
+    return '\n'.join(['---'] + new_frontmatter + [body_content])
 
 
 def copy_and_rewrite_agent(source: Path, target: Path, plugin_name: str, agent_name: str) -> bool:
@@ -312,6 +398,41 @@ def copy_and_rewrite_agent(source: Path, target: Path, plugin_name: str, agent_n
         return False
     
     target.write_text(new_content)
+    return True
+
+
+def transform_command_to_skill(source: Path, target_dir: Path, plugin_name: str, command_name: str) -> bool:
+    """Transform a command file into a skill directory. Returns True if created/updated."""
+    # Create the skill directory structure
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_dir / "SKILL.md"
+    
+    # Read the command content
+    content = source.read_text()
+    
+    # Extract frontmatter and body
+    frontmatter_lines, body_lines = extract_frontmatter_and_body(content)
+    
+    # If no frontmatter, create new
+    if frontmatter_lines is None:
+        frontmatter_lines = []
+    
+    # Add or update the name field with plugin-command format (using hyphen)
+    frontmatter_lines = add_or_update_frontmatter_field(frontmatter_lines, 'name', f'{plugin_name}-{command_name}')
+    
+    # Rewrite plugin:name references in the body to plugin-name
+    body_content = '\n'.join(body_lines)
+    body_content = rewrite_plugin_references(body_content, plugin_name)
+    body_lines = body_content.split('\n')
+    
+    # Reconstruct the content
+    skill_content = reconstruct_with_frontmatter(frontmatter_lines, body_lines)
+    
+    # Check if target exists and has same content
+    if target_file.exists() and target_file.read_text() == skill_content:
+        return False
+    
+    target_file.write_text(skill_content)
     return True
 
 
@@ -338,8 +459,10 @@ def sync_plugins():
     
     synced_skills = set()
     synced_agents = set()
+    synced_commands = set()
     added_skills = 0
     added_agents = 0
+    added_commands = 0
 
     # Load previous manifest before we start syncing (for cleanup)
     previous_manifest = load_manifest()
@@ -347,7 +470,8 @@ def sync_plugins():
     manifest = {
         "lastSync": datetime.now().isoformat(),
         "skills": {},
-        "agents": {}
+        "agents": {},
+        "commands": {}
     }
 
     for plugin_key, plugin_info in plugins_to_sync.items():
@@ -390,10 +514,37 @@ def sync_plugins():
                 "plugin": plugin_name,
                 "status": "active"
             }
+        
+        # Sync commands (transform into skills)
+        commands = find_commands(plugin_path)
+        for command_name, command_path in commands:
+            # Create skill directory: skills/command_name/SKILL.md
+            target_skill_dir = COPILOT_SKILLS_DIR / command_name
+            
+            if transform_command_to_skill(command_path, target_skill_dir, plugin_name, command_name):
+                added_commands += 1
+            synced_commands.add(command_name)
+            manifest["commands"][command_name] = {
+                "source": str(command_path),
+                "plugin": plugin_name,
+                "status": "active"
+            }
 
     # Clean up stale items (only remove what we previously synced)
     removed_skills = clean_stale_items(COPILOT_SKILLS_DIR, synced_skills, previous_manifest, is_agents=False)
     removed_agents = clean_stale_items(COPILOT_AGENTS_DIR, synced_agents, previous_manifest, is_agents=True)
+    
+    # Clean up stale command-generated skills (remove directories)
+    removed_commands = 0
+    previously_synced_commands = set(previous_manifest.get("commands", {}).keys())
+    for command_name in previously_synced_commands:
+        if command_name not in synced_commands:
+            command_skill_dir = COPILOT_SKILLS_DIR / command_name
+            if command_skill_dir.exists() and command_skill_dir.is_dir():
+                # Remove the entire skill directory
+                import shutil
+                shutil.rmtree(command_skill_dir)
+                removed_commands += 1
 
     # Preserve removed entries in manifest for history
     for name in previous_manifest.get("skills", {}):
@@ -404,6 +555,10 @@ def sync_plugins():
         if name not in manifest["agents"]:
             manifest["agents"][name] = {**previous_manifest["agents"][name], "status": "removed"}
     
+    for name in previous_manifest.get("commands", {}):
+        if name not in manifest["commands"]:
+            manifest["commands"][name] = {**previous_manifest["commands"][name], "status": "removed"}
+    
     # Write manifest
     with open(MANIFEST_FILE, "w") as f:
         json.dump(manifest, f, indent=2)
@@ -411,6 +566,7 @@ def sync_plugins():
     # Summary
     print(f"Skills: +{added_skills} -{removed_skills} (total: {len(synced_skills)})")
     print(f"Agents: +{added_agents} -{removed_agents} (total: {len(synced_agents)})")
+    print(f"Commands: +{added_commands} -{removed_commands} (total: {len(synced_commands)})")
 
 
 if __name__ == "__main__":
