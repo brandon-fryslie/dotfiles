@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, List, Optional, Set, Tuple
 
 # Paths
 CLAUDE_PLUGINS_FILE = Path.home() / ".claude" / "plugins" / "installed_plugins.json"
@@ -24,7 +25,7 @@ MANIFEST_FILE = Path.home() / ".copilot" / "claude-sync-manifest.json"
 SYNC_PREFIX = ""
 
 
-def load_installed_plugins() -> dict:
+def load_installed_plugins() -> Dict:
     """Load the installed plugins manifest."""
     if not CLAUDE_PLUGINS_FILE.exists():
         print(f"No installed plugins file found at {CLAUDE_PLUGINS_FILE}")
@@ -36,7 +37,7 @@ def load_installed_plugins() -> dict:
     return data.get("plugins", {})
 
 
-def load_enabled_plugins() -> set[str]:
+def load_enabled_plugins() -> Set[str]:
     """Load enabled plugins from settings.json."""
     if not CLAUDE_SETTINGS_FILE.exists():
         print(f"Warning: No settings file found at {CLAUDE_SETTINGS_FILE}")
@@ -60,7 +61,7 @@ def load_enabled_plugins() -> set[str]:
         return set()
 
 
-def get_plugin_path(plugin_info: list) -> Path | None:
+def get_plugin_path(plugin_info: list) -> Optional[Path]:
     """Get the install path for a plugin."""
     if not plugin_info:
         return None
@@ -74,7 +75,7 @@ def get_plugin_path(plugin_info: list) -> Path | None:
     return None
 
 
-def find_skills(plugin_path: Path) -> list[tuple[str, Path]]:
+def find_skills(plugin_path: Path) -> List[Tuple[str, Path]]:
     """Find all skills in a plugin directory."""
     skills = []
     skills_dir = plugin_path / "skills"
@@ -91,7 +92,7 @@ def find_skills(plugin_path: Path) -> list[tuple[str, Path]]:
     return skills
 
 
-def find_agents(plugin_path: Path) -> list[tuple[str, Path]]:
+def find_agents(plugin_path: Path) -> List[Tuple[str, Path]]:
     """Find all agents in a plugin directory."""
     agents = []
     agents_dir = plugin_path / "agents"
@@ -105,7 +106,7 @@ def find_agents(plugin_path: Path) -> list[tuple[str, Path]]:
     return agents
 
 
-def load_manifest() -> dict:
+def load_manifest() -> Dict:
     """Load the previous sync manifest."""
     if not MANIFEST_FILE.exists():
         return {}
@@ -117,7 +118,7 @@ def load_manifest() -> dict:
         return {}
 
 
-def clean_stale_symlinks(directory: Path, valid_names: set[str], manifest: dict) -> int:
+def clean_stale_symlinks(directory: Path, valid_names: Set[str], manifest: Dict) -> int:
     """Remove symlinks that we previously synced but are no longer valid. Returns count of removed."""
     if not directory.exists():
         return 0
