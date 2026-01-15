@@ -3,11 +3,12 @@
 Sync Claude Code plugins to Copilot CLI.
 
 Reads installed plugins from ~/.claude/plugins/installed_plugins.json
-and creates symlinks for skills and agents in ~/.copilot/skills and ~/.copilot/agents.
+and creates symlinks for skills and copies/rewrites agents to ~/.copilot/skills and ~/.copilot/agents.
 """
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -118,8 +119,8 @@ def load_manifest() -> Dict:
         return {}
 
 
-def clean_stale_symlinks(directory: Path, valid_names: Set[str], manifest: Dict) -> int:
-    """Remove symlinks that we previously synced but are no longer valid. Returns count of removed."""
+def clean_stale_items(directory: Path, valid_names: Set[str], manifest: Dict, is_agents: bool = False) -> int:
+    """Remove items that we previously synced but are no longer valid. Returns count of removed."""
     if not directory.exists():
         return 0
 
@@ -129,8 +130,13 @@ def clean_stale_symlinks(directory: Path, valid_names: Set[str], manifest: Dict)
 
     removed = 0
     for item in directory.iterdir():
-        if not item.is_symlink():
-            continue
+        # For skills, only remove symlinks; for agents, remove regular files
+        if is_agents:
+            if item.is_symlink():
+                continue  # Don't remove non-synced items
+        else:
+            if not item.is_symlink():
+                continue
 
         # Only remove if it was in our manifest and is no longer valid
         if item.name in previously_synced and item.name not in valid_names:
@@ -148,6 +154,164 @@ def create_symlink(source: Path, target: Path, name: str) -> bool:
         target.unlink()
     
     target.symlink_to(source)
+    return True
+
+
+def parse_frontmatter(content: str) -> Tuple[Optional[Dict[str, str]], int, int]:
+    """Parse YAML frontmatter from content. Returns (frontmatter_dict, start_idx, end_idx)."""
+    lines = content.split('\n')
+    
+    if not lines or lines[0] != '---':
+        return None, 0, 0
+    
+    # Find the end of frontmatter
+    for i in range(1, len(lines)):
+        if lines[i] == '---':
+            # Parse frontmatter into dict
+            fm_dict = {}
+            for line in lines[1:i]:
+                if ':' in line:
+                    key, _, value = line.partition(':')
+                    fm_dict[key.strip()] = value.strip()
+            return fm_dict, 0, i
+    
+    return None, 0, 0
+
+
+def update_frontmatter_field(line: str, plugin_name: str) -> str:
+    """Update a single frontmatter field line."""
+    # Update name field to include plugin namespace
+    if line.startswith('name:'):
+        match = re.match(r'name:\s*(.+)', line)
+        if match:
+            original_name = match.group(1).strip()
+            
+            # Remove any duplicate prefixes (e.g., "plugin:plugin:name" -> "plugin:name")
+            parts = original_name.split(':')
+            if len(parts) > 1:
+                # Remove consecutive duplicate parts
+                cleaned_parts = [parts[0]]
+                for part in parts[1:]:
+                    if part != cleaned_parts[-1]:
+                        cleaned_parts.append(part)
+                cleaned_name = ':'.join(cleaned_parts)
+            else:
+                cleaned_name = original_name
+            
+            # Only add prefix if not already present
+            if not cleaned_name.startswith(f'{plugin_name}:'):
+                return f'name: {plugin_name}:{cleaned_name}'
+            return f'name: {cleaned_name}'
+    
+    # Convert tools field from comma-separated string to array
+    elif line.startswith('tools:'):
+        match = re.match(r'tools:\s*(.+)', line)
+        if match:
+            tools_str = match.group(1).strip()
+            # Check if it's already an array
+            if not tools_str.startswith('['):
+                tools = [t.strip() for t in tools_str.split(',')]
+                return f'tools: [{", ".join(tools)}]'
+    
+    # Quote description field if not already quoted
+    elif line.startswith('description:'):
+        match = re.match(r'description:\s*(.+)', line)
+        if match:
+            desc_value = match.group(1).strip()
+            # Check if already quoted
+            if not ((desc_value.startswith('"') and desc_value.endswith('"')) or 
+                    (desc_value.startswith("'") and desc_value.endswith("'"))):
+                # Escape any internal double quotes and wrap in quotes
+                escaped_desc = desc_value.replace('"', '\\"')
+                return f'description: "{escaped_desc}"'
+    
+    return line
+
+
+def rewrite_agent_frontmatter(content: str, plugin_name: str, agent_name: str) -> str:
+    """Rewrite agent frontmatter to namespace the agent name and fix tool_calls format."""
+    lines = content.split('\n')
+    
+    if not lines or lines[0] != '---':
+        return content
+    
+    # Find the end of frontmatter
+    end_idx = None
+    for i in range(1, len(lines)):
+        if lines[i] == '---':
+            end_idx = i
+            break
+    
+    if end_idx is None:
+        return content
+    
+    # Known YAML fields in frontmatter
+    YAML_FIELDS = {'name', 'description', 'model', 'color', 'tools'}
+    
+    # Rebuild frontmatter, handling multiline description fields properly
+    new_frontmatter = []
+    i = 1
+    while i < end_idx:
+        line = lines[i]
+        
+        # Handle description field that may span multiple lines with XML examples
+        if line.startswith('description:'):
+            # Collect description and all following lines until we hit a true YAML field
+            desc_parts = []
+            
+            # Get the value after 'description:' on this line
+            match = re.match(r'description:\s*(.*)', line)
+            if match:
+                desc_parts.append(match.group(1))
+            
+            i += 1
+            # Collect all lines until we hit a known YAML field
+            while i < end_idx:
+                next_line = lines[i]
+                # Check if this is a YAML field (known field: at start, no leading space)
+                if next_line and not next_line[0].isspace():
+                    # Extract the field name
+                    field_match = re.match(r'(\w+):', next_line)
+                    if field_match and field_match.group(1) in YAML_FIELDS:
+                        break
+                if next_line.strip():  # Skip empty lines but keep non-empty content
+                    desc_parts.append(next_line.strip())
+                i += 1
+            
+            # Combine all parts into a single string
+            full_desc = ' '.join(desc_parts)
+            
+            # Remove any existing quotes
+            if full_desc.startswith('"') and full_desc.endswith('"'):
+                full_desc = full_desc[1:-1]
+            elif full_desc.startswith("'") and full_desc.endswith("'"):
+                full_desc = full_desc[1:-1]
+            
+            # Escape internal quotes
+            full_desc = full_desc.replace('"', '\\"')
+            
+            # Create properly quoted field
+            new_line = f'description: "{full_desc}"'
+            new_frontmatter.append(update_frontmatter_field(new_line, plugin_name))
+            continue
+        
+        new_frontmatter.append(update_frontmatter_field(line, plugin_name))
+        i += 1
+    
+    # Reconstruct the content
+    return '\n'.join(['---'] + new_frontmatter + lines[end_idx:])
+
+
+def copy_and_rewrite_agent(source: Path, target: Path, plugin_name: str, agent_name: str) -> bool:
+    """Copy agent file and rewrite frontmatter. Returns True if created/updated."""
+    content = source.read_text()
+    new_content = rewrite_agent_frontmatter(content, plugin_name, agent_name)
+    
+    # Check if target exists and has same content
+    if target.exists() and target.read_text() == new_content:
+        return False
+    
+    target.write_text(new_content)
     return True
 
 
@@ -208,13 +372,17 @@ def sync_plugins():
                 "status": "active"
             }
         
-        # Sync agents
+        # Sync agents (copy and rewrite instead of symlink)
         agents = find_agents(plugin_path)
         for agent_name, agent_path in agents:
-            target_name = f"{plugin_name}-{agent_name}.agent.md"
+            # Don't add .agent.md suffix if the file already has it
+            if agent_name.endswith('.agent'):
+                target_name = f"{plugin_name}-{agent_name}.md"
+            else:
+                target_name = f"{plugin_name}-{agent_name}.agent.md"
             target_path = COPILOT_AGENTS_DIR / target_name
             
-            if create_symlink(agent_path, target_path, target_name):
+            if copy_and_rewrite_agent(agent_path, target_path, plugin_name, agent_name):
                 added_agents += 1
             synced_agents.add(target_name)
             manifest["agents"][target_name] = {
@@ -223,9 +391,9 @@ def sync_plugins():
                 "status": "active"
             }
 
-    # Clean up stale symlinks (only remove what we previously synced)
-    removed_skills = clean_stale_symlinks(COPILOT_SKILLS_DIR, synced_skills, previous_manifest)
-    removed_agents = clean_stale_symlinks(COPILOT_AGENTS_DIR, synced_agents, previous_manifest)
+    # Clean up stale items (only remove what we previously synced)
+    removed_skills = clean_stale_items(COPILOT_SKILLS_DIR, synced_skills, previous_manifest, is_agents=False)
+    removed_agents = clean_stale_items(COPILOT_AGENTS_DIR, synced_agents, previous_manifest, is_agents=True)
 
     # Preserve removed entries in manifest for history
     for name in previous_manifest.get("skills", {}):
