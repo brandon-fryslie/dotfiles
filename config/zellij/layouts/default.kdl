@@ -1,0 +1,45 @@
+layout {
+    default_tab_template {
+        children
+        pane size=1 borderless=true {
+            plugin location="https://github.com/dj95/zjstatus/releases/latest/download/zjstatus.wasm" {
+                format_left   "{mode} #[fg=#89B4FA,bold]{session} #[fg=#6C7086]{command_cwd}"
+                format_center "{tabs}"
+                format_right  "{pipe_zjstatus_hints}{datetime}"
+                pipe_zjstatus_hints_format "#[fg=#6C7086]{output} "
+                format_space  ""
+
+                border_enabled  "false"
+
+                hide_frame_for_single_pane "true"
+
+                mode_normal        "#[bg=#89B4FA,fg=#1E1E2E,bold]  NORMAL "
+                mode_locked        "#[bg=#6C7086,fg=#1E1E2E,bold]  LOCKED "
+                mode_pane          "#[bg=#A6E3A1,fg=#1E1E2E,bold]  PANE "
+                mode_tab           "#[bg=#F9E2AF,fg=#1E1E2E,bold]  TAB "
+                mode_resize        "#[bg=#F38BA8,fg=#1E1E2E,bold]  RESIZE "
+                mode_scroll        "#[bg=#CBA6F7,fg=#1E1E2E,bold]  SCROLL "
+                mode_search        "#[bg=#F5C2E7,fg=#1E1E2E,bold]  SEARCH "
+                mode_session       "#[bg=#FAB387,fg=#1E1E2E,bold]  SESSION "
+                mode_move          "#[bg=#94E2D5,fg=#1E1E2E,bold]  MOVE "
+                mode_tmux          "#[bg=#FFC387,fg=#1E1E2E,bold]  TMUX "
+                mode_default_to_mode "locked"
+
+                tab_normal              "#[fg=#6C7086] {name} "
+                tab_active              "#[fg=#89B4FA,bold,italic] {name} "
+                tab_fullscreen_indicator "□ "
+                tab_floating_indicator   "⬚ "
+                tab_sync_indicator       "⟳ "
+
+                command_cwd_command      "pwd"
+                command_cwd_format       "#[fg=#6C7086,italic]{stdout}"
+                command_cwd_interval     "5"
+                command_cwd_rendermode   "static"
+
+                datetime          "#[fg=#6C7086,bold]{format}"
+                datetime_format   "%H:%M"
+                datetime_timezone "America/New_York"
+            }
+        }
+    }
+}
