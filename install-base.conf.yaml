@@ -13,9 +13,11 @@
     ~/.aider.conf.yml: config/aider.conf.global.yml
     ~/.gemrc: config/gemrc.global
     ~/.config/git: config/git
+    ~/.config/kitty: config/kitty
     ~/.mackup.cfg: config/mackup.global.cfg
     ~/.p10k.zsh: config/p10k.global.zsh
     ~/.rvmrc: config/rvmrc.global
     ~/.config/tmux: config/tmux
     ~/.config/tmux-powerline: config/tmux-powerline
+    ~/.config/zellij: config/zellij
     ~/.config/nvim: config/nvim
