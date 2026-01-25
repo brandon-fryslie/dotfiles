@@ -67,14 +67,18 @@
     "defaultMode": "acceptEdits"
   },
   "hooks": {},
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
+  },
   "enabledPlugins": {
     "beads@beads-marketplace": false,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
-    "code-review@claude-plugins-official": false,
-    "feature-dev@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": true,
     "playwright@claude-plugins-official": false,
-    "plugin-dev@claude-plugins-official": true,
+    "plugin-dev@claude-plugins-official": false,
     "pr-review-toolkit@claude-plugins-official": false,
     "pyright-lsp@claude-plugins-official": false,
     "ralph-wiggum@claude-plugins-official": false,
@@ -84,18 +88,13 @@
     "typescript-lsp@claude-plugins-official": true,
     "figma@claude-plugins-official": false,
     "ralph-loop@claude-plugins-official": true,
-    "code-simplifier@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": false,
     "brain-canvas@brain-canvas-marketplace": false,
     "do-more@loom99": true,
     "do-extra@loom99": true,
-    "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": false,
     "do@loom99": true
   },
   "alwaysThinkingEnabled": false,
-  "promptSuggestionEnabled": false,
-  "statusLine": {
-    "type": "command",
-    "command": "npx -y ccstatusline@latest",
-    "padding": 0
-  }
+  "promptSuggestionEnabled": false
 }
