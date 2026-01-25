@@ -1,0 +1,70 @@
+// Zellij Configuration
+// Leader key: Ctrl+s (unlock from locked mode)
+
+keybinds {
+    locked {
+        bind "Ctrl s" { SwitchToMode "normal"; }
+    }
+    shared {
+        bind "Alt [" { GoToPreviousTab; }
+        bind "Alt ]" { GoToNextTab; }
+        bind "Alt N" { NewTab; }
+        bind "Alt d" { Detach; }
+        bind "Alt s" {
+            LaunchOrFocusPlugin "session-manager" {
+                floating true
+                move_to_focused_tab true
+            }
+        }
+//        bind "Alt f" {
+//            Run "zellij-sessionizer" {
+//                close_on_exit true
+//                floating true
+//                x "25%"
+//                y "10%"
+//                width "50%"
+//                height "80%"
+//            }
+//        }
+    }
+
+    shared_except "locked" {
+        bind "Alt P" {
+            Run "zellij-playbooks"
+        }
+    }
+}
+
+theme "molokai-dark"
+
+default_mode "locked"
+pane_frames false
+
+plugins {
+
+    zjframes location="https://github.com/dj95/zjstatus/releases/latest/download/zjframes.wasm" {
+        hide_frame_for_single_pane       "true"
+        hide_frame_except_for_search     "true"
+        hide_frame_except_for_fullscreen "true"
+
+    }
+    zjstatus-hints location="https://github.com/b0o/zjstatus-hints/releases/latest/download/zjstatus-hints.wasm" {
+        max_length 0
+        overflow_str "..."
+        pipe_name "zjstatus_hints"
+        hide_in_base_mode true
+    }
+    zellij-playbooks-pipe location="file:~/.config/zellij/plugins/zellij-playbooks.wasm" {
+        pipe_mode true
+    }
+    zellij-playbooks location="file:~/.config/zellij/plugins/zellij-playbooks.wasm" {
+                autodetect_filter_mode true
+            }
+}
+
+load_plugins {
+    zellij-playbooks
+    zjframes
+    zjstatus-hints
+    zellij-playbooks
+}

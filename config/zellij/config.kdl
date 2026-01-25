@@ -2,69 +2,83 @@
 // Leader key: Ctrl+s (unlock from locked mode)
 
 keybinds {
-    locked {
-        bind "Ctrl s" { SwitchToMode "normal"; }
-    }
+    unbind "Ctrl q"
     shared {
         bind "Alt [" { GoToPreviousTab; }
         bind "Alt ]" { GoToNextTab; }
         bind "Alt N" { NewTab; }
         bind "Alt d" { Detach; }
+
         bind "Alt s" {
             LaunchOrFocusPlugin "session-manager" {
                 floating true
                 move_to_focused_tab true
             }
         }
-        bind "Alt f" {
-            Run "zellij-sessionizer" {
-                close_on_exit true
-                floating true
-                x "25%"
-                y "10%"
-                width "50%"
-                height "80%"
-            }
-        }
+//        bind "Alt f" {
+//            Run "zellij-sessionizer" {
+//                close_on_exit true
+//                floating true
+//                x "25%"
+//                y "10%"
+//                width "50%"
+//                height "80%"
+//            }
+//        }
+    }
+
+    locked {
+        bind "Ctrl l" { Clear; }
     }
 
     shared_except "locked" {
         bind "Alt P" {
-            LaunchOrFocusPlugin zellij-playbooks
+            Run "zellij-playbooks"
         }
     }
 }
 
-theme = "molokai-dark"
-
+theme "molokai-dark"
+default_layout "default"
 default_mode "locked"
+// default_layout "default"
 pane_frames false
+border_enabled false
+show_startup_tips false
+show_release_notes false
+web_server true // always start the web server on Zellij startup (default: false)
+/// web_server_ip "0.0.0.0" // the IP to listen on, 0.0.0.0 is all (default: 127.0.0.1)
+web_server_port 10101
 
 plugins {
 
-    zjframes location="https://github.com/dj95/zjstatus/releases/latest/download/zjframes.wasm" {
-        hide_frame_for_single_pane       "true"
-        hide_frame_except_for_search     "true"
-        hide_frame_except_for_fullscreen "true"
+//    zjframes location="https://github.com/dj95/zjstatus/releases/latest/download/zjframes.wasm" {
+//        hide_frame_for_single_pane       "true"
+//        hide_frame_except_for_search     "true"
+//        hide_frame_except_for_fullscreen "true"
+//
+//    }
+//    zjstatus-hints location="https://github.com/b0o/zjstatus-hints/releases/latest/download/zjstatus-hints.wasm" {
+//        max_length 0
+//        overflow_str "..."
+//        pipe_name "zjstatus_hints"
+//        hide_in_base_mode true
+//    }
+//    zellij-playbooks-pipe location="file:~/.config/zellij/plugins/zellij-playbooks.wasm" {
+//        pipe_mode true
+//    }
+//    zellij-playbooks location="file:~/.config/zellij/plugins/zellij-playbooks.wasm" {
+//                autodetect_filter_mode true
+//            }
 
-    }
-    zjstatus-hints location="https://github.com/b0o/zjstatus-hints/releases/latest/download/zjstatus-hints.wasm" {
-        max_length 0
-        overflow_str "..."
-        pipe_name "zjstatus_hints"
-        hide_in_base_mode true
-    }
-    zellij-playbooks-pipe location="file:~/.config/zellij/plugins/zellij-playbooks.wasm" {
-        pipe_mode true
-    }
-    zellij-playbooks location="file:~/.config/zellij/plugins/zellij-playbooks.wasm" {
-                autodetect_filter_mode true
-            }
+//    just-bacon location="https://github.com/nim65s/jbz/releases/download/v0.39.0/jbz.wasm" {
+//
+//    }
 }
 
 load_plugins {
-    zellij-playbooks
-    zjframes
-    zjstatus-hints
-    zellij-playbooks
+//    zellij-playbooks
+//    zjframes
+//    zjstatus-hints
+//    zellij-playbooks
 }
