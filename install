@@ -41,12 +41,12 @@ case "$PROFILE" in
     run_dotbot "base configuration" install-base.conf.yaml
     run_dotbot "home profile" install-home.conf.yaml
     run_dotbot "rad-shell configuration" install-rad.conf.yaml
-    run_dotbot "claude configuration" install-claude.conf.yaml
+    run_dotbot "agent-cli configuration" install-agent-cli.conf.yaml
     ;;
   work)
     run_dotbot "base configuration" install-base.conf.yaml
     run_dotbot "work profile" install-work.conf.yaml
-    run_dotbot "claude configuration" install-claude.conf.yaml
+    run_dotbot "agent-cli configuration" install-agent-cli.conf.yaml
     ;;
   base)
     run_dotbot "base configuration" install-base.conf.yaml
