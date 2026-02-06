@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+#
+# Wrapper script that syncs Claude Code plugins before launching Copilot CLI
+#
+# Usage: copilot-with-sync [copilot args...]
+#
+
+set -euo pipefail
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Paths
+SYNC_SCRIPT="${HOME}/.copilot/skills/claude-plugin-sync/sync_enhanced.py"
+MANIFEST_PATH="${HOME}/.copilot/sync-manifest.json"
+LAST_SYNC_FILE="${HOME}/.copilot/.last-sync"
+
+# Check if we should sync (don't sync too frequently)
+should_sync() {
+    # If manifest doesn't exist, definitely sync
+    if [[ ! -f "$MANIFEST_PATH" ]]; then
+        return 0
+    fi
+
+    # If last sync file doesn't exist, sync
+    if [[ ! -f "$LAST_SYNC_FILE" ]]; then
+        return 0
+    fi
+
+    # Check if last sync was more than 1 hour ago
+    local last_sync=$(cat "$LAST_SYNC_FILE")
+    local now=$(date +%s)
+    local diff=$((now - last_sync))
+
+    # Sync if more than 1 hour (3600 seconds) has passed
+    if [[ $diff -gt 3600 ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Run the sync
+run_sync() {
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}Syncing Claude Code plugins to Copilot...${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    if python3 "$SYNC_SCRIPT" "$@"; then
+        # Update last sync timestamp
+        date +%s > "$LAST_SYNC_FILE"
+        echo -e "${GREEN}✓ Sync complete${NC}\n"
+        return 0
+    else
+        echo -e "${RED}✗ Sync failed${NC}\n"
+        return 1
+    fi
+}
+
+# Main logic
+main() {
+    # Check if sync script exists
+    if [[ ! -f "$SYNC_SCRIPT" ]]; then
+        echo -e "${YELLOW}Warning: Sync script not found at $SYNC_SCRIPT${NC}"
+        echo -e "${YELLOW}Running Copilot without sync...${NC}\n"
+    elif should_sync; then
+        # Run sync (suppress output if user wants quiet mode)
+        if [[ "${COPILOT_QUIET_SYNC:-0}" == "1" ]]; then
+            run_sync >/dev/null 2>&1 || true
+        else
+            run_sync || true  # Don't fail if sync fails
+        fi
+    fi
+
+    # Launch Copilot with all arguments
+    exec copilot "$@"
+}
+
+# Handle --force-sync flag
+if [[ "${1:-}" == "--force-sync" ]]; then
+    shift
+    run_sync
+    exit $?
+fi
+
+# Handle --help
+if [[ "${1:-}" == "--help" ]] || [[ "${1:-}" == "-h" ]]; then
+    cat <<EOF
+Usage: copilot-with-sync [OPTIONS] [copilot args...]
+
+Wrapper that syncs Claude Code plugins before launching Copilot CLI.
+
+Options:
+  --force-sync     Force sync even if recently synced
+  -h, --help       Show this help message
+
+Environment Variables:
+  COPILOT_QUIET_SYNC=1    Suppress sync output
+
+All other arguments are passed directly to Copilot CLI.
+
+The sync runs automatically if:
+  - No manifest exists yet
+  - More than 1 hour has passed since last sync
+
+Sync script: $SYNC_SCRIPT
+Manifest: $MANIFEST_PATH
+EOF
+    exit 0
+fi
+
+main "$@"
