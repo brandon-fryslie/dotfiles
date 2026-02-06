@@ -1,0 +1,34 @@
+   285→  fieldId: FieldExprId,
+   286→  fieldExprs: readonly FieldExpr[]
+   287→): InstanceId | undefined {
+   288→  const expr = fieldExprs[fieldId as number];
+   289→  if (!expr) return undefined;
+   290→
+   291→  switch (expr.kind) {
+   292→    case 'intrinsic':
+   293→    case 'array':
+   294→    case 'stateRead':
+   295→      return expr.instanceId;
+   296→    case 'map':
+   297→      return expr.instanceId ?? inferFieldInstanceFromExprs(expr.input, fieldExprs);
+   298→    case 'zip':
+   299→      // Take first input's instance (they should all match per validation)
+   300→      return expr.instanceId ?? (expr.inputs.length > 0 ? inferFieldInstanceFromExprs(expr.inputs[0], fieldExprs) : undefined);
+   301→    case 'zipSig':
+   302→      return expr.instanceId ?? inferFieldInstanceFromExprs(expr.field, fieldExprs);
+   303→    case 'broadcast':
+   304→    case 'const':
+   305→      return undefined;
+   306→    default:
+   307→      return undefined;
+   308→  }
+   309→}
+   310→
+   311→/**
+   312→ * Resolve shape info from a signal expression.
+   313→ * Returns topologyId, paramSignals, and optional controlPointField with stride if the signal is a shapeRef.
+   314→ */
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

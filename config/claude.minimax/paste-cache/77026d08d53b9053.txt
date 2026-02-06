@@ -1,0 +1,51 @@
+Pick (c) throw, but only for the helper whose name asserts “many”, and make the “maybe” form explicit and rare.
+
+Contract decision (official)
+
+You want two helpers, with names that encode the contract:
+    1.    Total / failing helper (default in compiler/frontend/backend code)
+
+/** Returns the instance for many(instance). Throws if cardinality is not inst+many. */
+export function requireManyInstance(t: CanonicalType): InstanceRef
+
+    2.    Partial / query helper (only for UI/probing paths)
+
+/** Returns the instance for many(instance), else null (var/zero/one). */
+export function maybeManyInstance(t: CanonicalType): InstanceRef | null
+
+…and you do not expose a getManyInstance whose behavior is ambiguous. Rename it to one of the above.
+
+Why this is the right choice here
+    •    In the compiler pipeline, encountering field-expected code paths with cardinality not many is a bug or an earlier validation failure. You want fail-fast because it prevents silent corruption and “fix later” rationalizations.
+    •    In the UI, you legitimately have “not fully typed yet” (vars) and “not a field” values. That’s where maybe* is correct and keeps UI logic from crashing.
+
+What callers should do (rules)
+    •    Backend and lowering: use requireManyInstance() exclusively. If it throws, you have an axis-validation gap; that’s good signal.
+    •    Frontend axis validation: use requireManyInstance() when validating a node that is supposed to be a field by construction; use maybeManyInstance() only when you’re deciding what family something currently belongs to.
+    •    UI rendering: use maybeManyInstance() and handle null with “unknown / not-field”.
+
+Docstring requirements (what to write)
+
+For requireManyInstance:
+    •    throws if:
+    •    cardinality axis is var
+    •    cardinality is inst but zero|one
+    •    message must include:
+    •    the actual cardinality encountered
+    •    (optionally) a caller-supplied context string like "FieldExprMap.output"
+
+For maybeManyInstance:
+    •    returns null for:
+    •    var
+    •    inst.zero
+    •    inst.one
+
+Consistency enforcement across 30+ call sites
+    •    Replace all current getManyInstance() calls with either:
+    •    requireManyInstance() (most places), or
+    •    maybeManyInstance() (UI / diagnostic probes)
+    •    Ban ! on the result via lint rule or a simple grep gate:
+    •    disallow maybeManyInstance(... )!
+    •    Make it impossible to accidentally reintroduce ambiguity by deleting getManyInstance entirely.
+
+That choice makes the “field-ness is encoded in CanonicalType” invariant mechanically enforced, while still allowing incomplete typing in the UI without crashing.

@@ -1,0 +1,9 @@
+{
+  "id": "1",
+  "subject": "Define ConstValue type and helpers",
+  "description": "Add ConstValue discriminated union type, constValueMatchesPayload validator, and helper functions to canonical-types.ts",
+  "activeForm": "Defining ConstValue type in canonical-types.ts",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

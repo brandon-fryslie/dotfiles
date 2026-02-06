@@ -1,0 +1,104 @@
+     1→/**
+     2→ * IRBuilder Implementation
+     3→ *
+     4→ * Concrete implementation of the IRBuilder interface.
+     5→ */
+     6→
+     7→import type { CanonicalType } from '../../core/canonical-types';
+     8→import { FLOAT, INT, BOOL, VEC2, VEC3, COLOR, SHAPE, CAMERA_PROJECTION, canonicalType, unitScalar } from '../../core/canonical-types';
+     9→import type { TopologyId } from '../../shapes/types';
+    10→import type { IRBuilder } from './IRBuilder';
+    11→import type {
+    12→  SigExprId,
+    13→  FieldExprId,
+    14→  EventExprId,
+    15→  EventSlotId,
+    16→  ValueSlot,
+    17→  StateId,
+    18→  StateSlotId,
+    19→  InstanceId,
+    20→  DomainTypeId,
+    21→} from './Indices';
+    22→import {
+    23→  sigExprId,
+    24→  fieldExprId,
+    25→  eventExprId,
+    26→  eventSlotId,
+    27→  valueSlot,
+    28→  stateId,
+    29→  stateSlotId,
+    30→  instanceId,
+    31→} from './Indices';
+    32→import type { TimeModelIR } from './schedule';
+    33→import type {
+    34→  PureFn,
+    35→  OpCode,
+    36→  SigExpr,
+    37→  FieldExpr,
+    38→  EventExpr,
+    39→  InstanceDecl,
+    40→  Step,
+    41→  IntrinsicPropertyName,
+    42→  PlacementFieldName,
+    43→  BasisKind,
+    44→  ContinuityPolicy,
+    45→  StableStateId,
+    46→  StateMapping,
+    47→} from './types';
+    48→import type { CameraDeclIR } from './program';
+    49→
+    50→// =============================================================================
+    51→// IRBuilderImpl
+    52→// =============================================================================
+    53→
+    54→export class IRBuilderImpl implements IRBuilder {
+    55→  private sigExprs: SigExpr[] = [];
+    56→  private fieldExprs: FieldExpr[] = [];
+    57→  private eventExprs: EventExpr[] = [];
+    58→  private instances: Map<InstanceId, InstanceDecl> = new Map(); // NEW
+    59→  private slotCounter = 0;
+    60→  private stateCounter = 0;
+    61→  private stateSlotCounter = 0;
+    62→  private constCounter = 0;
+    63→  private timeModel: TimeModelIR | undefined;
+    64→  private currentBlockId: string | undefined;
+    65→
+    66→  // Hash-consing caches for expression deduplication (I13)
+    67→  private sigExprCache = new Map<string, SigExprId>();
+    68→  private fieldExprCache = new Map<string, FieldExprId>();
+    69→  private eventExprCache = new Map<string, EventExprId>();
+    70→
+    71→  // Slot registrations for debug/validation
+    72→  private sigSlots = new Map<number, ValueSlot>();
+    73→  private fieldSlots = new Map<number, ValueSlot>();
+    74→  private eventSlots = new Map<EventExprId, EventSlotId>();
+    75→  private eventSlotCounter = 0;
+    76→
+    77→  // Slot type tracking for slotMeta generation
+    78→  private slotTypes = new Map<ValueSlot, CanonicalType>();
+    79→
+    80→  constructor() {
+    81→    // Reserve system slots at fixed positions (compiler-runtime contract)
+    82→    // Slot 0: time.palette (color, stride=4)
+    83→    this.reserveSystemSlot(0, canonicalType(COLOR));
+    84→  }
+    85→
+    86→  /**
+    87→   * Reserve a system slot at a fixed position with known type.
+    88→   * Used for compiler-runtime contracts like time.palette at slot 0.
+    89→   */
+    90→  private reserveSystemSlot(slotId: number, type: CanonicalType): void {
+    91→    const slot = slotId as ValueSlot;
+    92→    this.slotTypes.set(slot, type);
+    93→    // Ensure slotCounter is past reserved slots
+    94→    if (this.slotCounter <= slotId) {
+    95→      this.slotCounter = slotId + 1;
+    96→    }
+    97→  }
+    98→
+    99→  // State slot tracking for persistent cross-frame storage
+   100→  // OLD: private stateSlots: { initialValue: number }[] = [];
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

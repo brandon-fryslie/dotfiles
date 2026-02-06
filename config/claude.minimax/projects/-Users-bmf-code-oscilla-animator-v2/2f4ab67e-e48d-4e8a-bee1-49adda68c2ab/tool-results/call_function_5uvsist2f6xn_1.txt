@@ -1,0 +1,104 @@
+   350→    this.fieldExprs.push(expr);
+   351→    this.fieldExprCache.set(hash, id);
+   352→    return id;
+   353→  }
+   354→  /**
+   355→  Broadcast(signal: SigExprId, type: CanonicalType): FieldExprId {
+   356→    const expr = { kind: 'broadcast' as const, signal, type };
+   357→    const hash = hashFieldExpr(expr);
+   358→    const existing = this.fieldExprCache.get(hash);
+   359→    if (existing !== undefined) {
+   360→      return existing;
+   361→    }
+   362→    const id = fieldExprId(this.fieldExprs.length);
+   363→    this.fieldExprs.push(expr);
+   364→    this.fieldExprCache.set(hash, id);
+   365→    return id;
+   366→  }
+   367→
+   368→  ReduceField(field: FieldExprId, op: 'min' | 'max' | 'sum' | 'avg', type: CanonicalType): SigExprId {
+   369→    const expr = { kind: 'reduceField' as const, field, op, type };
+   370→    const hash = hashSigExpr(expr);
+   371→    const existing = this.sigExprCache.get(hash);
+   372→    if (existing !== undefined) {
+   373→      return existing;
+   374→    }
+   375→    const id = sigExprId(this.sigExprs.length);
+   376→    this.sigExprs.push(expr);
+   377→    this.sigExprCache.set(hash, id);
+   378→    return id;
+   379→  }
+   380→
+   381→  fieldMap(input: FieldExprId, fn: PureFn, type: CanonicalType): FieldExprId {
+   382→    const instanceId = this.inferFieldInstance(input);
+   383→    const expr = { kind: 'map' as const, input, fn, type, instanceId };
+   384→    const hash = hashFieldExpr(expr);
+   385→    const existing = this.fieldExprCache.get(hash);
+   386→    if (existing !== undefined) {
+   387→      return existing;
+   388→    }
+   389→    const id = fieldExprId(this.fieldExprs.length);
+   390→    this.fieldExprs.push(expr);
+   391→    this.fieldExprCache.set(hash, id);
+   392→    return id;
+   393→  }
+   394→
+   395→  fieldZip(inputs: readonly FieldExprId[], fn: PureFn, type: CanonicalType): FieldExprId {
+   396→    const instanceId = this.inferZipInstance(inputs);
+   397→    const expr = { kind: 'zip' as const, inputs, fn, type, instanceId };
+   398→    const hash = hashFieldExpr(expr);
+   399→    const existing = this.fieldExprCache.get(hash);
+   400→    if (existing !== undefined) {
+   401→      return existing;
+   402→    }
+   403→    const id = fieldExprId(this.fieldExprs.length);
+   404→    this.fieldExprs.push(expr);
+   405→    this.fieldExprCache.set(hash, id);
+   406→    return id;
+   407→  }
+   408→
+   409→  fieldZipSig(
+   410→    field: FieldExprId,
+   411→    signals: readonly SigExprId[],
+   412→    fn: PureFn,
+   413→    type: CanonicalType
+   414→  ): FieldExprId {
+   415→    const instanceId = this.inferFieldInstance(field);
+   416→    const expr = { kind: 'zipSig' as const, field, signals, fn, type, instanceId };
+   417→    const hash = hashFieldExpr(expr);
+   418→    const existing = this.fieldExprCache.get(hash);
+   419→    if (existing !== undefined) {
+   420→      return existing;
+   421→    }
+   422→    const id = fieldExprId(this.fieldExprs.length);
+   423→    this.fieldExprs.push(expr);
+   424→    this.fieldExprCache.set(hash, id);
+   425→    return id;
+   426→  }
+   427→
+   428→  fieldPathDerivative(
+   429→    input: FieldExprId,
+   430→    operation: 'tangent' | 'arcLength',
+   431→    type: CanonicalType
+   432→  ): FieldExprId {
+   433→    const expr = { kind: 'pathDerivative' as const, input, operation, type };
+   434→    const hash = hashFieldExpr(expr);
+   435→    const existing = this.fieldExprCache.get(hash);
+   436→    if (existing !== undefined) {
+   437→      return existing;
+   438→    }
+   439→    const id = fieldExprId(this.fieldExprs.length);
+   440→    this.fieldExprs.push(expr);
+   441→    this.fieldExprCache.set(hash, id);
+   442→    return id;
+   443→  }
+   444→
+   445→  // =========================================================================
+   446→  // Instance Inference
+   447→  // =========================================================================
+   448→
+   449→  /**
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

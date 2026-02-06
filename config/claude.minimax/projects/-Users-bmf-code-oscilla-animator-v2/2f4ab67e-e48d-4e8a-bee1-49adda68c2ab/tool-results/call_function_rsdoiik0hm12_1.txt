@@ -1,0 +1,49 @@
+          "domain": "signal",
+          "role": "userWire"
+        },
+        {
+          "port": 6,
+          "block": 2,
+          "portName": "phaseA",
+          "direction": "out",
+          "domain": "signal",
+          "role": "userWire"
+        },
+        {
+          "port": 7,
+          "block": 2,
+          "portName": "phaseB",
+          "direction": "out",
+          "domain": "signal",
+          "role": "userWire"
+        },
+        {
+          "port": 8,
+          "block": 2,
+          "portName": "palette",
+          "direction": "out",
+          "domain": "signal",
+          "role": "userWire"
+        },
+        {
+          "port": 9,
+          "block": 2,
+          "portName": "energy",
+          "direction": "out",
+          "domain": "signal",
+          "role": "userWire"
+        }
+      ],
+      "slotToPort": {},
+      "blockMap": {}
+    },
+    "fieldSlotRegistry": {},
+    "renderGlobals": []
+  }
+}
+
+
+ Test Files  124 passed (124)
+      Tests  2033 passed | 15 skipped (2048)
+   Start at  21:17:57
+   Duration  12.86s (transform 3.29s, setup 12.98s, collect 13.23s, tests 12.60s, environment 74.33s, prepare 8.27s)

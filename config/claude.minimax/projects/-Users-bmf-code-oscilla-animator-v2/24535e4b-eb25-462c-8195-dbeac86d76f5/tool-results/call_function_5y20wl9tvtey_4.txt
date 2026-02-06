@@ -1,0 +1,711 @@
+     1→/**
+     2→ * Intermediate Representation (IR) Types
+     3→ *
+     4→ * Expression types and execution step definitions used by the compiler IR.
+     5→ * These types are actively used by CompiledProgramIR in ./program.ts.
+     6→ *
+     7→ * Contents:
+     8→ * - SigExpr: Signal expressions (evaluated once per frame)
+     9→ * - FieldExpr: Field expressions (evaluated per-element at sinks)
+    10→ * - EventExpr: Event expressions (edge-triggered)
+    11→ * - Steps: Execution schedule step types
+    12→ * - PureFn: Pure function representations
+    13→ * - Instance System: Domain instances, layouts, and declarations
+    14→ * - Continuity System: Policies and gauges for anti-jank
+    15→ * - Time Model: infinite time representation
+    16→ * - Shape System: Unified shape model with topologies
+    17→ */
+    18→
+    19→// Import canonical types as source of truth
+    20→import type { CanonicalType } from '../../core/canonical-types';
+    21→
+    22→// Import ValueSlot and StateSlotId for use in this file
+    23→import type { ValueSlot as _ValueSlot, StateSlotId as _StateSlotId } from './Indices';
+    24→type ValueSlot = _ValueSlot;
+    25→type StateSlotId = _StateSlotId;
+    26→
+    27→// Re-export branded indices
+    28→export type {
+    29→  NodeIndex,
+    30→  PortIndex,
+    31→  ValueSlot,
+    32→  StateSlotId,
+    33→  StepIndex,
+    34→  SigExprId,
+    35→  FieldExprId,
+    36→  EventExprId,
+    37→  EventSlotId,
+    38→  TransformChainId,
+    39→  NodeId,
+    40→  StepId,
+    41→  ExprId,
+    42→  StateId,
+    43→  SlotId,
+    44→  InstanceId,
+    45→} from './Indices';
+    46→
+    47→export {
+    48→  nodeIndex,
+    49→  portIndex,
+    50→  valueSlot,
+    51→  stateSlotId,
+    52→  stepIndex,
+    53→  sigExprId,
+    54→  fieldExprId,
+    55→  eventExprId,
+    56→  eventSlotId,
+    57→  nodeId,
+    58→  stepId,
+    59→  exprId,
+    60→  stateId,
+    61→  slotId,
+    62→  instanceId,
+    63→} from './Indices';
+    64→
+    65→import type {
+    66→  SigExprId,
+    67→  FieldExprId,
+    68→  EventExprId,
+    69→  EventSlotId,
+    70→  SlotId,
+    71→} from './Indices';
+    72→
+    73→// Import shape types
+    74→import type { TopologyId } from '../../shapes/types';
+    75→
+    76→// Import time model types
+    77→import type { TimeModelIR } from './schedule';
+    78→
+    79→
+    80→// =============================================================================
+    81→// Signal Expressions
+    82→// =============================================================================
+    83→
+    84→export type SigExpr =
+    85→  | SigExprConst
+    86→  | SigExprSlot
+    87→  | SigExprTime
+    88→  | SigExprExternal
+    89→  | SigExprMap
+    90→  | SigExprZip
+    91→  | SigExprStateRead
+    92→  | SigExprShapeRef
+    93→  | SigExprReduceField
+    94→  | SigExprEventRead;
+    95→
+    96→export interface SigExprConst {
+    97→  readonly kind: 'const';
+    98→  readonly value: number | string | boolean;
+    99→  readonly type: CanonicalType;
+   100→}
+   101→
+   102→export interface SigExprSlot {
+   103→  readonly kind: 'slot';
+   104→  readonly slot: ValueSlot;
+   105→  readonly type: CanonicalType;
+   106→}
+   107→
+   108→export interface SigExprTime {
+   109→  readonly kind: 'time';
+   110→  readonly which: 'tMs' | 'phaseA' | 'phaseB' | 'dt' | 'progress' | 'palette' | 'energy';
+   111→  readonly type: CanonicalType;
+   112→}
+   113→
+   114→export interface SigExprExternal {
+   115→  readonly kind: 'external';
+   116→  readonly which: string;
+   117→  readonly type: CanonicalType;
+   118→}
+   119→
+   120→export interface SigExprMap {
+   121→  readonly kind: 'map';
+   122→  readonly input: SigExprId;
+   123→  readonly fn: PureFn;
+   124→  readonly type: CanonicalType;
+   125→}
+   126→
+   127→export interface SigExprZip {
+   128→  readonly kind: 'zip';
+   129→  readonly inputs: readonly SigExprId[];
+   130→  readonly fn: PureFn;
+   131→  readonly type: CanonicalType;
+   132→}
+   133→
+   134→/**
+   135→ * State read signal expression.
+   136→ * Reads a persistent state value from the state store.
+   137→ */
+   138→export interface SigExprStateRead {
+   139→  readonly kind: 'stateRead';
+   140→  readonly stateSlot: StateSlotId;
+   141→  readonly type: CanonicalType;
+   142→}
+   143→
+   144→/**
+   145→ * Shape reference signal expression.
+   146→ * References a shape topology with runtime parameters.
+   147→ */
+   148→export interface SigExprShapeRef {
+   149→  readonly kind: 'shapeRef';
+   150→  readonly topologyId: TopologyId;
+   151→  readonly paramSignals: readonly SigExprId[]; // Signals for each topology param
+   152→  /** Optional control points for paths - carries stride like all field refs */
+   153→  readonly controlPointField?: { readonly id: FieldExprId; readonly stride: number };
+   154→  readonly type: CanonicalType; // Should be canonicalType(SHAPE)
+   155→}
+   156→
+   157→/**
+   158→ * Reduce field to scalar signal expression.
+   159→ * Aggregates all elements of a field using a reduction operation.
+   160→ * 
+   161→ * Semantics: Componentwise reduction (e.g., vec2 sum: (Σx, Σy))
+   162→ * Empty field behavior: Returns 0 for numeric types
+   163→ * 
+   164→ * Spec: 04-compilation.md:394, 409
+   165→ */
+   166→export interface SigExprReduceField {
+   167→  readonly kind: 'reduceField';
+   168→  readonly field: FieldExprId;
+   169→  readonly op: 'min' | 'max' | 'sum' | 'avg';
+   170→  readonly type: CanonicalType;
+   171→}
+   172→
+   173→/**
+   174→ * Event read signal expression.
+   175→ * Reads the fired/not-fired state of an event slot as a float (0.0 or 1.0).
+   176→ * This is the canonical event→signal bridge (spec §9.2).
+   177→ */
+   178→export interface SigExprEventRead {
+   179→  readonly kind: 'eventRead';
+   180→  readonly eventSlot: EventSlotId;
+   181→  readonly type: CanonicalType;
+   182→}
+   183→
+   184→// =============================================================================
+   185→// Field Expressions
+   186→// =============================================================================
+   187→
+   188→/**
+   189→ * Valid intrinsic property names (closed union).
+   190→ * These are per-element properties automatically available for any instance.
+   191→ */
+   192→export type IntrinsicPropertyName =
+   193→  | 'index'
+   194→  | 'normalizedIndex'
+   195→  | 'randomId';
+   196→
+   197→/**
+   198→ * PlacementBasis field names (stable per-element coordinates).
+   199→ * These replace normalizedIndex in gauge-invariant layout blocks.
+   200→ */
+   201→export type PlacementFieldName = 'uv' | 'rank' | 'seed';
+   202→
+   203→/**
+   204→ * Basis generation algorithm.
+   205→ * User-configurable per layout block.
+   206→ */
+   207→export type BasisKind =
+   208→  | 'halton2D'    // Low-discrepancy sequence (good general coverage)
+   209→  | 'random'      // Pure random (specified seed)
+   210→  | 'spiral'      // Spiral pattern (good for circles)
+   211→  | 'grid';       // Grid-aligned (good for grid layouts)
+   212→
+   213→export type FieldExpr =
+   214→  | FieldExprConst
+   215→  | FieldExprIntrinsic
+   216→  | FieldExprBroadcast
+   217→  | FieldExprMap
+   218→  | FieldExprZip
+   219→  | FieldExprZipSig
+   220→  | FieldExprStateRead
+   221→  | FieldExprPathDerivative
+   222→  | FieldExprPlacement;
+   223→
+   224→export interface FieldExprConst {
+   225→  readonly kind: 'const';
+   226→  readonly value: number | string;
+   227→  readonly type: CanonicalType;
+   228→}
+   229→
+   230→/**
+   231→ * Intrinsic field expression - properly typed intrinsic access.
+   232→ * Provides per-element properties automatically available for any instance.
+   233→ */
+   234→export interface FieldExprIntrinsic {
+   235→  readonly kind: 'intrinsic';
+   236→  readonly instanceId: InstanceId;
+   237→  readonly intrinsic: IntrinsicPropertyName;
+   238→  readonly type: CanonicalType;
+   239→}
+   240→
+   241→/**
+   242→ * Placement field expression - gauge-invariant per-element coordinates.
+   243→ * These replace normalizedIndex for layout blocks.
+   244→ */
+   245→export interface FieldExprPlacement {
+   246→  readonly kind: 'placement';
+   247→  readonly instanceId: InstanceId;
+   248→  readonly field: PlacementFieldName;
+   249→  readonly basisKind: BasisKind;
+   250→  readonly type: CanonicalType;
+   251→}
+   252→
+   253→export interface FieldExprBroadcast {
+   254→  readonly kind: 'broadcast';
+   255→  readonly signal: SigExprId;
+   256→  readonly type: CanonicalType;
+   257→}
+   258→
+   259→export interface FieldExprMap {
+   260→  readonly kind: 'map';
+   261→  readonly input: FieldExprId;
+   262→  readonly fn: PureFn;
+   263→  readonly type: CanonicalType;
+   264→  readonly instanceId?: InstanceId;
+   265→}
+   266→
+   267→export interface FieldExprZip {
+   268→  readonly kind: 'zip';
+   269→  readonly inputs: readonly FieldExprId[];
+   270→  readonly fn: PureFn;
+   271→  readonly type: CanonicalType;
+   272→  readonly instanceId?: InstanceId;
+   273→}
+   274→
+   275→export interface FieldExprZipSig {
+   276→  readonly kind: 'zipSig';
+   277→  readonly field: FieldExprId;
+   278→  readonly signals: readonly SigExprId[];
+   279→  readonly fn: PureFn;
+   280→  readonly type: CanonicalType;
+   281→  readonly instanceId?: InstanceId;
+   282→}
+   283→
+   284→/**
+   285→ * Per-lane state read for stateful cardinality-generic blocks.
+   286→ * Each lane reads its corresponding state slot value.
+   287→ */
+   288→export interface FieldExprStateRead {
+   289→  readonly kind: 'stateRead';
+   290→  readonly stateSlot: StateSlotId;
+   291→  readonly instanceId: InstanceId;
+   292→  readonly type: CanonicalType;
+   293→}
+   294→
+   295→/**
+   296→ * Path derivative field expression.
+   297→ * Computes tangent or arc length from path control points.
+   298→ *
+   299→ * MVP Scope: Polygonal paths only (linear approximation).
+   300→ * - tangent: Central difference between adjacent points
+   301→ * - arcLength: Cumulative Euclidean distance
+   302→ *
+   303→ * Phase 2: Will add bezier curve support via topology access.
+   304→ */
+   305→export interface FieldExprPathDerivative {
+   306→  readonly kind: 'pathDerivative';
+   307→  readonly input: FieldExprId;
+   308→  readonly operation: 'tangent' | 'arcLength';
+   309→  readonly type: CanonicalType;
+   310→}
+   311→
+   312→// =============================================================================
+   313→// Event Expressions
+   314→// =============================================================================
+   315→
+   316→export type EventExpr =
+   317→  | EventExprConst
+   318→  | EventExprPulse
+   319→  | EventExprWrap
+   320→  | EventExprCombine
+   321→  | EventExprNever;
+   322→
+   323→export interface EventExprConst {
+   324→  readonly kind: 'const';
+   325→  readonly type: CanonicalType;
+   326→  readonly fired: boolean;
+   327→}
+   328→
+   329→export interface EventExprPulse {
+   330→  readonly kind: 'pulse';
+   331→  readonly type: CanonicalType;
+   332→  readonly source: 'timeRoot';
+   333→}
+   334→
+   335→export interface EventExprWrap {
+   336→  readonly kind: 'wrap';
+   337→  readonly type: CanonicalType;
+   338→  readonly signal: SigExprId;
+   339→}
+   340→
+   341→export interface EventExprCombine {
+   342→  readonly kind: 'combine';
+   343→  readonly type: CanonicalType;
+   344→  readonly events: readonly EventExprId[];
+   345→  readonly mode: 'any' | 'all';
+   346→}
+   347→
+   348→export interface EventExprNever {
+   349→  readonly kind: 'never';
+   350→  readonly type: CanonicalType;
+   351→}
+   352→
+   353→// =============================================================================
+   354→// Pure Functions
+   355→// =============================================================================
+   356→
+   357→/**
+   358→ * PureFn - Pure function representation for map/zip operations
+   359→ *
+   360→ * Can be a primitive opcode, a kernel function, or an expression string.
+   361→ */
+   362→export type PureFn =
+   363→  | { readonly kind: 'opcode'; readonly opcode: OpCode }
+   364→  | { readonly kind: 'kernel'; readonly name: string }
+   365→  | { readonly kind: 'expr'; readonly expr: string }
+   366→  | { readonly kind: 'composed'; readonly ops: readonly OpCode[] };
+   367→
+   368→/**
+   369→ * OpCode - Primitive operations available in the IR
+   370→ *
+   371→ * Used in map/zip functions to transform signals/fields.
+   372→ * All operations are pure (no side effects).
+   373→ */
+   374→export enum OpCode {
+   375→  // Arithmetic
+   376→  Add = 'add',
+   377→  Sub = 'sub',
+   378→  Mul = 'mul',
+   379→  Div = 'div',
+   380→  Mod = 'mod',
+   381→  Pow = 'pow',
+   382→  Neg = 'neg',
+   383→  Abs = 'abs',
+   384→
+   385→  // Trigonometric
+   386→  Sin = 'sin',
+   387→  Cos = 'cos',
+   388→  Tan = 'tan',
+   389→
+   390→  // Range
+   391→  Min = 'min',
+   392→  Max = 'max',
+   393→  Clamp = 'clamp',
+   394→  Lerp = 'lerp',
+   395→
+   396→  // Comparison
+   397→  Eq = 'eq',
+   398→  Lt = 'lt',
+   399→  Gt = 'gt',
+   400→
+   401→  // Phase
+   402→  Wrap01 = 'wrap01',
+   403→
+   404→  // Hash
+   405→  Hash = 'hash',
+   406→
+   407→  // Math functions (unary)
+   408→  Floor = 'floor',
+   409→  Ceil = 'ceil',
+   410→  Round = 'round',
+   411→  Fract = 'fract',
+   412→  Sqrt = 'sqrt',
+   413→  Exp = 'exp',
+   414→  Log = 'log',
+   415→  Sign = 'sign',
+   416→}
+   417→
+   418→// =============================================================================
+   419→// Instance System
+   420→// =============================================================================
+   421→
+   422→/**
+   423→ * Import new domain system types.
+   424→ */
+   425→import type { DomainTypeId, InstanceId } from './Indices';
+   426→
+   427→/**
+   428→ * Instance declaration.
+   429→ * An instance is a specific instantiation of a domain type with count and lifecycle.
+   430→ * Layout is now handled entirely through field kernels (circleLayout, lineLayout, gridLayout).
+   431→ */
+   432→export interface InstanceDecl {
+   433→  readonly id: InstanceId;
+   434→  readonly domainType: DomainTypeId;
+   435→  readonly count: number | 'dynamic';
+   436→  readonly lifecycle: 'static' | 'dynamic' | 'pooled';
+   437→  // Continuity System: Identity specification
+   438→  readonly identityMode: 'stable' | 'none';
+   439→  readonly elementIdSeed?: number; // For deterministic ID generation
+   440→}
+   441→
+   442→// =============================================================================
+   443→// Continuity System Types (spec: topics/11-continuity-system.md)
+   444→// =============================================================================
+   445→
+   446→/**
+   447→ * Runtime domain instance with identity information (spec §3.1).
+   448→ * Used by continuity system for element mapping.
+   449→ */
+   450→export interface DomainInstance {
+   451→  /** Number of elements in this domain */
+   452→  readonly count: number;
+   453→
+   454→  /** Stable element IDs - required when identityMode='stable' */
+   455→  readonly elementId: Uint32Array;
+   456→
+   457→  /** Identity mode - 'stable' enables per-element continuity */
+   458→  readonly identityMode: 'stable' | 'none';
+   459→
+   460→  /** Optional spatial hints for fallback position-based mapping */
+   461→  readonly posHintXY?: Float32Array;
+   462→}
+   463→
+   464→/**
+   465→ * Gauge specification for continuity (spec §2.4).
+   466→ * A gauge is an operation that composes with the base value to produce the effective value.
+   467→ */
+   468→export type GaugeSpec =
+   469→  | { readonly kind: 'add' }           // scalar/vec/linear RGBA: x_eff = x_base + Δ
+   470→  | { readonly kind: 'mul' }           // scale continuity (rare): x_eff = x_base * Δ
+   471→  | { readonly kind: 'affine' }        // x_eff = a*x_base + b (for clamped values)
+   472→  | { readonly kind: 'phaseOffset01' }; // specialized for phase (wrap-aware)
+   473→
+   474→/**
+   475→ * Continuity policy for a field target (spec §2.2).
+   476→ * Every target has exactly one declared policy. No "optional" behavior exists.
+   477→ */
+   478→export type ContinuityPolicy =
+   479→  | { readonly kind: 'none' }
+   480→  | { readonly kind: 'preserve'; readonly gauge: GaugeSpec }
+   481→  | { readonly kind: 'slew'; readonly gauge: GaugeSpec; readonly tauMs: number }
+   482→  | { readonly kind: 'crossfade'; readonly windowMs: number; readonly curve: 'linear' | 'smoothstep' | 'ease-in-out' }
+   483→  | { readonly kind: 'project'; readonly projector: 'byId' | 'byPosition'; readonly post: 'slew'; readonly tauMs: number };
+   484→
+   485→
+   486→// =============================================================================
+   487→// Time Model
+   488→// =============================================================================
+   489→
+   490→export type TimeModel = TimeModelIR;
+   491→
+   492→// =============================================================================
+   493→// Execution Steps
+   494→// =============================================================================
+   495→
+   496→export type Step =
+   497→  | StepEvalSig
+   498→  | StepSlotWriteStrided
+   499→  | StepMaterialize
+   500→  | StepRender
+   501→  | StepStateWrite
+   502→  | StepFieldStateWrite
+   503→  | StepContinuityMapBuild
+   504→  | StepContinuityApply
+   505→  | StepEvalEvent;
+   506→
+   507→export interface StepEvalSig {
+   508→  readonly kind: 'evalSig';
+   509→  readonly expr: SigExprId;
+   510→  readonly target: ValueSlot;
+   511→}
+   512→
+   513→/**
+   514→ * Strided slot write step - writes multiple scalar signal components to contiguous slots.
+   515→ *
+   516→ * This is the canonical way to materialize multi-component signal values (vec2, vec3, color)
+   517→ * into value slots without requiring array-returning evaluators or side-effect kernels.
+   518→ *
+   519→ * Contract:
+   520→ * - inputs.length must equal the stride of slotBase (from slotMeta)
+   521→ * - Each input is evaluated as a scalar signal
+   522→ * - Results are written sequentially: values.f64[slotBase + i] = evaluateSignal(inputs[i])
+   523→ *
+   524→ * Example: vec2 output
+   525→ *   slotBase = allocSlot(stride=2)
+   526→ *   inputs = [sigExprX, sigExprY]
+   527→ *   → writes values.f64[slotBase+0] = eval(sigExprX), values.f64[slotBase+1] = eval(sigExprY)
+   528→ */
+   529→export interface StepSlotWriteStrided {
+   530→  readonly kind: 'slotWriteStrided';
+   531→  readonly slotBase: ValueSlot;
+   532→  readonly inputs: readonly SigExprId[];
+   533→}
+   534→
+   535→export interface StepMaterialize {
+   536→  readonly kind: 'materialize';
+   537→  readonly field: FieldExprId;
+   538→  readonly instanceId: InstanceId;
+   539→  readonly target: ValueSlot;
+   540→}
+   541→
+   542→export interface StepRender {
+   543→  readonly kind: 'render';
+   544→  readonly instanceId: InstanceId;
+   545→  /** Slot containing position buffer (after continuity applied) */
+   546→  readonly positionSlot: ValueSlot;
+   547→  /** Slot containing color buffer (after continuity applied) */
+   548→  readonly colorSlot: ValueSlot;
+   549→  /** Scale multiplier for shape dimensions (uniform signal, default 1.0) */
+   550→  readonly scale?: { readonly k: 'sig'; readonly id: SigExprId };
+   551→  /** Shape - topology + param signals (REQUIRED at runtime, types now enforce this) */
+   552→  readonly shape:
+   553→    | { readonly k: 'sig'; readonly topologyId: TopologyId; readonly paramSignals: readonly SigExprId[] }
+   554→    | { readonly k: 'slot'; readonly slot: ValueSlot };
+   555→  /** Optional control points for path rendering - P5c: Add control points field */
+   556→  readonly controlPoints?: { readonly k: 'slot'; readonly slot: ValueSlot };
+   557→  /** C-13: Per-instance rotation (radians) - slot containing Float32Array */
+   558→  readonly rotationSlot?: ValueSlot;
+   559→  /** C-13: Per-instance anisotropic scale (x,y pairs) - slot containing Float32Array */
+   560→  readonly scale2Slot?: ValueSlot;
+   561→}
+   562→
+   563→export interface StepStateWrite {
+   564→  readonly kind: 'stateWrite';
+   565→  readonly stateSlot: StateSlotId;
+   566→  readonly value: SigExprId;
+   567→}
+   568→
+   569→/**
+   570→ * Per-lane state write for stateful cardinality-generic blocks.
+   571→ * Each lane writes its corresponding value to state.
+   572→ */
+   573→export interface StepFieldStateWrite {
+   574→  readonly kind: 'fieldStateWrite';
+   575→  readonly stateSlot: StateSlotId;
+   576→  readonly value: FieldExprId;
+   577→}
+   578→
+   579→/**
+   580→ * Continuity map build step (spec §5.1).
+   581→ * Detects domain changes and builds element mappings.
+   582→ */
+   583→export interface StepContinuityMapBuild {
+   584→  readonly kind: 'continuityMapBuild';
+   585→  readonly instanceId: InstanceId;
+   586→  readonly outputMapping: string; // Mapping identifier
+   587→}
+   588→
+   589→/**
+   590→ * Continuity apply step (spec §5.1).
+   591→ * Applies continuity policy to a field target.
+   592→ */
+   593→export interface StepContinuityApply {
+   594→  readonly kind: 'continuityApply';
+   595→  readonly targetKey: string; // Unique identifier for this target
+   596→  readonly instanceId: InstanceId;
+   597→  readonly policy: ContinuityPolicy;
+   598→  readonly baseSlot: ValueSlot; // Input buffer (base values)
+   599→  readonly outputSlot: ValueSlot; // Output buffer (continuity-applied values)
+   600→  readonly semantic: 'position' | 'radius' | 'opacity' | 'color' | 'custom';
+   601→  readonly stride: number; // Components per element (from payload type, not semantic)
+   602→}
+   603→
+   604→/**
+   605→ * Event evaluation step.
+   606→ * Evaluates an event expression and writes result to event storage.
+   607→ */
+   608→export interface StepEvalEvent {
+   609→  readonly kind: 'evalEvent';
+   610→  readonly expr: EventExprId;
+   611→  readonly target: EventSlotId;
+   612→}
+   613→
+   614→// =============================================================================
+   615→// Stable State Identity (for hot-swap migration)
+   616→// =============================================================================
+   617→
+   618→/**
+   619→ * Stable state ID - semantic identity that survives recompilation.
+   620→ *
+   621→ * Format: "blockId:stateKind" (e.g., "b3:delay", "b7:slew")
+   622→ *
+   623→ * The lane index is NOT part of StableStateId - lanes are remapped using
+   624→ * the continuity mapping service during hot-swap.
+   625→ */
+   626→export type StableStateId = string & { readonly __brand: 'StableStateId' };
+   627→
+   628→/**
+   629→ * Create a stable state ID from block ID and state kind.
+   630→ *
+   631→ * @param blockId - The block's stable ID (survives recompilation)
+   632→ * @param stateKind - Type of state (e.g., 'delay', 'slew', 'phase')
+   633→ */
+   634→export function stableStateId(blockId: string, stateKind: string): StableStateId {
+   635→  return `${blockId}:${stateKind}` as StableStateId;
+   636→}
+   637→
+   638→/**
+   639→ * State mapping for scalar (signal cardinality) state.
+   640→ *
+   641→ * Used for stateful primitives operating on a single value per frame.
+   642→ */
+   643→export interface StateMappingScalar {
+   644→  readonly kind: 'scalar';
+   645→  /** Stable semantic identity */
+   646→  readonly stateId: StableStateId;
+   647→  /** Positional slot index (changes each compile) */
+   648→  readonly slotIndex: number;
+   649→  /** Floats per state element (usually 1) */
+   650→  readonly stride: number;
+   651→  /** Initial values (length = stride) */
+   652→  readonly initial: readonly number[];
+   653→}
+   654→
+   655→/**
+   656→ * Spec-aligned type alias for scalar state slot declarations.
+   657→ *
+   658→ * This is the name used in the specification (04-compilation.md §I9).
+   659→ * The implementation uses `StateMappingScalar` as the canonical name
+   660→ * because it clarifies the "mapping" between semantic state IDs and
+   661→ * positional slots.
+   662→ *
+   663→ * @see StateMappingScalar
+   664→ * @see design-docs/CANONICAL-oscilla-v2.5-20260109/topics/04-compilation.md §I9
+   665→ */
+   666→export type ScalarSlotDecl = StateMappingScalar;
+   667→
+   668→/**
+   669→ * State mapping for field (many cardinality) state.
+   670→ *
+   671→ * Used for stateful primitives operating on per-lane state arrays.
+   672→ * Lane remapping during hot-swap uses the continuity mapping service.
+   673→ */
+   674→export interface StateMappingField {
+   675→  readonly kind: 'field';
+   676→  /** Stable semantic identity */
+   677→  readonly stateId: StableStateId;
+   678→  /** Instance this state tracks (for lane mapping) */
+   679→  readonly instanceId: InstanceId;
+   680→  /** Start offset in state array (positional, changes each compile) */
+   681→  readonly slotStart: number;
+   682→  /** Number of lanes at compile time */
+   683→  readonly laneCount: number;
+   684→  /** Floats per lane (>=1) */
+   685→  readonly stride: number;
+   686→  /** Per-lane initial values template (length = stride) */
+   687→  readonly initial: readonly number[];
+   688→}
+   689→
+   690→/**
+   691→ * Spec-aligned type alias for field state slot declarations.
+   692→ *
+   693→ * This is the name used in the specification (04-compilation.md §I9).
+   694→ * The implementation uses `StateMappingField` as the canonical name
+   695→ * because it clarifies the "mapping" between semantic state IDs and
+   696→ * positional slots, with lane remapping for hot-swap.
+   697→ *
+   698→ * @see StateMappingField
+   699→ * @see design-docs/CANONICAL-oscilla-v2.5-20260109/topics/04-compilation.md §I9
+   700→ */
+   701→export type FieldSlotDecl = StateMappingField;
+   702→
+   703→/**
+   704→ * Union of scalar and field state mappings.
+   705→ */
+   706→export type StateMapping = StateMappingScalar | StateMappingField;
+   707→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

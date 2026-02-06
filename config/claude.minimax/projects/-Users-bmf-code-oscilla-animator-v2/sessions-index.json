@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "sessionId": "62f3bb5c-cbe1-4727-8908-2915e2e1ec8a",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/62f3bb5c-cbe1-4727-8908-2915e2e1ec8a.jsonl",
+      "fileMtime": 1769659081667,
+      "firstPrompt": "minimax",
+      "summary": "Find last commit for createDiagnostic function definition",
+      "messageCount": 6,
+      "created": "2026-01-28T07:40:38.340Z",
+      "modified": "2026-01-28T11:32:57.739Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "372e2c74-061a-4260-b760-8cd64885c77a",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/372e2c74-061a-4260-b760-8cd64885c77a.jsonl",
+      "fileMtime": 1769659125209,
+      "firstPrompt": "minimax",
+      "summary": "Minimax plugin request interrupted",
+      "messageCount": 4,
+      "created": "2026-01-29T03:57:55.351Z",
+      "modified": "2026-01-29T03:58:34.563Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "1ba0abf1-7bc0-4dd0-adca-633b0b211109",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/1ba0abf1-7bc0-4dd0-adca-633b0b211109.jsonl",
+      "fileMtime": 1769664416832,
+      "firstPrompt": "minimax",
+      "summary": "Invalid API key · Please run /login",
+      "messageCount": 19,
+      "created": "2026-01-29T05:19:21.039Z",
+      "modified": "2026-01-29T05:26:49.061Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "c5a3309a-cab4-4f32-97c0-106c8617bf60",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/c5a3309a-cab4-4f32-97c0-106c8617bf60.jsonl",
+      "fileMtime": 1769668577249,
+      "firstPrompt": "minimax",
+      "summary": "API Error: 404 404 page not found",
+      "messageCount": 2,
+      "created": "2026-01-29T05:30:03.437Z",
+      "modified": "2026-01-29T05:32:32.449Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "6cb1b6d8-c262-4dc2-bb1a-4cf4a4a7f082",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/6cb1b6d8-c262-4dc2-bb1a-4cf4a4a7f082.jsonl",
+      "fileMtime": 1769668577432,
+      "firstPrompt": "minimax",
+      "summary": "API Error: 404 404 page not found",
+      "messageCount": 2,
+      "created": "2026-01-29T05:27:25.544Z",
+      "modified": "2026-01-29T05:27:34.121Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "2f4ab67e-e48d-4e8a-bee1-49adda68c2ab",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/2f4ab67e-e48d-4e8a-bee1-49adda68c2ab.jsonl",
+      "fileMtime": 1769668577553,
+      "firstPrompt": "minimax",
+      "summary": "API Error: 404 404 page not found",
+      "messageCount": 45,
+      "created": "2026-01-29T03:58:42.341Z",
+      "modified": "2026-01-29T06:12:37.727Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "24535e4b-eb25-462c-8195-dbeac86d76f5",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/24535e4b-eb25-462c-8195-dbeac86d76f5.jsonl",
+      "fileMtime": 1769675253484,
+      "firstPrompt": "canonical-type/SPRINT-2026-01-28-192541-const-value-*.md",
+      "summary": "Invalid API key · Please run /login",
+      "messageCount": 46,
+      "created": "2026-01-29T06:13:08.760Z",
+      "modified": "2026-01-29T07:25:31.125Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    },
+    {
+      "sessionId": "c38f2ae7-d7b8-4a20-a272-11843201cae0",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-oscilla-animator-v2/c38f2ae7-d7b8-4a20-a272-11843201cae0.jsonl",
+      "fileMtime": 1769675253489,
+      "firstPrompt": "minimax",
+      "summary": "Invalid API key · Please run /login",
+      "messageCount": 4,
+      "created": "2026-01-29T06:36:16.166Z",
+      "modified": "2026-01-29T06:39:49.639Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/oscilla-animator-v2",
+      "isSidechain": false
+    }
+  ],
+  "originalPath": "/Users/bmf/code/oscilla-animator-v2"
+}

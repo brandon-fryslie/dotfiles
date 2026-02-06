@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "plugins": {
+    "do-more@loom99": [
+      {
+        "scope": "user",
+        "installPath": "/Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/loom99/do-more/0.5.23",
+        "version": "0.5.23",
+        "installedAt": "2026-01-29T03:58:34.552Z",
+        "lastUpdated": "2026-01-29T03:58:34.552Z",
+        "gitCommitSha": "74ef39bba16e32eea315736668f6ea05f74e8cda"
+      }
+    ],
+    "do@loom99": [
+      {
+        "scope": "user",
+        "installPath": "/Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/loom99/do/0.5.23",
+        "version": "0.5.23",
+        "installedAt": "2026-01-29T03:59:46.179Z",
+        "lastUpdated": "2026-01-29T03:59:46.179Z",
+        "gitCommitSha": "74ef39bba16e32eea315736668f6ea05f74e8cda"
+      }
+    ],
+    "do-extra@loom99": [
+      {
+        "scope": "user",
+        "installPath": "/Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/loom99/do-extra/0.5.17",
+        "version": "0.5.17",
+        "installedAt": "2026-01-29T03:59:46.200Z",
+        "lastUpdated": "2026-01-29T03:59:46.200Z",
+        "gitCommitSha": "74ef39bba16e32eea315736668f6ea05f74e8cda"
+      }
+    ],
+    "typescript-lsp@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2026-01-29T04:02:04.796Z",
+        "lastUpdated": "2026-01-29T04:02:04.796Z",
+        "gitCommitSha": "e30768372b4150ca1bc0839d93283e8edc30d60d"
+      }
+    ]
+  }
+}

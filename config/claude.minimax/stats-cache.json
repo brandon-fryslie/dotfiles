@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "lastComputedDate": "2026-01-28",
+  "dailyActivity": [
+    {
+      "date": "2026-01-28",
+      "messageCount": 14,
+      "sessionCount": 3,
+      "toolCallCount": 0
+    }
+  ],
+  "dailyModelTokens": [
+    {
+      "date": "2026-01-28",
+      "tokensByModel": {
+        "MiniMax-M2.1": 1032
+      }
+    }
+  ],
+  "modelUsage": {
+    "MiniMax-M2.1": {
+      "inputTokens": 1032,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 76344,
+      "cacheCreationInputTokens": 101188,
+      "webSearchRequests": 0,
+      "costUSD": 0,
+      "contextWindow": 0,
+      "maxOutputTokens": 0
+    }
+  },
+  "totalSessions": 3,
+  "totalMessages": 14,
+  "longestSession": {
+    "sessionId": "62f3bb5c-cbe1-4727-8908-2915e2e1ec8a",
+    "duration": 13939399,
+    "messageCount": 8,
+    "timestamp": "2026-01-28T07:40:38.340Z"
+  },
+  "firstSessionDate": "2026-01-28T07:40:38.340Z",
+  "hourCounts": {
+    "0": 1,
+    "2": 2
+  }
+}

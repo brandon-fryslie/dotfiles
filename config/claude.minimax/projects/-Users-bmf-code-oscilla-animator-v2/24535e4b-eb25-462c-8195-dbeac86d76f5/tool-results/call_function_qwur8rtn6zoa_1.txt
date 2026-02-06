@@ -1,0 +1,7 @@
+/Users/bmf/code/oscilla-animator-v2/src/compiler/passes-v2/__tests__/combine-utils.test.ts
+/Users/bmf/code/oscilla-animator-v2/src/compiler/passes-v2/__tests__/payload-validation.test.ts
+/Users/bmf/code/oscilla-animator-v2/src/compiler/passes-v2/index.ts
+/Users/bmf/code/oscilla-animator-v2/src/compiler/passes-v2/__tests__/unit-validation.test.ts
+/Users/bmf/code/oscilla-animator-v2/src/compiler/passes-v2/resolveWriters.ts
+/Users/bmf/code/oscilla-animator-v2/src/compiler/passes-v2/combine-utils.ts
+/Users/bmf/code/oscilla-animator-v2/src/compiler/passes-v2/__tests__/cardinality-specialization.test.ts

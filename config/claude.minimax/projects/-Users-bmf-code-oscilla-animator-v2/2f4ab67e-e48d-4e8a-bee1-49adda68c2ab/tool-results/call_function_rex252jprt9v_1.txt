@@ -1,0 +1,14 @@
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/EXPLORE-2026-01-28-191553.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/EVALUATION-2026-01-28-191553.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-foundation-PLAN.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-foundation-DOD.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-foundation-CONTEXT.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-event-typing-PLAN.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-event-typing-DOD.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-event-typing-CONTEXT.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-authority-consolidation-PLAN.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-authority-consolidation-DOD.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-authority-consolidation-CONTEXT.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-const-value-PLAN.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-const-value-DOD.md
+/Users/bmf/code/oscilla-animator-v2/.agent_planning/canonical-type/SPRINT-2026-01-28-192541-const-value-CONTEXT.md

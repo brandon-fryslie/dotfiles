@@ -1,0 +1,44 @@
+   245→
+   246→    it('deduplicates identical fieldArray', () => {
+   247→      const b = new IRBuilderImpl();
+   248→      const type = canonicalType(FLOAT);
+   249→      const inst = instanceId('inst1');
+   250→      
+   251→      const id1 = b.fieldArray(inst, type);
+   252→      const id2 = b.fieldArray(inst, type);
+   253→      
+   254→      expect(id1).toBe(id2);
+   255→    });
+   256→
+   257→    it('deduplicates identical fieldPlacement', () => {
+   258→      const b = new IRBuilderImpl();
+   259→      const type = canonicalType(VEC2);
+   260→      const inst = instanceId('inst1');
+   261→      
+   262→      const id1 = b.fieldPlacement(inst, 'uv', 'halton2D', type);
+   263→      const id2 = b.fieldPlacement(inst, 'uv', 'halton2D', type);
+   264→      
+   265→      expect(id1).toBe(id2);
+   266→    });
+   267→  });
+   268→
+   269→  describe('EventExpr deduplication', () => {
+   270→    it('deduplicates identical eventPulse', () => {
+   271→      const b = new IRBuilderImpl();
+   272→      
+   273→      const id1 = b.eventPulse('InfiniteTimeRoot');
+   274→      const id2 = b.eventPulse('InfiniteTimeRoot');
+   275→      
+   276→      expect(id1).toBe(id2);
+   277→    });
+   278→
+   279→    it('deduplicates identical eventNever', () => {
+   280→      const b = new IRBuilderImpl();
+   281→      
+   282→      const id1 = b.eventNever();
+   283→      const id2 = b.eventNever();
+   284→      
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

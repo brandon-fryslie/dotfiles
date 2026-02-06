@@ -1,0 +1,14 @@
+src/compiler/ir/types.ts:167:  readonly kind: 'reduce_field';
+src/compiler/ir/IRBuilderImpl.ts:389:    const expr = { kind: 'reduce_field' as const, field, op, type };
+src/runtime/SignalEvaluator.ts:201:    case 'reduce_field': {
+src/runtime/__tests__/reduce-op.test.ts:74:      // Find reduce_field expression
+src/runtime/__tests__/reduce-op.test.ts:75:      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+src/runtime/__tests__/reduce-op.test.ts:78:      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+src/runtime/__tests__/reduce-op.test.ts:101:      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+src/runtime/__tests__/reduce-op.test.ts:107:      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+src/runtime/__tests__/reduce-op.test.ts:129:      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+src/runtime/__tests__/reduce-op.test.ts:131:      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+src/runtime/__tests__/reduce-op.test.ts:149:      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+src/runtime/__tests__/reduce-op.test.ts:151:      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+src/runtime/__tests__/reduce-op.test.ts:157:  // NOTE: Runtime evaluation tests are deferred until reduce_field
+src/runtime/__tests__/reduce-op.test.ts:161:      // TODO: Implement after reduce_field can materialize fields

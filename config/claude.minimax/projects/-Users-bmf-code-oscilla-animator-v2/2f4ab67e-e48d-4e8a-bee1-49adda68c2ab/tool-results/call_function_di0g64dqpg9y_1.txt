@@ -1,0 +1,154 @@
+   120→  return allowed.includes(unit.kind);
+   121→}
+   122→
+   123→/**
+   124→ * Get the default unit for a payload type.
+   125→ * Used for ergonomic helpers where unit can be omitted.
+   126→ * Throws if given a payload variable (must resolve payload first).
+   127→ */
+   128→export function defaultUnitForPayload(payload: PayloadType): Unit {
+   129→  if (isPayloadVar(payload)) {
+   130→    throw new Error(`Cannot get default unit for payload variable ${payload.id} - resolve payload first`);
+   131→  }
+   132→  // After isPayloadVar check, payload is ConcretePayloadType
+   133→  const concretePayload = payload as ConcretePayloadType;
+   134→  switch (concretePayload.kind) {
+   135→    case 'float': return unitScalar();
+   136→    case 'int': return unitCount();
+   137→    case 'vec2': return unitWorld2();
+   138→    case 'vec3': return unitWorld3();
+   139→    case 'color': return unitRgba01();
+   140→    case 'bool': return unitNone();
+   141→    case 'shape': return unitNone();
+   142→    case 'cameraProjection': return unitNone();
+   143→    default: {
+   144→      const _exhaustive: never = concretePayload;
+   145→      throw new Error(`Unknown payload kind: ${(_exhaustive as ConcretePayloadType).kind}`);
+   146→    }
+   147→  }
+   148→}
+   149→
+   150→// =============================================================================
+   151→// PayloadType - What the value is made of
+   152→// =============================================================================
+   153→
+   154→/**
+   155→ * Concrete payload types (non-variable) as discriminated union with intrinsic stride.
+   156→ *
+   157→ * Stride is baked into the type - wherever you have a ConcretePayloadType,
+   158→ * stride is immediately available via `.stride`. No lookups needed.
+   159→ *
+   160→ * Note: 'phase' is NOT a payload - it's float with unit:phase01.
+   161→ * Note: 'event' and 'domain' are NOT PayloadTypes - they are axis/resource concepts.
+   162→ */
+   163→export type ConcretePayloadType =
+   164→  | { readonly kind: 'float'; readonly stride: 1 }
+   165→  | { readonly kind: 'int'; readonly stride: 1 }
+   166→  | { readonly kind: 'bool'; readonly stride: 1 }
+   167→  | { readonly kind: 'vec2'; readonly stride: 2 }
+   168→  | { readonly kind: 'vec3'; readonly stride: 3 }
+   169→  | { readonly kind: 'color'; readonly stride: 4 }
+   170→  | { readonly kind: 'shape'; readonly stride: 8 }
+   171→  | { readonly kind: 'cameraProjection'; readonly stride: 1 };
+   172→
+   173→/**
+   174→ * The kind discriminator for concrete payload types.
+   175→ * Use this for switch statements and Record keys.
+   176→ */
+   177→export type PayloadKind = ConcretePayloadType['kind'];
+   178→
+   179→// --- Singleton instances for each concrete payload type ---
+   180→// Use these instead of creating new objects. They are identical by reference.
+   181→
+   182→/** Float payload type (stride: 1) */
+   183→export const FLOAT: ConcretePayloadType = { kind: 'float', stride: 1 } as const;
+   184→/** Int payload type (stride: 1) */
+   185→export const INT: ConcretePayloadType = { kind: 'int', stride: 1 } as const;
+   186→/** Bool payload type (stride: 1) */
+   187→export const BOOL: ConcretePayloadType = { kind: 'bool', stride: 1 } as const;
+   188→/** Vec2 payload type (stride: 2) */
+   189→export const VEC2: ConcretePayloadType = { kind: 'vec2', stride: 2 } as const;
+   190→/** Vec3 payload type (stride: 3) */
+   191→export const VEC3: ConcretePayloadType = { kind: 'vec3', stride: 3 } as const;
+   192→/** Color payload type (stride: 4) */
+   193→export const COLOR: ConcretePayloadType = { kind: 'color', stride: 4 } as const;
+   194→/** Shape payload type (stride: 8) */
+   195→export const SHAPE: ConcretePayloadType = { kind: 'shape', stride: 8 } as const;
+   196→/** Camera projection payload type (stride: 1) */
+   197→export const CAMERA_PROJECTION: ConcretePayloadType = { kind: 'cameraProjection', stride: 1 } as const;
+   198→
+   199→/**
+   200→ * Map from kind string to singleton instance.
+   201→ * Used by payloadFromKind() for deserialization and compatibility.
+   202→ */
+   203→const PAYLOAD_BY_KIND: Record<PayloadKind, ConcretePayloadType> = {
+   204→  float: FLOAT,
+   205→  int: INT,
+   206→  bool: BOOL,
+   207→  vec2: VEC2,
+   208→  vec3: VEC3,
+   209→  color: COLOR,
+   210→  shape: SHAPE,
+   211→  cameraProjection: CAMERA_PROJECTION,
+   212→};
+   213→
+   214→/**
+   215→ * Get a ConcretePayloadType from its kind string.
+   216→ * Used for deserialization and backwards compatibility.
+   217→ */
+   218→export function payloadFromKind(kind: PayloadKind): ConcretePayloadType {
+   219→  return PAYLOAD_BY_KIND[kind];
+   220→}
+   221→
+   222→/**
+   223→ * The base data type of a value, including unresolved variables.
+   224→ *
+   225→ * PayloadType can be either:
+   226→ * - A concrete type object with kind and stride (e.g., FLOAT, VEC2)
+   227→ * - A payload variable { kind: 'var', id: string } for polymorphic ports
+   228→ *
+   229→ * Payload variables MUST be resolved by the constraint solver before compilation.
+   230→ */
+   231→export type PayloadType =
+   232→  | ConcretePayloadType
+   233→  | { readonly kind: 'var'; readonly id: string };  // Unresolved payload variable
+   234→
+   235→let payloadVarCounter = 0;
+   236→/**
+   237→ * Create an unresolved payload variable.
+   238→ * Payload variables MUST be resolved by the constraint solver before compilation.
+   239→ */
+   240→export function payloadVar(id?: string): PayloadType {
+   241→  return { kind: 'var', id: id ?? `_pv${payloadVarCounter++}` };
+   242→}
+   243→
+   244→/**
+   245→ * Check if a payload is an unresolved variable.
+   246→ */
+   247→export function isPayloadVar(payload: PayloadType): payload is { kind: 'var'; id: string } {
+   248→  return typeof payload === 'object' && payload !== null && payload.kind === 'var';
+   249→}
+   250→
+   251→/**
+   252→ * Check if a payload is a concrete (non-variable) type.
+   253→ */
+   254→export function isConcretePayload(payload: PayloadType): payload is ConcretePayloadType {
+   255→  return typeof payload === 'object' && payload !== null && 'stride' in payload;
+   256→}
+   257→
+   258→/**
+   259→ * Compare two payloads for equality.
+   260→ */
+   261→export function payloadsEqual(a: PayloadType, b: PayloadType): boolean {
+   262→  if (isPayloadVar(a) && isPayloadVar(b)) {
+   263→    return a.id === b.id;
+   264→  }
+   265→  if (isPayloadVar(a) || isPayloadVar(b)) {
+   266→    return false;  // One is var, other is concrete
+   267→  }
+   268→  // Both concrete - compare by kind (stride is derived from kind, so kind equality is sufficient)
+   269→  return a.kind === b.kind;
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

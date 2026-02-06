@@ -1,0 +1,18 @@
+{
+  "claude-plugins-official": {
+    "source": {
+      "source": "github",
+      "repo": "anthropics/claude-plugins-official"
+    },
+    "installLocation": "/Users/bmf/code/dotfiles/config/claude.minimax/plugins/marketplaces/claude-plugins-official",
+    "lastUpdated": "2026-01-29T08:27:34.819Z"
+  },
+  "loom99": {
+    "source": {
+      "source": "directory",
+      "path": "/Users/bmf/code/loom99-claude-marketplace"
+    },
+    "installLocation": "/Users/bmf/code/loom99-claude-marketplace",
+    "lastUpdated": "2026-01-29T03:58:29.112Z"
+  }
+}

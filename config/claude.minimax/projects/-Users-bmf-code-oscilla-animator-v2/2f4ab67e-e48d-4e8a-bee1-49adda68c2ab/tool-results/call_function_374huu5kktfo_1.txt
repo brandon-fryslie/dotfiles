@@ -1,0 +1,13 @@
+src/compiler/compile.ts:680:    case 'array':
+src/runtime/Materializer.ts.bak2:376:    case 'array': {
+src/runtime/Materializer.ts.bak4:377:    case 'array': {
+src/runtime/Materializer.ts.bak:375:    case 'array': {
+src/runtime/Materializer.ts.bak3:377:    case 'array': {
+src/runtime/Materializer.ts:377:    case 'array': {
+src/compiler/backend/schedule-program.ts:293:    case 'array':
+src/compiler/ir/IRBuilderImpl.ts:360:      kind: 'array' as const,
+src/compiler/ir/IRBuilderImpl.ts:486:      case 'array':
+src/compiler/ir/program.ts:241:  | { readonly kind: 'array'; readonly length: number; readonly element: ShapeDescIR }
+src/ui/components/IRTreeView.tsx:335:type NodeType = 'primitive' | 'null' | 'circular' | 'function' | 'object' | 'array' | 'map' | 'set';
+src/ui/components/IRTreeView.tsx:350:  if (Array.isArray(value)) return 'array';
+src/ui/components/IRTreeView.tsx:378:    case 'array':

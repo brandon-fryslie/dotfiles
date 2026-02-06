@@ -1,0 +1,314 @@
+     1→# Implementation Context: foundation
+     2→
+     3→## Overview
+     4→This sprint performs three mechanical refactors with zero semantic changes. All are local to type definitions and imports. TypeScript compiler + test suite provide complete validation.
+     5→
+     6→---
+     7→
+     8→## C-7: Delete FieldExprArray
+     9→
+    10→### Files to Modify
+    11→1. **src/compiler/ir/types.ts**
+    12→
+    13→### Exact Changes
+    14→
+    15→**Location 1: Line 218 (FieldExpr union)**
+    16→```typescript
+    17→// BEFORE
+    18→export type FieldExpr =
+    19→  | FieldExprIntrinsic
+    20→  | FieldExprConst
+    21→  | FieldExprArray        // <-- DELETE this line
+    22→  | FieldExprMap
+    23→  | FieldExprZip
+    24→  | FieldExprZipSig
+    25→  | FieldExprReduce;
+    26→
+    27→// AFTER
+    28→export type FieldExpr =
+    29→  | FieldExprIntrinsic
+    30→  | FieldExprConst
+    31→  | FieldExprMap
+    32→  | FieldExprZip
+    33→  | FieldExprZipSig
+    34→  | FieldExprReduce;
+    35→```
+    36→
+    37→**Location 2: Lines 285-289 (interface definition)**
+    38→```typescript
+    39→// DELETE this entire block:
+    40→export interface FieldExprArray {
+    41→  readonly kind: 'array';
+    42→  readonly slot: SlotId;
+    43→  readonly channel: ChannelId;
+    44→}
+    45→```
+    46→
+    47→### Verification
+    48→```bash
+    49→# After changes, this should return zero results in src/
+    50→grep -r "FieldExprArray" src/
+    51→```
+    52→
+    53→---
+    54→
+    55→## C-3: Rename reduce_field → reduceField
+    56→
+    57→### Search Pattern
+    58→```bash
+    59→grep -rn "reduce_field" src/
+    60→```
+    61→
+    62→### Files to Modify (estimated 17 occurrences)
+    63→
+    64→**1. src/compiler/ir/types.ts:167**
+    65→```typescript
+    66→// BEFORE
+    67→export interface FieldExprReduce {
+    68→  readonly kind: 'reduce_field';
+    69→  // ...
+    70→}
+    71→
+    72→// AFTER
+    73→export interface FieldExprReduce {
+    74→  readonly kind: 'reduceField';
+    75→  // ...
+    76→}
+    77→```
+    78→
+    79→**2. Switch/case statements (wherever they pattern-match FieldExpr.kind)**
+    80→```typescript
+    81→// BEFORE
+    82→case 'reduce_field': {
+    83→  // ...
+    84→}
+    85→
+    86→// AFTER
+    87→case 'reduceField': {
+    88→  // ...
+    89→}
+    90→```
+    91→
+    92→**3. Type guards**
+    93→```typescript
+    94→// BEFORE
+    95→if (expr.kind === 'reduce_field') { ... }
+    96→
+    97→// AFTER
+    98→if (expr.kind === 'reduceField') { ... }
+    99→```
+   100→
+   101→**4. Test assertions**
+   102→```typescript
+   103→// BEFORE
+   104→expect(expr.kind).toBe('reduce_field');
+   105→
+   106→// AFTER
+   107→expect(expr.kind).toBe('reduceField');
+   108→```
+   109→
+   110→### Pattern to Follow
+   111→- All string literals: `'reduce_field'` → `'reduceField'`
+   112→- No function/variable names change (only the literal string)
+   113→- Consistent with other FieldExpr kinds: 'map', 'zip', 'zipSig', 'stateRead'
+   114→
+   115→### Verification
+   116→```bash
+   117→# Should return 0 matches in src/
+   118→grep -r "reduce_field" src/
+   119→```
+   120→
+   121→---
+   122→
+   123→## C-2: Create core/ids.ts with Branded IDs
+   124→
+   125→### Primary File to Modify
+   126→
+   127→**src/core/ids.ts**
+   128→
+   129→Add these types and factories (insert after existing axis var IDs, before BlockId section):
+   130→
+   131→```typescript
+   132→// Insert at approximately line 14 (after axis var IDs, before BlockId)
+   133→export type InstanceId = Brand<string, 'InstanceId'>;
+   134→export type DomainTypeId = Brand<string, 'DomainTypeId'>;
+   135→```
+   136→
+   137→```typescript
+   138→// Insert at approximately line 34 (in factory function section)
+   139→export const instanceId = (s: string) => s as InstanceId;
+   140→export const domainTypeId = (s: string) => s as DomainTypeId;
+   141→```
+   142→
+   143→**Final structure (lines 14-36):**
+   144→```typescript
+   145→export type BranchVarId = Brand<string, 'BranchVarId'>;
+   146→
+   147→export type InstanceId = Brand<string, 'InstanceId'>;        // <-- NEW
+   148→export type DomainTypeId = Brand<string, 'DomainTypeId'>;    // <-- NEW
+   149→
+   150→export type BlockId = Brand<string, 'BlockId'>;
+   151→// ... rest of IDs
+   152→
+   153→// Factory functions
+   154→export const cardinalityVarId = (s: string) => s as CardinalityVarId;
+   155→// ... other factories
+   156→export const branchVarId = (s: string) => s as BranchVarId;
+   157→
+   158→export const instanceId = (s: string) => s as InstanceId;          // <-- NEW
+   159→export const domainTypeId = (s: string) => s as DomainTypeId;      // <-- NEW
+   160→
+   161→export const blockId = (s: string) => s as BlockId;
+   162→// ... rest
+   163→```
+   164→
+   165→### Files to Update Imports (~20 sites)
+   166→
+   167→**Search command:**
+   168→```bash
+   169→grep -rn "from.*Indices.*InstanceId\|from.*Indices.*DomainTypeId" src/
+   170→```
+   171→
+   172→**Pattern to find:**
+   173→```typescript
+   174→import { InstanceId, DomainTypeId } from '../compiler/ir/Indices';
+   175→import { InstanceId } from '../../compiler/ir/Indices';
+   176→```
+   177→
+   178→**Pattern to replace with:**
+   179→```typescript
+   180→import { InstanceId, DomainTypeId } from '../core/ids';
+   181→import { InstanceId } from '../../core/ids';
+   182→```
+   183→
+   184→### Key Files That MUST Import from core/ids.ts
+   185→
+   186→1. **src/core/canonical-types.ts**
+   187→```typescript
+   188→// Add to existing import from './ids'
+   189→import {
+   190→  CardinalityVarId,
+   191→  TemporalityVarId,
+   192→  BindingVarId,
+   193→  PerspectiveVarId,
+   194→  BranchVarId,
+   195→  InstanceId,        // <-- ADD
+   196→  DomainTypeId       // <-- ADD
+   197→} from './ids';
+   198→```
+   199→
+   200→2. **src/compiler/ir/types.ts**
+   201→```typescript
+   202→// Change existing import
+   203→import { InstanceId, DomainTypeId } from '../../core/ids';  // <-- NEW PATH
+   204→```
+   205→
+   206→3. **src/compiler/ir/Indices.ts (OPTIONAL compatibility re-export)**
+   207→```typescript
+   208→// Keep old import path working during migration
+   209→export { InstanceId, DomainTypeId } from '../../core/ids';
+   210→```
+   211→
+   212→### Import Path Patterns by File Location
+   213→
+   214→| File Location | Import Path |
+   215→|---------------|-------------|
+   216→| `src/core/*.ts` | `from './ids'` |
+   217→| `src/compiler/ir/*.ts` | `from '../../core/ids'` |
+   218→| `src/compiler/passes-v2/*.ts` | `from '../../../core/ids'` |
+   219→| `src/runtime/*.ts` | `from '../core/ids'` |
+   220→
+   221→### Data Structures Using InstanceId/DomainTypeId
+   222→
+   223→**InstanceRef interface (canonical-types.ts:79-82)**
+   224→```typescript
+   225→export interface InstanceRef {
+   226→  readonly instanceId: InstanceId;      // Already typed correctly
+   227→  readonly domainTypeId: DomainTypeId;  // Already typed correctly
+   228→}
+   229→```
+   230→
+   231→**Step types (types.ts) — DO NOT CHANGE YET**
+   232→These will be fixed in C-6 (Sprint 2):
+   233→- Line 540: StepMaterialize
+   234→- Line 546: StepRender
+   235→- Line 587: StepContinuityMapBuild
+   236→- Line 598: StepContinuityApply
+   237→- Line 681: StateMappingField
+   238→
+   239→### Verification
+   240→```bash
+   241→# All imports should resolve
+   242→npm run typecheck
+   243→
+   244→# Verify core/ids.ts is the authority
+   245→grep -rn "Brand<string, 'InstanceId'>" src/
+   246→# Should ONLY match core/ids.ts
+   247→
+   248→# Verify no Indices imports remain (except re-exports)
+   249→grep -rn "from.*Indices.*InstanceId" src/ | grep -v "export.*from.*core/ids"
+   250→# Should return 0 results
+   251→```
+   252→
+   253→---
+   254→
+   255→## Testing Strategy
+   256→
+   257→### Unit Tests
+   258→Run existing canonical-types test suite:
+   259→```bash
+   260→npm test -- canonical-types.test.ts
+   261→```
+   262→
+   263→### Type Checking
+   264→```bash
+   265→npm run typecheck
+   266→# OR
+   267→npx tsc --noEmit
+   268→```
+   269→
+   270→### Integration Test
+   271→```bash
+   272→# Full test suite
+   273→npm test
+   274→```
+   275→
+   276→---
+   277→
+   278→## Rollback Plan
+   279→All changes are non-breaking:
+   280→1. C-7: Restore FieldExprArray to union + interface
+   281→2. C-3: Revert 'reduceField' → 'reduce_field'
+   282→3. C-2: Revert imports, remove InstanceId/DomainTypeId from core/ids.ts
+   283→
+   284→Git provides automatic rollback.
+   285→
+   286→---
+   287→
+   288→## Adjacent Code Patterns
+   289→
+   290→### Example: Existing branded ID usage
+   291→```typescript
+   292→// From src/core/ids.ts (current)
+   293→export type BlockId = Brand<string, 'BlockId'>;
+   294→export const blockId = (s: string) => s as BlockId;
+   295→```
+   296→
+   297→### Example: Proper import pattern
+   298→```typescript
+   299→// From src/core/canonical-types.ts (current)
+   300→import {
+   301→  CardinalityVarId,
+   302→  TemporalityVarId,
+   303→  BindingVarId,
+   304→  PerspectiveVarId,
+   305→  BranchVarId
+   306→} from './ids';
+   307→```
+   308→
+   309→Follow this exact pattern for InstanceId/DomainTypeId.
+   310→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

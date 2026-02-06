@@ -1,0 +1,104 @@
+   500→
+   501→// =============================================================================
+   502→// Extent - 5-Axis Coordinate
+   503→// =============================================================================
+   504→
+   505→/**
+   506→ * Describes where/when/about-what a value exists.
+   507→ *
+   508→ * The 5 axes are independent of PayloadType:
+   509→ * 1. Cardinality: How many lanes (zero/one/many)
+   510→ * 2. Temporality: When value exists (continuous/discrete)
+   511→ * 3. Binding: Referential anchoring (unbound/weak/strong/identity)
+   512→ * 4. Perspective: Point of view (v0: global only)
+   513→ * 5. Branch: Execution branch (v0: main only)
+   514→ */
+   515→export interface Extent {
+   516→  readonly cardinality: AxisTag<Cardinality>;
+   517→  readonly temporality: AxisTag<Temporality>;
+   518→  readonly binding: AxisTag<Binding>;
+   519→  readonly perspective: AxisTag<PerspectiveId>;
+   520→  readonly branch: AxisTag<BranchId>;
+   521→}
+   522→
+   523→/**
+   524→ * Create an extent with all default axes.
+   525→ */
+   526→export function extentDefault(): Extent {
+   527→  return {
+   528→    cardinality: axisDefault(),
+   529→    temporality: axisDefault(),
+   530→    binding: axisDefault(),
+   531→    perspective: axisDefault(),
+   532→    branch: axisDefault(),
+   533→  };
+   534→}
+   535→
+   536→/**
+   537→ * Create an extent with specified axes (rest default).
+   538→ */
+   539→export function extent(overrides: Partial<Extent>): Extent {
+   540→  return {
+   541→    cardinality: overrides.cardinality ?? axisDefault(),
+   542→    temporality: overrides.temporality ?? axisDefault(),
+   543→    binding: overrides.binding ?? axisDefault(),
+   544→    perspective: overrides.perspective ?? axisDefault(),
+   545→    branch: overrides.branch ?? axisDefault(),
+   546→  };
+   547→}
+   548→
+   549→// =============================================================================
+   550→// CanonicalType - Complete Type Contract
+   551→// =============================================================================
+   552→
+   553→/**
+   554→ * The full type description for a port or wire.
+   555→ *
+   556→ * Every value has (payload, unit, extent). Unit is mandatory.
+   557→ * Spec Reference: 0-Units-and-Adapters.md §A1
+   558→ */
+   559→export interface CanonicalType {
+   560→  readonly payload: PayloadType;
+   561→  readonly extent: Extent;
+   562→  readonly unit: Unit;
+   563→}
+   564→
+   565→/**
+   566→ * Create a CanonicalType with specified payload and unit.
+   567→ *
+   568→ * Overload 1: canonicalType(payload) - uses default unit for payload (only for concrete payloads)
+   569→ * Overload 2: canonicalType(payload, unit) - explicit unit (required for payload variables)
+   570→ * Overload 3: canonicalType(payload, unit, extentOverrides) - full control
+   571→ *
+   572→ * Legacy: canonicalType(payload, extentOverrides) still works during migration.
+   573→ *
+   574→ * Note: When using payloadVar(), you MUST provide an explicit unit (use unitVar for polymorphism).
+   575→ */
+   576→export function canonicalType(
+   577→  payload: PayloadType,
+   578→  unitOrExtent?: Unit | Partial<Extent>,
+   579→  extentOverrides?: Partial<Extent>
+   580→): CanonicalType {
+   581→  let unit: Unit;
+   582→  let extOverrides: Partial<Extent> | undefined;
+   583→
+   584→  if (unitOrExtent === undefined) {
+   585→    // canonicalType(FLOAT) -> use default unit (only for concrete payloads)
+   586→    if (isPayloadVar(payload)) {
+   587→      throw new Error(`Cannot omit unit for payload variable ${payload.id} - use unitVar() for polymorphic unit`);
+   588→    }
+   589→    unit = defaultUnitForPayload(payload);
+   590→    extOverrides = undefined;
+   591→  } else if ('kind' in unitOrExtent) {
+   592→    // canonicalType(FLOAT, unitPhase01(), {...}) or canonicalType(payloadVar('x'), unitVar('y'))
+   593→    unit = unitOrExtent as Unit;
+   594→    extOverrides = extentOverrides;
+   595→  } else {
+   596→    // Legacy: canonicalType(FLOAT, { cardinality: ... })
+   597→    if (isPayloadVar(payload)) {
+   598→      throw new Error(`Cannot omit unit for payload variable ${payload.id} - use unitVar() for polymorphic unit`);
+   599→    }
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

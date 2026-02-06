@@ -1,0 +1,34 @@
+   140→  /**
+   141→   * Create an array field expression (Stage 2: Signal<T> → Field<T>).
+   142→   * Represents the elements of an array instance.
+   143→   * @param instanceId - The instance containing the array elements
+   144→   * @param type - Signal type for the array elements
+   145→   */
+   146→  fieldArray(instanceId: InstanceId, type: CanonicalType): FieldExprId;
+   147→
+   148→  /** Broadcast a signal to a field. */
+   149→  Broadcast(signal: SigExprId, type: CanonicalType): FieldExprId;
+   150→
+   151→  /** Map a function over a field. */
+   152→  fieldMap(input: FieldExprId, fn: PureFn, type: CanonicalType): FieldExprId;
+   153→
+   154→  /** Zip multiple fields with a function. */
+   155→  fieldZip(inputs: readonly FieldExprId[], fn: PureFn, type: CanonicalType): FieldExprId;
+   156→
+   157→  /** Zip a field with signals. */
+   158→  fieldZipSig(
+   159→    field: FieldExprId,
+   160→    signals: readonly SigExprId[],
+   161→    fn: PureFn,
+   162→    type: CanonicalType
+   163→  ): FieldExprId;
+   164→
+   165→  /**
+   166→   * Create a path derivative field expression.
+   167→   * Computes tangent or arc length from path control points.
+   168→   *
+   169→   * MVP Scope: Polygonal paths only (linear approximation).
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

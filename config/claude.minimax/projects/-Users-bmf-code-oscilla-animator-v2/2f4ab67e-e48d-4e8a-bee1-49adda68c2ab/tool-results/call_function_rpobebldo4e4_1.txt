@@ -1,0 +1,5 @@
+355:  Broadcast(signal: SigExprId, type: CanonicalType): FieldExprId {
+368:  ReduceField(field: FieldExprId, op: 'min' | 'max' | 'sum' | 'avg', type: CanonicalType): SigExprId {
+381:  fieldMap(input: FieldExprId, fn: PureFn, type: CanonicalType): FieldExprId {
+395:  fieldZip(inputs: readonly FieldExprId[], fn: PureFn, type: CanonicalType): FieldExprId {
+409:  fieldZipSig(

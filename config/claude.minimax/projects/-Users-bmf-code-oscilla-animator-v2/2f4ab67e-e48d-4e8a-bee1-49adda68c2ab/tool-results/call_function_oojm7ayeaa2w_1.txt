@@ -1,0 +1,84 @@
+    60→      const instance = b.createInstance(DOMAIN_CIRCLE, 10);
+    61→      const type = signalTypeField(FLOAT, instance);
+    62→      const sig = b.sigConst(1.0, signalTypeSignal(FLOAT));
+    63→      const broadcast = b.Broadcast(sig, type);
+    64→
+    65→      // Broadcasts are instance-agnostic
+    66→      expect(b.inferFieldInstance(broadcast)).toBeUndefined();
+    67→    });
+    68→
+    69→    it('returns undefined for const fields', () => {
+    70→      const b = new IRBuilderImpl();
+    71→      const instance = b.createInstance(DOMAIN_CIRCLE, 10);
+    72→      const type = signalTypeField(FLOAT, instance);
+    73→      const constField = b.fieldConst(42, type);
+    74→
+    75→      // Consts are instance-agnostic
+    76→      expect(b.inferFieldInstance(constField)).toBeUndefined();
+    77→    });
+    78→  });
+    79→
+    80→  describe('array and layout field instance inference', () => {
+    81→    it('returns instanceId for array fields', () => {
+    82→      const b = new IRBuilderImpl();
+    83→      const instance = b.createInstance(DOMAIN_CIRCLE, 10);
+    84→      const type = signalTypeField(FLOAT, instance);
+    85→      const arrayField = b.fieldArray(instance, type);
+    86→
+    87→      expect(b.inferFieldInstance(arrayField)).toBe(instance);
+    88→    });
+    89→
+    90→    it('returns instanceId for kernel-based layout fields', () => {
+    91→      const b = new IRBuilderImpl();
+    92→      const instance = b.createInstance(DOMAIN_CIRCLE, 10);
+    93→      const floatType = signalTypeField(FLOAT, instance);
+    94→      const vec2Type = signalTypeField(VEC2, instance);
+    95→      
+    96→      // Create normalizedIndex field
+    97→      const normalizedIndex = b.fieldIntrinsic(instance, 'normalizedIndex', floatType);
+    98→      
+    99→      // Create signals for grid dimensions
+   100→      const colsSig = b.sigConst(5, signalTypeSignal(INT));
+   101→      const rowsSig = b.sigConst(2, signalTypeSignal(INT));
+   102→      
+   103→      // Apply gridLayout kernel
+   104→      const layoutField = b.fieldZipSig(
+   105→        normalizedIndex,
+   106→        [colsSig, rowsSig],
+   107→        { kind: 'kernel', name: 'gridLayout' },
+   108→        vec2Type
+   109→      );
+   110→
+   111→      expect(b.inferFieldInstance(layoutField)).toBe(instance);
+   112→    });
+   113→  });
+   114→
+   115→  describe('field composition with intrinsics', () => {
+   116→    it('propagates instanceId through map on intrinsic', () => {
+   117→      const b = new IRBuilderImpl();
+   118→      const instance = b.createInstance(DOMAIN_CIRCLE, 10);
+   119→      const type = signalTypeField(FLOAT, instance);
+   120→      const intrinsic = b.fieldIntrinsic(instance, 'index', type);
+   121→      const mapped = b.fieldMap(intrinsic, { kind: 'opcode', opcode: OpCode.Sin }, type);
+   122→
+   123→      // Instance propagates from input
+   124→      expect(b.inferFieldInstance(mapped)).toBe(instance);
+   125→    });
+   126→
+   127→    it('propagates instanceId through zipSig on intrinsic', () => {
+   128→      const b = new IRBuilderImpl();
+   129→      const instance = b.createInstance(DOMAIN_CIRCLE, 10);
+   130→      const fieldType = signalTypeField(FLOAT, instance);
+   131→      const sigType = signalTypeSignal(FLOAT);
+   132→      const intrinsic = b.fieldIntrinsic(instance, 'index', fieldType);
+   133→      const signal = b.sigConst(2.0, sigType);
+   134→      const zipped = b.fieldZipSig(intrinsic, [signal], { kind: 'opcode', opcode: OpCode.Mul }, fieldType);
+   135→
+   136→      expect(b.inferFieldInstance(zipped)).toBe(instance);
+   137→    });
+   138→
+   139→    it('unifies instance for zip of intrinsics from same instance', () => {
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

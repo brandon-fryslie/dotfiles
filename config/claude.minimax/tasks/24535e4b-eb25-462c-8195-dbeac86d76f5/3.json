@@ -1,0 +1,9 @@
+{
+  "id": "3",
+  "subject": "Update const construction sites",
+  "description": "Find and update all 40+ const construction sites identified by TypeScript after interface changes",
+  "activeForm": "Updating const construction sites",
+  "status": "in_progress",
+  "blocks": [],
+  "blockedBy": []
+}

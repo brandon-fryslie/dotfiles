@@ -1,0 +1,21 @@
+=== FieldExprArray check ===
+src/blocks/array-blocks.ts:    // NOTE: elementInput is required - FieldExprArray (identity) has been removed per spec
+
+=== reduce_field check ===
+
+=== core/ids.ts exports ===
+export type Brand<K, T extends string> = K & { readonly __brand: T };
+export type CardinalityVarId = Brand<string, 'CardinalityVarId'>;
+export type TemporalityVarId = Brand<string, 'TemporalityVarId'>;
+export type BindingVarId = Brand<string, 'BindingVarId'>;
+export type PerspectiveVarId = Brand<string, 'PerspectiveVarId'>;
+export type BranchVarId = Brand<string, 'BranchVarId'>;
+export type DomainTypeId = Brand<string, 'DomainTypeId'>;
+export type InstanceId = Brand<string, 'InstanceId'>;
+export const cardinalityVarId = (s: string) => s as CardinalityVarId;
+export const temporalityVarId = (s: string) => s as TemporalityVarId;
+export const bindingVarId = (s: string) => s as BindingVarId;
+export const perspectiveVarId = (s: string) => s as PerspectiveVarId;
+export const branchVarId = (s: string) => s as BranchVarId;
+export const domainTypeId = (s: string) => s as DomainTypeId;
+export const instanceId = (s: string) => s as InstanceId;

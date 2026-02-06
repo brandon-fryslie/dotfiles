@@ -1,0 +1,11 @@
+Found 10 files
+.agent_planning/canonical-type/SPRINT-2026-01-28-192541-authority-consolidation-PLAN.md
+.agent_planning/canonical-type/SPRINT-2026-01-28-192541-authority-consolidation-DOD.md
+.agent_planning/canonical-type/SPRINT-2026-01-28-192541-authority-consolidation-CONTEXT.md
+.agent_planning/canonical-type/SPRINT-2026-01-28-192541-const-value-CONTEXT.md
+.agent_planning/canonical-type/SPRINT-2026-01-28-192541-const-value-DOD.md
+.agent_planning/canonical-type/SPRINT-2026-01-28-192541-const-value-PLAN.md
+.agent_planning/canonical-type/EVALUATION-2026-01-28-191553.md
+.agent_planning/canonical-type/EXPLORE-2026-01-28-191553.md
+.agent_planning/gap-analysis/SUMMARY.md
+.agent_planning/gap-analysis/critical/topic-02-axes.md

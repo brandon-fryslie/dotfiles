@@ -1,0 +1,14 @@
+{
+  "name": "do-extra",
+  "version": "0.5.17",
+  "description": "do-extra: You don't need this.  But it's here if you do.",
+  "author": {
+    "name": "Brandon Fryslie"
+  },
+  "license": "MIT",
+  "keywords": [
+    "experimental",
+    "workflow",
+    "tools"
+  ]
+}

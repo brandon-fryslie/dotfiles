@@ -1,0 +1,64 @@
+   335→
+   336→/**
+   337→ * Reference to a specific instance.
+   338→ * Instances are configurations of domain types (count, layout, lifecycle).
+   339→ */
+   340→export interface InstanceRef {
+   341→  readonly kind: 'instance';
+   342→  readonly domainType: string; // DomainTypeId
+   343→  readonly instanceId: string; // InstanceId
+   344→}
+   345→
+   346→/**
+   347→ * Create an instance reference.
+   348→ */
+   349→export function instanceRef(domainType: string, instanceId: string): InstanceRef {
+   350→  return { kind: 'instance', domainType, instanceId };
+   351→}
+   352→
+   353→// =============================================================================
+   354→// Cardinality - How Many Lanes
+   355→// =============================================================================
+   356→
+   357→/**
+   358→ * How many lanes/elements a value has.
+   359→ *
+   360→ * Mapping from old World:
+   361→ * - zero = was 'static' / 'config' / 'scalar' (compile-time constant)
+   362→ * - one = was 'signal' (single lane, time-varying)
+   363→ * - many(instance) = was 'field(domain)' (N lanes aligned by instance)
+   364→ */
+   365→export type Cardinality =
+   366→  | { readonly kind: 'zero' }                              // Compile-time constant, no runtime lanes
+   367→  | { readonly kind: 'one' }                               // Single lane
+   368→  | { readonly kind: 'many'; readonly instance: InstanceRef }; // N lanes aligned by instance
+   369→
+   370→/**
+   371→ * Create a zero cardinality (compile-time constant).
+   372→ */
+   373→export function cardinalityZero(): Cardinality {
+   374→  return { kind: 'zero' };
+   375→}
+   376→
+   377→/**
+   378→ * Create a one cardinality (single lane).
+   379→ */
+   380→export function cardinalityOne(): Cardinality {
+   381→  return { kind: 'one' };
+   382→}
+   383→
+   384→/**
+   385→ * Create a many cardinality (N lanes aligned by instance).
+   386→ */
+   387→export function cardinalityMany(instance: InstanceRef): Cardinality {
+   388→  return { kind: 'many', instance };
+   389→}
+   390→
+   391→// =============================================================================
+   392→// Temporality - When
+   393→// =============================================================================
+   394→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>
