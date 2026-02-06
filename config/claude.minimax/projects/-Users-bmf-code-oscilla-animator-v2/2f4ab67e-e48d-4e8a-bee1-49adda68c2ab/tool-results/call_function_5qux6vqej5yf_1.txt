@@ -1,0 +1,54 @@
+   355→   * Create an array field expression (Stage 2: Signal<T> → Field<T>).
+   356→   * Represents the elements of an array instance.
+   357→   */
+   358→  fieldArray(instanceId: InstanceId, type: CanonicalType): FieldExprId {
+   359→    const expr = {
+   360→      kind: 'array' as const,
+   361→      instanceId,
+   362→      type,
+   363→    };
+   364→    const hash = hashFieldExpr(expr);
+   365→    const existing = this.fieldExprCache.get(hash);
+   366→    if (existing !== undefined) {
+   367→      return existing;
+   368→    }
+   369→    const id = fieldExprId(this.fieldExprs.length);
+   370→    this.fieldExprs.push(expr);
+   371→    this.fieldExprCache.set(hash, id);
+   372→    return id;
+   373→  }
+   374→
+   375→  Broadcast(signal: SigExprId, type: CanonicalType): FieldExprId {
+   376→    const expr = { kind: 'broadcast' as const, signal, type };
+   377→    const hash = hashFieldExpr(expr);
+   378→    const existing = this.fieldExprCache.get(hash);
+   379→    if (existing !== undefined) {
+   380→      return existing;
+   381→    }
+   382→    const id = fieldExprId(this.fieldExprs.length);
+   383→    this.fieldExprs.push(expr);
+   384→    this.fieldExprCache.set(hash, id);
+   385→    return id;
+   386→  }
+   387→
+   388→  ReduceField(field: FieldExprId, op: 'min' | 'max' | 'sum' | 'avg', type: CanonicalType): SigExprId {
+   389→    const expr = { kind: 'reduceField' as const, field, op, type };
+   390→    const hash = hashSigExpr(expr);
+   391→    const existing = this.sigExprCache.get(hash);
+   392→    if (existing !== undefined) {
+   393→      return existing;
+   394→    }
+   395→    const id = sigExprId(this.sigExprs.length);
+   396→    this.sigExprs.push(expr);
+   397→    this.sigExprCache.set(hash, id);
+   398→    return id;
+   399→  }
+   400→
+   401→  fieldMap(input: FieldExprId, fn: PureFn, type: CanonicalType): FieldExprId {
+   402→    const instanceId = this.inferFieldInstance(input);
+   403→    const expr = { kind: 'map' as const, input, fn, type, instanceId };
+   404→    const hash = hashFieldExpr(expr);
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

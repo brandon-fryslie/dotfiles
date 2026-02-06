@@ -1,0 +1,361 @@
+     1→# Oscilla Animator v2 - Project Roadmap
+     2→
+     3→Last updated: 2026-01-27-171000
+     4→
+     5→---
+     6→
+     7→## 🟢 Phase 1: Core Foundation [ACTIVE] (6/13 completed)
+     8→
+     9→**Goal:** Implement the core compilation pipeline and runtime system according to the unified spec
+    10→
+    11→**Status:** ACTIVE
+    12→**Started:** 2026-01-05
+    13→**Target Completion:** TBD
+    14→**Unified Plan:** `.agent_planning/phase1-remaining/PLAN-20260109-210000.md` (APPROVED)
+    15→
+    16→### Topics
+    17→
+    18→#### ✅ update-blocks-types [COMPLETED]
+    19→- **State:** COMPLETED
+    20→- **Epic:** None
+    21→- **Description:** Refactor blocks to use centralized type helpers, split god blocks into composable primitives
+    22→- **Completed:** 2026-01-05
+    23→- **Summary:** PositionSwirl split into 5 composable blocks, HueRainbow split into 2. All tests pass.
+    24→- **Completion Report:** `.agent_planning/ARCHITECTURAL-REFACTOR-COMPLETE.md`
+    25→
+    26→#### ✅ canonical-arch-alignment [COMPLETED]
+    27→- **State:** COMPLETED
+    28→- **Epic:** None
+    29→- **Description:** Implement canonical 5-axis type system (PayloadType, AxisTag, Cardinality, Temporality, Binding, Extent, CanonicalType)
+    30→- **Completed:** 2026-01-09
+    31→- **Summary:** P0-P3 delivered. 68 tests passing. All 25 blocks migrated to CanonicalType system.
+    32→- **Planning Files:** `.agent_planning/canonical-arch-alignment/`
+    33→
+    34→#### ✅ design-docs-audit [COMPLETED]
+    35→- **State:** COMPLETED
+    36→- **Epic:** None
+    37→- **Description:** Audit design docs for contradictions, ambiguities, and inconsistencies
+    38→- **Planning Files:** `.agent_planning/design-docs-audit/`
+    39→
+    40→#### ✅ ir-5-axes [COMPLETED]
+    41→- **State:** COMPLETED
+    42→- **Epic:** Phase 1 Unified Plan (P0)
+    43→- **Spec:** `design-docs/IR-and-normalization-5-axes.md`
+    44→- **Description:** Implement 5-axis metadata in IR schema, CompiledProgramIR, slotMeta with offsets
+    45→- **Completed:** 2026-01-09
+    46→- **Summary:** CompiledProgramIR schema foundation complete. Dense execution tables, slot addressing with offsets, mandatory axes metadata, and DebugIndexIR all implemented. All 68 tests passing.
+    47→- **Planning Files:** `.agent_planning/ir-5-axes/`
+    48→- **Completion Report:** `.agent_planning/ir-5-axes/COMPLETION-20260109-212700.md`
+    49→
+    50→#### 📋 type-system [PLANNING]
+    51→- **State:** PLANNING
+    52→- **Epic:** Phase 1 Unified Plan (P1)
+    53→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/01-type-system.md`
+    54→- **Description:** AxesDescIR integration, bridge functions, SlotMetaEntry population
+    55→- **Planning Files:** `.agent_planning/phase1-remaining/`
+    56→- **Status Note:** ~90% foundation complete, IR integration remaining
+    57→
+    58→#### 📋 time-model [PLANNING]
+    59→- **State:** PLANNING
+    60→- **Epic:** Phase 1 Unified Plan (P2)
+    61→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/03-time-system.md`
+    62→- **Description:** Dual-phase TimeRoot (phaseA/phaseB independent periods), phase continuity on hot-swap
+    63→- **Planning Files:** `.agent_planning/time-model/`
+    64→- **Status Note:** Sprint plan APPROVED. P0: Dual-phase TimeRoot, P1: Runtime tracking, P2: Phase continuity
+    65→
+    66→#### 📋 buses-and-rails [PLANNING]
+    67→- **State:** PLANNING
+    68→- **Epic:** Phase 1 Unified Plan (P5)
+    69→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/02-block-system.md`
+    70→- **Description:** Multi-writer combine, default sources, rail system
+    71→- **Planning Files:** `.agent_planning/phase1-remaining/`
+    72→- **Status Note:** ~10% complete, major work pending
+    73→
+    74→#### ✅ compilation-pipeline [COMPLETED]
+    75→- **State:** COMPLETED
+    76→- **Epic:** Phase 1 Unified Plan (P3)
+    77→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/04-compilation.md`
+    78→- **Description:** Code cleanup after successful implementation of all 8 compilation passes
+    79→- **Planning Files:** `.agent_planning/compilation-pipeline/`
+    80→- **Beads Issue:** oscilla-animator-v2-k0v (closed)
+    81→- **Completed:** 2026-01-19
+    82→- **Summary:** All 8 passes implemented and working. Code cleanup completed: removed unused state API stubs, documented Pass 8 decision, resolved seed management TODO. 372 tests passing, 0 failures.
+    83→- **Commits:**
+    84→  - 3bbc970 - "docs(compiler): Document Pass 8 status and decision"
+    85→  - 217be30 - "refactor(compiler): Remove unused state API stubs"
+    86→  - b0f8005 - "docs(compiler): Resolve seed management TODO in Pass 6"
+    87→- **Key Finding:** "Passes 5-10" was a miscount. There are only 8 passes (1-8), all complete:
+    88→  1. ✅ Normalization
+    89→  2. ✅ Type Graph
+    90→  3. ✅ Time Topology
+    91→  4. ✅ Dependency Graph
+    92→  5. ✅ SCC Validation
+    93→  6. ✅ Block Lowering
+    94→  7. ✅ Schedule Construction
+    95→  8. ✅ Link Resolution (reference implementation, not used - Pass 6 handles all resolution)
+    96→- **Completed Sprints:**
+    97→  - Domain Unification - 11 tests passing, domain tracking through field composition
+    98→  - Graph Normalization Adapters - Type-aware adapter insertion (signal→field broadcast), strict type checking in Pass 2, extensible adapter registry
+    99→  - Domain→Instance Migration - Replaced vestigial DomainId with InstanceId throughout IR. DomainId type removed entirely. inferFieldInstance() replaces inferFieldDomain().
+   100→  - Pipeline Cleanup - Removed 4 unused state API stubs, documented Pass 8, resolved seed TODO
+   101→
+   102→#### 📋 runtime-execution [PLANNING]
+   103→- **State:** PLANNING
+   104→- **Epic:** Phase 1 Unified Plan (P4)
+   105→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/05-runtime.md`
+   106→- **Description:** Offset-addressed execution, schedule executor update
+   107→- **Planning Files:** `.agent_planning/phase1-remaining/`
+   108→- **Status Note:** ~50% complete, offset addressing needed
+   109→
+   110→#### ✅ primitives-catalog [COMPLETED]
+   111→- **State:** COMPLETED
+   112→- **Epic:** Phase 1 Unified Plan (P6)
+   113→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/02-block-system.md`
+   114→- **Description:** Basic 12 completion, stateful primitives, composites
+   115→- **Planning Files:** `.agent_planning/primitives-catalog/`
+   116→- **Completed:** 2025-01-21
+   117→- **Summary:** All MVP stateful primitives implemented (UnitDelay, Lag, Phasor, SampleAndHold, Accumulator). Hash and Id01 also complete. 547 tests passing.
+   118→
+   119→#### 📋 field-blocks-expansion [PLANNING]
+   120→- **State:** PLANNING
+   121→- **Epic:** Phase 1 Unified Plan (Extended)
+   122→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/02-block-system.md:195+`
+   123→- **Description:** Extended block system: SpiralLayout, RandomScatter, AlongPath, vector state blocks (FieldLag, FieldUnitDelay, FieldPhasor), Polygon primitive, enhanced per-element randomness (AnimatedNoise, NoiseField, GaussianRandom)
+   124→- **Planning Files:** `.agent_planning/field-blocks-expansion/`
+   125→- **Status Note:** 5-sprint plan ready. Estimated 24-36 hours total.
+   126→- **Key Deliverables:**
+   127→  - Sprint 1 (P0): SpiralLayout, RandomScatter blocks + kernels
+   128→  - Sprint 2 (P1): AnimatedNoise, NoiseField, GaussianRandom blocks
+   129→  - Sprint 3 (P2): FieldLag, FieldUnitDelay, FieldPhasor (per-element state)
+   130→  - Sprint 4 (P2): Polygon primitive block
+   131→  - Sprint 5 (P3): Full AlongPath with arbitrary paths (stretch goal)
+   132→
+   133→#### 📋 domain-refactor [PLANNING]
+   134→- **State:** PLANNING
+   135→- **Epic:** None (Cross-cutting refactor)
+   136→- **Spec:** `design-docs/WHAT-IS-A-DOMAIN.md`, `design-docs/WHAT-IS-A-DOMAIN-PART-4-REFACTOR.md`
+   137→- **Description:** Complete architectural refactor separating domain TYPE (shape, circle, control) from INSTANTIATION (count, layout). Currently conflated throughout codebase.
+   138→- **Planning Files:** `.agent_planning/domain-refactor/`
+   139→- **Status Note:** 8-sprint plan ready. Affects ~50 files. Foundation for domain-editor-ui.
+   140→- **Key Changes:**
+   141→  - Add DomainTypeId, InstanceId, InstanceDecl, LayoutSpec types
+   142→  - Create domain registry with hierarchy (circle extends shape)
+   143→  - Delete GridDomain/DomainN blocks (embody wrong model)
+   144→  - Create new instance blocks (CircleInstance, ShapeInstance)
+   145→  - Update all field operations to use instance context
+   146→  - Update compiler passes and runtime
+   147→
+   148→#### 📋 placement-basis [PLANNING]
+   149→- **State:** PLANNING
+   150→- **Epic:** Gauge Invariant Continuity
+   151→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/11-continuity-system.md` (I2), `topics/17-layout-system.md`
+   152→- **Description:** PlacementBasis abstraction for stable per-element placement coordinates (uv, rank, seed) independent of element count N. Eliminates velocity snaps when element count changes.
+   153→- **Planning Files:** `.agent_planning/placement-basis/`
+   154→- **Status Note:** 7-sprint plan complete (user decisions resolved). Ready for implementation.
+   155→- **User Decisions:**
+   156→  - Migration: Manual only (no backwards compatibility)
+   157→  - BasisKind: User-configurable input parameter
+   158→  - Rank: Activation only (not Z-ordering)
+   159→  - MaxCount: Pre-allocate to 10k (MAX_ELEMENTS constant)
+   160→- **Constraints:**
+   161→  - Write NEW layouts (CircleLayoutUV, LineLayoutUV, GridLayoutUV) - no migration of existing
+   162→  - Defer compiler validation until new layouts proven gauge-invariant
+   163→  - Test as you go, use buffer pools, modular/composable code
+   164→  - No arbitrary defaults - hard errors on missing values
+   165→- **Key Deliverables:**
+   166→  - Sprint 1: Type Foundation + Tests (HIGH)
+   167→  - Sprint 2: Generation + Tests (HIGH)
+   168→  - Sprint 3: Materialization + Tests (HIGH)
+   169→  - Sprint 4: Layout Kernels + Tests (HIGH)
+   170→  - Sprint 5: New Layout Blocks + Tests (HIGH)
+   171→  - Sprint 6: Persistence & Hot-Swap + Tests (MEDIUM)
+   172→  - Sprint 7: Velocity Continuity Integration Tests (HIGH)
+   173→  - (Deferred) Compiler Validation
+   174→- **Problem Solved:** Current layouts use `normalizedIndex(i, N)` which causes velocity discontinuities when N changes. PlacementBasis provides stable per-element coordinates that persist across count changes.
+   175→- **Origin:** `.agent_planning/placement-basis/HANDOFF.md`, ChatGPT conversation on GaugeInvariantLayouts
+   176→
+   177→#### ✅ continuity-crossfade [COMPLETED]
+   178→- **State:** COMPLETED
+   179→- **Epic:** Continuity System (Part 2)
+   180→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/11-continuity-system.md` §3.7
+   181→- **Description:** Implement crossfade policy for continuity system - the fallback when element identity cannot be established
+   182→- **Dependencies:** continuity-system (COMPLETED 2026-01-18)
+   183→- **Completed:** 2026-01-19
+   184→- **Summary:** Sprint 3 Continuity items implemented - crossfade policy with buffer blending, domain change detection and mapping (continuityMapBuild step), gauge/slew application (continuityApply step). 69 continuity tests passing, 358 total tests passing.
+   185→- **Key Files Modified:**
+   186→  - `src/runtime/ContinuityApply.ts` - Crossfade case implementation with smoothstep/lerp helpers
+   187→  - `src/runtime/ContinuityState.ts` - Added crossfadeStartMs and crossfadeOldBuffer to TargetContinuityState
+   188→  - `src/runtime/ScheduleExecutor.ts` - Implemented continuityMapBuild and continuityApply step execution
+   189→  - `src/runtime/__tests__/ContinuityApply.test.ts` - Unit tests for smoothstep/lerp
+   190→  - `src/runtime/__tests__/continuity-integration.test.ts` - Integration tests for crossfade blending
+   191→- **Implementation Details:**
+   192→  - Buffer crossfade: `X_out[i] = lerp(X_old_eff[i], X_new_base[i], w(t))` where w(t) uses smoothstep curve
+   193→  - Old effective values captured BEFORE slew buffer reinitialization to preserve actual previous state
+   194→  - Domain change detection creates identity/byId/byPosition mappings based on instance identity mode
+   195→  - Crossfade state tracking with start time and old buffer snapshot
+   196→
+   197→---
+   198→
+   199→## 🟢 Phase 2: Rendering & UI [ACTIVE] (5/7 completed)
+   200→
+   201→**Goal:** Implement rendering pipeline and basic UI for patch editing
+   202→
+   203→**Status:** ACTIVE
+   204→**Dependencies:** Phase 1 core foundation
+   205→
+   206→### Topics
+   207→
+   208→#### ✅ ui-framework [COMPLETED]
+   209→- **State:** COMPLETED
+   210→- **Epic:** None
+   211→- **Description:** Panel-based UI layout system using jsPanel4 and MUI
+   212→- **Completed:** 2026-01-09
+   213→- **Summary:** Three-column layout with tabs, toolbar, sidebars. Canvas preview + Patch diagram in center. Inspector, debug, help panels. 146 tests passing. 60 FPS animation.
+   214→- **Planning Files:** `.agent_planning/ui-framework/`
+   215→
+   216→#### ✅ diagnostics-system [COMPLETED]
+   217→- **State:** COMPLETED (Sprint 1)
+   218→- **Epic:** None
+   219→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/07-diagnostics-system.md`
+   220→- **Description:** Event-driven diagnostics with stable IDs, EventHub coordination, compile/authoring/runtime streams
+   221→- **Completed:** 2026-01-11
+   222→- **Sprint 1 Summary:** Core infrastructure complete - EventHub, DiagnosticHub, TargetRef (7 kinds), stable diagnostic IDs, authoring validators (<10ms), compiler integration, DiagnosticConsole UI. 206 tests passing. All 15 acceptance criteria met.
+   223→- **Planning Files:** `.agent_planning/diagnostics-system/`
+   224→- **Sprint 2 Planned:** Runtime diagnostics (NaN/performance monitoring), bus warnings, quick fixes, UI badges
+   225→- **Architecture:** Event-driven with five-event contract (GraphCommitted, CompileBegin, CompileEnd, ProgramSwapped, RuntimeHealthSnapshot). Snapshot semantics for compile/authoring (replace), runtime (merge with expiry).
+   226→
+   227→#### ✅ continuity-ui [COMPLETED]
+   228→- **State:** COMPLETED
+   229→- **Epic:** None
+   230→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/11-continuity-system.md`
+   231→- **Description:** UI integration for continuity system - live parameter editing, domain change logging, ContinuityPanel
+   232→- **Completed:** 2026-01-18
+   233→- **Sprint Summary:**
+   234→  - **Sprint 1 (Live Param Recompile):** MobX reaction watches block params, debounced recompile (150ms), continuity state preserved across hot-swap. Slider uiHint added to Array block count param.
+   235→  - **Sprint 2 (Continuity Logging):** Domain change detection compares old/new instance counts, throttled logging (5/sec per instance), logs to LogPanel.
+   236→  - **Sprint 3 (Continuity Panel):** ContinuityStore (MobX), ContinuityPanel component, batched UI updates at 5Hz, domain change history tracking.
+   237→- **Planning Files:** `.agent_planning/continuity-ui/`
+   238→- **Key Files:**
+   239→  - `src/stores/ContinuityStore.ts` - MobX store for continuity state
+   240→  - `src/ui/components/app/ContinuityPanel.tsx` - Panel component
+   241→  - `src/ui/dockview/panels/ContinuityPanel.tsx` - Dockview wrapper
+   242→  - `src/main.ts` - Live recompile and batched updates
+   243→
+   244→#### ✅ ui-features-v2 [COMPLETED]
+   245→- **State:** COMPLETED
+   246→- **Epic:** None
+   247→- **Description:** Visualization and inspection UI - Table View, Block Inspector, Block Library, Domains Panel
+   248→- **Completed:** 2026-01-12
+   249→- **Sprint 1:** P0-P2, P6 complete (Block model, roles, bus block)
+   250→- **Sprint 2:** P3-P8 complete (Connection Matrix, Split Sidebar, TimeRoot Hidden, DefaultSource Display, Type Preview)
+   251→- **Summary:** Full read-only visualization. Connection matrix shows block×block adjacency. Split sidebar shows Library+Inspector simultaneously. TimeRoot blocks hidden from UI. Default sources displayed in inspector. Type preview when clicking Library items.
+   252→- **Planning Files:** `.agent_planning/ui-features-v2/`
+   253→
+   254→#### 💡 renderer-implementation [PROPOSED]
+   255→- **State:** PROPOSED
+   256→- **Epic:** None
+   257→- **Spec:** `design-docs/CANONICAL-oscilla-v2.5-20260109/topics/06-renderer.md`
+   258→- **Description:** Renderer contract, Canvas2D implementation, render commands
+   259→
+   260→#### 🔄 patch-editor-ui [IN PROGRESS]
+   261→- **State:** IN PROGRESS (Sprint 2B)
+   262→- **Epic:** None
+   263→- **Description:** Visual patch editor for creating and editing animation programs
+   264→- **Sprint 2A:** COMPLETED (2026-01-13) - All blockers fixed, undo/redo (50 steps), keyboard shortcuts (Ctrl+Z/Y), context menu delete, pan/zoom navigation. 275 tests passing.
+   265→- **Sprint 2B:** IN PROGRESS (Phase 1/5 complete) - Auto-layout and minimap integrated. Custom node rendering and parameter UI remaining.
+   266→- **Planning Files:** `.agent_planning/patch-editor-ui/`
+   267→- **Verification:** `/SPRINT2A-VERIFICATION.md`
+   268→- **Current Commit:** cfafede - Auto-layout & minimap plugins integrated
+   269→- **Sub-tasks:**
+   270→  - ✅ auto-arrange-layout (oscilla-animator-v2-8fp) - COMPLETED 2026-01-19
+   271→
+   272→#### ✅ auto-arrange-layout [COMPLETED]
+   273→- **State:** COMPLETED
+   274→- **Epic:** patch-editor-ui Sprint 2B Phase 1
+   275→- **Description:** Complete and verify auto-arrange layout functionality in React Flow editor using ELK algorithm
+   276→- **Planning Files:** `.agent_planning/auto-arrange-layout/`
+   277→- **Beads Issue:** oscilla-animator-v2-8fp (closed)
+   278→- **Completed:** 2026-01-19
+   279→- **Summary:** ELK layout algorithm fully integrated with edge case handling (empty graph, single node) and error handling. 9 comprehensive tests ensure no overlaps, correct spacing, and proper zoom-to-fit. All acceptance criteria met.
+   280→- **Commit:** 8a7480f - "feat(ui): Add auto-arrange layout with edge case handling and tests"
+   281→- **Key Files:**
+   282→  - `src/ui/reactFlowEditor/layout.ts` - ELK layout algorithm (100px node spacing, 80px layer spacing)
+   283→  - `src/ui/reactFlowEditor/ReactFlowEditor.tsx:166-195, 302-310` - Button, handler, edge cases
+   284→  - `src/ui/reactFlowEditor/__tests__/layout.test.ts` - 9 comprehensive tests
+   285→- **Test Results:** 367 tests passing (9 new layout tests), no regressions
+   286→
+   287→#### 📋 domain-editor-ui [PLANNING]
+   288→- **State:** PLANNING
+   289→- **Epic:** None
+   290→- **Description:** UI for creating and selecting domains - presets vs custom configuration, domain management UX
+   291→- **Planning Files:** `.agent_planning/domain-editor-ui/`
+   292→- **Recommended Approach:** Parameter Panel + Presets (Option A from research)
+   293→- **Dependencies:** patch-editor-ui, Phase 1 complete
+   294→- **Origin:** Identified during compilation-pipeline domain unification sprint (2026-01-09)
+   295→
+   296→#### 📋 adapter-system-improvement [PLANNING]
+   297→- **State:** PLANNING
+   298→- **Epic:** `oscilla-animator-v2-o7a`
+   299→- **Description:** Per-port-per-connection adapters, resource addressing (`my_block.inputs.count.adapters.<name>`), visual representation on wires, auto-insertion by editor
+   300→- **Planning Files:** `.agent_planning/adapter-system-improvement/`
+   301→- **Dependencies:** canonical-addressing (COMPLETED)
+   302→- **Origin:** User requirement for improved adapter UX and addressing
+   303→- **Sprints:**
+   304→  - Sprint 1 (P1): Data Model & Addressing - `oscilla-animator-v2-53c`
+   305→  - Sprint 2 (P1): Normalization Pass Updates - `oscilla-animator-v2-mtc`
+   306→  - Sprint 3 (P1): Editor Integration - `oscilla-animator-v2-lrc`
+   307→  - Sprint 4 (P2): UI Visualization - `oscilla-animator-v2-166`
+   308→  - Sprint 5 (P2): Context Menu & Editing - `oscilla-animator-v2-u01`
+   309→
+   310→---
+   311→
+   312→## ⏸️ Phase 3: Advanced Features [QUEUED] (0/2 completed)
+   313→
+   314→**Goal:** Implement advanced system features and optimizations
+   315→
+   316→**Status:** QUEUED
+   317→**Dependencies:** Phase 2 rendering
+   318→
+   319→### Topics
+   320→
+   321→#### 💡 phase-matching-system [PROPOSED]
+   322→- **State:** PROPOSED
+   323→- **Epic:** None
+   324→- **Spec:** `design-docs/spec-archived-20260109-160000/time/10-phase-matching-system.md`
+   325→- **Description:** Phase matching and unwrapping system
+   326→
+   327→#### 💡 transforms-catalog [PROPOSED]
+   328→- **State:** PROPOSED
+   329→- **Epic:** None
+   330→- **Spec:** `design-docs/spec-archived-20260109-160000/graph/07-transforms.md`
+   331→- **Description:** Transform blocks, lens/adapter stacks, full catalog
+   332→
+   333→---
+   334→
+   335→## Legend
+   336→
+   337→**Phase Status:**
+   338→- 🟢 ACTIVE - Currently being worked on
+   339→- ⏸️ QUEUED - Planned but not started
+   340→- ✅ COMPLETED - All topics completed
+   341→- 🔴 BLOCKED - Cannot proceed due to dependencies
+   342→
+   343→**Topic Status:**
+   344→- 💡 PROPOSED - Identified but no planning yet
+   345→- 📋 PLANNING - Planning files exist, ready for implementation
+   346→- 🔄 IN PROGRESS - Implementation started
+   347→- ✅ COMPLETED - All acceptance criteria met
+   348→- 📦 ARCHIVED - No longer maintained
+   349→
+   350→**Notes:**
+   351→- Topics align with canonical spec in `design-docs/CANONICAL-oscilla-v2.5-20260109/`
+   352→- Each topic should have planning files in `.agent_planning/<topic>/`
+   353→- Phase 1 remaining work unified in `.agent_planning/phase1-remaining/`
+   354→- Use `/do:roadmap <topic>` to add new topics
+   355→- Use `/do:plan <topic>` to create planning files for a topic
+   356→- Roadmap is automatically updated by workflow skills (see `.claude/rules/roadmap-hooks.md`)
+   357→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>
