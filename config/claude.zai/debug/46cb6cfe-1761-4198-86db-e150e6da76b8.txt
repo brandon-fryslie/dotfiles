@@ -1,0 +1,292 @@
+2026-01-28T07:40:16.465Z [DEBUG] Failed to check enabledPlatforms: TypeError: undefined is not an object (evaluating 'mZ.join')
+2026-01-28T07:40:16.516Z [DEBUG] Watching for changes in setting files /Users/bmf/code/oscilla-animator-v2/.claude...
+2026-01-28T07:40:16.517Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-28T07:40:16.517Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-28T07:40:16.517Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-28T07:40:16.517Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-28T07:40:16.518Z [DEBUG] Applying permission update: Adding 14 allow rule(s) to destination 'localSettings': ["Bash(osascript:*)","mcp__cherry-chrome__chrome_list_connections","Bash(lsof:*)","Skill(do:it)","Skill(do:it-skill)","Skill(do:plan-skill)","Skill(do:plan)","Skill(superpowers:brainstorming)","Bash(pkill:*)","mcp__cherry-chrome__chrome","mcp__cherry-chrome__connect","mcp__chatgpt-convo__chatgpt","mcp__cherry-chrome__query_elements","Bash(bd list:*)"]
+2026-01-28T07:40:16.518Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-28T07:40:16.519Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.519Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.519Z [DEBUG] [STARTUP] Running setup()...
+2026-01-28T07:40:16.519Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-28T07:40:16.520Z [DEBUG] Loading skills from: managed=/Library/Application Support/ClaudeCode/.claude/skills, user=/Users/bmf/code/dotfiles/config/claude.zai/skills, project=[/Users/bmf/code/oscilla-animator-v2/.claude/skills]
+2026-01-28T07:40:16.524Z [DEBUG] Error log sink initialized
+2026-01-28T07:40:16.525Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-28T07:40:16.525Z [DEBUG] Total plugin skills loaded: 0
+2026-01-28T07:40:16.525Z [DEBUG] Total plugin commands loaded: 0
+2026-01-28T07:40:16.525Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-28T07:40:16.525Z [DEBUG] [STARTUP] setup() completed in 6ms
+2026-01-28T07:40:16.525Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-28T07:40:16.525Z [DEBUG] Total plugin agents loaded: 0
+2026-01-28T07:40:16.526Z [DEBUG] [Claude in Chrome] Found chrome profiles: Default
+2026-01-28T07:40:16.529Z [DEBUG] Watching for changes in skill/command directories: /Users/bmf/code/dotfiles/config/claude.zai/commands, /Users/bmf/code/oscilla-animator-v2/.claude/skills...
+2026-01-28T07:40:16.531Z [DEBUG] Loaded 8 unique skills (managed: 0, user: 0, project: 7, legacy commands: 1)
+2026-01-28T07:40:16.531Z [DEBUG] getSkills returning: 8 skill dir commands, 0 plugin skills, 1 bundled skills
+2026-01-28T07:40:16.531Z [DEBUG] [STARTUP] Commands and agents loaded in 6ms
+2026-01-28T07:40:16.531Z [DEBUG] [STARTUP] Running showSetupScreens()...
+2026-01-28T07:40:16.534Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-01-28T07:40:16.535Z [DEBUG] [STARTUP] showSetupScreens() completed in 4ms
+2026-01-28T07:40:16.535Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-28T07:40:16.536Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-28T07:40:16.536Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-28T07:40:16.536Z [DEBUG] Total LSP servers loaded: 0
+2026-01-28T07:40:16.536Z [DEBUG] [STARTUP] MCP configs loaded in 18ms
+2026-01-28T07:40:16.539Z [DEBUG] MCP server "cherry-chrome": Starting connection with timeout of 30000ms
+2026-01-28T07:40:16.540Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-28T07:40:16.540Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-28T07:40:16.540Z [DEBUG] LSP server manager initialized successfully
+2026-01-28T07:40:16.540Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-28T07:40:16.540Z [DEBUG] [Claude in Chrome] Found brave profiles: Default
+2026-01-28T07:40:16.563Z [DEBUG] [Claude in Chrome] Extension not found in any browser
+2026-01-28T07:40:16.566Z [DEBUG] Git remote URL: git@github.com:brandon-fryslie/oscilla-animator-v2.git
+2026-01-28T07:40:16.566Z [DEBUG] Parsed repository: brandon-fryslie/oscilla-animator-v2 from git@github.com:brandon-fryslie/oscilla-animator-v2.git
+2026-01-28T07:40:16.566Z [DEBUG] Parsed repository: brandon-fryslie/oscilla-animator-v2 from URL: git@github.com:brandon-fryslie/oscilla-animator-v2.git
+2026-01-28T07:40:16.566Z [DEBUG] Path /Users/bmf/code/oscilla-animator-v2 already tracked for repo brandon-fryslie/oscilla-animator-v2
+2026-01-28T07:40:16.702Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T07:40:16.702Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.702Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.3ea; cc_entrypoint=cli
+2026-01-28T07:40:16.702Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:16.702Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:16.703Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:16.714Z [ERROR] MCP server "cherry-chrome" Server stderr: Cherry Chrome MCP Server running on stdio [MODE: SMART TOOLS]
+Set USE_LEGACY_TOOLS=true to use original granular tools
+2026-01-28T07:40:16.714Z [DEBUG] MCP server "cherry-chrome": Successfully connected to undefined server in 177ms
+2026-01-28T07:40:16.714Z [DEBUG] MCP server "cherry-chrome": Connection established with capabilities: {"hasTools":true,"hasPrompts":false,"hasResources":false,"serverVersion":{"name":"cherry-chrome-mcp","version":"0.1.0"}}
+2026-01-28T07:40:16.718Z [DEBUG] [Reconnection] computeInitialTeamContext: No teammate context set (not a teammate)
+2026-01-28T07:40:16.719Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.zai/.claude.json.tmp.70500.1769586016719
+2026-01-28T07:40:16.719Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T07:40:16.719Z [DEBUG] Temp file written successfully, size: 1345 bytes
+2026-01-28T07:40:16.719Z [DEBUG] Applied original permissions to temp file
+2026-01-28T07:40:16.719Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.zai/.claude.json.tmp.70500.1769586016719 to /Users/bmf/code/dotfiles/config/claude.zai/.claude.json
+2026-01-28T07:40:16.719Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.zai/.claude.json written atomically
+2026-01-28T07:40:16.720Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-28T07:40:16.720Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-28T07:40:16.721Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-01-28T07:40:16.721Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T07:40:16.721Z [DEBUG] Matched 0 unique hooks for query "startup" (0 before deduplication)
+2026-01-28T07:40:16.721Z [DEBUG] [render] initLayout starting
+2026-01-28T07:40:16.721Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.723Z [DEBUG] [render] initLayout complete
+2026-01-28T07:40:16.724Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.724Z [DEBUG] [render] first ink render: 447ms since process start
+2026-01-28T07:40:16.761Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.761Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.765Z [DEBUG] [keybindings] KeybindingSetup initialized with 99 bindings, 0 warnings
+2026-01-28T07:40:16.767Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.768Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.768Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.768Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.768Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.768Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.768Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.769Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.769Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.769Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.769Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.769Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.769Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.769Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.770Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.771Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.771Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.771Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.771Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.773Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.773Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.774Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.775Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.775Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.775Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.775Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.794Z [DEBUG] [keybindings] Skipping file watcher - user customization disabled
+2026-01-28T07:40:16.794Z [DEBUG] [REPL:mount] REPL mounted, disabled=false
+2026-01-28T07:40:16.795Z [DEBUG] Official marketplace auto-install skipped: already_attempted
+2026-01-28T07:40:16.795Z [DEBUG] performStartupChecks called
+2026-01-28T07:40:16.796Z [DEBUG] Starting background plugin installations
+2026-01-28T07:40:16.796Z [DEBUG] performBackgroundPluginInstallations called
+2026-01-28T07:40:16.797Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-28T07:40:16.800Z [DEBUG] [claudeai-mcp] Checking gate (cached)...
+2026-01-28T07:40:16.800Z [DEBUG] [claudeai-mcp] Gate returned: false
+2026-01-28T07:40:16.800Z [DEBUG] [claudeai-mcp] Disabled via gate
+2026-01-28T07:40:16.800Z [DEBUG] Setting installation status: 0 marketplaces, 0 installable plugins, 0 uninstallable plugins
+2026-01-28T07:40:16.800Z [DEBUG] Loaded plugins - Enabled: 0, Disabled: 0, Commands: 0, Agents: 0, Errors: 0
+2026-01-28T07:40:16.802Z [DEBUG] FileHistory: Added snapshot for 09a2044b-44e5-4062-9d2f-818a752a3c35, tracking 0 files
+2026-01-28T07:40:16.803Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.803Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.806Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.806Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.815Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.826Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.zai/.claude.json.tmp.70500.1769586016826
+2026-01-28T07:40:16.826Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T07:40:16.827Z [DEBUG] Temp file written successfully, size: 1345 bytes
+2026-01-28T07:40:16.827Z [DEBUG] Applied original permissions to temp file
+2026-01-28T07:40:16.827Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.zai/.claude.json.tmp.70500.1769586016826 to /Users/bmf/code/dotfiles/config/claude.zai/.claude.json
+2026-01-28T07:40:16.827Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.zai/.claude.json written atomically
+2026-01-28T07:40:16.828Z [DEBUG] Plugin autoupdate: skipped (auto-updater disabled)
+2026-01-28T07:40:16.829Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.zai/todos/46cb6cfe-1761-4198-86db-e150e6da76b8-agent-46cb6cfe-1761-4198-86db-e150e6da76b8.json.tmp.70500.1769586016829
+2026-01-28T07:40:16.829Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-28T07:40:16.829Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.zai/todos/46cb6cfe-1761-4198-86db-e150e6da76b8-agent-46cb6cfe-1761-4198-86db-e150e6da76b8.json.tmp.70500.1769586016829 to /Users/bmf/code/dotfiles/config/claude.zai/todos/46cb6cfe-1761-4198-86db-e150e6da76b8-agent-46cb6cfe-1761-4198-86db-e150e6da76b8.json
+2026-01-28T07:40:16.829Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.zai/todos/46cb6cfe-1761-4198-86db-e150e6da76b8-agent-46cb6cfe-1761-4198-86db-e150e6da76b8.json written atomically
+2026-01-28T07:40:16.830Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.830Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.834Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-28T07:40:16.834Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-28T07:40:16.835Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-28T07:40:16.835Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-28T07:40:16.835Z [DEBUG] Summarizing all 6 messages (~0 tokens)
+2026-01-28T07:40:16.835Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T07:40:16.835Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.835Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.c90; cc_entrypoint=cli
+2026-01-28T07:40:16.835Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:16.835Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:16.835Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:16.836Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.836Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.846Z [DEBUG] Stats cache does not exist, returning empty cache
+2026-01-28T07:40:16.846Z [DEBUG] Stats cache empty, processing all historical data in background
+2026-01-28T07:40:16.847Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.847Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.857Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.857Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.860Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-28T07:40:16.860Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T07:40:16.861Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-28T07:40:16.864Z [DEBUG] Started caffeinate to prevent sleep
+2026-01-28T07:40:16.864Z [DEBUG] FileHistory: Making snapshot for message aee024b5-a166-44d5-9dfe-97d308a82f33
+2026-01-28T07:40:16.864Z [DEBUG] FileHistory: Added snapshot for aee024b5-a166-44d5-9dfe-97d308a82f33, tracking 0 files
+2026-01-28T07:40:16.865Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.866Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.866Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.866Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:16.873Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T07:40:16.873Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.873Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.249; cc_entrypoint=cli
+2026-01-28T07:40:16.873Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:16.873Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:16.873Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-28T07:40:16.876Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:16.880Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.880Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:16.893Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:16.893Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:16.893Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:17.443Z [DEBUG] countTokensWithFallback: API returned null, trying haiku fallback (20 tools)
+2026-01-28T07:40:17.443Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:17.443Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:17.443Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:17.836Z [DEBUG] countTokensWithFallback: haiku fallback failed: 401 {"error":{"message":"token expired or incorrect","type":"401"}}
+2026-01-28T07:40:17.836Z [DEBUG] countToolDefinitionTokens returned null for 20 tools: mcp__cherry-chrome__connect, mcp__cherry-chrome__chrome_list_connections, mcp__cherry-chrome__chrome...
+2026-01-28T07:40:17.836Z [DEBUG] Auto tool search disabled (char fallback): 11970 chars (threshold: 50000, 10% of context) [source: query]
+2026-01-28T07:40:17.839Z [DEBUG] Skills and commands included in Skill tool: skill-lookup, refresh-indexes, motion, dockview-with-examples, doc-index, gap-analysis, dockview-api-only, recap
+2026-01-28T07:40:17.840Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:17.840Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:17.840Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.cbf; cc_entrypoint=cli
+2026-01-28T07:40:17.840Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:17.840Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:17.840Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:17.842Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:17.842Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T07:40:17.847Z [DEBUG] High write ratio: blit=363, write=867 (70.5% writes), screen=23x121
+2026-01-28T07:40:17.895Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:17.895Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:17.895Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:17.937Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:17.937Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:17.937Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:18.023Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=/Users/bmf/.local/share/claude/versions/2.1.20)
+2026-01-28T07:40:18.372Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:18.372Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:18.372Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:18.534Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:18.574Z [DEBUG] High write ratio: blit=363, write=954 (72.4% writes), screen=24x121
+2026-01-28T07:40:19.182Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:19.185Z [DEBUG] High write ratio: blit=242, write=976 (80.1% writes), screen=24x121
+2026-01-28T07:40:19.373Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:19.373Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:19.373Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:19.384Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:19.384Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:19.384Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:19.771Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:19.771Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:19.771Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:19.778Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:19.778Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:19.778Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:19.884Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:21.944Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:21.944Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:21.944Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:21.984Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:21.984Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:21.984Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:22.336Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:22.336Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:22.336Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:22.405Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:22.445Z [DEBUG] High write ratio: blit=242, write=976 (80.1% writes), screen=24x121
+2026-01-28T07:40:23.544Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:23.544Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:23.544Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:24.939Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:24.943Z [DEBUG] High write ratio: blit=242, write=976 (80.1% writes), screen=24x121
+2026-01-28T07:40:26.488Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:26.488Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:26.488Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:27.107Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:27.107Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:27.107Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:27.218Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:27.218Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:27.218Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:27.433Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T07:40:27.433Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T07:40:27.433Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T07:40:29.128Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:29.130Z [DEBUG] Stopped caffeinate, allowing sleep
+2026-01-28T07:40:29.131Z [ERROR] Error in non-streaming fallback: Request was aborted.
+2026-01-28T07:40:29.133Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:29.133Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:29.133Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:29.133Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:29.133Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:29.133Z [DEBUG] Layout engine: yoga
+2026-01-28T07:40:29.171Z [DEBUG] High write ratio: blit=242, write=890 (78.6% writes), screen=22x121
+2026-01-28T07:40:29.256Z [DEBUG] Getting matching hook commands for SessionEnd with query: prompt_input_exit
+2026-01-28T07:40:29.256Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T07:40:29.256Z [DEBUG] Matched 0 unique hooks for query "prompt_input_exit" (0 before deduplication)
