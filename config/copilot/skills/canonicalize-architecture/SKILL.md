@@ -1,10 +1,7 @@
 ---
-allowed-tools: Read, Write, Edit, Glob, Grep, Task, Bash
-description: Analyze architecture/spec documents for contradictions, ambiguities, and inconsistencies. Produces an encyclopedia-style canonical specification series.
-argument-hint: <directory-or-file-list> (e.g., "design-docs/" or "spec.md arch.md api.md")
-agent: Opus
+name: "canonicalize-architecture"
+description: "Analyze architecture/spec documents for contradictions, ambiguities, and inconsistencies. Produces an encyclopedia-style canonical specification series."
 ---
-
 # Architecture Document Canonicalization
 
 You are analyzing architecture and technical specification documents to surface contradictions, inconsistencies, and consequential ambiguities. The ultimate goal is to compile a comprehensive **canonical specification encyclopedia**—a three-tiered collection of documents organized by change cost.
