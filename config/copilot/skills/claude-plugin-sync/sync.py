@@ -473,6 +473,13 @@ def write_if_changed(target: Path, content: str) -> bool:
     if target.exists() and target.read_text() == content:
         return False
 
+    # Ensure parent directory exists
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove existing file/symlink if it exists
+    if target.exists() or target.is_symlink():
+        target.unlink()
+
     target.write_text(content)
     return True
 
