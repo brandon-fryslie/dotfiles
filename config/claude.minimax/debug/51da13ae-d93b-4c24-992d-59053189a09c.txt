@@ -1,0 +1,392 @@
+2026-01-28T09:03:03.944Z [DEBUG] Failed to check enabledPlatforms: TypeError: undefined is not an object (evaluating 'mZ.join')
+2026-01-28T09:03:03.998Z [DEBUG] Watching for changes in setting files /Users/bmf/code/dotfiles/.claude...
+2026-01-28T09:03:03.999Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-28T09:03:03.999Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-28T09:03:03.999Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-28T09:03:03.999Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-28T09:03:04.000Z [DEBUG] Applying permission update: Adding 9 allow rule(s) to destination 'localSettings': ["mcp__aider-mcp-server__aider_ai_code","Bash(./dotbot/bin/dotbot:*)","Bash(just check-missing:*)","Bash(just status:*)","Bash(just validate)","Read(//Users/bmf/Library/**)","Bash(bats:*)","Read(//Users/bmf/.local/share/uv/tools/**)","Bash(just install:*)"]
+2026-01-28T09:03:04.000Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-28T09:03:04.001Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.001Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.001Z [DEBUG] [STARTUP] Running setup()...
+2026-01-28T09:03:04.002Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-28T09:03:04.002Z [DEBUG] Loading skills from: managed=/Library/Application Support/ClaudeCode/.claude/skills, user=/Users/bmf/code/dotfiles/config/claude.minimax/skills, project=[/Users/bmf/code/dotfiles/.claude/skills]
+2026-01-28T09:03:04.004Z [DEBUG] Error log sink initialized
+2026-01-28T09:03:04.005Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-28T09:03:04.005Z [DEBUG] Total plugin skills loaded: 0
+2026-01-28T09:03:04.005Z [DEBUG] Total plugin commands loaded: 0
+2026-01-28T09:03:04.005Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-28T09:03:04.005Z [DEBUG] [STARTUP] setup() completed in 4ms
+2026-01-28T09:03:04.005Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-28T09:03:04.005Z [DEBUG] Total plugin agents loaded: 0
+2026-01-28T09:03:04.005Z [DEBUG] Loaded 1 unique skills (managed: 0, user: 0, project: 1, legacy commands: 0)
+2026-01-28T09:03:04.005Z [DEBUG] getSkills returning: 1 skill dir commands, 0 plugin skills, 1 bundled skills
+2026-01-28T09:03:04.006Z [DEBUG] [STARTUP] Commands and agents loaded in 1ms
+2026-01-28T09:03:04.006Z [DEBUG] [STARTUP] Running showSetupScreens()...
+2026-01-28T09:03:04.008Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-01-28T09:03:04.010Z [DEBUG] [STARTUP] showSetupScreens() completed in 4ms
+2026-01-28T09:03:04.010Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-28T09:03:04.010Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-28T09:03:04.010Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-28T09:03:04.011Z [DEBUG] Total LSP servers loaded: 0
+2026-01-28T09:03:04.011Z [DEBUG] [STARTUP] MCP configs loaded in 11ms
+2026-01-28T09:03:04.011Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-28T09:03:04.011Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-28T09:03:04.011Z [DEBUG] LSP server manager initialized successfully
+2026-01-28T09:03:04.011Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-28T09:03:04.013Z [DEBUG] [Reconnection] computeInitialTeamContext: No teammate context set (not a teammate)
+2026-01-28T09:03:04.014Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984014
+2026-01-28T09:03:04.014Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:04.014Z [DEBUG] Temp file written successfully, size: 1529 bytes
+2026-01-28T09:03:04.014Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:04.014Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984014 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:04.014Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:04.015Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-28T09:03:04.015Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-28T09:03:04.015Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-01-28T09:03:04.015Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:03:04.015Z [DEBUG] Matched 0 unique hooks for query "startup" (0 before deduplication)
+2026-01-28T09:03:04.015Z [DEBUG] [render] initLayout starting
+2026-01-28T09:03:04.015Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.018Z [DEBUG] [render] initLayout complete
+2026-01-28T09:03:04.019Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.019Z [DEBUG] [render] first ink render: 266ms since process start
+2026-01-28T09:03:04.030Z [DEBUG] [Claude in Chrome] Found chrome profiles: Default
+2026-01-28T09:03:04.033Z [DEBUG] Watching for changes in skill/command directories: /Users/bmf/code/dotfiles/.claude/skills...
+2026-01-28T09:03:04.051Z [DEBUG] [Claude in Chrome] Found brave profiles: Default
+2026-01-28T09:03:04.052Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.052Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.057Z [DEBUG] [keybindings] KeybindingSetup initialized with 99 bindings, 0 warnings
+2026-01-28T09:03:04.058Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.059Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.059Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.059Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.059Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.059Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.059Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.059Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.060Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.060Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.063Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.063Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.063Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.063Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.065Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.065Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.066Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.066Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.066Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.066Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.066Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.067Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.080Z [DEBUG] Git remote URL: git@github.com:brandon-fryslie/dotfiles.git
+2026-01-28T09:03:04.080Z [DEBUG] Parsed repository: brandon-fryslie/dotfiles from git@github.com:brandon-fryslie/dotfiles.git
+2026-01-28T09:03:04.080Z [DEBUG] Parsed repository: brandon-fryslie/dotfiles from URL: git@github.com:brandon-fryslie/dotfiles.git
+2026-01-28T09:03:04.081Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984081
+2026-01-28T09:03:04.081Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:04.081Z [DEBUG] Temp file written successfully, size: 1603 bytes
+2026-01-28T09:03:04.081Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:04.081Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984081 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:04.081Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:04.081Z [DEBUG] Added /Users/bmf/code/dotfiles to tracked paths for repo brandon-fryslie/dotfiles
+2026-01-28T09:03:04.096Z [DEBUG] [keybindings] Skipping file watcher - user customization disabled
+2026-01-28T09:03:04.096Z [DEBUG] [REPL:mount] REPL mounted, disabled=false
+2026-01-28T09:03:04.097Z [DEBUG] Official marketplace auto-install skipped: already_attempted
+2026-01-28T09:03:04.097Z [DEBUG] performStartupChecks called
+2026-01-28T09:03:04.098Z [DEBUG] Starting background plugin installations
+2026-01-28T09:03:04.098Z [DEBUG] performBackgroundPluginInstallations called
+2026-01-28T09:03:04.100Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-28T09:03:04.103Z [DEBUG] [claudeai-mcp] Checking gate (cached)...
+2026-01-28T09:03:04.103Z [DEBUG] [claudeai-mcp] Gate returned: false
+2026-01-28T09:03:04.103Z [DEBUG] [claudeai-mcp] Disabled via gate
+2026-01-28T09:03:04.104Z [DEBUG] Setting installation status: 0 marketplaces, 0 installable plugins, 0 uninstallable plugins
+2026-01-28T09:03:04.104Z [DEBUG] Loaded plugins - Enabled: 0, Disabled: 0, Commands: 0, Agents: 0, Errors: 0
+2026-01-28T09:03:04.107Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984107
+2026-01-28T09:03:04.107Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:04.107Z [DEBUG] Temp file written successfully, size: 2185 bytes
+2026-01-28T09:03:04.107Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:04.107Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984107 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:04.107Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:04.108Z [DEBUG] FileHistory: Added snapshot for 1d8a3255-8b6f-456b-9d95-317987c2defd, tracking 0 files
+2026-01-28T09:03:04.109Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.109Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.112Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.113Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.121Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.122Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984122
+2026-01-28T09:03:04.122Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:04.123Z [DEBUG] Temp file written successfully, size: 2244 bytes
+2026-01-28T09:03:04.123Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:04.123Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984122 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:04.123Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.123Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.132Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T09:03:04.132Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.132Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.3ea; cc_entrypoint=cli
+2026-01-28T09:03:04.132Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T09:03:04.132Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T09:03:04.133Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T09:03:04.142Z [DEBUG] Plugin autoupdate: skipped (auto-updater disabled)
+2026-01-28T09:03:04.143Z [DEBUG] Created empty session index
+2026-01-28T09:03:04.143Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/todos/51da13ae-d93b-4c24-992d-59053189a09c-agent-51da13ae-d93b-4c24-992d-59053189a09c.json.tmp.79349.1769590984143
+2026-01-28T09:03:04.143Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-28T09:03:04.143Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/todos/51da13ae-d93b-4c24-992d-59053189a09c-agent-51da13ae-d93b-4c24-992d-59053189a09c.json.tmp.79349.1769590984143 to /Users/bmf/code/dotfiles/config/claude.minimax/todos/51da13ae-d93b-4c24-992d-59053189a09c-agent-51da13ae-d93b-4c24-992d-59053189a09c.json
+2026-01-28T09:03:04.143Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/todos/51da13ae-d93b-4c24-992d-59053189a09c-agent-51da13ae-d93b-4c24-992d-59053189a09c.json written atomically
+2026-01-28T09:03:04.144Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.144Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.147Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-28T09:03:04.147Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-28T09:03:04.147Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-28T09:03:04.147Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-28T09:03:04.148Z [DEBUG] Stats cache does not exist, returning empty cache
+2026-01-28T09:03:04.149Z [DEBUG] Stats cache empty, processing all historical data in background
+2026-01-28T09:03:04.150Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.150Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.159Z [DEBUG] [Claude in Chrome] Extension not found in any browser
+2026-01-28T09:03:04.160Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.160Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.163Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.163Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.165Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-28T09:03:04.165Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:03:04.165Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-28T09:03:04.167Z [DEBUG] Started caffeinate to prevent sleep
+2026-01-28T09:03:04.167Z [DEBUG] FileHistory: Making snapshot for message 951b5636-44d4-4fa4-be9d-4901c341f62b
+2026-01-28T09:03:04.167Z [DEBUG] FileHistory: Added snapshot for 951b5636-44d4-4fa4-be9d-4901c341f62b, tracking 0 files
+2026-01-28T09:03:04.200Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.201Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.201Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.201Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:04.205Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984205
+2026-01-28T09:03:04.205Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:04.205Z [DEBUG] Temp file written successfully, size: 2289 bytes
+2026-01-28T09:03:04.205Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:04.205Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590984205 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:04.205Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:04.207Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T09:03:04.207Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.207Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.6d2; cc_entrypoint=cli
+2026-01-28T09:03:04.207Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T09:03:04.207Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T09:03:04.207Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-28T09:03:04.207Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T09:03:04.215Z [DEBUG] Auto tool search disabled: 0 tokens (threshold: 20000, 10% of context) [source: query]
+2026-01-28T09:03:04.217Z [DEBUG] Skills and commands included in Skill tool: kitty-docs
+2026-01-28T09:03:04.219Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.219Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.223Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.223Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.223Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.cbf; cc_entrypoint=cli
+2026-01-28T09:03:04.223Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T09:03:04.223Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T09:03:04.223Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T09:03:04.227Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.227Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:04.244Z [DEBUG] High write ratio: blit=381, write=664 (63.5% writes), screen=22x127
+2026-01-28T09:03:04.279Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=3/3, firstChangeY=9
+  prev: "· Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.588Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.648Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.691Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.741Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.793Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.849Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.889Z [ERROR] Error in non-streaming fallback: 400 {"type":"error","error":{"type":"invalid_request_error","message":"invalid params"}}
+2026-01-28T09:03:04.896Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.947Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:04.997Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:05.049Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:05.100Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:05.154Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:05.206Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:05.285Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=/Users/bmf/.local/share/claude/versions/2.1.20)
+2026-01-28T09:03:05.287Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:05.859Z [DEBUG] Stream started - received first chunk
+2026-01-28T09:03:06.125Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.207Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.225Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.306Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.326Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.410Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.428Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.510Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.529Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.612Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.630Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=2/2, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.713Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.733Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.815Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=1/1, firstChangeY=9
+  prev: "✻ Thundering… (esc to interrupt)                                                                                               "
+  next: "✻ Thundering… (esc to interrupt)                                                                                               "
+2026-01-28T09:03:06.965Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.965Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.966Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.967Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.967Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.967Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:06.969Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-28T09:03:07.021Z [DEBUG] Full reset (scrollback changes): scrollbackRows=11, changes=127/1321, firstChangeY=10
+  prev: "╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮"
+  next: "                                                                                                                               "
+2026-01-28T09:03:07.216Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.684Z [DEBUG] Stream started - received first chunk
+2026-01-28T09:03:07.686Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.686Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.686Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.686Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.686Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:07.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:08.253Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:09.435Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:09.435Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:09.687Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.108Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:10.108Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:10.109Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.109Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.110Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.111Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.111Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.111Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.111Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.111Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:10.112Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:10.112Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:10.114Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-01-28T09:03:10.114Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:03:10.114Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-28T09:03:10.117Z [DEBUG] Stopped caffeinate, allowing sleep
+2026-01-28T09:03:10.122Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590990122
+2026-01-28T09:03:10.122Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:10.122Z [DEBUG] Temp file written successfully, size: 2338 bytes
+2026-01-28T09:03:10.122Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:10.122Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590990122 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:10.122Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:10.123Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590990123
+2026-01-28T09:03:10.123Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:10.123Z [DEBUG] Temp file written successfully, size: 2376 bytes
+2026-01-28T09:03:10.123Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:10.123Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.79349.1769590990123 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:10.123Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:04:04.662Z [DEBUG] Getting matching hook commands for SessionEnd with query: other
+2026-01-28T09:04:04.662Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:04:04.662Z [DEBUG] Matched 0 unique hooks for query "other" (0 before deduplication)

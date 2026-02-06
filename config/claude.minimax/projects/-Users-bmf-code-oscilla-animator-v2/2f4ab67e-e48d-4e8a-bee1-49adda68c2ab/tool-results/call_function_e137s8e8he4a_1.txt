@@ -1,0 +1,7 @@
+/Users/bmf/code/oscilla-animator-v2/src/core/rand.ts
+/Users/bmf/code/oscilla-animator-v2/src/core/domain-registry.ts
+/Users/bmf/code/oscilla-animator-v2/src/core/canonical-name.ts
+/Users/bmf/code/oscilla-animator-v2/src/core/__tests__/canonical-name.test.ts
+/Users/bmf/code/oscilla-animator-v2/src/core/__tests__/canonical-types.test.ts
+/Users/bmf/code/oscilla-animator-v2/src/core/types.ts
+/Users/bmf/code/oscilla-animator-v2/src/core/canonical-types.ts

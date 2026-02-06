@@ -1,0 +1,193 @@
+     1→/**
+     2→ * ReduceOp Tests
+     3→ * 
+     4→ * Tests field→scalar reduction operations (sum, avg, min, max)
+     5→ */
+     6→
+     7→import { describe, it, expect } from 'vitest';
+     8→import { compile } from '../../compiler/compile';
+     9→import { buildPatch } from '../../graph';
+    10→import { BLOCK_DEFS_BY_TYPE } from '../../blocks/registry';
+    11→
+    12→describe('ReduceOp', () => {
+    13→  describe('Block Registration', () => {
+    14→    it('registers Reduce block in registry', () => {
+    15→      const reduceBlock = BLOCK_DEFS_BY_TYPE.get('Reduce');
+    16→      
+    17→      expect(reduceBlock).toBeDefined();
+    18→      expect(reduceBlock?.type).toBe('Reduce');
+    19→      expect(reduceBlock?.category).toBe('field');
+    20→      expect(reduceBlock?.form).toBe('primitive');
+    21→    });
+    22→
+    23→    it('has correct input/output port definitions', () => {
+    24→      const reduceBlock = BLOCK_DEFS_BY_TYPE.get('Reduce');
+    25→      
+    26→      expect(reduceBlock?.inputs.field).toBeDefined();
+    27→      expect(reduceBlock?.inputs.field.label).toBe('Field');
+    28→      
+    29→      expect(reduceBlock?.outputs.signal).toBeDefined();
+    30→      expect(reduceBlock?.outputs.signal.label).toBe('Result');
+    31→    });
+    32→
+    33→    it('has correct cardinality metadata', () => {
+    34→      const reduceBlock = BLOCK_DEFS_BY_TYPE.get('Reduce');
+    35→      
+    36→      expect(reduceBlock?.cardinality).toBeDefined();
+    37→      expect(reduceBlock?.cardinality?.cardinalityMode).toBe('transform');
+    38→      expect(reduceBlock?.cardinality?.laneCoupling).toBe('laneCoupled');
+    39→    });
+    40→  });
+    41→
+    42→  describe('IR Generation', () => {
+    43→    it('compiles patch with Reduce block', () => {
+    44→      const patch = buildPatch((b) => {
+    45→        b.addBlock('InfiniteTimeRoot', {});
+    46→        const array = b.addBlock('Array', { count: 3 });
+    47→        const reduce = b.addBlock('Reduce', {});
+    48→        b.wire(array, 'elements', reduce, 'field');
+    49→      });
+    50→
+    51→      const result = compile(patch);
+    52→      expect(result.kind).toBe('ok');
+    53→      if (result.kind !== 'ok') return;
+    54→
+    55→      // Verify program compiled successfully
+    56→      expect(result.program).toBeDefined();
+    57→      expect(result.program.signalExprs).toBeDefined();
+    58→    });
+    59→
+    60→    it('creates SigExprReduceField in IR', () => {
+    61→      const patch = buildPatch((b) => {
+    62→        b.addBlock('InfiniteTimeRoot', {});
+    63→        const array = b.addBlock('Array', { count: 3 });
+    64→        const reduce = b.addBlock('Reduce', {});
+    65→        b.wire(array, 'elements', reduce, 'field');
+    66→      });
+    67→
+    68→      const result = compile(patch);
+    69→      expect(result.kind).toBe('ok');
+    70→      if (result.kind !== 'ok') return;
+    71→
+    72→      const program = result.program;
+    73→      
+    74→      // Find reduce_field expression
+    75→      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+    76→      expect(reduceExpr).toBeDefined();
+    77→      
+    78→      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+    79→        expect(reduceExpr.field).toBeDefined();
+    80→        expect(reduceExpr.op).toBeDefined();
+    81→        expect(['min', 'max', 'sum', 'avg']).toContain(reduceExpr.op);
+    82→        expect(reduceExpr.type).toBeDefined();
+    83→      }
+    84→    });
+    85→  });
+    86→
+    87→  describe('Type System Integration', () => {
+    88→    it('preserves payload type from field to signal', () => {
+    89→      const patch = buildPatch((b) => {
+    90→        b.addBlock('InfiniteTimeRoot', {});
+    91→        const array = b.addBlock('Array', { count: 3 });
+    92→        const reduce = b.addBlock('Reduce', {});
+    93→        b.wire(array, 'elements', reduce, 'field');
+    94→      });
+    95→
+    96→      const result = compile(patch);
+    97→      expect(result.kind).toBe('ok');
+    98→      if (result.kind !== 'ok') return;
+    99→
+   100→      const program = result.program;
+   101→      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+   102→      
+   103→      // For now, just verify the expression exists with the required fields
+   104→      // Type structure verification skipped until runtime evaluation complete
+   105→      expect(reduceExpr).toBeDefined();
+   106→      
+   107→      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+   108→        expect(reduceExpr.type).toBeDefined();
+   109→        expect(reduceExpr.field).toBeDefined();
+   110→        expect(reduceExpr.op).toBeDefined();
+   111→      }
+   112→    });
+   113→  });
+   114→
+   115→  describe('Operation Configuration', () => {
+   116→    it('defaults to sum operation', () => {
+   117→      const patch = buildPatch((b) => {
+   118→        b.addBlock('InfiniteTimeRoot', {});
+   119→        const array = b.addBlock('Array', { count: 3 });
+   120→        const reduce = b.addBlock('Reduce', {}); // No config
+   121→        b.wire(array, 'elements', reduce, 'field');
+   122→      });
+   123→
+   124→      const result = compile(patch);
+   125→      expect(result.kind).toBe('ok');
+   126→      if (result.kind !== 'ok') return;
+   127→
+   128→      const program = result.program;
+   129→      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+   130→      
+   131→      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+   132→        expect(reduceExpr.op).toBe('sum'); // Default
+   133→      }
+   134→    });
+   135→
+   136→    it('accepts configured operation', () => {
+   137→      const patch = buildPatch((b) => {
+   138→        b.addBlock('InfiniteTimeRoot', {});
+   139→        const array = b.addBlock('Array', { count: 3 });
+   140→        const reduce = b.addBlock('Reduce', { op: 'max' });
+   141→        b.wire(array, 'elements', reduce, 'field');
+   142→      });
+   143→
+   144→      const result = compile(patch);
+   145→      expect(result.kind).toBe('ok');
+   146→      if (result.kind !== 'ok') return;
+   147→
+   148→      const program = result.program;
+   149→      const reduceExpr = program.signalExprs.nodes.find(e => e.kind === 'reduce_field');
+   150→      
+   151→      if (reduceExpr && reduceExpr.kind === 'reduce_field') {
+   152→        expect(reduceExpr.op).toBe('max');
+   153→      }
+   154→    });
+   155→  });
+   156→
+   157→  // NOTE: Runtime evaluation tests are deferred until reduce_field
+   158→  // can access field materialization (requires ScheduleExecutor changes)
+   159→  describe.skip('Runtime Evaluation', () => {
+   160→    it('sums scalar field values', () => {
+   161→      // TODO: Implement after reduce_field can materialize fields
+   162→    });
+   163→
+   164→    it('computes average correctly', () => {
+   165→      // TODO: Implement componentwise reduction
+   166→    });
+   167→
+   168→    it('finds minimum value', () => {
+   169→      // TODO: Implement componentwise reduction
+   170→    });
+   171→
+   172→    it('finds maximum value', () => {
+   173→      // TODO: Implement componentwise reduction
+   174→    });
+   175→
+   176→    it('handles empty field', () => {
+   177→      // TODO: Should return 0
+   178→    });
+   179→
+   180→    it('propagates NaN', () => {
+   181→      // TODO: NaN in any element should propagate
+   182→    });
+   183→
+   184→    it('reduces vec2 componentwise', () => {
+   185→      // TODO: sum([vec2(1,2), vec2(3,4)]) → vec2(4, 6)
+   186→    });
+   187→  });
+   188→});
+   189→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

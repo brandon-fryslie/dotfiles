@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "sessionId": "51da13ae-d93b-4c24-992d-59053189a09c",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-dotfiles/51da13ae-d93b-4c24-992d-59053189a09c.jsonl",
+      "fileMtime": 1769591007876,
+      "firstPrompt": "minimax",
+      "summary": "Minimax Claude Configuration Inquiry",
+      "messageCount": 2,
+      "created": "2026-01-28T09:03:04.163Z",
+      "modified": "2026-01-28T09:03:10.107Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/dotfiles",
+      "isSidechain": false
+    }
+  ],
+  "originalPath": "/Users/bmf/code/dotfiles"
+}

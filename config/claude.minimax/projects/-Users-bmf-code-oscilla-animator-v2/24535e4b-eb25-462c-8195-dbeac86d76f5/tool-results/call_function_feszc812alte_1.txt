@@ -1,0 +1,39 @@
+     1→/**
+     2→ * Compiler Passes - Public API
+     3→ *
+     4→ * This module re-exports from the new frontend/backend structure.
+     5→ * Maintained for backward compatibility during migration.
+     6→ *
+     7→ * New code should import from:
+     8→ * - src/compiler/frontend/ for Frontend passes
+     9→ * - src/compiler/backend/ for Backend passes
+    10→ */
+    11→
+    12→// Frontend passes (re-export for backward compatibility)
+    13→export { pass1TypeConstraints, getPortType } from "../frontend/analyze-type-constraints";
+    14→export type { TypeResolvedPatch, Pass1Result, Pass1Error, TypeConstraintError, PortKey } from "../frontend/analyze-type-constraints";
+    15→
+    16→export { pass2TypeGraph } from "../frontend/analyze-type-graph";
+    17→export type { TypedPatch } from "../ir/patches";
+    18→
+    19→// Backend passes (re-export for backward compatibility)
+    20→export { pass3Time } from "../backend/derive-time-model";
+    21→export type { TimeResolvedPatch } from "../ir/patches";
+    22→
+    23→export { pass4DepGraph } from "../backend/derive-dep-graph";
+    24→export type { DepGraphWithTimeModel, DepGraph } from "../ir/patches";
+    25→
+    26→export { pass5CycleValidation } from "../backend/schedule-scc";
+    27→export type { AcyclicOrLegalGraph } from "../ir/patches";
+    28→
+    29→export { pass6BlockLowering } from "../backend/lower-blocks";
+    30→export type { UnlinkedIRFragments, Pass6Options } from "../backend/lower-blocks";
+    31→
+    32→export { pass7Schedule } from "../backend/schedule-program";
+    33→export type { ScheduleIR } from "../backend/schedule-program";
+    34→
+    35→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

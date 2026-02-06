@@ -1,0 +1,26 @@
+   675→  const expr = fieldExprs[fieldId as number];
+   676→  if (!expr) return undefined;
+   677→
+   678→  switch (expr.kind) {
+   679→    case 'intrinsic':
+   680→    case 'array':
+   681→    case 'stateRead':
+   682→      return expr.instanceId;
+   683→    case 'map':
+   684→      return expr.instanceId ?? inferFieldInstanceFromExprs(expr.input, fieldExprs);
+   685→    case 'zip':
+   686→      return expr.instanceId ?? (expr.inputs.length > 0 ? inferFieldInstanceFromExprs(expr.inputs[0], fieldExprs) : undefined);
+   687→    case 'zipSig':
+   688→      return expr.instanceId ?? inferFieldInstanceFromExprs(expr.field, fieldExprs);
+   689→    case 'broadcast':
+   690→    case 'const':
+   691→      return undefined;
+   692→    default:
+   693→      return undefined;
+   694→  }
+   695→}
+   696→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

@@ -1,0 +1,34 @@
+   380→      return existing;
+   381→    }
+   382→    const id = fieldExprId(this.fieldExprs.length);
+   383→    this.fieldExprs.push(expr);
+   384→    this.fieldExprCache.set(hash, id);
+   385→    return id;
+   386→  }
+   387→
+   388→  ReduceField(field: FieldExprId, op: 'min' | 'max' | 'sum' | 'avg', type: CanonicalType): SigExprId {
+   389→    const expr = { kind: 'reduce_field' as const, field, op, type };
+   390→    const hash = hashSigExpr(expr);
+   391→    const existing = this.sigExprCache.get(hash);
+   392→    if (existing !== undefined) {
+   393→      return existing;
+   394→    }
+   395→    const id = sigExprId(this.sigExprs.length);
+   396→    this.sigExprs.push(expr);
+   397→    this.sigExprCache.set(hash, id);
+   398→    return id;
+   399→  }
+   400→
+   401→  fieldMap(input: FieldExprId, fn: PureFn, type: CanonicalType): FieldExprId {
+   402→    const instanceId = this.inferFieldInstance(input);
+   403→    const expr = { kind: 'map' as const, input, fn, type, instanceId };
+   404→    const hash = hashFieldExpr(expr);
+   405→    const existing = this.fieldExprCache.get(hash);
+   406→    if (existing !== undefined) {
+   407→      return existing;
+   408→    }
+   409→    const id = fieldExprId(this.fieldExprs.length);
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

@@ -1,0 +1,96 @@
+     1→# Definition of Done: const-value
+     2→Generated: 2026-01-28-192541
+     3→Status: READY FOR IMPLEMENTATION
+     4→Plan: SPRINT-2026-01-28-192541-const-value-PLAN.md
+     5→
+     6→## Acceptance Criteria
+     7→
+     8→### C-8: ConstValue Discriminated Union
+     9→
+    10→#### Type Definition
+    11→- [ ] ConstValue discriminated union defined (7 variants: float, int, bool, vec2, vec3, color, cameraProjection)
+    12→- [ ] ConstValue defined in src/core/canonical-types.ts or src/compiler/ir/types.ts
+    13→- [ ] All tuple values (vec2, vec3, color) use readonly arrays: `readonly [number, number]`
+    14→- [ ] constValueMatchesPayload(payload, value): boolean exists and exported
+    15→
+    16→#### Interface Updates
+    17→- [ ] SigExprConst.value type changed from `number | string | boolean` to `ConstValue`
+    18→- [ ] FieldExprConst.value type changed from loose union to `ConstValue`
+    19→
+    20→#### Construction Sites (estimate 40+)
+    21→- [ ] All SigExprConst construction sites updated to use ConstValue
+    22→- [ ] All FieldExprConst construction sites updated to use ConstValue
+    23→- [ ] TypeScript enforces: cannot pass raw number/string/boolean (must wrap in ConstValue)
+    24→- [ ] All construction sites use correct ConstValue.kind for their payload.kind
+    25→
+    26→#### Axis Enforcement Integration
+    27→- [ ] axis-enforcement.ts validates ConstValue.kind matches payload.kind
+    28→- [ ] findAllConstExpr helper (or equivalent) iterates all const expressions
+    29→- [ ] Mismatch produces AxisInvalid diagnostic with clear violation message
+    30→- [ ] Integration tested: mismatched const fails validation
+    31→
+    32→#### Test Coverage
+    33→**Positive tests (should pass):**
+    34→- [ ] Float const with float payload
+    35→- [ ] Int const with int payload
+    36→- [ ] Bool const with bool payload
+    37→- [ ] Vec2 const with vec2 payload
+    38→- [ ] Vec3 const with vec3 payload
+    39→- [ ] Color const with color payload
+    40→- [ ] CameraProjection const with cameraProjection payload
+    41→
+    42→**Negative tests (should fail):**
+    43→- [ ] Float const with vec2 payload → AxisInvalid
+    44→- [ ] Vec2 const with float payload → AxisInvalid
+    45→- [ ] Int const with bool payload → AxisInvalid
+    46→- [ ] String value with float payload → TypeScript compile error
+    47→
+    48→**Immutability tests:**
+    49→- [ ] Vec2 tuple is readonly (cannot mutate elements)
+    50→- [ ] Vec3 tuple is readonly
+    51→- [ ] Color tuple is readonly
+    52→
+    53→- [ ] All tests pass
+    54→- [ ] TypeScript compilation succeeds
+    55→
+    56→---
+    57→
+    58→## Integration Verification
+    59→- [ ] Full test suite passes (`npm test`)
+    60→- [ ] TypeScript compilation clean (`npm run typecheck`)
+    61→- [ ] Axis enforcement catches payload mismatches
+    62→- [ ] Runtime safe: impossible to construct mismatched const at compile time
+    63→
+    64→---
+    65→
+    66→## Completion Confirmation (All 8 Gap Analysis Items)
+    67→After this sprint, verify all critical items complete:
+    68→- [ ] ✅ C-1: EventExpr typed (Sprint 2)
+    69→- [ ] ✅ C-2: core/ids.ts authority (Sprint 1)
+    70→- [ ] ✅ C-3: reduce_field renamed (Sprint 1)
+    71→- [ ] ✅ C-4: Axis enforcement exists and passing (Sprint 3)
+    72→- [ ] ✅ C-5: instanceId removed from FieldExpr, getManyInstance added (Sprint 3)
+    73→- [ ] ✅ C-6: string leakage fixed in Step types (Sprint 2)
+    74→- [ ] ✅ C-7: FieldExprArray deleted (Sprint 1)
+    75→- [ ] ✅ C-8: ConstValue discriminated union (Sprint 4) ← THIS SPRINT
+    76→
+    77→---
+    78→
+    79→## Unblocking Confirmation
+    80→- [ ] U-1 (ValueExpr IR) can safely start — axis enforcement ensures valid IR
+    81→- [ ] Invariant I5 enforced (const literal shape matches payload)
+    82→- [ ] CanonicalType migration 100% complete (per gap analysis)
+    83→
+    84→---
+    85→
+    86→## Documentation
+    87→- [ ] ConstValue docstring explains payload matching requirement
+    88→- [ ] constValueMatchesPayload docstring documents validator purpose
+    89→- [ ] Helper functions documented (floatConst, vec2Const, etc.) if implemented
+    90→- [ ] Git commit messages explain rationale
+    91→- [ ] README or CHANGELOG updated with ConstValue migration notes (if applicable)
+    92→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

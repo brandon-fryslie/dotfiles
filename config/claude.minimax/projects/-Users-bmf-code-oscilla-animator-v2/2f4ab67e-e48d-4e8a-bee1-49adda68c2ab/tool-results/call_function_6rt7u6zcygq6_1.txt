@@ -1,0 +1,523 @@
+     1→# Implementation Context: event-typing
+     2→
+     3→## Overview
+     4→Add type: CanonicalType to all EventExpr variants with hard invariant enforcement (payload=bool, unit=none, temporality=discrete), and fix string → InstanceId leakage in 6 Step types.
+     5→
+     6→---
+     7→
+     8→## C-1: Add type: CanonicalType to EventExpr
+     9→
+    10→### Files to Modify
+    11→
+    12→1. **src/compiler/ir/types.ts** (add type field to 5 interfaces)
+    13→2. **src/core/canonical-types.ts** (add eventType helper)
+    14→3. **All EventExpr construction sites** (~30 files, TypeScript will identify them)
+    15→4. **src/core/__tests__/canonical-types.test.ts** (add invariant tests)
+    16→
+    17→---
+    18→
+    19→### Step 1: Add Helper Function
+    20→
+    21→**File**: `src/core/canonical-types.ts`
+    22→
+    23→**Location**: Insert after existing helper functions (e.g., after unifyTypes, before end of file)
+    24→
+    25→```typescript
+    26→/**
+    27→ * Create a CanonicalType for event expressions.
+    28→ * HARD INVARIANTS (enforced by axis validation):
+    29→ * - payload.kind === 'bool' (events are fired/not-fired)
+    30→ * - unit.kind === 'none' (events are dimensionless)
+    31→ * - extent.temporality === 'discrete' (events fire at instants)
+    32→ * 
+    33→ * @param cardinality - Can be 'one' or 'many(instance)' for per-instance events
+    34→ */
+    35→export function eventType(cardinality: CardinalityAxis): CanonicalType {
+    36→  return {
+    37→    payload: { kind: 'bool' },
+    38→    unit: { kind: 'none' },
+    39→    extent: {
+    40→      cardinality,
+    41→      temporality: { kind: 'inst', value: { kind: 'discrete' } },
+    42→      binding: { kind: 'inst', value: { kind: 'unbound' } },
+    43→      perspective: { kind: 'inst', value: { kind: 'default' } },
+    44→      branch: { kind: 'inst', value: { kind: 'main' } }
+    45→    }
+    46→  };
+    47→}
+    48→```
+    49→
+    50→**Import additions** (if not already present):
+    51→```typescript
+    52→import { CanonicalType, CardinalityAxis } from './canonical-types';
+    53→```
+    54→
+    55→---
+    56→
+    57→### Step 2: Update EventExpr Interfaces
+    58→
+    59→**File**: `src/compiler/ir/types.ts`
+    60→
+    61→**Import addition** (add to existing imports at top of file):
+    62→```typescript
+    63→import type { CanonicalType } from '../../core/canonical-types';
+    64→```
+    65→
+    66→**Location 1: Lines 330-333 (EventExprConst)**
+    67→```typescript
+    68→// BEFORE
+    69→export interface EventExprConst {
+    70→  readonly kind: 'const';
+    71→  readonly fired: boolean;
+    72→}
+    73→
+    74→// AFTER
+    75→export interface EventExprConst {
+    76→  readonly kind: 'const';
+    77→  readonly type: CanonicalType;  // <-- ADD
+    78→  readonly fired: boolean;
+    79→}
+    80→```
+    81→
+    82→**Location 2: Lines 335-338 (EventExprPulse)**
+    83→```typescript
+    84→// BEFORE
+    85→export interface EventExprPulse {
+    86→  readonly kind: 'pulse';
+    87→  readonly condition: SigExpr;
+    88→}
+    89→
+    90→// AFTER
+    91→export interface EventExprPulse {
+    92→  readonly kind: 'pulse';
+    93→  readonly type: CanonicalType;  // <-- ADD
+    94→  readonly condition: SigExpr;
+    95→}
+    96→```
+    97→
+    98→**Location 3: Lines 340-345 (EventExprWrap)**
+    99→```typescript
+   100→// BEFORE
+   101→export interface EventExprWrap {
+   102→  readonly kind: 'wrap';
+   103→  readonly wrappedSig: SigExpr;
+   104→  readonly state: StateSlotId;
+   105→  readonly initValue: number;
+   106→}
+   107→
+   108→// AFTER
+   109→export interface EventExprWrap {
+   110→  readonly kind: 'wrap';
+   111→  readonly type: CanonicalType;  // <-- ADD
+   112→  readonly wrappedSig: SigExpr;
+   113→  readonly state: StateSlotId;
+   114→  readonly initValue: number;
+   115→}
+   116→```
+   117→
+   118→**Location 4: Lines 347-350 (EventExprCombine)**
+   119→```typescript
+   120→// BEFORE
+   121→export interface EventExprCombine {
+   122→  readonly kind: 'combine';
+   123→  readonly inputs: readonly EventExpr[];
+   124→}
+   125→
+   126→// AFTER
+   127→export interface EventExprCombine {
+   128→  readonly kind: 'combine';
+   129→  readonly type: CanonicalType;  // <-- ADD
+   130→  readonly inputs: readonly EventExpr[];
+   131→}
+   132→```
+   133→
+   134→**Location 5: Lines 352-354 (EventExprNever)**
+   135→```typescript
+   136→// BEFORE
+   137→export interface EventExprNever {
+   138→  readonly kind: 'never';
+   139→}
+   140→
+   141→// AFTER
+   142→export interface EventExprNever {
+   143→  readonly kind: 'never';
+   144→  readonly type: CanonicalType;  // <-- ADD
+   145→}
+   146→```
+   147→
+   148→---
+   149→
+   150→### Step 3: Find and Update Construction Sites
+   151→
+   152→**Search command:**
+   153→```bash
+   154→# Find all EventExpr construction sites
+   155→grep -rn "kind: 'const'\|kind: 'pulse'\|kind: 'wrap'\|kind: 'combine'\|kind: 'never'" src/ | grep -E "Event|event"
+   156→```
+   157→
+   158→**Typical locations** (estimate 30+ sites):
+   159→- `src/compiler/ir-builder/` — IR builder creates EventExpr nodes
+   160→- `src/compiler/passes-v2/` — Normalization/transform passes
+   161→- `src/__tests__/` — Test fixtures
+   162→- `src/runtime/` — If any runtime code creates events
+   163→
+   164→**Pattern for each construction site:**
+   165→
+   166→```typescript
+   167→// BEFORE (will cause TypeScript error after Step 2)
+   168→const expr: EventExprConst = {
+   169→  kind: 'const',
+   170→  fired: true
+   171→};
+   172→
+   173→// AFTER (add type field)
+   174→import { eventType } from '../../core/canonical-types';
+   175→import { cardinalityOne } from '../../core/canonical-types'; // or create inline
+   176→
+   177→const expr: EventExprConst = {
+   178→  kind: 'const',
+   179→  type: eventType({ kind: 'inst', value: { kind: 'one' } }),  // <-- ADD
+   180→  fired: true
+   181→};
+   182→```
+   183→
+   184→**Helper for common cardinalities:**
+   185→```typescript
+   186→// For cardinality=one (most common)
+   187→const cardOne: CardinalityAxis = { kind: 'inst', value: { kind: 'one' } };
+   188→
+   189→// For per-instance events (cardinality=many)
+   190→import { instanceId, domainTypeId } from '../../core/ids';
+   191→const cardMany: CardinalityAxis = {
+   192→  kind: 'inst',
+   193→  value: {
+   194→    kind: 'many',
+   195→    instance: {
+   196→      instanceId: instanceId('inst_123'),
+   197→      domainTypeId: domainTypeId('domain_foo')
+   198→    }
+   199→  }
+   200→};
+   201→```
+   202→
+   203→**Strategy**: After Step 2, run TypeScript compiler. It will identify ALL construction sites that need updating:
+   204→```bash
+   205→npm run typecheck 2>&1 | grep EventExpr
+   206→```
+   207→
+   208→---
+   209→
+   210→### Step 4: Add Invariant Tests
+   211→
+   212→**File**: `src/core/__tests__/canonical-types.test.ts`
+   213→
+   214→**Location**: Add new describe block at end of file (before final closing brace)
+   215→
+   216→```typescript
+   217→describe('EventExpr Type Invariants', () => {
+   218→  test('eventType helper creates valid event type', () => {
+   219→    const cardOne: CardinalityAxis = {
+   220→      kind: 'inst',
+   221→      value: { kind: 'one' }
+   222→    };
+   223→    const type = eventType(cardOne);
+   224→
+   225→    expect(type.payload.kind).toBe('bool');
+   226→    expect(type.unit.kind).toBe('none');
+   227→    expect(type.extent.temporality).toEqual({
+   228→      kind: 'inst',
+   229→      value: { kind: 'discrete' }
+   230→    });
+   231→  });
+   232→
+   233→  test('EventExprConst satisfies invariants', () => {
+   234→    const cardOne: CardinalityAxis = {
+   235→      kind: 'inst',
+   236→      value: { kind: 'one' }
+   237→    };
+   238→    const expr: EventExprConst = {
+   239→      kind: 'const',
+   240→      type: eventType(cardOne),
+   241→      fired: true
+   242→    };
+   243→
+   244→    expect(expr.type.payload.kind).toBe('bool');
+   245→    expect(expr.type.unit.kind).toBe('none');
+   246→    expect(expr.type.extent.temporality.kind).toBe('inst');
+   247→    if (expr.type.extent.temporality.kind === 'inst') {
+   248→      expect(expr.type.extent.temporality.value.kind).toBe('discrete');
+   249→    }
+   250→  });
+   251→
+   252→  test('Per-instance events use cardinality=many', () => {
+   253→    import { instanceId, domainTypeId } from '../../core/ids';
+   254→    const cardMany: CardinalityAxis = {
+   255→      kind: 'inst',
+   256→      value: {
+   257→        kind: 'many',
+   258→        instance: {
+   259→          instanceId: instanceId('inst_test'),
+   260→          domainTypeId: domainTypeId('domain_test')
+   261→        }
+   262→      }
+   263→    };
+   264→    const type = eventType(cardMany);
+   265→
+   266→    expect(type.extent.cardinality.kind).toBe('inst');
+   267→    if (type.extent.cardinality.kind === 'inst') {
+   268→      expect(type.extent.cardinality.value.kind).toBe('many');
+   269→    }
+   270→  });
+   271→
+   272→  // Add similar tests for EventExprPulse, EventExprWrap, EventExprCombine, EventExprNever
+   273→});
+   274→```
+   275→
+   276→**Import additions** (add to top of test file):
+   277→```typescript
+   278→import { eventType } from '../canonical-types';
+   279→import type { EventExprConst, EventExprPulse, EventExprWrap, EventExprCombine, EventExprNever } from '../../compiler/ir/types';
+   280→```
+   281→
+   282→---
+   283→
+   284→## C-6: Fix string → InstanceId Leakage
+   285→
+   286→### Files to Modify
+   287→
+   288→1. **src/compiler/ir/types.ts** (6 interface changes)
+   289→2. **All construction sites for these Step types** (TypeScript will identify)
+   290→
+   291→---
+   292→
+   293→### Step 1: Update Type Definitions
+   294→
+   295→**File**: `src/compiler/ir/types.ts`
+   296→
+   297→**Import addition** (add to existing imports, if not already present from C-1):
+   298→```typescript
+   299→import { InstanceId } from '../../core/ids';
+   300→```
+   301→
+   302→**Location 1: Line 435 (InstanceDecl)**
+   303→```typescript
+   304→// BEFORE
+   305→export interface InstanceDecl {
+   306→  readonly id: string; // InstanceId
+   307→  // ...
+   308→}
+   309→
+   310→// AFTER
+   311→export interface InstanceDecl {
+   312→  readonly id: InstanceId;  // <-- CHANGE
+   313→  // ...
+   314→}
+   315→```
+   316→
+   317→**Location 2: Line 540 (StepMaterialize)**
+   318→```typescript
+   319→// BEFORE
+   320→export interface StepMaterialize {
+   321→  readonly kind: 'materialize';
+   322→  readonly instanceId: string;
+   323→  // ...
+   324→}
+   325→
+   326→// AFTER
+   327→export interface StepMaterialize {
+   328→  readonly kind: 'materialize';
+   329→  readonly instanceId: InstanceId;  // <-- CHANGE
+   330→  // ...
+   331→}
+   332→```
+   333→
+   334→**Location 3: Line 546 (StepRender)**
+   335→```typescript
+   336→// BEFORE
+   337→export interface StepRender {
+   338→  readonly kind: 'render';
+   339→  readonly instanceId: string;
+   340→  // ...
+   341→}
+   342→
+   343→// AFTER
+   344→export interface StepRender {
+   345→  readonly kind: 'render';
+   346→  readonly instanceId: InstanceId;  // <-- CHANGE
+   347→  // ...
+   348→}
+   349→```
+   350→
+   351→**Location 4: Line 587 (StepContinuityMapBuild)**
+   352→```typescript
+   353→// BEFORE
+   354→export interface StepContinuityMapBuild {
+   355→  readonly kind: 'continuity-map-build';
+   356→  readonly instanceId: string;
+   357→  // ...
+   358→}
+   359→
+   360→// AFTER
+   361→export interface StepContinuityMapBuild {
+   362→  readonly kind: 'continuity-map-build';
+   363→  readonly instanceId: InstanceId;  // <-- CHANGE
+   364→  // ...
+   365→}
+   366→```
+   367→
+   368→**Location 5: Line 598 (StepContinuityApply)**
+   369→```typescript
+   370→// BEFORE
+   371→export interface StepContinuityApply {
+   372→  readonly kind: 'continuity-apply';
+   373→  readonly instanceId: string;
+   374→  // ...
+   375→}
+   376→
+   377→// AFTER
+   378→export interface StepContinuityApply {
+   379→  readonly kind: 'continuity-apply';
+   380→  readonly instanceId: InstanceId;  // <-- CHANGE
+   381→  // ...
+   382→}
+   383→```
+   384→
+   385→**Location 6: Line 681 (StateMappingField)**
+   386→```typescript
+   387→// BEFORE
+   388→export interface StateMappingField {
+   389→  readonly instanceId: string;
+   390→  // ...
+   391→}
+   392→
+   393→// AFTER
+   394→export interface StateMappingField {
+   395→  readonly instanceId: InstanceId;  // <-- CHANGE
+   396→  // ...
+   397→}
+   398→```
+   399→
+   400→---
+   401→
+   402→### Step 2: Find and Update Construction Sites
+   403→
+   404→**Search command:**
+   405→```bash
+   406→# Find construction sites for these Step types
+   407→grep -rn "kind: 'materialize'\|kind: 'render'\|kind: 'continuity-map-build'\|kind: 'continuity-apply'" src/
+   408→grep -rn "StateMappingField" src/
+   409→grep -rn "InstanceDecl" src/ | grep -v "interface\|import"
+   410→```
+   411→
+   412→**Pattern for each construction site:**
+   413→
+   414→```typescript
+   415→// BEFORE (will cause TypeScript error after Step 1)
+   416→const step: StepMaterialize = {
+   417→  kind: 'materialize',
+   418→  instanceId: 'inst_123',  // <-- type error
+   419→  // ...
+   420→};
+   421→
+   422→// AFTER (use instanceId factory)
+   423→import { instanceId } from '../../core/ids';
+   424→
+   425→const step: StepMaterialize = {
+   426→  kind: 'materialize',
+   427→  instanceId: instanceId('inst_123'),  // <-- properly branded
+   428→  // ...
+   429→};
+   430→```
+   431→
+   432→**Strategy**: After Step 1, run TypeScript compiler to identify ALL sites:
+   433→```bash
+   434→npm run typecheck 2>&1 | grep -E "instanceId|InstanceDecl"
+   435→```
+   436→
+   437→**Common patterns**:
+   438→```typescript
+   439→// Existing code with instanceId from elsewhere
+   440→const inst = someInstance.id;  // Already InstanceId type
+   441→const step: StepMaterialize = {
+   442→  kind: 'materialize',
+   443→  instanceId: inst,  // No change needed if already typed
+   444→  // ...
+   445→};
+   446→
+   447→// String literal needs wrapping
+   448→const step: StepMaterialize = {
+   449→  kind: 'materialize',
+   450→  instanceId: instanceId('literal_value'),  // Wrap with factory
+   451→  // ...
+   452→};
+   453→
+   454→// Variables need conversion
+   455→const idString = 'inst_foo';
+   456→const step: StepMaterialize = {
+   457→  kind: 'materialize',
+   458→  instanceId: instanceId(idString),  // Convert
+   459→  // ...
+   460→};
+   461→```
+   462→
+   463→---
+   464→
+   465→## Verification
+   466→
+   467→### TypeScript Compilation
+   468→```bash
+   469→npm run typecheck
+   470→# Should have ZERO errors
+   471→```
+   472→
+   473→### Unit Tests
+   474→```bash
+   475→npm test -- canonical-types.test.ts
+   476→# All EventExpr invariant tests should pass
+   477→```
+   478→
+   479→### Full Test Suite
+   480→```bash
+   481→npm test
+   482→# All tests should pass
+   483→```
+   484→
+   485→### Grep Verification
+   486→```bash
+   487→# Should return 0 results for EventExpr without type field
+   488→grep -A 3 "interface EventExpr" src/compiler/ir/types.ts | grep -v "type: CanonicalType"
+   489→
+   490→# Should return 0 results for instanceId: string in Step types
+   491→grep -n "instanceId: string" src/compiler/ir/types.ts
+   492→```
+   493→
+   494→---
+   495→
+   496→## Adjacent Code Patterns
+   497→
+   498→### Existing CanonicalType usage in types.ts
+   499→```typescript
+   500→// From SigExpr (already has type field)
+   501→export interface SigExprConst {
+   502→  readonly kind: 'const';
+   503→  readonly type: CanonicalType;  // <-- EventExpr should match this pattern
+   504→  readonly value: number | string | boolean;
+   505→}
+   506→```
+   507→
+   508→### Existing branded ID usage
+   509→```typescript
+   510→// From FieldExprIntrinsic (already uses InstanceId correctly)
+   511→export interface FieldExprIntrinsic {
+   512→  readonly kind: 'intrinsic';
+   513→  readonly instanceId: InstanceId;  // <-- Step types should match this pattern
+   514→  // ...
+   515→}
+   516→```
+   517→
+   518→Follow these exact patterns for EventExpr and Step types.
+   519→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>
