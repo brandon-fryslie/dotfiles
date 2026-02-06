@@ -1,0 +1,65 @@
+{
+  "numStartups": 3,
+  "promptQueueUseCount": 1,
+  "firstStartTime": "2026-01-28T07:35:29.283Z",
+  "sonnet45MigrationComplete": true,
+  "opus45MigrationComplete": true,
+  "opusProMigrationComplete": true,
+  "thinkingMigrationComplete": true,
+  "cachedChromeExtensionInstalled": false,
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.20",
+  "githubRepoPaths": {
+    "brandon-fryslie/oscilla-animator-v2": [
+      "/Users/bmf/code/oscilla-animator-v2"
+    ],
+    "brandon-fryslie/dotfiles": [
+      "/Users/bmf/code/dotfiles"
+    ]
+  },
+  "bypassPermissionsModeAccepted": true,
+  "userID": "4310df6a99b39a197bdf981ca098ef2d3349d471d2852c0118b02a342268ddfa",
+  "lastReleaseNotesSeen": "2.1.20",
+  "projects": {
+    "/Users/bmf/code/oscilla-animator-v2": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": false,
+      "projectOnboardingSeenCount": 1,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false,
+      "exampleFiles": [],
+      "reactVulnerabilityCache": {
+        "detected": false,
+        "package": null,
+        "packageName": null,
+        "version": null,
+        "packageManager": null
+      },
+      "lastCost": 0,
+      "lastAPIDuration": 0,
+      "lastAPIDurationWithoutRetries": 0,
+      "lastToolDuration": 0,
+      "lastDuration": 12935,
+      "lastLinesAdded": 0,
+      "lastLinesRemoved": 0,
+      "lastTotalInputTokens": 0,
+      "lastTotalOutputTokens": 0,
+      "lastTotalCacheCreationInputTokens": 0,
+      "lastTotalCacheReadInputTokens": 0,
+      "lastTotalWebSearchRequests": 0,
+      "lastFpsAverage": 23.57,
+      "lastFpsLow1Pct": 279.85,
+      "lastModelUsage": {},
+      "lastSessionId": "46cb6cfe-1761-4198-86db-e150e6da76b8"
+    }
+  },
+  "officialMarketplaceAutoInstallAttempted": true,
+  "officialMarketplaceAutoInstalled": true,
+  "hasIdeOnboardingBeenShown": {
+    "intellij": true
+  }
+}

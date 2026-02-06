@@ -1,0 +1,10 @@
+{
+  "claude-plugins-official": {
+    "source": {
+      "source": "github",
+      "repo": "anthropics/claude-plugins-official"
+    },
+    "installLocation": "/Users/bmf/code/dotfiles/config/claude.zai/plugins/marketplaces/claude-plugins-official",
+    "lastUpdated": "2026-01-28T07:35:42.128Z"
+  }
+}
