@@ -19,7 +19,9 @@
 - create:
     - ~/.copilot
     - ~/.copilot/skills
+    - ~/.codex
 
 - link:
     ~/.copilot/copilot-instructions.md: config/copilot/copilot-instructions.md
     ~/.copilot/skills/claude-plugin-sync: config/copilot/skills/claude-plugin-sync
+    ~/.codex/skills: config/codex/skills
