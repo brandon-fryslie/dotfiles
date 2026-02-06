@@ -1,0 +1,151 @@
+     1→# Sprint: foundation - Type System Foundation Cleanup
+     2→Generated: 2026-01-28-192541
+     3→Confidence: HIGH: 3, MEDIUM: 0, LOW: 0
+     4→Status: READY FOR IMPLEMENTATION
+     5→Source: EVALUATION-2026-01-28-191553.md
+     6→
+     7→## Sprint Goal
+     8→Remove poisonous placeholders, fix naming inconsistencies, and establish core/ids.ts as THE source of truth for branded IDs — unblocking all downstream sprints.
+     9→
+    10→## Scope
+    11→**Deliverables:**
+    12→- Delete FieldExprArray (no semantics, no runtime backing)
+    13→- Rename reduce_field → reduceField (17 occurrences)
+    14→- Create core/ids.ts with InstanceId/DomainTypeId migration from Indices.ts
+    15→
+    16→**No Dependencies**: All items can start immediately.
+    17→
+    18→## Work Items
+    19→
+    20→### P0 (Critical): C-7 - Delete FieldExprArray
+    21→
+    22→**Dependencies**: None
+    23→**Spec Reference**: 15-FiveAxesTypeSystem-Conclusion.md:143 • **Status Reference**: EVALUATION-2026-01-28-191553.md:190-208
+    24→
+    25→#### Description
+    26→Remove FieldExprArray from the type system. This node has no defined semantics: no backing store (no StateSlotId reference), no lifetime rules (when is it created/destroyed?), no runtime storage contract (what allocates the array?). It exists only as a placeholder in the FieldExpr union but is never constructed. Per the spec: "Delete until it has concrete backing store, lifetime rules, and runtime storage contract."
+    27→
+    28→**Current State**:
+    29→- Defined in `src/compiler/ir/types.ts:285-289`
+    30→- Referenced in FieldExpr union at line 218
+    31→- 12 total matches in codebase (all planning docs or unused definitions)
+    32→- Zero production usage found by grep
+    33→
+    34→#### Acceptance Criteria (REQUIRED)
+    35→- [ ] FieldExprArray interface deleted from src/compiler/ir/types.ts:285-289
+    36→- [ ] FieldExprArray removed from FieldExpr union type at line 218
+    37→- [ ] All tests pass (no test failures related to FieldExprArray)
+    38→- [ ] TypeScript compilation succeeds with no FieldExprArray references
+    39→- [ ] Zero matches for "FieldExprArray" in src/ directory (excluding comments documenting removal)
+    40→
+    41→#### Technical Notes
+    42→- Safe deletion: no runtime usage, only exists in type union
+    43→- Keep DEFERRED-ms5.12-FieldExprArray.md as documentation of why it was removed
+    44→- If future work needs array semantics, it must define: backing store, lifetime, allocator contract
+    45→
+    46→---
+    47→
+    48→### P0 (Critical): C-3 - Rename reduce_field → reduceField
+    49→
+    50→**Dependencies**: None
+    51→**Spec Reference**: 10-RulesForNewTypes.md:147 (naming consistency) • **Status Reference**: EVALUATION-2026-01-28-191553.md:108-119
+    52→
+    53→#### Description
+    54→Fix naming inconsistency: 'reduce_field' uses snake_case while all other FieldExpr kind literals use camelCase ('map', 'zip', 'zipSig', 'stateRead'). This inconsistency spreads to evaluators, tests, and design docs. Per Rule 4 (15-FiveAxesTypeSystem:147), naming consistency prevents subtle pattern-match bugs and makes migrations cleaner.
+    55→
+    56→**Current State**:
+    57→- 17 total occurrences across codebase
+    58→- src/compiler/ir/types.ts:167 (kind definition)
+    59→- src/runtime (SignalEvaluator usage)
+    60→- 11 occurrences in tests
+    61→- 3 occurrences in design docs
+    62→
+    63→#### Acceptance Criteria (REQUIRED)
+    64→- [ ] src/compiler/ir/types.ts:167 kind literal changed from 'reduce_field' to 'reduceField'
+    65→- [ ] All 17 occurrences updated (types, runtime, tests, docs)
+    66→- [ ] All tests pass with new naming
+    67→- [ ] TypeScript compilation succeeds
+    68→- [ ] Zero matches for "reduce_field" in src/ (excluding git history/comments)
+    69→
+    70→#### Technical Notes
+    71→- Use grep to find all occurrences: `grep -r "reduce_field" src/`
+    72→- Simple find-replace operation
+    73→- Tests will catch any missed sites (pattern match failures)
+    74→- Update string literals in switch/case statements and type guards
+    75→
+    76→---
+    77→
+    78→### P0 (Critical): C-2 - Create core/ids.ts with Branded IDs
+    79→
+    80→**Dependencies**: None (but UNBLOCKS C-5, C-6)
+    81→**Spec Reference**: 00-exhaustive-type-system.md:1-45 • **Status Reference**: EVALUATION-2026-01-28-191553.md:84-105
+    82→
+    83→#### Description
+    84→Establish core/ids.ts as THE authoritative source of truth for all branded ID types. Currently InstanceId and DomainTypeId are defined in src/compiler/ir/Indices.ts (line 65-71), creating a module boundary violation: canonical-types.ts (core module) cannot import from Indices.ts (compiler module). This blocks C-5 (getManyInstance needs InstanceId) and C-6 (fix string leakage in Step types).
+    85→
+    86→**Current State**:
+    87→- src/core/ids.ts exists with axis var IDs (CardinalityVarId, etc.) but missing InstanceId/DomainTypeId
+    88→- src/compiler/ir/Indices.ts:65-71 has InstanceId definition (wrong module)
+    89→- src/compiler/ir/types.ts:435 has comment `// InstanceId` indicating intent
+    90→- 5 Step types use `instanceId: string` not branded InstanceId (lines 540, 546, 587, 598, 681)
+    91→
+    92→**Spec Contract** (00-exhaustive-type-system.md:1-45):
+    93→```typescript
+    94→// src/core/ids.ts
+    95→export type Brand<K, T extends string> = K & { readonly __brand: T };
+    96→
+    97→export type InstanceId = Brand<string, 'InstanceId'>;
+    98→export type DomainTypeId = Brand<string, 'DomainTypeId'>;
+    99→
+   100→export const instanceId = (s: string) => s as InstanceId;
+   101→export const domainTypeId = (s: string) => s as DomainTypeId;
+   102→```
+   103→
+   104→#### Acceptance Criteria (REQUIRED)
+   105→- [ ] InstanceId and DomainTypeId type definitions added to core/ids.ts
+   106→- [ ] instanceId() and domainTypeId() factory functions exported from core/ids.ts
+   107→- [ ] All imports of InstanceId/DomainTypeId updated to use core/ids.ts (estimate 20 sites)
+   108→- [ ] src/compiler/ir/types.ts, canonical-types.ts import from core/ids.ts
+   109→- [ ] All tests pass with new import paths
+   110→- [ ] TypeScript compilation succeeds
+   111→- [ ] Optional: Keep re-exports in Indices.ts for backward compat during migration
+   112→
+   113→#### Technical Notes
+   114→- Mechanical refactor, low risk (TypeScript will find all import sites)
+   115→- Pattern: `import { InstanceId } from '../compiler/ir/Indices'` → `import { InstanceId } from '../core/ids'`
+   116→- May keep compatibility re-exports in Indices.ts: `export { InstanceId, DomainTypeId } from '../../core/ids';`
+   117→- Estimate ~20 import sites to update
+   118→- Unblocks C-5 (getManyInstance), C-6 (string leakage fix)
+   119→
+   120→---
+   121→
+   122→## Dependencies
+   123→None — all three items can be implemented in parallel.
+   124→
+   125→## Risks
+   126→- **Low Risk**: All items are mechanical refactors with clear specifications
+   127→- **Validation**: TypeScript compiler + existing test suite will catch errors
+   128→- **Rollback**: All changes are local to type definitions and imports
+   129→
+   130→---
+   131→
+   132→## Success Criteria
+   133→- ✅ FieldExprArray deleted from type system
+   134→- ✅ Consistent naming: 'reduceField' everywhere
+   135→- ✅ core/ids.ts is THE source of truth for InstanceId/DomainTypeId
+   136→- ✅ All tests pass
+   137→- ✅ Zero TypeScript compilation errors
+   138→- ✅ C-5 and C-6 unblocked (can import InstanceId from core/ids.ts)
+   139→
+   140→---
+   141→
+   142→## Estimated Effort
+   143→- C-7 (Delete FieldExprArray): 1 hour
+   144→- C-3 (Rename reduce_field): 2 hours  
+   145→- C-2 (Create core/ids.ts): 4 hours
+   146→**Total: 7 hours**
+   147→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

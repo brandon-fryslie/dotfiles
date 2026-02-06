@@ -1,0 +1,34 @@
+   370→        pool
+   371→      );
+   372→      const sigValues = expr.signals.map((id) => evaluateSignal(id, signals, state));
+   373→      applyZipSig(buffer, fieldInput, sigValues, expr.fn, N, expr.type);
+   374→      break;
+   375→    }
+   376→
+   377→    case 'array': {
+   378→      // Array field expression: Stage 2 of three-stage architecture
+   379→      // This represents the identity field of the instance
+   380→      // For now, we'll fill with the index as a placeholder
+   381→      // TODO: Support actual element values when blocks provide them
+   382→      const arr = buffer as Float32Array;
+   383→      for (let i = 0; i < N; i++) {
+   384→        arr[i] = i;
+   385→      }
+   386→      break;
+   387→    }
+   388→
+   389→    case 'stateRead': {
+   390→      // Per-lane state read for stateful cardinality-generic blocks
+   391→      // Each lane reads its corresponding state slot value
+   392→      const arr = buffer as Float32Array;
+   393→      const baseSlot = expr.stateSlot as number;
+   394→      for (let i = 0; i < N; i++) {
+   395→        arr[i] = state.state[baseSlot + i] ?? 0;
+   396→      }
+   397→      break;
+   398→    }
+   399→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

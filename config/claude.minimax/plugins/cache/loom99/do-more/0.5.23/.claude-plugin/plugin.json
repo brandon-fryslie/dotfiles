@@ -1,0 +1,14 @@
+{
+  "name": "do-more",
+  "version": "0.5.23",
+  "description": "do-more: There are those who do, and those who do more.",
+  "author": {
+    "name": "Brandon Fryslie"
+  },
+  "license": "MIT",
+  "keywords": [
+    "development",
+    "workflow",
+    "skills"
+  ]
+}

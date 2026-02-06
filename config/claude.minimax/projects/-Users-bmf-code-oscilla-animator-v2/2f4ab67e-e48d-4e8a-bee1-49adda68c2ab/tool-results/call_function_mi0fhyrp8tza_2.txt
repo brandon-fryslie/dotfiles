@@ -1,0 +1,61 @@
+     1→# Definition of Done: foundation
+     2→Generated: 2026-01-28-192541
+     3→Status: READY FOR IMPLEMENTATION
+     4→Plan: SPRINT-2026-01-28-192541-foundation-PLAN.md
+     5→
+     6→## Acceptance Criteria
+     7→
+     8→### C-7: Delete FieldExprArray
+     9→- [ ] FieldExprArray interface deleted from src/compiler/ir/types.ts:285-289
+    10→- [ ] FieldExprArray removed from FieldExpr union type (types.ts:218)
+    11→- [ ] All tests pass (no FieldExprArray-related failures)
+    12→- [ ] TypeScript compilation succeeds
+    13→- [ ] Zero matches for "FieldExprArray" in src/ directory (grep verification)
+    14→
+    15→### C-3: Rename reduce_field → reduceField
+    16→- [ ] src/compiler/ir/types.ts:167 kind literal uses 'reduceField'
+    17→- [ ] All 17 occurrences updated (types, runtime, tests, docs)
+    18→- [ ] Pattern matches in switch/case statements updated
+    19→- [ ] Type guards updated to use 'reduceField'
+    20→- [ ] All tests pass with new naming
+    21→- [ ] TypeScript compilation succeeds
+    22→- [ ] Zero matches for "reduce_field" in src/ (grep verification)
+    23→
+    24→### C-2: Create core/ids.ts with Branded IDs
+    25→- [ ] InstanceId type definition exists in src/core/ids.ts
+    26→- [ ] DomainTypeId type definition exists in src/core/ids.ts
+    27→- [ ] instanceId() factory function exported from core/ids.ts
+    28→- [ ] domainTypeId() factory function exported from core/ids.ts
+    29→- [ ] src/core/canonical-types.ts imports InstanceId from core/ids.ts
+    30→- [ ] src/compiler/ir/types.ts imports InstanceId/DomainTypeId from core/ids.ts
+    31→- [ ] All ~20 import sites updated to use core/ids.ts
+    32→- [ ] No imports of InstanceId from src/compiler/ir/Indices.ts remain (except optional re-exports)
+    33→- [ ] All tests pass
+    34→- [ ] TypeScript compilation succeeds
+    35→
+    36→---
+    37→
+    38→## Integration Verification
+    39→- [ ] Full test suite passes (`npm test` or equivalent)
+    40→- [ ] TypeScript compilation clean (`npm run typecheck` or tsc --noEmit)
+    41→- [ ] No console errors or warnings in runtime
+    42→- [ ] Git diff shows exactly 3 concerns changed (FieldExprArray, reduce_field, ids.ts)
+    43→
+    44→---
+    45→
+    46→## Unblocking Confirmation
+    47→- [ ] C-5 can now import InstanceId from core/ids.ts for getManyInstance implementation
+    48→- [ ] C-6 can now replace `instanceId: string` with `instanceId: InstanceId` in Step types
+    49→- [ ] No module boundary violations (core does not import compiler)
+    50→
+    51→---
+    52→
+    53→## Documentation
+    54→- [ ] DEFERRED-ms5.12-FieldExprArray.md preserved as explanation of removal
+    55→- [ ] Git commit messages explain rationale for each change
+    56→- [ ] No breaking changes to public APIs (internal refactor only)
+    57→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

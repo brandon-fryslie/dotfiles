@@ -1,0 +1,699 @@
+     1→/**
+     2→ * Compiler Entry Point
+     3→ *
+     4→ * Main compilation pipeline:
+     5→ * 1. Normalization - Convert Patch to NormalizedPatch
+     6→ * 2. Pass 2: Type Graph - Resolve types for all connections
+     7→ * 3. Pass 3: Time Topology - Determine time model
+     8→ * 4. Pass 4: Dependency Graph - Build execution dependencies
+     9→ * 5. Pass 5: Cycle Validation (SCC) - Check for illegal cycles
+    10→ * 6. Pass 6: Block Lowering - Lower blocks to IR expressions
+    11→ * 7. Pass 7: Schedule Construction - Build execution schedule
+    12→ *
+    13→ * Integrated with event emission for diagnostics.
+    14→ */
+    15→
+    16→import type { Patch } from '../graph';
+    17→import { normalize, type NormalizedPatch } from '../graph/normalize';
+    18→import type { CompiledProgramIR, SlotMetaEntry, ValueSlot, FieldSlotEntry, OutputSpecIR } from './ir/program';
+    19→import type { UnlinkedIRFragments } from './backend/lower-blocks';
+    20→import type { ScheduleIR } from './backend/schedule-program';
+    21→import type { FieldExpr, FieldExprId, InstanceId } from './ir/types';
+    22→import { payloadStride } from './ir/signalExpr';
+    23→import type { AcyclicOrLegalGraph } from './ir/patches';
+    24→import { convertCompileErrorsToDiagnostics } from './diagnosticConversion';
+    25→import type { EventHub } from '../events/EventHub';
+    26→import { canonicalType } from '../core/canonical-types';
+    27→import { FLOAT, INT, BOOL, VEC2, VEC3, COLOR, SHAPE, CAMERA_PROJECTION } from '../core/canonical-types';
+    28→// debugService import removed for strict compiler isolation (One Source of Truth)
+    29→import { compilationInspector } from '../services/CompilationInspectorService';
+    30→import { computeRenderReachableBlocks } from './reachability';
+    31→
+    32→
+    33→// Import block registrations (side-effect imports to register blocks)
+    34→import '../blocks/time-blocks';
+    35→import '../blocks/signal-blocks';
+    36→import '../blocks/primitive-blocks'; // NEW - Sprint 9: Three-stage architecture (Stage 1)
+    37→import '../blocks/array-blocks'; // NEW - Sprint 9: Three-stage architecture (Stage 2)
+    38→import '../blocks/instance-blocks'; // NEW - Sprint 3 (replaces domain-blocks)
+    39→import '../blocks/field-blocks';
+    40→import '../blocks/math-blocks';
+    41→import '../blocks/event-blocks';
+    42→import '../blocks/expression-blocks'; // NEW - Expression DSL Integration Sprint 3
+    43→import '../blocks/color-blocks';
+    44→import '../blocks/geometry-blocks';
+    45→import '../blocks/identity-blocks';
+    46→import '../blocks/render-blocks';
+    47→import '../blocks/field-operations-blocks';
+    48→import '../blocks/path-blocks'; // NEW - Path foundation sprint
+    49→import '../blocks/path-operators-blocks'; // NEW - Path operators sprint
+    50→import '../blocks/adapter-blocks'; // Unit-conversion adapters (Spec §B4.1)
+    51→import '../blocks/camera-block'; // NEW - Camera system
+    52→import '../blocks/io-blocks'; // NEW - External input system
+    53→
+    54→import '../blocks/test-blocks'; // Test blocks for signal evaluation in tests
+    55→
+    56→// Import passes
+    57→import { pass1TypeConstraints } from './passes-v2';
+    58→import { pass2TypeGraph } from './passes-v2';
+    59→import { pass3Time } from './passes-v2';
+    60→import { pass4DepGraph } from './passes-v2';
+    61→import { pass5CycleValidation } from './passes-v2';
+    62→import { pass6BlockLowering } from './passes-v2';
+    63→import { pass7Schedule } from './passes-v2';
+    64→
+    65→// =============================================================================
+    66→// Compile Errors & Results
+    67→// =============================================================================
+    68→
+    69→export interface CompileError {
+    70→  readonly kind: string;
+    71→  readonly message: string;
+    72→  readonly blockId?: string;
+    73→  readonly connectionId?: string;
+    74→  readonly portId?: string;
+    75→}
+    76→
+    77→export type CompileSuccess = {
+    78→  readonly kind: 'ok';
+    79→  readonly program: CompiledProgramIR;
+    80→};
+    81→
+    82→export type CompileFailure = {
+    83→  readonly kind: 'error';
+    84→  readonly errors: readonly CompileError[];
+    85→};
+    86→
+    87→export type CompileResult = CompileSuccess | CompileFailure;
+    88→
+    89→// =============================================================================
+    90→// Compile Options
+    91→// =============================================================================
+    92→
+    93→export interface CompileOptions {
+    94→  readonly patchId?: string;
+    95→  readonly patchRevision?: number;
+    96→  readonly events: EventHub;
+    97→}
+    98→
+    99→// =============================================================================
+   100→// Main Compile Function
+   101→// =============================================================================
+   102→
+   103→/**
+   104→ * Compile a Patch into a CompiledProgramIR.
+   105→ *
+   106→ * @param patch - The patch to compile
+   107→ * @param options - Optional compile options for event emission
+   108→ * @returns CompileResult with either the compiled program or errors
+   109→ */
+   110→export function compile(patch: Patch, options?: CompileOptions): CompileResult {
+   111→  const compileId = options?.patchId ? `${options.patchId}:${options.patchRevision || 0}` : 'unknown';
+   112→  const startTime = performance.now();
+   113→
+   114→  // Begin compilation inspection
+   115→  try {
+   116→    compilationInspector.beginCompile(compileId);
+   117→  } catch (e) {
+   118→    console.warn('[CompilationInspector] Failed to begin compile:', e);
+   119→  }
+   120→
+   121→  // Emit CompileBegin event
+   122→  if (options) {
+   123→    options.events.emit({
+   124→      type: 'CompileBegin',
+   125→      compileId,
+   126→      patchId: options.patchId || 'unknown',
+   127→      patchRevision: options.patchRevision || 0,
+   128→      trigger: 'manual',
+   129→    });
+   130→  }
+   131→
+   132→  try {
+   133→    // Pass 1: Normalization
+   134→    const normResult = normalize(patch);
+   135→
+   136→    if (normResult.kind === 'error') {
+   137→      const compileErrors: CompileError[] = normResult.errors.map((e) => {
+   138→        switch (e.kind) {
+   139→          case 'DanglingEdge':
+   140→            return {
+   141→              kind: e.kind,
+   142→              message: `Edge references missing block (${e.missing})`,
+   143→              blockId: e.edge.from.blockId,
+   144→            };
+   145→          case 'DuplicateBlockId':
+   146→            return {
+   147→              kind: e.kind,
+   148→              message: `Duplicate block ID: ${e.id}`,
+   149→              blockId: e.id,
+   150→            };
+   151→          case 'UnknownPort':
+   152→            return {
+   153→              kind: 'UnknownBlockType',
+   154→              message: `Port '${e.portId}' does not exist on block '${e.blockId}' (${e.direction})`,
+   155→              blockId: e.blockId,
+   156→              portId: e.portId,
+   157→            };
+   158→          case 'NoAdapterFound':
+   159→            return {
+   160→              kind: 'TypeMismatch',
+   161→              message: `No adapter found for type conversion: ${e.fromType} → ${e.toType}`,
+   162→              blockId: e.edge.to.blockId,
+   163→              portId: e.edge.to.slotId,
+   164→            };
+   165→          case 'vararg':
+   166→            return {
+   167→              kind: 'VarargError',
+   168→              message: e.message,
+   169→              blockId: e.where.blockId,
+   170→              portId: e.where.portId,
+   171→            };
+   172→          case 'CompositeExpansion':
+   173→            return {
+   174→              kind: 'CompositeExpansion',
+   175→              message: e.message,
+   176→              blockId: e.compositeBlockId,
+   177→              code: e.code,
+   178→            };
+   179→          default: {
+   180→            const _exhaustive: never = e;
+   181→            return {
+   182→              kind: 'UnknownBlockType',
+   183→              message: `Unknown normalization error: ${JSON.stringify(_exhaustive)}`,
+   184→            };
+   185→          }
+   186→        }
+   187→      });
+   188→
+   189→      return emitFailure(options, startTime, compileId, compileErrors);
+   190→    }
+   191→
+   192→    const normalized = normResult.patch;
+   193→
+   194→    // Capture normalization pass
+   195→    try {
+   196→      compilationInspector.capturePass('normalization', patch, normalized);
+   197→    } catch (e) {
+   198→      console.warn('[CompilationInspector] Failed to capture normalization:', e);
+   199→    }
+   200→
+   201→    // Pass 1: Type Constraints (unit and payload inference)
+   202→    // Resolves polymorphic unit and payload variables through constraint propagation
+   203→    // Output is TypeResolvedPatch - THE source of truth for all port types
+   204→    const pass1Result = pass1TypeConstraints(normalized);
+   205→    if ('kind' in pass1Result && pass1Result.kind === 'error') {
+   206→      const compileErrors: CompileError[] = pass1Result.errors.map((e: { kind: string; blockIndex: number; portName: string; message: string; suggestions: readonly string[] }) => ({
+   207→        kind: e.kind,
+   208→        message: `${e.message}\nSuggestions:\n${e.suggestions.map((s: string) => `  - ${s}`).join('\n')}`,
+   209→        blockId: normalized.blocks[e.blockIndex]?.id,
+   210→        portId: e.portName,
+   211→      }));
+   212→      return emitFailure(options, startTime, compileId, compileErrors);
+   213→    }
+   214→    const typeResolved = pass1Result as import('./frontend/analyze-type-constraints').TypeResolvedPatch;
+   215→
+   216→    try {
+   217→      compilationInspector.capturePass('type-constraints', normalized, typeResolved);
+   218→    } catch (e) {
+   219→      console.warn('[CompilationInspector] Failed to capture type-constraints:', e);
+   220→    }
+   221→
+   222→    // Pass 2: Type Graph (validates types using resolved types from pass1)
+   223→    const typedPatch = pass2TypeGraph(typeResolved);
+   224→
+   225→    try {
+   226→      compilationInspector.capturePass('type-graph', normalized, typedPatch);
+   227→    } catch (e) {
+   228→      console.warn('[CompilationInspector] Failed to capture type-graph:', e);
+   229→    }
+   230→
+   231→    // Pass 3: Time Topology
+   232→    const timeResolvedPatch = pass3Time(typedPatch);
+   233→
+   234→    try {
+   235→      compilationInspector.capturePass('time', typedPatch, timeResolvedPatch);
+   236→    } catch (e) {
+   237→      console.warn('[CompilationInspector] Failed to capture time:', e);
+   238→    }
+   239→
+   240→    // Pass 4: Dependency Graph
+   241→    const depGraphPatch = pass4DepGraph(timeResolvedPatch);
+   242→
+   243→    try {
+   244→      compilationInspector.capturePass('depgraph', timeResolvedPatch, depGraphPatch);
+   245→    } catch (e) {
+   246→      console.warn('[CompilationInspector] Failed to capture depgraph:', e);
+   247→    }
+   248→
+   249→    // Pass 5: Cycle Validation (SCC)
+   250→    const acyclicPatch = pass5CycleValidation(depGraphPatch);
+   251→
+   252→    try {
+   253→      compilationInspector.capturePass('scc', depGraphPatch, acyclicPatch);
+   254→    } catch (e) {
+   255→      console.warn('[CompilationInspector] Failed to capture scc:', e);
+   256→    }
+   257→
+   258→    // Pass 6: Block Lowering
+   259→    const unlinkedIR = pass6BlockLowering(acyclicPatch, {
+   260→      events: options?.events,
+   261→      compileId,
+   262→      patchRevision: options?.patchRevision,
+   263→    });
+   264→
+   265→    try {
+   266→      compilationInspector.capturePass('block-lowering', acyclicPatch, unlinkedIR);
+   267→    } catch (e) {
+   268→      console.warn('[CompilationInspector] Failed to capture block-lowering:', e);
+   269→    }
+   270→
+   271→    // Check for errors from pass 6 - Filter by reachability
+   272→    // Collect warnings for unreachable blocks to include in CompileEnd event
+   273→    let unreachableBlockWarnings: Array<{
+   274→      id: string;
+   275→      code: 'W_BLOCK_UNREACHABLE_ERROR';
+   276→      severity: 'warn';
+   277→      domain: 'compile';
+   278→      primaryTarget: { kind: 'block'; blockId: string };
+   279→      title: string;
+   280→      message: string;
+   281→      scope: { patchRevision: number; compileId: string };
+   282→      metadata: { firstSeenAt: number; lastSeenAt: number; occurrenceCount: number };
+   283→    }> = [];
+   284→
+   285→    if (unlinkedIR.errors.length > 0) {
+   286→      // Compute which blocks are reachable from render blocks
+   287→      const reachableBlocks = computeRenderReachableBlocks(
+   288→        acyclicPatch.blocks,
+   289→        acyclicPatch.edges
+   290→      );
+   291→
+   292→      // Build blockId → blockIndex map
+   293→      const blockIdToIndex = new Map<string, number>();
+   294→      for (let i = 0; i < acyclicPatch.blocks.length; i++) {
+   295→        blockIdToIndex.set(acyclicPatch.blocks[i].id, i);
+   296→      }
+   297→
+   298→      // Partition errors into reachable and unreachable
+   299→      const reachableErrors: import('./types').CompileError[] = [];
+   300→      const unreachableErrors: import('./types').CompileError[] = [];
+   301→
+   302→      for (const error of unlinkedIR.errors) {
+   303→        const blockIdx = error.where?.blockId
+   304→          ? blockIdToIndex.get(error.where.blockId)
+   305→          : undefined;
+   306→
+   307→        // Error is reachable if:
+   308→        // 1. It has no blockId (global error), OR
+   309→        // 2. The block is in the reachable set
+   310→        if (blockIdx === undefined || reachableBlocks.has(blockIdx as import('./ir/patches').BlockIndex)) {
+   311→          reachableErrors.push(error);
+   312→        } else {
+   313→          unreachableErrors.push(error);
+   314→        }
+   315→      }
+   316→
+   317→      // Build warning diagnostics for unreachable block errors
+   318→      // These will be emitted with the CompileEnd event so DiagnosticHub can process them
+   319→      if (unreachableErrors.length > 0 && options) {
+   320→        unreachableBlockWarnings = unreachableErrors.map((error) => ({
+   321→          id: `W_BLOCK_UNREACHABLE_ERROR:${error.where?.blockId}:rev${options.patchRevision || 0}`,
+   322→          code: 'W_BLOCK_UNREACHABLE_ERROR' as const,
+   323→          severity: 'warn' as const,
+   324→          domain: 'compile' as const,
+   325→          primaryTarget: { kind: 'block' as const, blockId: error.where?.blockId || 'unknown' },
+   326→          title: `Unreachable Block Error: ${error.code}`,
+   327→          message: `Block '${error.where?.blockId || 'unknown'}' has error but is not connected to render pipeline: ${error.message}\n\nSuggestion: Connect this block to the render pipeline or remove it.`,
+   328→          scope: { patchRevision: options.patchRevision || 0, compileId },
+   329→          metadata: {
+   330→            firstSeenAt: Date.now(),
+   331→            lastSeenAt: Date.now(),
+   332→            occurrenceCount: 1,
+   333→          },
+   334→        }));
+   335→      }
+   336→
+   337→      // Only fail compilation if there are reachable errors
+   338→      if (reachableErrors.length > 0) {
+   339→        const compileErrors: CompileError[] = reachableErrors.map((e) => ({
+   340→          kind: e.code,
+   341→          message: e.message,
+   342→          blockId: e.where?.blockId,
+   343→        }));
+   344→        return emitFailure(options, startTime, compileId, compileErrors);
+   345→      }
+   346→    }
+   347→
+   348→
+   349→    // Pass 7: Schedule Construction
+   350→    const scheduleIR = pass7Schedule(unlinkedIR, acyclicPatch);
+   351→
+   352→    try {
+   353→      compilationInspector.capturePass('schedule', unlinkedIR, scheduleIR);
+   354→    } catch (e) {
+   355→      console.warn('[CompilationInspector] Failed to capture schedule:', e);
+   356→    }
+   357→
+   358→    // Convert to CompiledProgramIR
+   359→    const compiledIR = convertLinkedIRToProgram(unlinkedIR, scheduleIR, acyclicPatch);
+   360→
+   361→    // Build edge-to-slot map logic removed from compiler (migrated to main.ts)
+   362→
+   363→
+   364→    // End compilation inspection (success)
+   365→    try {
+   366→      compilationInspector.endCompile('success');
+   367→    } catch (e) {
+   368→      console.warn('[CompilationInspector] Failed to end compile:', e);
+   369→    }
+   370→
+   371→    // Emit CompileEnd event (success)
+   372→    // Include warnings for unreachable blocks that had errors (they didn't block compilation)
+   373→    if (options) {
+   374→      const durationMs = performance.now() - startTime;
+   375→      const successDiagnostic = {
+   376→        id: `compile-success:rev${options.patchRevision || 0}`,
+   377→        code: 'I_COMPILE_SUCCESS' as const,
+   378→        severity: 'info' as const,
+   379→        domain: 'compile' as const,
+   380→        primaryTarget: { kind: 'graphSpan' as const, blockIds: [] },
+   381→        title: 'Compilation Successful',
+   382→        message: `Compiled in ${durationMs.toFixed(1)}ms`,
+   383→        scope: { patchRevision: options.patchRevision || 0, compileId },
+   384→        metadata: {
+   385→          firstSeenAt: Date.now(),
+   386→          lastSeenAt: Date.now(),
+   387→          occurrenceCount: 1,
+   388→        },
+   389→      };
+   390→      // Combine success diagnostic with any unreachable block warnings
+   391→      const diagnostics = [successDiagnostic, ...unreachableBlockWarnings];
+   392→      options.events.emit({
+   393→        type: 'CompileEnd',
+   394→        compileId,
+   395→        patchId: options.patchId || 'unknown',
+   396→        patchRevision: options.patchRevision || 0,
+   397→        status: 'success',
+   398→        durationMs,
+   399→        diagnostics,
+   400→      });
+   401→    }
+   402→
+   403→    return {
+   404→      kind: 'ok',
+   405→      program: compiledIR,
+   406→    };
+   407→  } catch (e: unknown) {
+   408→    // Catch errors from any pass
+   409→    const error = e instanceof Error ? e : new Error(String(e));
+   410→    const errorKind = (e as { code?: string }).code || 'CompilationFailed';
+   411→    const errorMessage = error.message || 'Unknown compilation error';
+   412→
+   413→    const compileErrors: CompileError[] = [{
+   414→      kind: errorKind,
+   415→      message: errorMessage,
+   416→    }];
+   417→
+   418→    // End compilation inspection (failure)
+   419→    try {
+   420→      compilationInspector.endCompile('failure');
+   421→    } catch (e2) {
+   422→      console.warn('[CompilationInspector] Failed to end compile:', e2);
+   423→    }
+   424→
+   425→    return emitFailure(options, startTime, compileId, compileErrors);
+   426→  }
+   427→}
+   428→
+   429→// =============================================================================
+   430→// Helper Functions
+   431→// =============================================================================
+   432→
+   433→function emitFailure(
+   434→  options: CompileOptions | undefined,
+   435→  startTime: number,
+   436→  compileId: string,
+   437→  errors: CompileError[]
+   438→): CompileFailure {
+   439→  // End compilation inspection (failure) if not already called
+   440→  try {
+   441→    if (compilationInspector['currentSnapshot']) {
+   442→      compilationInspector.endCompile('failure');
+   443→    }
+   444→  } catch (e) {
+   445→    console.warn('[CompilationInspector] Failed to end compile:', e);
+   446→  }
+   447→
+   448→  if (options) {
+   449→    const durationMs = performance.now() - startTime;
+   450→    const diagnostics = convertCompileErrorsToDiagnostics(errors, options.patchRevision || 0, compileId);
+   451→    options.events.emit({
+   452→      type: 'CompileEnd',
+   453→      compileId,
+   454→      patchId: options.patchId || 'unknown',
+   455→      patchRevision: options.patchRevision || 0,
+   456→      status: 'failure',
+   457→      durationMs,
+   458→      diagnostics,
+   459→    });
+   460→  }
+   461→
+   462→  return {
+   463→    kind: 'error',
+   464→    errors,
+   465→  };
+   466→}
+   467→
+   468→/**
+   469→ * Convert LinkedIR and ScheduleIR to CompiledProgramIR.
+   470→ *
+   471→ * @param unlinkedIR - Unlinked IR fragments from Pass 6
+   472→ * @param scheduleIR - Execution schedule from Pass 7
+   473→ * @returns CompiledProgramIR
+   474→ */
+   475→function convertLinkedIRToProgram(
+   476→  unlinkedIR: UnlinkedIRFragments,
+   477→  scheduleIR: ScheduleIR,
+   478→  acyclicPatch: AcyclicOrLegalGraph
+   479→): CompiledProgramIR {
+   480→  // Extract data from the IR builder
+   481→  const builder = unlinkedIR.builder;
+   482→  const signalNodes = builder.getSigExprs();
+   483→  const fieldNodes = builder.getFieldExprs();
+   484→  const eventNodes = builder.getEventExprs();
+   485→
+   486→  // Build fieldSlotRegistry from blockOutputs (field outputs that can be materialized on demand)
+   487→  const fieldSlotRegistry = new Map<ValueSlot, FieldSlotEntry>();
+   488→  const fieldSlotSet = new Set<number>(); // Track which slots are field outputs
+   489→  if (unlinkedIR.blockOutputs) {
+   490→    for (const [, outputs] of unlinkedIR.blockOutputs.entries()) {
+   491→      for (const [, ref] of outputs.entries()) {
+   492→        if (ref.k === 'field') {
+   493→          const instanceId = inferFieldInstanceFromExprs(ref.id, fieldNodes);
+   494→          if (instanceId) {
+   495→            fieldSlotRegistry.set(ref.slot, { fieldId: ref.id, instanceId });
+   496→            fieldSlotSet.add(ref.slot as number);
+   497→          }
+   498→        }
+   499→      }
+   500→    }
+   501→  }
+   502→
+   503→  // Build slot metadata from slot types
+   504→  const slotTypes = builder.getSlotMetaInputs();
+   505→  const slotMeta: SlotMetaEntry[] = [];
+   506→
+   507→  // Track offsets per storage class
+   508→  const storageOffsets = {
+   509→    f64: 0,
+   510→    f32: 0,
+   511→    i32: 0,
+   512→    u32: 0,
+   513→    object: 0,
+   514→    shape2d: 0,
+   515→  };
+   516→
+   517→  // Build slotMeta entries for all allocated slots
+   518→  // Slots are indexed from 0, so iterate through all slot IDs
+   519→  for (let slotId = 0; slotId < builder.getSlotCount?.() || 0; slotId++) {
+   520→    const slot = slotId as ValueSlot;
+   521→    const slotInfo = slotTypes.get(slot);
+   522→    const type = slotInfo?.type || canonicalType(FLOAT); // Default to float if no type info
+   523→
+   524→    // Determine storage class from type
+   525→    // Field output slots store buffer references in the objects Map
+   526→    // Shape payloads use dedicated shape2d bank; all other signals go to f64
+   527→    const storage: SlotMetaEntry['storage'] = fieldSlotSet.has(slotId)
+   528→      ? 'object'
+   529→      : type.payload .kind === 'shape' ? 'shape2d' : 'f64';
+   530→
+   531→    // Use stride from slotInfo (which comes from registered type), fallback to computing from payload
+   532→    // Objects/fields have stride=1 since they store a single reference
+   533→    const stride = storage === 'object' ? 1 : (slotInfo?.stride ?? payloadStride(type.payload));
+   534→
+   535→    // Offset must increment by stride, not 1 - multi-component types (color=4, vec3=3, vec2=2) need space
+   536→    const offset = storageOffsets[storage];
+   537→    storageOffsets[storage] += stride;
+   538→
+   539→    slotMeta.push({
+   540→      slot,
+   541→      storage,
+   542→      offset,
+   543→      stride,
+   544→      type,
+   545→    });
+   546→  }
+   547→
+   548→  // Add slotMeta entries for slots allocated by Pass 7 (continuity pipeline buffers).
+   549→  // These slots store object references (Float32Array buffers) and start after the builder's slot range.
+   550→  const builderSlotCount = builder.getSlotCount?.() || 0;
+   551→  const steps = scheduleIR.steps;
+   552→  let maxSlotUsed = builderSlotCount - 1;
+   553→  for (const step of steps) {
+   554→    if (step.kind === 'materialize' && (step.target as number) >= builderSlotCount) {
+   555→      maxSlotUsed = Math.max(maxSlotUsed, step.target as number);
+   556→    }
+   557→    if (step.kind === 'continuityApply') {
+   558→      maxSlotUsed = Math.max(maxSlotUsed, step.baseSlot as number, step.outputSlot as number);
+   559→    }
+   560→  }
+   561→  for (let slotId = builderSlotCount; slotId <= maxSlotUsed; slotId++) {
+   562→    slotMeta.push({
+   563→      slot: slotId as ValueSlot,
+   564→      storage: 'object',
+   565→      offset: storageOffsets.object++,
+   566→      stride: 1, // Object slots store a single reference
+   567→      type: canonicalType(FLOAT),
+   568→    });
+   569→  }
+   570→
+   571→  // Build output specs
+   572→  // Allocate a slot for the render frame output (RenderFrameIR object)
+   573→  const renderFrameSlot = (maxSlotUsed + 1) as ValueSlot;
+   574→
+   575→  // Add SlotMetaEntry for render frame slot (object storage for RenderFrameIR)
+   576→  slotMeta.push({
+   577→    slot: renderFrameSlot,
+   578→    storage: 'object',
+   579→    offset: storageOffsets.object++,
+   580→    stride: 1, // Object slots store a single reference
+   581→    type: canonicalType(FLOAT), // Type is irrelevant for RenderFrameIR object slot
+   582→  });
+   583→
+   584→  // Create OutputSpecIR for render frame
+   585→  const outputs: OutputSpecIR[] = [{
+   586→    kind: 'renderFrame',
+   587→    slot: renderFrameSlot,
+   588→  }];
+   589→
+   590→  // Build debug index
+   591→  const stepToBlock = new Map();
+   592→  const slotToBlock = new Map();
+   593→  const ports: any[] = [];
+   594→  const slotToPort = new Map();
+   595→  const blockMap = new Map(); // Map numeric BlockId -> string ID
+   596→
+   597→  // Populate debug index from unlinkedIR.blockOutputs (provenance)
+   598→  if (unlinkedIR.blockOutputs) {
+   599→    let portCounter = 0;
+   600→
+   601→    // Build block map from acyclicPatch
+   602→    // We need to look up blocks by index to get their string ID
+   603→    const blocks = acyclicPatch.blocks || []; // AcyclicOrLegalGraph has blocks array
+   604→    for (let i = 0; i < blocks.length; i++) {
+   605→      blockMap.set(i, blocks[i].id);
+   606→    }
+   607→
+   608→    for (const [blockIndex, outputs] of unlinkedIR.blockOutputs.entries()) {
+   609→      for (const [portId, ref] of outputs.entries()) {
+   610→        // Only map signal and field slots to debug index
+   611→        // Events use separate storage (eventScalars Uint8Array) and don't have debug support yet
+   612→        if (ref.k === 'sig' || ref.k === 'field') {
+   613→          const slot = ref.slot;
+   614→
+   615→          // Generate stable port ID
+   616→          // We don't have a PortId type factory exposed here easily, so cast
+   617→          const portIndex = portCounter++;
+   618→
+   619→          // Record slot->port mapping
+   620→          slotToPort.set(slot, portIndex);
+   621→
+   622→          // Add port binding info
+   623→          ports.push({
+   624→            port: portIndex,
+   625→            block: blockIndex,
+   626→            portName: portId,
+   627→            direction: 'out',
+   628→            domain: ref.k === 'field' ? 'field' : 'signal',
+   629→            role: 'userWire',
+   630→          });
+   631→        }
+   632→      }
+   633→    }
+   634→  }
+   635→
+   636→  const debugIndex = {
+   637→    stepToBlock,
+   638→    slotToBlock,
+   639→    ports,
+   640→    slotToPort,
+   641→    blockMap,
+   642→  };
+   643→
+   644→  // Collect render globals from builder
+   645→  const renderGlobals = builder.getRenderGlobals();
+   646→
+   647→  // Validate camera uniqueness (spec §2.1)
+   648→  if (renderGlobals.length > 1) {
+   649→    throw new Error('E_CAMERA_MULTIPLE: Only one Camera block is permitted.');
+   650→  }
+   651→
+   652→  return {
+   653→    irVersion: 1,
+   654→    signalExprs: { nodes: signalNodes },
+   655→    fieldExprs: { nodes: fieldNodes },
+   656→    eventExprs: { nodes: eventNodes },
+   657→    constants: { json: [] },
+   658→    schedule: scheduleIR,
+   659→    outputs,
+   660→    slotMeta,
+   661→    debugIndex,
+   662→    fieldSlotRegistry,
+   663→    renderGlobals, // NEW - Camera system: populated from builder
+   664→  };
+   665→}
+   666→
+   667→/**
+   668→ * Infer instance from a field expression by walking the expression tree.
+   669→ * Used to build fieldSlotRegistry for demand-driven materialization.
+   670→ */
+   671→function inferFieldInstanceFromExprs(
+   672→  fieldId: FieldExprId,
+   673→  fieldExprs: readonly FieldExpr[]
+   674→): InstanceId | undefined {
+   675→  const expr = fieldExprs[fieldId as number];
+   676→  if (!expr) return undefined;
+   677→
+   678→  switch (expr.kind) {
+   679→    case 'intrinsic':
+   680→    case 'stateRead':
+   681→      return expr.instanceId;
+   682→    case 'map':
+   683→      return expr.instanceId ?? inferFieldInstanceFromExprs(expr.input, fieldExprs);
+   684→    case 'zip':
+   685→      return expr.instanceId ?? (expr.inputs.length > 0 ? inferFieldInstanceFromExprs(expr.inputs[0], fieldExprs) : undefined);
+   686→    case 'zipSig':
+   687→      return expr.instanceId ?? inferFieldInstanceFromExprs(expr.field, fieldExprs);
+   688→    case 'broadcast':
+   689→    case 'const':
+   690→      return undefined;
+   691→    default:
+   692→      return undefined;
+   693→  }
+   694→}
+   695→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

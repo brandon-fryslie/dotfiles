@@ -1,0 +1,249 @@
+{
+  "numStartups": 15,
+  "installMethod": "native",
+  "autoUpdates": false,
+  "tipsHistory": {
+    "new-user-warmup": 2,
+    "plan-mode-for-complex-tasks": 2,
+    "terminal-setup": 3,
+    "memory-command": 3,
+    "theme-command": 6,
+    "prompt-queue": 6,
+    "enter-to-steer-in-relatime": 6,
+    "todo-list": 6,
+    "ide-upsell-external-terminal": 6,
+    "install-github-app": 6,
+    "install-slack-app": 6,
+    "drag-and-drop-images": 6,
+    "paste-images-mac": 6,
+    "double-esc-code-restore": 8,
+    "continue": 8,
+    "shift-tab": 8,
+    "image-paste": 8
+  },
+  "promptQueueUseCount": 8,
+  "showExpandedTodos": true,
+  "cachedGrowthBookFeatures": {
+    "tengu_1p_event_batch_config": {
+      "scheduledDelayMillis": 5000,
+      "maxExportBatchSize": 200,
+      "maxQueueSize": 8192
+    },
+    "tengu_mcp_tool_search": false,
+    "tengu_scratch": false,
+    "tengu_brass_pebble": false,
+    "tengu_disable_bypass_permissions_mode": false,
+    "tengu_event_sampling_config": {},
+    "tengu_tool_pear": false,
+    "tengu_scarf_coffee": false,
+    "tengu_log_segment_events": false,
+    "tengu_log_datadog_events": true,
+    "tengu_keybinding_customization_release": true,
+    "tengu_thinkback": false,
+    "tengu_pid_based_version_locking": true,
+    "tengu_c4w_usage_limit_notifications_enabled": true,
+    "tengu-top-of-feed-tip": {
+      "tip": "",
+      "color": ""
+    },
+    "tengu_react_vulnerability_warning": false,
+    "tengu_code_diff_cli": true,
+    "tengu_pr_status_cli": true,
+    "tengu_post_compact_survey": false,
+    "tengu_claudeai_mcp_connectors": false,
+    "tengu_marble_kite": false,
+    "tengu_kv7_prompt_sort": false,
+    "tengu_tool_search_unsupported_models": [
+      "haiku"
+    ],
+    "tengu_attribution_header": false,
+    "enhanced_telemetry_beta": false,
+    "tengu_marble_anvil": true,
+    "tengu_system_prompt_global_cache": false,
+    "tengu_workout": false
+  },
+  "firstStartTime": "2026-01-28T07:40:32.176Z",
+  "sonnet45MigrationComplete": true,
+  "opus45MigrationComplete": true,
+  "opusProMigrationComplete": true,
+  "thinkingMigrationComplete": true,
+  "cachedChromeExtensionInstalled": false,
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.20",
+  "githubRepoPaths": {
+    "brandon-fryslie/oscilla-animator-v2": [
+      "/Users/bmf/code/oscilla-animator-v2"
+    ],
+    "brandon-fryslie/dotfiles": [
+      "/Users/bmf/code/dotfiles"
+    ],
+    "brandon-fryslie/cc-dump": [
+      "/Users/bmf/code/cc-dump"
+    ]
+  },
+  "bypassPermissionsModeAccepted": true,
+  "userID": "bb87fa0225ea91f4319360933ffd8beef544bf2096c0c6d4420503e27f6cbdcc",
+  "lastReleaseNotesSeen": "2.1.23",
+  "projects": {
+    "/Users/bmf/code/oscilla-animator-v2": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": false,
+      "projectOnboardingSeenCount": 7,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false,
+      "exampleFiles": [
+        "main.ts",
+        "compile.ts",
+        "ScheduleExecutor.ts",
+        "IRBuilderImpl.ts",
+        "BlockInspector.tsx"
+      ],
+      "reactVulnerabilityCache": {
+        "detected": false,
+        "package": null,
+        "packageName": null,
+        "version": null,
+        "packageManager": null
+      },
+      "exampleFilesGeneratedAt": 1769586052539,
+      "lastCost": 0,
+      "lastAPIDuration": 0,
+      "lastAPIDurationWithoutRetries": 0,
+      "lastToolDuration": 0,
+      "lastDuration": 7375582,
+      "lastLinesAdded": 0,
+      "lastLinesRemoved": 0,
+      "lastTotalInputTokens": 0,
+      "lastTotalOutputTokens": 0,
+      "lastTotalCacheCreationInputTokens": 0,
+      "lastTotalCacheReadInputTokens": 0,
+      "lastTotalWebSearchRequests": 0,
+      "lastFpsAverage": 0.22,
+      "lastFpsLow1Pct": 327.99,
+      "lastModelUsage": {},
+      "lastSessionId": "c38f2ae7-d7b8-4a20-a272-11843201cae0"
+    },
+    "/Users/bmf/code/dotfiles": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": false,
+      "projectOnboardingSeenCount": 0,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false,
+      "exampleFiles": [],
+      "reactVulnerabilityCache": {
+        "detected": false,
+        "package": null,
+        "packageName": null,
+        "version": null,
+        "packageManager": null
+      },
+      "hasCompletedProjectOnboarding": true,
+      "lastCost": 0.02675445,
+      "lastAPIDuration": 24473,
+      "lastAPIDurationWithoutRetries": 24472,
+      "lastToolDuration": 0,
+      "lastDuration": 39529,
+      "lastLinesAdded": 0,
+      "lastLinesRemoved": 0,
+      "lastTotalInputTokens": 469,
+      "lastTotalOutputTokens": 1283,
+      "lastTotalCacheCreationInputTokens": 151,
+      "lastTotalCacheReadInputTokens": 18454,
+      "lastTotalWebSearchRequests": 0,
+      "lastFpsAverage": 14.34,
+      "lastFpsLow1Pct": 428.66,
+      "lastModelUsage": {
+        "MiniMax-M2.1": {
+          "inputTokens": 469,
+          "outputTokens": 1283,
+          "cacheReadInputTokens": 18454,
+          "cacheCreationInputTokens": 151,
+          "webSearchRequests": 0,
+          "costUSD": 0.02675445
+        }
+      },
+      "lastSessionId": "59b0d77e-5167-449d-b16e-a80fddfebc43"
+    },
+    "/Users/bmf/code/cc-dump": {
+      "allowedTools": [],
+      "mcpContextUris": [],
+      "mcpServers": {},
+      "enabledMcpjsonServers": [],
+      "disabledMcpjsonServers": [],
+      "hasTrustDialogAccepted": false,
+      "projectOnboardingSeenCount": 0,
+      "hasClaudeMdExternalIncludesApproved": false,
+      "hasClaudeMdExternalIncludesWarningShown": false,
+      "exampleFiles": [
+        "app.py",
+        "hot_reload.py",
+        "cli.py",
+        "widget_factory.py",
+        "analysis.py"
+      ],
+      "reactVulnerabilityCache": {
+        "detected": false,
+        "package": null,
+        "packageName": null,
+        "version": null,
+        "packageManager": null
+      },
+      "exampleFilesGeneratedAt": 1769659479772,
+      "lastCost": 0.1048185,
+      "lastAPIDuration": 19134,
+      "lastAPIDurationWithoutRetries": 19133,
+      "lastToolDuration": 0,
+      "lastDuration": 202559,
+      "lastLinesAdded": 0,
+      "lastLinesRemoved": 0,
+      "lastTotalInputTokens": 127,
+      "lastTotalOutputTokens": 725,
+      "lastTotalCacheCreationInputTokens": 24950,
+      "lastTotalCacheReadInputTokens": 0,
+      "lastTotalWebSearchRequests": 0,
+      "lastFpsAverage": 1.21,
+      "lastFpsLow1Pct": 150.86,
+      "lastModelUsage": {
+        "MiniMax-M2.1": {
+          "inputTokens": 127,
+          "outputTokens": 725,
+          "cacheReadInputTokens": 0,
+          "cacheCreationInputTokens": 24950,
+          "webSearchRequests": 0,
+          "costUSD": 0.1048185
+        }
+      },
+      "lastSessionId": "f347ffec-bc59-4bbc-8ab1-eefc29413497"
+    }
+  },
+  "officialMarketplaceAutoInstallAttempted": true,
+  "officialMarketplaceAutoInstalled": true,
+  "hasIdeOnboardingBeenShown": {
+    "intellij": true
+  },
+  "skillUsage": {
+    "do:it": {
+      "usageCount": 5,
+      "lastUsedAt": 1769667810544
+    },
+    "do:plan": {
+      "usageCount": 2,
+      "lastUsedAt": 1769665121235
+    },
+    "do:do-it": {
+      "usageCount": 1,
+      "lastUsedAt": 1769667200722
+    }
+  },
+  "changelogLastFetched": 1769675250446,
+  "autoUpdatesProtectedForNative": true,
+  "lastPlanModeUse": 1769669229233
+}

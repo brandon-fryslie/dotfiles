@@ -1,0 +1,346 @@
+2026-01-28T09:03:25.272Z [DEBUG] Failed to check enabledPlatforms: TypeError: undefined is not an object (evaluating 'mZ.join')
+2026-01-28T09:03:25.323Z [DEBUG] Watching for changes in setting files /Users/bmf/code/dotfiles/.claude...
+2026-01-28T09:03:25.324Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-28T09:03:25.324Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-28T09:03:25.324Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-28T09:03:25.324Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-28T09:03:25.325Z [DEBUG] Applying permission update: Adding 9 allow rule(s) to destination 'localSettings': ["mcp__aider-mcp-server__aider_ai_code","Bash(./dotbot/bin/dotbot:*)","Bash(just check-missing:*)","Bash(just status:*)","Bash(just validate)","Read(//Users/bmf/Library/**)","Bash(bats:*)","Read(//Users/bmf/.local/share/uv/tools/**)","Bash(just install:*)"]
+2026-01-28T09:03:25.325Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-28T09:03:25.326Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.327Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.327Z [DEBUG] [STARTUP] Running setup()...
+2026-01-28T09:03:25.327Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-28T09:03:25.327Z [DEBUG] Loading skills from: managed=/Library/Application Support/ClaudeCode/.claude/skills, user=/Users/bmf/code/dotfiles/config/claude.minimax/skills, project=[/Users/bmf/code/dotfiles/.claude/skills]
+2026-01-28T09:03:25.329Z [DEBUG] Error log sink initialized
+2026-01-28T09:03:25.330Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-28T09:03:25.330Z [DEBUG] Total plugin skills loaded: 0
+2026-01-28T09:03:25.330Z [DEBUG] Total plugin commands loaded: 0
+2026-01-28T09:03:25.330Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-28T09:03:25.330Z [DEBUG] [STARTUP] setup() completed in 3ms
+2026-01-28T09:03:25.330Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-28T09:03:25.330Z [DEBUG] Total plugin agents loaded: 0
+2026-01-28T09:03:25.330Z [DEBUG] Loaded 1 unique skills (managed: 0, user: 0, project: 1, legacy commands: 0)
+2026-01-28T09:03:25.330Z [DEBUG] getSkills returning: 1 skill dir commands, 0 plugin skills, 1 bundled skills
+2026-01-28T09:03:25.331Z [DEBUG] [STARTUP] Commands and agents loaded in 1ms
+2026-01-28T09:03:25.331Z [DEBUG] [STARTUP] Running showSetupScreens()...
+2026-01-28T09:03:25.333Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-01-28T09:03:25.335Z [DEBUG] [STARTUP] showSetupScreens() completed in 4ms
+2026-01-28T09:03:25.335Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-28T09:03:25.335Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-28T09:03:25.335Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-28T09:03:25.336Z [DEBUG] Total LSP servers loaded: 0
+2026-01-28T09:03:25.336Z [DEBUG] [STARTUP] MCP configs loaded in 11ms
+2026-01-28T09:03:25.336Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-28T09:03:25.336Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-28T09:03:25.336Z [DEBUG] LSP server manager initialized successfully
+2026-01-28T09:03:25.336Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-28T09:03:25.337Z [DEBUG] [Reconnection] computeInitialTeamContext: No teammate context set (not a teammate)
+2026-01-28T09:03:25.338Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591005338
+2026-01-28T09:03:25.338Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:25.338Z [DEBUG] Temp file written successfully, size: 2376 bytes
+2026-01-28T09:03:25.338Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:25.338Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591005338 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:25.338Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:25.339Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-28T09:03:25.339Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-28T09:03:25.340Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-01-28T09:03:25.340Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:03:25.340Z [DEBUG] Matched 0 unique hooks for query "startup" (0 before deduplication)
+2026-01-28T09:03:25.340Z [DEBUG] [render] initLayout starting
+2026-01-28T09:03:25.340Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.343Z [DEBUG] [render] initLayout complete
+2026-01-28T09:03:25.344Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.344Z [DEBUG] [render] first ink render: 261ms since process start
+2026-01-28T09:03:25.355Z [DEBUG] [Claude in Chrome] Found chrome profiles: Default
+2026-01-28T09:03:25.359Z [DEBUG] Watching for changes in skill/command directories: /Users/bmf/code/dotfiles/.claude/skills...
+2026-01-28T09:03:25.360Z [DEBUG] [Claude in Chrome] Found brave profiles: Default
+2026-01-28T09:03:25.377Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.377Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.381Z [DEBUG] [keybindings] KeybindingSetup initialized with 99 bindings, 0 warnings
+2026-01-28T09:03:25.382Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.383Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.383Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.383Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.383Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.384Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.384Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.384Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.384Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.384Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.386Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.386Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.386Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.386Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.387Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.387Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.388Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.388Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.388Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.388Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.389Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.389Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.389Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.389Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.389Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.390Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.390Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.390Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.390Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.403Z [DEBUG] Git remote URL: git@github.com:brandon-fryslie/dotfiles.git
+2026-01-28T09:03:25.403Z [DEBUG] Parsed repository: brandon-fryslie/dotfiles from git@github.com:brandon-fryslie/dotfiles.git
+2026-01-28T09:03:25.403Z [DEBUG] Parsed repository: brandon-fryslie/dotfiles from URL: git@github.com:brandon-fryslie/dotfiles.git
+2026-01-28T09:03:25.403Z [DEBUG] Path /Users/bmf/code/dotfiles already tracked for repo brandon-fryslie/dotfiles
+2026-01-28T09:03:25.419Z [DEBUG] [keybindings] Skipping file watcher - user customization disabled
+2026-01-28T09:03:25.419Z [DEBUG] [REPL:mount] REPL mounted, disabled=false
+2026-01-28T09:03:25.420Z [DEBUG] Official marketplace auto-install skipped: already_attempted
+2026-01-28T09:03:25.420Z [DEBUG] performStartupChecks called
+2026-01-28T09:03:25.420Z [DEBUG] Starting background plugin installations
+2026-01-28T09:03:25.421Z [DEBUG] performBackgroundPluginInstallations called
+2026-01-28T09:03:25.423Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-28T09:03:25.427Z [DEBUG] [claudeai-mcp] Checking gate (cached)...
+2026-01-28T09:03:25.428Z [DEBUG] [claudeai-mcp] Gate returned: false
+2026-01-28T09:03:25.428Z [DEBUG] [claudeai-mcp] Disabled via gate
+2026-01-28T09:03:25.428Z [DEBUG] Setting installation status: 0 marketplaces, 0 installable plugins, 0 uninstallable plugins
+2026-01-28T09:03:25.428Z [DEBUG] Loaded plugins - Enabled: 0, Disabled: 0, Commands: 0, Agents: 0, Errors: 0
+2026-01-28T09:03:25.436Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591005436
+2026-01-28T09:03:25.436Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:25.436Z [DEBUG] Temp file written successfully, size: 2376 bytes
+2026-01-28T09:03:25.436Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:25.436Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591005436 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:25.436Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:25.437Z [DEBUG] FileHistory: Added snapshot for 17847614-ef79-43e1-8556-bc6e553db840, tracking 0 files
+2026-01-28T09:03:25.437Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.437Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.440Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.441Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.449Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.449Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.450Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.450Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.450Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.450Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.450Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.451Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.459Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T09:03:25.459Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.460Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.3ea; cc_entrypoint=cli
+2026-01-28T09:03:25.460Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T09:03:25.460Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T09:03:25.460Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T09:03:25.462Z [DEBUG] [Claude in Chrome] Extension not found in any browser
+2026-01-28T09:03:25.467Z [DEBUG] Plugin autoupdate: skipped (auto-updater disabled)
+2026-01-28T09:03:25.468Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/todos/59b0d77e-5167-449d-b16e-a80fddfebc43-agent-59b0d77e-5167-449d-b16e-a80fddfebc43.json.tmp.80131.1769591005468
+2026-01-28T09:03:25.468Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-28T09:03:25.468Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/todos/59b0d77e-5167-449d-b16e-a80fddfebc43-agent-59b0d77e-5167-449d-b16e-a80fddfebc43.json.tmp.80131.1769591005468 to /Users/bmf/code/dotfiles/config/claude.minimax/todos/59b0d77e-5167-449d-b16e-a80fddfebc43-agent-59b0d77e-5167-449d-b16e-a80fddfebc43.json
+2026-01-28T09:03:25.468Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/todos/59b0d77e-5167-449d-b16e-a80fddfebc43-agent-59b0d77e-5167-449d-b16e-a80fddfebc43.json written atomically
+2026-01-28T09:03:25.468Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.468Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.473Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-28T09:03:25.473Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-28T09:03:25.473Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-28T09:03:25.473Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-28T09:03:25.474Z [DEBUG] Summarizing all 3 messages (~0 tokens)
+2026-01-28T09:03:25.474Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T09:03:25.474Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.474Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.c90; cc_entrypoint=cli
+2026-01-28T09:03:25.474Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T09:03:25.474Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T09:03:25.474Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T09:03:25.475Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.475Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.478Z [DEBUG] Stats cache does not exist, returning empty cache
+2026-01-28T09:03:25.479Z [DEBUG] Stats cache empty, processing all historical data in background
+2026-01-28T09:03:25.480Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.480Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.493Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.493Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.497Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-28T09:03:25.497Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:03:25.497Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-28T09:03:25.499Z [DEBUG] Started caffeinate to prevent sleep
+2026-01-28T09:03:25.499Z [DEBUG] FileHistory: Making snapshot for message 6f3deda4-527a-4f38-a245-522e01b387b6
+2026-01-28T09:03:25.499Z [DEBUG] FileHistory: Added snapshot for 6f3deda4-527a-4f38-a245-522e01b387b6, tracking 0 files
+2026-01-28T09:03:25.501Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.501Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.501Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.501Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:25.506Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-28T09:03:25.506Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.506Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.6d2; cc_entrypoint=cli
+2026-01-28T09:03:25.506Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T09:03:25.506Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T09:03:25.506Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-28T09:03:25.506Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T09:03:25.515Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.515Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.519Z [DEBUG] Auto tool search disabled: 0 tokens (threshold: 20000, 10% of context) [source: query]
+2026-01-28T09:03:25.522Z [DEBUG] Skills and commands included in Skill tool: kitty-docs
+2026-01-28T09:03:25.524Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.524Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.527Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.527Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.527Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.cbf; cc_entrypoint=cli
+2026-01-28T09:03:25.527Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-28T09:03:25.527Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-28T09:03:25.527Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-28T09:03:25.534Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.534Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:25.836Z [ERROR] Error in non-streaming fallback: 400 {"type":"error","error":{"type":"invalid_request_error","message":"invalid params"}}
+2026-01-28T09:03:26.386Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.583Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.583Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.583Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.583Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.583Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.583Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.583Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:26.614Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=/Users/bmf/.local/share/claude/versions/2.1.20)
+2026-01-28T09:03:26.669Z [DEBUG] Stream started - received first chunk
+2026-01-28T09:03:26.825Z [DEBUG] Stream started - received first chunk
+2026-01-28T09:03:27.072Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.072Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.072Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.072Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.072Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.075Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.612Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.612Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.612Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.612Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.612Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.613Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.613Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.613Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.613Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.613Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.613Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.613Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:27.619Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591007619
+2026-01-28T09:03:27.619Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:27.620Z [DEBUG] Temp file written successfully, size: 2376 bytes
+2026-01-28T09:03:27.620Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:27.620Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591007619 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:27.620Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:27.621Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-28T09:03:27.876Z [DEBUG] Generated summary for session 51da13ae-d93b-4c24-992d-59053189a09c: "Minimax Claude Configuration Inquiry"
+2026-01-28T09:03:27.876Z [DEBUG] Session index: added 1, updated 0, removed 0, summaries generated 1 (total: 1)
+2026-01-28T09:03:28.518Z [DEBUG] Stream started - received first chunk
+2026-01-28T09:03:28.521Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:28.522Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.432Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:32.970Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:34.246Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:34.246Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:34.247Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.217Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:35.217Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:35.218Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.218Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.219Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.219Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.219Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.219Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.219Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.219Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.219Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.220Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.223Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:35.223Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:35.225Z [DEBUG] Getting matching hook commands for Stop with query: undefined
+2026-01-28T09:03:35.225Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:03:35.225Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-28T09:03:35.229Z [DEBUG] High write ratio: blit=254, write=821 (76.4% writes), screen=25x127
+2026-01-28T09:03:35.232Z [DEBUG] Stopped caffeinate, allowing sleep
+2026-01-28T09:03:35.232Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.232Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.233Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.235Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591015235
+2026-01-28T09:03:35.235Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:35.235Z [DEBUG] Temp file written successfully, size: 2401 bytes
+2026-01-28T09:03:35.235Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:35.235Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591015235 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:35.235Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:35.236Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591015236
+2026-01-28T09:03:35.236Z [DEBUG] Preserving file permissions: 100600
+2026-01-28T09:03:35.236Z [DEBUG] Temp file written successfully, size: 2426 bytes
+2026-01-28T09:03:35.236Z [DEBUG] Applied original permissions to temp file
+2026-01-28T09:03:35.236Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.80131.1769591015236 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-28T09:03:35.236Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-28T09:03:35.240Z [DEBUG] Started caffeinate to prevent sleep
+2026-01-28T09:03:35.241Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:35.241Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-28T09:03:35.242Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.242Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.242Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.242Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.242Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.242Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.245Z [DEBUG] Layout engine: yoga
+2026-01-28T09:03:35.247Z [DEBUG] Stopped caffeinate, allowing sleep
+2026-01-28T09:04:04.663Z [DEBUG] Getting matching hook commands for SessionEnd with query: other
+2026-01-28T09:04:04.663Z [DEBUG] Found 0 hook matchers in settings
+2026-01-28T09:04:04.663Z [DEBUG] Matched 0 unique hooks for query "other" (0 before deduplication)

@@ -1,0 +1,8 @@
+340:export interface InstanceRef {
+349:export function instanceRef(domainType: string, instanceId: string): InstanceRef {
+368:  | { readonly kind: 'many'; readonly instance: InstanceRef }; // N lanes aligned by instance
+387:export function cardinalityMany(instance: InstanceRef): Cardinality {
+820: * Accepts either an InstanceRef or a plain instanceId string (uses 'default' domain type).
+822:export function signalTypeField(payload: PayloadType, instance: InstanceRef | string, unit?: Unit): CanonicalType {
+859: * Accepts either an InstanceRef or a plain instanceId string (uses 'default' domain type).
+861:export function signalTypePerLaneEvent(payload: PayloadType, instance: InstanceRef | string, unit?: Unit): CanonicalType {

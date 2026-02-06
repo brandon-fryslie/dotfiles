@@ -1,0 +1,9 @@
+{
+  "id": "2",
+  "subject": "Update expression interfaces",
+  "description": "Update SigExprConst and FieldExprConst interfaces to use ConstValue instead of number | string | boolean",
+  "activeForm": "Updating expression interfaces to use ConstValue",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

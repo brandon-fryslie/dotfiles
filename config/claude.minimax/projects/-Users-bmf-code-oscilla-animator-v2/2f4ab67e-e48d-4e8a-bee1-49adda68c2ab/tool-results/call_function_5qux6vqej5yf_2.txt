@@ -1,0 +1,34 @@
+   480→  inferFieldInstance(fieldId: FieldExprId): InstanceId | undefined {
+   481→    const expr = this.fieldExprs[fieldId as number];
+   482→    if (!expr) return undefined;
+   483→
+   484→    switch (expr.kind) {
+   485→      case 'intrinsic':
+   486→      case 'array':
+   487→      case 'stateRead':
+   488→      case 'placement':
+   489→        return expr.instanceId; // These ARE bound to an instance
+   490→      case 'map':
+   491→        return expr.instanceId ?? this.inferFieldInstance(expr.input);
+   492→      case 'zip':
+   493→        return expr.instanceId ?? this.inferZipInstance(expr.inputs);
+   494→      case 'zipSig':
+   495→        return expr.instanceId ?? this.inferFieldInstance(expr.field);
+   496→      case 'pathDerivative':
+   497→        return this.inferFieldInstance(expr.input);
+   498→      case 'broadcast':
+   499→      case 'const':
+   500→        return undefined; // Truly instance-agnostic
+   501→    }
+   502→  }
+   503→
+   504→  /**
+   505→   * Infer instance from zip inputs, throwing an error if they differ.
+   506→   * Returns the unified instance, or undefined if all inputs are instance-agnostic.
+   507→   */
+   508→  private inferZipInstance(inputs: readonly FieldExprId[]): InstanceId | undefined {
+   509→    const instances: InstanceId[] = [];
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

@@ -1,0 +1,104 @@
+   400→ */
+   401→export type Temporality =
+   402→  | { readonly kind: 'continuous' }
+   403→  | { readonly kind: 'discrete' };
+   404→
+   405→/**
+   406→ * Create a continuous temporality.
+   407→ */
+   408→export function temporalityContinuous(): Temporality {
+   409→  return { kind: 'continuous' };
+   410→}
+   411→
+   412→/**
+   413→ * Create a discrete temporality (events).
+   414→ */
+   415→export function temporalityDiscrete(): Temporality {
+   416→  return { kind: 'discrete' };
+   417→}
+   418→
+   419→// =============================================================================
+   420→// Referent References
+   421→// =============================================================================
+   422→
+   423→/**
+   424→ * Stable identifier for a referent (binding target).
+   425→ */
+   426→export type ReferentId = string;
+   427→
+   428→/**
+   429→ * Reference to a referent by ID.
+   430→ */
+   431→export interface ReferentRef {
+   432→  readonly kind: 'referent';
+   433→  readonly id: ReferentId;
+   434→}
+   435→
+   436→/**
+   437→ * Create a referent reference.
+   438→ */
+   439→export function referentRef(id: ReferentId): ReferentRef {
+   440→  return { kind: 'referent', id };
+   441→}
+   442→
+   443→// =============================================================================
+   444→// Binding - Referential Anchoring (v0: Default-Only)
+   445→// =============================================================================
+   446→
+   447→/**
+   448→ * How a value is bound to a referent.
+   449→ *
+   450→ * Note: Binding is independent of Domain. Same domain can host
+   451→ * unbound image vs bound mask.
+   452→ */
+   453→export type Binding =
+   454→  | { readonly kind: 'unbound' }
+   455→  | { readonly kind: 'weak'; readonly referent: ReferentRef }
+   456→  | { readonly kind: 'strong'; readonly referent: ReferentRef }
+   457→  | { readonly kind: 'identity'; readonly referent: ReferentRef };
+   458→
+   459→/**
+   460→ * Create an unbound binding.
+   461→ */
+   462→export function bindingUnbound(): Binding {
+   463→  return { kind: 'unbound' };
+   464→}
+   465→
+   466→/**
+   467→ * Create a weak binding.
+   468→ */
+   469→export function bindingWeak(referent: ReferentRef): Binding {
+   470→  return { kind: 'weak', referent };
+   471→}
+   472→
+   473→/**
+   474→ * Create a strong binding.
+   475→ */
+   476→export function bindingStrong(referent: ReferentRef): Binding {
+   477→  return { kind: 'strong', referent };
+   478→}
+   479→
+   480→/**
+   481→ * Create an identity binding.
+   482→ */
+   483→export function bindingIdentity(referent: ReferentRef): Binding {
+   484→  return { kind: 'identity', referent };
+   485→}
+   486→
+   487→// =============================================================================
+   488→// Perspective and Branch (v0: Default-Only)
+   489→// =============================================================================
+   490→
+   491→/**
+   492→ * Perspective identifier.
+   493→ */
+   494→export type PerspectiveId = string;
+   495→
+   496→/**
+   497→ * Branch identifier.
+   498→ */
+   499→export type BranchId = string;
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

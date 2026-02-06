@@ -1,0 +1,11 @@
+> oscilla-animator-v2@0.0.1 typecheck
+> tsc -b
+
+src/compiler/backend/schedule-program.ts(293,10): error TS2678: Type '"array"' is not comparable to type '"const" | "map" | "zip" | "stateRead" | "intrinsic" | "placement" | "broadcast" | "zipSig" | "pathDerivative"'.
+src/compiler/compile.ts(680,10): error TS2678: Type '"array"' is not comparable to type '"const" | "map" | "zip" | "stateRead" | "intrinsic" | "placement" | "broadcast" | "zipSig" | "pathDerivative"'.
+src/compiler/ir/IRBuilderImpl.ts(364,32): error TS2345: Argument of type '{ kind: "array"; instanceId: InstanceId; type: CanonicalType; }' is not assignable to parameter of type 'FieldExpr'.
+  Type '{ kind: "array"; instanceId: InstanceId; type: CanonicalType; }' is missing the following properties from type 'FieldExprPlacement': field, basisKind
+src/compiler/ir/IRBuilderImpl.ts(370,26): error TS2345: Argument of type '{ kind: "array"; instanceId: InstanceId; type: CanonicalType; }' is not assignable to parameter of type 'FieldExpr'.
+  Type '{ kind: "array"; instanceId: InstanceId; type: CanonicalType; }' is missing the following properties from type 'FieldExprPlacement': field, basisKind
+src/compiler/ir/IRBuilderImpl.ts(486,12): error TS2678: Type '"array"' is not comparable to type '"const" | "map" | "zip" | "stateRead" | "intrinsic" | "placement" | "broadcast" | "zipSig" | "pathDerivative"'.
+src/runtime/Materializer.ts(377,10): error TS2678: Type '"array"' is not comparable to type '"const" | "map" | "zip" | "stateRead" | "intrinsic" | "placement" | "broadcast" | "zipSig" | "pathDerivative"'.

@@ -1,0 +1,1126 @@
+     1→/**
+     2→ * IRBuilder Implementation
+     3→ *
+     4→ * Concrete implementation of the IRBuilder interface.
+     5→ */
+     6→
+     7→import type { CanonicalType } from '../../core/canonical-types';
+     8→import { FLOAT, INT, BOOL, VEC2, VEC3, COLOR, SHAPE, CAMERA_PROJECTION, canonicalType, unitScalar, eventTypeScalar } from '../../core/canonical-types';
+     9→import type { TopologyId } from '../../shapes/types';
+    10→import type { IRBuilder } from './IRBuilder';
+    11→import type {
+    12→  SigExprId,
+    13→  FieldExprId,
+    14→  EventExprId,
+    15→  EventSlotId,
+    16→  ValueSlot,
+    17→  StateId,
+    18→  StateSlotId,
+    19→  InstanceId,
+    20→  DomainTypeId,
+    21→} from './Indices';
+    22→import {
+    23→  sigExprId,
+    24→  fieldExprId,
+    25→  eventExprId,
+    26→  eventSlotId,
+    27→  valueSlot,
+    28→  stateId,
+    29→  stateSlotId,
+    30→  instanceId,
+    31→} from './Indices';
+    32→import type { TimeModelIR } from './schedule';
+    33→import type {
+    34→  PureFn,
+    35→  OpCode,
+    36→  SigExpr,
+    37→  FieldExpr,
+    38→  EventExpr,
+    39→  EventExprPulse,
+    40→  EventExprWrap,
+    41→  EventExprCombine,
+    42→  EventExprNever,
+    43→  InstanceDecl,
+    44→  Step,
+    45→  IntrinsicPropertyName,
+    46→  PlacementFieldName,
+    47→  BasisKind,
+    48→  ContinuityPolicy,
+    49→  StableStateId,
+    50→  StateMapping,
+    51→} from './types';
+    52→import type { CameraDeclIR } from './program';
+    53→
+    54→// =============================================================================
+    55→// IRBuilderImpl
+    56→// =============================================================================
+    57→
+    58→export class IRBuilderImpl implements IRBuilder {
+    59→  private sigExprs: SigExpr[] = [];
+    60→  private fieldExprs: FieldExpr[] = [];
+    61→  private eventExprs: EventExpr[] = [];
+    62→  private instances: Map<InstanceId, InstanceDecl> = new Map(); // NEW
+    63→  private slotCounter = 0;
+    64→  private stateCounter = 0;
+    65→  private stateSlotCounter = 0;
+    66→  private constCounter = 0;
+    67→  private timeModel: TimeModelIR | undefined;
+    68→  private currentBlockId: string | undefined;
+    69→
+    70→  // Hash-consing caches for expression deduplication (I13)
+    71→  private sigExprCache = new Map<string, SigExprId>();
+    72→  private fieldExprCache = new Map<string, FieldExprId>();
+    73→  private eventExprCache = new Map<string, EventExprId>();
+    74→
+    75→  // Slot registrations for debug/validation
+    76→  private sigSlots = new Map<number, ValueSlot>();
+    77→  private fieldSlots = new Map<number, ValueSlot>();
+    78→  private eventSlots = new Map<EventExprId, EventSlotId>();
+    79→  private eventSlotCounter = 0;
+    80→
+    81→  // Slot type tracking for slotMeta generation
+    82→  private slotTypes = new Map<ValueSlot, CanonicalType>();
+    83→
+    84→  constructor() {
+    85→    // Reserve system slots at fixed positions (compiler-runtime contract)
+    86→    // Slot 0: time.palette (color, stride=4)
+    87→    this.reserveSystemSlot(0, canonicalType(COLOR));
+    88→  }
+    89→
+    90→  /**
+    91→   * Reserve a system slot at a fixed position with known type.
+    92→   * Used for compiler-runtime contracts like time.palette at slot 0.
+    93→   */
+    94→  private reserveSystemSlot(slotId: number, type: CanonicalType): void {
+    95→    const slot = slotId as ValueSlot;
+    96→    this.slotTypes.set(slot, type);
+    97→    // Ensure slotCounter is past reserved slots
+    98→    if (this.slotCounter <= slotId) {
+    99→      this.slotCounter = slotId + 1;
+   100→    }
+   101→  }
+   102→
+   103→  // State slot tracking for persistent cross-frame storage
+   104→  // OLD: private stateSlots: { initialValue: number }[] = [];
+   105→  // NEW: Store state mappings with stable IDs
+   106→  private stateMappings: StateMapping[] = [];
+   107→
+   108→  // Step tracking for schedule generation
+   109→  private steps: Step[] = [];
+   110→
+   111→  // Render globals tracking (Camera system)
+   112→  private renderGlobals: CameraDeclIR[] = [];
+   113→
+   114→  // =========================================================================
+   115→  // Signal Expressions
+   116→  // =========================================================================
+   117→
+   118→  sigConst(value: number | string | boolean, type: CanonicalType): SigExprId {
+   119→    // Hash-consing (I13): check cache before creating new ID
+   120→    const expr = { kind: 'const' as const, value, type };
+   121→    const hash = hashSigExpr(expr);
+   122→    const existing = this.sigExprCache.get(hash);
+   123→    if (existing !== undefined) {
+   124→      return existing;
+   125→    }
+   126→    const id = sigExprId(this.sigExprs.length);
+   127→    this.sigExprs.push(expr);
+   128→    this.sigExprCache.set(hash, id);
+   129→    return id;
+   130→  }
+   131→
+   132→  sigSlot(slot: ValueSlot, type: CanonicalType): SigExprId {
+   133→    const expr = { kind: 'slot' as const, slot, type };
+   134→    const hash = hashSigExpr(expr);
+   135→    const existing = this.sigExprCache.get(hash);
+   136→    if (existing !== undefined) {
+   137→      return existing;
+   138→    }
+   139→    const id = sigExprId(this.sigExprs.length);
+   140→    this.sigExprs.push(expr);
+   141→    this.sigExprCache.set(hash, id);
+   142→    return id;
+   143→  }
+   144→
+   145→  sigTime(which: 'tMs' | 'phaseA' | 'phaseB' | 'dt' | 'progress' | 'palette' | 'energy', type: CanonicalType): SigExprId {
+   146→    const expr = { kind: 'time' as const, which, type };
+   147→    const hash = hashSigExpr(expr);
+   148→    const existing = this.sigExprCache.get(hash);
+   149→    if (existing !== undefined) {
+   150→      return existing;
+   151→    }
+   152→    const id = sigExprId(this.sigExprs.length);
+   153→    this.sigExprs.push(expr);
+   154→    this.sigExprCache.set(hash, id);
+   155→    return id;
+   156→  }
+   157→
+   158→  sigExternal(channel: string, type: CanonicalType): SigExprId {
+   159→    const expr = { kind: 'external' as const, which: channel, type };
+   160→    const hash = hashSigExpr(expr);
+   161→    const existing = this.sigExprCache.get(hash);
+   162→    if (existing !== undefined) {
+   163→      return existing;
+   164→    }
+   165→    const id = sigExprId(this.sigExprs.length);
+   166→    this.sigExprs.push(expr);
+   167→    this.sigExprCache.set(hash, id);
+   168→    return id;
+   169→  }
+   170→
+   171→  sigMap(input: SigExprId, fn: PureFn, type: CanonicalType): SigExprId {
+   172→    const expr = { kind: 'map' as const, input, fn, type };
+   173→    const hash = hashSigExpr(expr);
+   174→    const existing = this.sigExprCache.get(hash);
+   175→    if (existing !== undefined) {
+   176→      return existing;
+   177→    }
+   178→    const id = sigExprId(this.sigExprs.length);
+   179→    this.sigExprs.push(expr);
+   180→    this.sigExprCache.set(hash, id);
+   181→    return id;
+   182→  }
+   183→
+   184→  sigZip(inputs: readonly SigExprId[], fn: PureFn, type: CanonicalType): SigExprId {
+   185→    const expr = { kind: 'zip' as const, inputs, fn, type };
+   186→    const hash = hashSigExpr(expr);
+   187→    const existing = this.sigExprCache.get(hash);
+   188→    if (existing !== undefined) {
+   189→      return existing;
+   190→    }
+   191→    const id = sigExprId(this.sigExprs.length);
+   192→    this.sigExprs.push(expr);
+   193→    this.sigExprCache.set(hash, id);
+   194→    return id;
+   195→  }
+   196→  sigShapeRef(topologyId: TopologyId, paramSignals: readonly SigExprId[], type: CanonicalType, controlPointField?: { id: FieldExprId; stride: number }): SigExprId {
+   197→    const expr = { kind: 'shapeRef' as const, topologyId, paramSignals, controlPointField, type };
+   198→    const hash = hashSigExpr(expr);
+   199→    const existing = this.sigExprCache.get(hash);
+   200→    if (existing !== undefined) {
+   201→      return existing;
+   202→    }
+   203→    const id = sigExprId(this.sigExprs.length);
+   204→    this.sigExprs.push(expr);
+   205→    this.sigExprCache.set(hash, id);
+   206→    return id;
+   207→  }
+   208→
+   209→  /**
+   210→   * Binary operation helper - creates a sig expression that zips two inputs with an opcode.
+   211→   */
+   212→  sigBinOp(a: SigExprId, b: SigExprId, opcode: OpCode, type: CanonicalType): SigExprId {
+   213→    return this.sigZip([a, b], { kind: 'opcode', opcode }, type);
+   214→  }
+   215→
+   216→  /**
+   217→   * Unary operation helper - creates a sig expression that maps a single input with an opcode.
+   218→   */
+   219→  sigUnaryOp(input: SigExprId, opcode: OpCode, type: CanonicalType): SigExprId {
+   220→    return this.sigMap(input, { kind: 'opcode', opcode }, type);
+   221→  }
+   222→
+   223→  // =========================================================================
+   224→  // Signal Combine
+   225→  // =========================================================================
+   226→
+   227→  sigCombine(
+   228→    inputs: readonly SigExprId[],
+   229→    mode: 'sum' | 'average' | 'max' | 'min' | 'last',
+   230→    type: CanonicalType
+   231→  ): SigExprId {
+   232→    // For combining signals, we use zip with appropriate combine function
+   233→    const fn: PureFn = { kind: 'kernel', name: `combine_${mode}` };
+   234→    const expr = { kind: 'zip' as const, inputs, fn, type };
+   235→    const hash = hashSigExpr(expr);
+   236→    const existing = this.sigExprCache.get(hash);
+   237→    if (existing !== undefined) {
+   238→      return existing;
+   239→    }
+   240→    const id = sigExprId(this.sigExprs.length);
+   241→    this.sigExprs.push(expr);
+   242→    this.sigExprCache.set(hash, id);
+   243→    return id;
+   244→  }
+   245→
+   246→  // =========================================================================
+   247→  // Signal Expression Lookup
+   248→  // =========================================================================
+   249→
+   250→  /**
+   251→   * Look up the SigExpr for a given SigExprId.
+   252→   * Used by blocks that need to introspect expression structure.
+   253→   */
+   254→  getSigExpr(id: SigExprId): SigExpr | undefined {
+   255→    return this.sigExprs[id as number];
+   256→  }
+   257→
+   258→  /**
+   259→   * Look up the type for a signal expression.
+   260→   */
+   261→  getSigExprType(id: SigExprId): CanonicalType | undefined {
+   262→    const expr = this.sigExprs[id as number];
+   263→    return expr?.type;
+   264→  }
+   265→
+   266→  /**
+   267→   * Resolve a SigExprId to its slot, if it exists.
+   268→   * Returns undefined if the signal is not a slot reference.
+   269→   */
+   270→  resolveSigSlot(id: SigExprId): ValueSlot | undefined {
+   271→    const expr = this.sigExprs[id as number];
+   272→    if (expr?.kind === 'slot') {
+   273→      return expr.slot as unknown as ValueSlot;
+   274→    }
+   275→    return undefined;
+   276→  }
+   277→
+   278→  // =========================================================================
+   279→  // Field Expressions
+   280→  // =========================================================================
+   281→
+   282→  fieldConst(value: number | string, type: CanonicalType): FieldExprId {
+   283→    const expr = { kind: 'const' as const, value, type };
+   284→    const hash = hashFieldExpr(expr);
+   285→    const existing = this.fieldExprCache.get(hash);
+   286→    if (existing !== undefined) {
+   287→      return existing;
+   288→    }
+   289→    const id = fieldExprId(this.fieldExprs.length);
+   290→    this.fieldExprs.push(expr);
+   291→    this.fieldExprCache.set(hash, id);
+   292→    return id;
+   293→  }
+   294→
+   295→  /**
+   296→   * Create a field from an intrinsic property.
+   297→   * Uses proper FieldExprIntrinsic type - no 'as any' casts needed.
+   298→   */
+   299→  fieldIntrinsic(instanceId: InstanceId, intrinsic: IntrinsicPropertyName, type: CanonicalType): FieldExprId {
+   300→    const expr = {
+   301→      kind: 'intrinsic' as const,
+   302→      instanceId,
+   303→      intrinsic,
+   304→      type,
+   305→    };
+   306→    const hash = hashFieldExpr(expr);
+   307→    const existing = this.fieldExprCache.get(hash);
+   308→    if (existing !== undefined) {
+   309→      return existing;
+   310→    }
+   311→    const id = fieldExprId(this.fieldExprs.length);
+   312→    this.fieldExprs.push(expr);
+   313→    this.fieldExprCache.set(hash, id);
+   314→    return id;
+   315→  }
+   316→
+   317→
+   318→  /**
+   319→   * Create a field from placement basis.
+   320→   * Replaces normalizedIndex for gauge-invariant layouts.
+   321→   */
+   322→  fieldPlacement(
+   323→    instanceId: InstanceId,
+   324→    field: PlacementFieldName,
+   325→    basisKind: BasisKind,
+   326→    type: CanonicalType
+   327→  ): FieldExprId {
+   328→    if (!instanceId) {
+   329→      throw new Error('fieldPlacement: instanceId is required');
+   330→    }
+   331→    if (!field) {
+   332→      throw new Error('fieldPlacement: field is required');
+   333→    }
+   334→    if (!basisKind) {
+   335→      throw new Error('fieldPlacement: basisKind is required');
+   336→    }
+   337→    if (!type) {
+   338→      throw new Error('fieldPlacement: type is required');
+   339→    }
+   340→
+   341→    const expr = {
+   342→      kind: 'placement' as const,
+   343→      instanceId,
+   344→      field,
+   345→      basisKind,
+   346→      type,
+   347→    };
+   348→    const hash = hashFieldExpr(expr);
+   349→    const existing = this.fieldExprCache.get(hash);
+   350→    if (existing !== undefined) {
+   351→      return existing;
+   352→    }
+   353→    const id = fieldExprId(this.fieldExprs.length);
+   354→    this.fieldExprs.push(expr);
+   355→    this.fieldExprCache.set(hash, id);
+   356→    return id;
+   357→  }
+   358→
+   359→  Broadcast(signal: SigExprId, type: CanonicalType): FieldExprId {
+   360→    const expr = { kind: 'broadcast' as const, signal, type };
+   361→    const hash = hashFieldExpr(expr);
+   362→    const existing = this.fieldExprCache.get(hash);
+   363→    if (existing !== undefined) {
+   364→      return existing;
+   365→    }
+   366→    const id = fieldExprId(this.fieldExprs.length);
+   367→    this.fieldExprs.push(expr);
+   368→    this.fieldExprCache.set(hash, id);
+   369→    return id;
+   370→  }
+   371→
+   372→  ReduceField(field: FieldExprId, op: 'min' | 'max' | 'sum' | 'avg', type: CanonicalType): SigExprId {
+   373→    const expr = { kind: 'reduceField' as const, field, op, type };
+   374→    const hash = hashSigExpr(expr);
+   375→    const existing = this.sigExprCache.get(hash);
+   376→    if (existing !== undefined) {
+   377→      return existing;
+   378→    }
+   379→    const id = sigExprId(this.sigExprs.length);
+   380→    this.sigExprs.push(expr);
+   381→    this.sigExprCache.set(hash, id);
+   382→    return id;
+   383→  }
+   384→
+   385→  fieldMap(input: FieldExprId, fn: PureFn, type: CanonicalType): FieldExprId {
+   386→    const instanceId = this.inferFieldInstance(input);
+   387→    const expr = { kind: 'map' as const, input, fn, type, instanceId };
+   388→    const hash = hashFieldExpr(expr);
+   389→    const existing = this.fieldExprCache.get(hash);
+   390→    if (existing !== undefined) {
+   391→      return existing;
+   392→    }
+   393→    const id = fieldExprId(this.fieldExprs.length);
+   394→    this.fieldExprs.push(expr);
+   395→    this.fieldExprCache.set(hash, id);
+   396→    return id;
+   397→  }
+   398→
+   399→  fieldZip(inputs: readonly FieldExprId[], fn: PureFn, type: CanonicalType): FieldExprId {
+   400→    const instanceId = this.inferZipInstance(inputs);
+   401→    const expr = { kind: 'zip' as const, inputs, fn, type, instanceId };
+   402→    const hash = hashFieldExpr(expr);
+   403→    const existing = this.fieldExprCache.get(hash);
+   404→    if (existing !== undefined) {
+   405→      return existing;
+   406→    }
+   407→    const id = fieldExprId(this.fieldExprs.length);
+   408→    this.fieldExprs.push(expr);
+   409→    this.fieldExprCache.set(hash, id);
+   410→    return id;
+   411→  }
+   412→
+   413→  fieldZipSig(
+   414→    field: FieldExprId,
+   415→    signals: readonly SigExprId[],
+   416→    fn: PureFn,
+   417→    type: CanonicalType
+   418→  ): FieldExprId {
+   419→    const instanceId = this.inferFieldInstance(field);
+   420→    const expr = { kind: 'zipSig' as const, field, signals, fn, type, instanceId };
+   421→    const hash = hashFieldExpr(expr);
+   422→    const existing = this.fieldExprCache.get(hash);
+   423→    if (existing !== undefined) {
+   424→      return existing;
+   425→    }
+   426→    const id = fieldExprId(this.fieldExprs.length);
+   427→    this.fieldExprs.push(expr);
+   428→    this.fieldExprCache.set(hash, id);
+   429→    return id;
+   430→  }
+   431→
+   432→  fieldPathDerivative(
+   433→    input: FieldExprId,
+   434→    operation: 'tangent' | 'arcLength',
+   435→    type: CanonicalType
+   436→  ): FieldExprId {
+   437→    const expr = { kind: 'pathDerivative' as const, input, operation, type };
+   438→    const hash = hashFieldExpr(expr);
+   439→    const existing = this.fieldExprCache.get(hash);
+   440→    if (existing !== undefined) {
+   441→      return existing;
+   442→    }
+   443→    const id = fieldExprId(this.fieldExprs.length);
+   444→    this.fieldExprs.push(expr);
+   445→    this.fieldExprCache.set(hash, id);
+   446→    return id;
+   447→  }
+   448→
+   449→  // =========================================================================
+   450→  // Instance Inference
+   451→  // =========================================================================
+   452→
+   453→  /**
+   454→   * Infer the instance a field expression operates over.
+   455→   * Returns the InstanceId if the field is bound to a specific instance,
+   456→   * or undefined if the field is instance-agnostic (const, broadcast).
+   457→   *
+   458→   * Instance binding:
+   459→   * - intrinsic, array, stateRead → return their instanceId (bound to instance)
+   460→   * - map, zipSig → propagate from input
+   461→   * - zip → unify from inputs (must all be same instance)
+   462→   * - const, broadcast → undefined (instance-agnostic)
+   463→   */
+   464→  inferFieldInstance(fieldId: FieldExprId): InstanceId | undefined {
+   465→    const expr = this.fieldExprs[fieldId as number];
+   466→    if (!expr) return undefined;
+   467→
+   468→    switch (expr.kind) {
+   469→      case 'intrinsic':
+   470→      case 'stateRead':
+   471→      case 'placement':
+   472→        return expr.instanceId; // These ARE bound to an instance
+   473→      case 'map':
+   474→        return expr.instanceId ?? this.inferFieldInstance(expr.input);
+   475→      case 'zip':
+   476→        return expr.instanceId ?? this.inferZipInstance(expr.inputs);
+   477→      case 'zipSig':
+   478→        return expr.instanceId ?? this.inferFieldInstance(expr.field);
+   479→      case 'pathDerivative':
+   480→        return this.inferFieldInstance(expr.input);
+   481→      case 'broadcast':
+   482→      case 'const':
+   483→        return undefined; // Truly instance-agnostic
+   484→    }
+   485→  }
+   486→
+   487→  /**
+   488→   * Infer instance from zip inputs, throwing an error if they differ.
+   489→   * Returns the unified instance, or undefined if all inputs are instance-agnostic.
+   490→   */
+   491→  private inferZipInstance(inputs: readonly FieldExprId[]): InstanceId | undefined {
+   492→    const instances: InstanceId[] = [];
+   493→    for (const id of inputs) {
+   494→      const inst = this.inferFieldInstance(id);
+   495→      if (inst !== undefined) {
+   496→        instances.push(inst);
+   497→      }
+   498→    }
+   499→
+   500→    if (instances.length === 0) return undefined;
+   501→
+   502→    const first = instances[0];
+   503→    for (let i = 1; i < instances.length; i++) {
+   504→      if (instances[i] !== first) {
+   505→        throw new Error(
+   506→          `Instance mismatch in fieldZip: '${first}' vs '${instances[i]}'. ` +
+   507→          `All field inputs must share the same instance.`
+   508→        );
+   509→      }
+   510→    }
+   511→    return first;
+   512→  }
+   513→
+   514→  // =========================================================================
+   515→  // Field Combine
+   516→  // =========================================================================
+   517→
+   518→  fieldCombine(
+   519→    inputs: readonly FieldExprId[],
+   520→    mode: 'sum' | 'average' | 'max' | 'min' | 'last' | 'product',
+   521→    type: CanonicalType
+   522→  ): FieldExprId {
+   523→    // For combining fields, we use zip with appropriate combine function
+   524→    const fn: PureFn = { kind: 'kernel', name: `combine_${mode}` };
+   525→    const expr = { kind: 'zip' as const, inputs, fn, type };
+   526→    const hash = hashFieldExpr(expr);
+   527→    const existing = this.fieldExprCache.get(hash);
+   528→    if (existing !== undefined) {
+   529→      return existing;
+   530→    }
+   531→    const id = fieldExprId(this.fieldExprs.length);
+   532→    this.fieldExprs.push(expr);
+   533→    this.fieldExprCache.set(hash, id);
+   534→    return id;
+   535→  }
+   536→
+   537→  // =========================================================================
+   538→  // Event Expressions
+   539→  // =========================================================================
+   540→
+   541→  eventPulse(source: 'InfiniteTimeRoot'): EventExprId {
+   542→    const expr: EventExprPulse = {
+   543→      kind: 'pulse',
+   544→      type: eventTypeScalar(),
+   545→      source: 'timeRoot',
+   546→    };
+   547→    const hash = hashEventExpr(expr);
+   548→    const existing = this.eventExprCache.get(hash);
+   549→    if (existing !== undefined) {
+   550→      return existing;
+   551→    }
+   552→    const id = eventExprId(this.eventExprs.length);
+   553→    this.eventExprs.push(expr);
+   554→    this.eventExprCache.set(hash, id);
+   555→    return id;
+   556→  }
+   557→
+   558→  eventWrap(signal: SigExprId): EventExprId {
+   559→    const expr: EventExprWrap = {
+   560→      kind: 'wrap',
+   561→      type: eventTypeScalar(),
+   562→      signal,
+   563→    };
+   564→    const hash = hashEventExpr(expr);
+   565→    const existing = this.eventExprCache.get(hash);
+   566→    if (existing !== undefined) {
+   567→      return existing;
+   568→    }
+   569→    const id = eventExprId(this.eventExprs.length);
+   570→    this.eventExprs.push(expr);
+   571→    this.eventExprCache.set(hash, id);
+   572→    return id;
+   573→  }
+   574→
+   575→  eventCombine(
+   576→    events: readonly EventExprId[],
+   577→    mode: 'any' | 'all' | 'merge' | 'last',
+   578→    _type?: CanonicalType
+   579→  ): EventExprId {
+   580→    // Map 'merge' and 'last' to underlying event combine modes
+   581→    const underlyingMode = mode === 'merge' || mode === 'last' ? 'any' : mode;
+   582→    const expr: EventExprCombine = {
+   583→      kind: 'combine',
+   584→      type: eventTypeScalar(),
+   585→      events,
+   586→      mode: underlyingMode as 'any' | 'all',
+   587→    };
+   588→    const hash = hashEventExpr(expr);
+   589→    const existing = this.eventExprCache.get(hash);
+   590→    if (existing !== undefined) {
+   591→      return existing;
+   592→    }
+   593→    const id = eventExprId(this.eventExprs.length);
+   594→    this.eventExprs.push(expr);
+   595→    this.eventExprCache.set(hash, id);
+   596→    return id;
+   597→  }
+   598→
+   599→  /**
+   600→   * Create a "never fires" event.
+   601→   * Used as a default when an event input is optional and not connected.
+   602→   */
+   603→  eventNever(): EventExprId {
+   604→    const expr: EventExprNever = {
+   605→      kind: 'never',
+   606→      type: eventTypeScalar(),
+   607→    };
+   608→    const hash = hashEventExpr(expr);
+   609→    const existing = this.eventExprCache.get(hash);
+   610→    if (existing !== undefined) {
+   611→      return existing;
+   612→    }
+   613→    const id = eventExprId(this.eventExprs.length);
+   614→    this.eventExprs.push(expr);
+   615→    this.eventExprCache.set(hash, id);
+   616→    return id;
+   617→  }
+   618→
+   619→  // =========================================================================
+   620→  // Domains (OLD - Will be removed in Sprint 8)
+   621→  // =========================================================================
+   622→
+   623→
+   624→  /**
+   625→   * Create a grid domain with rows x cols elements.
+   626→   */
+   627→
+   628→  /**
+   629→   * Create an N-element domain with optional seed for deterministic IDs.
+   630→   */
+   631→
+   632→
+   633→
+   634→  // =========================================================================
+   635→  // Instances (NEW)
+   636→  // =========================================================================
+   637→
+   638→  /**
+   639→   * Create an instance (NEW).
+   640→   * Layout is now handled entirely through field kernels (circleLayout, lineLayout, gridLayout).
+   641→   */
+   642→  createInstance(
+   643→    domainType: DomainTypeId,
+   644→    count: number,
+   645→    lifecycle: 'static' | 'dynamic' | 'pooled' = 'static',
+   646→    identityMode: 'stable' | 'none' = 'stable',
+   647→    elementIdSeed?: number
+   648→  ): InstanceId {
+   649→    const id = instanceId(`instance_${this.instances.size}`);
+   650→    this.instances.set(id, {
+   651→      id,
+   652→      domainType,
+   653→      count,
+   654→      lifecycle,
+   655→      identityMode,
+   656→      elementIdSeed,
+   657→    });
+   658→    return id;
+   659→  }
+   660→
+   661→  /**
+   662→   * Get all instances (NEW).
+   663→   */
+   664→  getInstances(): ReadonlyMap<InstanceId, InstanceDecl> {
+   665→    return this.instances;
+   666→  }
+   667→
+   668→  /**
+   669→   * Generate a deterministic 8-char alphanumeric ID from a seed.
+   670→   */
+   671→  private seededId(seed: number): string {
+   672→    let h = seed;
+   673→    h = ((h >> 16) ^ h) * 0x45d9f3b;
+   674→    h = ((h >> 16) ^ h) * 0x45d9f3b;
+   675→    h = (h >> 16) ^ h;
+   676→    return Math.abs(h).toString(36).slice(0, 8).padStart(8, '0');
+   677→  }
+   678→
+   679→  // =========================================================================
+   680→  // Slots
+   681→  // =========================================================================
+   682→
+   683→  /**
+   684→   * P0: Strided slot allocation.
+   685→   *
+   686→   * Allocates a contiguous region of `stride` slots starting at a base slot.
+   687→   * Returns the base slot identifier.
+   688→   *
+   689→   * Contract:
+   690→   * - stride defaults to 1 (scalar slots)
+   691→   * - For multi-component payloads (vec2, vec3, color), stride > 1
+   692→   * - The slot allocator increments by stride to reserve the full region
+   693→   * - Downstream code reads/writes components at [slotBase+0 .. slotBase+(stride-1)]
+   694→   *
+   695→   * Example:
+   696→   *   vec2 slot: allocSlot(2) returns slotBase K, reserves slots [K, K+1]
+   697→   *   vec3 slot: allocSlot(3) returns slotBase K, reserves slots [K, K+1, K+2]
+   698→   *
+   699→   * @param stride - Number of contiguous f64 positions to allocate (default 1)
+   700→   * @returns Base slot identifier for the allocated region
+   701→   */
+   702→  allocSlot(stride: number = 1): ValueSlot {
+   703→    if (stride < 1 || !Number.isInteger(stride)) {
+   704→      throw new Error(`allocSlot: stride must be a positive integer, got ${stride}`);
+   705→    }
+   706→    const baseSlot = valueSlot(this.slotCounter);
+   707→    this.slotCounter += stride;
+   708→    return baseSlot;
+   709→  }
+   710→
+   711→  /**
+   712→   * Allocate a typed value slot (tracking type for slotMeta generation).
+   713→   */
+   714→  allocTypedSlot(type: CanonicalType, _label?: string): ValueSlot {
+   715→    // Compute stride from payload
+   716→    let stride: number;
+   717→    switch (type.payload.kind) {
+   718→      case 'float':
+   719→      case 'int':
+   720→      case 'bool':
+   721→      case 'cameraProjection':
+   722→        stride = 1;
+   723→        break;
+   724→      case 'vec2':
+   725→        stride = 2;
+   726→        break;
+   727→      case 'vec3':
+   728→        stride = 3;
+   729→        break;
+   730→      case 'color':
+   731→        stride = 4;
+   732→        break;
+   733→      case 'shape':
+   734→        stride = 0; // Shape slots don't occupy f64 storage
+   735→        break;
+   736→      default:
+   737→        stride = 1; // Fallback
+   738→    }
+   739→
+   740→    const slot = this.allocSlot(stride);
+   741→    this.slotTypes.set(slot, type);
+   742→    return slot;
+   743→  }
+   744→  /**
+   745→   * Register a slot type for slotMeta generation.
+   746→   *
+   747→   * CRITICAL: This must be called after lowering produces slots via allocSlot(stride).
+   748→   * Without type registration, slotMeta generation defaults to stride=1, causing runtime errors
+   749→   * when slotWriteStrided tries to write multiple components to a single-component slot.
+   750→   */
+   751→  registerSlotType(slot: ValueSlot, type: CanonicalType): void {
+   752→    this.slotTypes.set(slot, type);
+   753→  }
+   754→
+   755→  getSlotCount(): number {
+   756→    return this.slotCounter;
+   757→  }
+   758→
+   759→  /**
+   760→   * Get slot type information for slotMeta generation.
+   761→   */
+   762→  getSlotTypes(): ReadonlyMap<ValueSlot, CanonicalType> {
+   763→    return this.slotTypes;
+   764→  }
+   765→
+   766→  /**
+   767→   * Get slot metadata inputs for slotMeta generation.
+   768→   *
+   769→   * This extracts all slots that have been allocated with type information,
+   770→   * computing stride from payload type. This is used at compile finalization
+   771→   * to ensure slotMeta covers all slots the runtime will touch.
+   772→   */
+   773→  getSlotMetaInputs(): ReadonlyMap<ValueSlot, { readonly type: CanonicalType; readonly stride: number }> {
+   774→    const result = new Map<ValueSlot, { readonly type: CanonicalType; readonly stride: number }>();
+   775→    for (const [slot, type] of this.slotTypes) {
+   776→      // Import payloadStride inline to compute stride from payload type
+   777→      let stride: number;
+   778→      switch (type.payload.kind) {
+   779→        case 'float':
+   780→        case 'int':
+   781→        case 'bool':
+   782→        case 'cameraProjection':
+   783→          stride = 1;
+   784→          break;
+   785→        case 'vec2':
+   786→          stride = 2;
+   787→          break;
+   788→        case 'vec3':
+   789→          stride = 3;
+   790→          break;
+   791→        case 'color':
+   792→          stride = 4;
+   793→          break;
+   794→        case 'shape':
+   795→          stride = 0;
+   796→          break;
+   797→        default:
+   798→          stride = 1; // Fallback
+   799→      }
+   800→      result.set(slot, { type, stride });
+   801→    }
+   802→    return result;
+   803→  }
+   804→
+   805→  // =========================================================================
+   806→  // State Slots (Persistent Cross-Frame Storage)
+   807→  // =========================================================================
+   808→
+   809→  allocStateSlot(
+   810→    stableId: StableStateId,
+   811→    options?: {
+   812→      initialValue?: number;
+   813→      stride?: number;
+   814→      instanceId?: InstanceId;
+   815→      laneCount?: number;
+   816→    }
+   817→  ): StateSlotId {
+   818→    const initialValue = options?.initialValue ?? 0;
+   819→    const stride = options?.stride ?? 1;
+   820→    const initial = Array(stride).fill(initialValue);
+   821→
+   822→    const slotIndex = this.stateSlotCounter;
+   823→
+   824→    if (options?.instanceId !== undefined) {
+   825→      // Field state (many cardinality)
+   826→      const laneCount = options.laneCount;
+   827→      if (laneCount === undefined) {
+   828→        throw new Error('allocStateSlot: laneCount required when instanceId is provided');
+   829→      }
+   830→      this.stateMappings.push({
+   831→        kind: 'field',
+   832→        stateId: stableId,
+   833→        instanceId: options.instanceId,
+   834→        slotStart: slotIndex,
+   835→        laneCount,
+   836→        stride,
+   837→        initial,
+   838→      });
+   839→      // Reserve slots for all lanes
+   840→      this.stateSlotCounter += laneCount * stride;
+   841→    } else {
+   842→      // Scalar state (signal cardinality)
+   843→      this.stateMappings.push({
+   844→        kind: 'scalar',
+   845→        stateId: stableId,
+   846→        slotIndex,
+   847→        stride,
+   848→        initial,
+   849→      });
+   850→      this.stateSlotCounter += stride;
+   851→    }
+   852→
+   853→    return stateSlotId(slotIndex);
+   854→  }
+   855→
+   856→  sigStateRead(stateSlot: StateSlotId, type: CanonicalType): SigExprId {
+   857→    const expr = { kind: 'stateRead' as const, stateSlot, type };
+   858→    const hash = hashSigExpr(expr);
+   859→    const existing = this.sigExprCache.get(hash);
+   860→    if (existing !== undefined) {
+   861→      return existing;
+   862→    }
+   863→    const id = sigExprId(this.sigExprs.length);
+   864→    this.sigExprs.push(expr);
+   865→    this.sigExprCache.set(hash, id);
+   866→    return id;
+   867→  }
+   868→
+   869→  sigEventRead(eventSlot: EventSlotId, type: CanonicalType): SigExprId {
+   870→    // EventRead: produces a signal that is 1.0 on frames when the event fires, 0.0 otherwise
+   871→    const expr = { kind: 'eventRead' as const, eventSlot, type };
+   872→    const hash = hashSigExpr(expr);
+   873→    const existing = this.sigExprCache.get(hash);
+   874→    if (existing !== undefined) {
+   875→      return existing;
+   876→    }
+   877→    const id = sigExprId(this.sigExprs.length);
+   878→    this.sigExprs.push(expr);
+   879→    this.sigExprCache.set(hash, id);
+   880→    return id;
+   881→  }
+   882→
+   883→  stepStateWrite(stateSlot: StateSlotId, value: SigExprId): void {
+   884→    this.steps.push({ kind: 'stateWrite', stateSlot, value });
+   885→  }
+   886→
+   887→  fieldStateRead(stateSlot: StateSlotId, instanceId: InstanceId, type: CanonicalType): FieldExprId {
+   888→    const expr = { kind: 'stateRead' as const, stateSlot, instanceId, type };
+   889→    const hash = hashFieldExpr(expr);
+   890→    const existing = this.fieldExprCache.get(hash);
+   891→    if (existing !== undefined) {
+   892→      return existing;
+   893→    }
+   894→    const id = fieldExprId(this.fieldExprs.length);
+   895→    this.fieldExprs.push(expr);
+   896→    this.fieldExprCache.set(hash, id);
+   897→    return id;
+   898→  }
+   899→
+   900→  stepFieldStateWrite(stateSlot: StateSlotId, value: FieldExprId): void {
+   901→    this.steps.push({ kind: 'fieldStateWrite', stateSlot, value });
+   902→  }
+   903→
+   904→  stepEvalSig(expr: SigExprId, target: ValueSlot): void {
+   905→    this.steps.push({ kind: 'evalSig', expr, target });
+   906→  }
+   907→
+   908→  /**
+   909→   * P3: Emit a strided slot write step.
+   910→   *
+   911→   * Writes multiple scalar signal components to contiguous slots.
+   912→   * This is the canonical way to materialize multi-component signal values (vec2, vec3, color)
+   913→   * without requiring array-returning evaluators or side-effect kernels.
+   914→   *
+   915→   * Contract:
+   916→   * - slotBase must have been allocated with allocSlot(stride=inputs.length)
+   917→   * - Each input is a scalar SigExprId
+   918→   * - At runtime, evaluates each input and writes to values.f64[slotBase+i]
+   919→   *
+   920→   * Example usage (vec2 output):
+   921→   *   const slotBase = builder.allocSlot(2);
+   922→   *   builder.stepSlotWriteStrided(slotBase, [sigExprX, sigExprY]);
+   923→   *
+   924→   * @param slotBase - Base slot for the contiguous write region
+   925→   * @param inputs - Array of scalar signal expressions to evaluate and write
+   926→   */
+   927→  stepSlotWriteStrided(slotBase: ValueSlot, inputs: readonly SigExprId[]): void {
+   928→    if (inputs.length === 0) {
+   929→      throw new Error('stepSlotWriteStrided: inputs array must not be empty');
+   930→    }
+   931→    this.steps.push({ kind: 'slotWriteStrided', slotBase, inputs });
+   932→  }
+   933→
+   934→  stepMaterialize(field: FieldExprId, instanceId: InstanceId, target: ValueSlot): void {
+   935→    this.steps.push({ kind: 'materialize', field, instanceId, target });
+   936→  }
+   937→
+   938→  stepContinuityMapBuild(instanceId: InstanceId): void {
+   939→    // outputMapping key is derived from instanceId for consistency
+   940→    this.steps.push({ kind: 'continuityMapBuild', instanceId, outputMapping: `mapping_${instanceId}` });
+   941→  }
+   942→
+   943→  stepContinuityApply(
+   944→    targetKey: string,
+   945→    instanceId: InstanceId,
+   946→    policy: ContinuityPolicy,
+   947→    baseSlot: ValueSlot,
+   948→    outputSlot: ValueSlot,
+   949→    semantic: 'position' | 'radius' | 'opacity' | 'color' | 'custom',
+   950→    stride: number
+   951→  ): void {
+   952→    this.steps.push({
+   953→      kind: 'continuityApply',
+   954→      targetKey,
+   955→      instanceId,
+   956→      policy,
+   957→      baseSlot,
+   958→      outputSlot,
+   959→      semantic,
+   960→      stride,
+   961→    });
+   962→  }
+   963→
+   964→  // =========================================================================
+   965→  // Slot Registration
+   966→  // =========================================================================
+   967→
+   968→  registerSigSlot(sigId: number, slot: ValueSlot): void {
+   969→    this.sigSlots.set(sigId, slot);
+   970→  }
+   971→
+   972→  registerFieldSlot(fieldId: number, slot: ValueSlot): void {
+   973→    this.fieldSlots.set(fieldId, slot);
+   974→  }
+   975→
+   976→  allocEventSlot(eventId: EventExprId): EventSlotId {
+   977→    const slot = eventSlotId(this.eventSlotCounter++);
+   978→    this.eventSlots.set(eventId, slot);
+   979→    return slot;
+   980→  }
+   981→
+   982→  // =========================================================================
+   983→  // Render Globals
+   984→  // =========================================================================
+   985→
+   986→  addRenderGlobal(decl: CameraDeclIR): void {
+   987→    this.renderGlobals.push(decl);
+   988→  }
+   989→
+   990→  getRenderGlobals(): readonly CameraDeclIR[] {
+   991→    return this.renderGlobals;
+   992→  }
+   993→
+   994→  // =========================================================================
+   995→  // State
+   996→  // =========================================================================
+   997→
+   998→  allocState(_initialValue: unknown): StateId {
+   999→    return stateId(`state_${this.stateCounter++}`);
+  1000→  }
+  1001→
+  1002→  // =========================================================================
+  1003→  // Debug Tracking
+  1004→  // =========================================================================
+  1005→
+  1006→  setCurrentBlockId(blockId: string | undefined): void {
+  1007→    this.currentBlockId = blockId;
+  1008→  }
+  1009→
+  1010→  allocConstId(_value: number): number {
+  1011→    return this.constCounter++;
+  1012→  }
+  1013→
+  1014→  // =========================================================================
+  1015→  // Time Model
+  1016→  // =========================================================================
+  1017→
+  1018→  setTimeModel(model: TimeModelIR): void {
+  1019→    this.timeModel = model;
+  1020→  }
+  1021→
+  1022→  getTimeModel(): TimeModelIR | undefined {
+  1023→    return this.timeModel;
+  1024→  }
+  1025→
+  1026→  // =========================================================================
+  1027→  // Pure Functions
+  1028→  // =========================================================================
+  1029→
+  1030→  opcode(op: OpCode): PureFn {
+  1031→    return { kind: 'opcode', opcode: op };
+  1032→  }
+  1033→
+  1034→  expr(expression: string): PureFn {
+  1035→    return { kind: 'expr', expr: expression };
+  1036→  }
+  1037→
+  1038→  kernel(name: string): PureFn {
+  1039→    return { kind: 'kernel', name };
+  1040→  }
+  1041→
+  1042→  // =========================================================================
+  1043→  // Build Result
+  1044→  // =========================================================================
+  1045→
+  1046→  getSigExprs(): readonly SigExpr[] {
+  1047→    return this.sigExprs;
+  1048→  }
+  1049→
+  1050→  getFieldExprs(): readonly FieldExpr[] {
+  1051→    return this.fieldExprs;
+  1052→  }
+  1053→
+  1054→  getEventExprs(): readonly EventExpr[] {
+  1055→    return this.eventExprs;
+  1056→  }
+  1057→
+  1058→  getSigSlots(): ReadonlyMap<number, ValueSlot> {
+  1059→    return this.sigSlots;
+  1060→  }
+  1061→
+  1062→  getFieldSlots(): ReadonlyMap<number, ValueSlot> {
+  1063→    return this.fieldSlots;
+  1064→  }
+  1065→
+  1066→  getEventSlots(): ReadonlyMap<EventExprId, EventSlotId> {
+  1067→    return this.eventSlots;
+  1068→  }
+  1069→
+  1070→  getEventSlotCount(): number {
+  1071→    return this.eventSlotCounter;
+  1072→  }
+  1073→
+  1074→  /**
+  1075→   * Get state mappings with stable IDs for hot-swap migration.
+  1076→   */
+  1077→  getStateMappings(): readonly StateMapping[] {
+  1078→    return this.stateMappings;
+  1079→  }
+  1080→
+  1081→
+  1082→  getStateSlotCount(): number {
+  1083→    return this.stateSlotCounter;
+  1084→  }
+  1085→
+  1086→  getSteps(): readonly Step[] {
+  1087→    return this.steps;
+  1088→  }
+  1089→
+  1090→  getSchedule(): TimeModelIR {
+  1091→    if (!this.timeModel) {
+  1092→      throw new Error('Time model not set');
+  1093→    }
+  1094→    return this.timeModel;
+  1095→  }
+  1096→}
+  1097→
+  1098→// =============================================================================
+  1099→// Hash-consing utility functions (I13)
+  1100→// =============================================================================
+  1101→// JSON.stringify is sufficient because all expression fields are readonly primitives/arrays
+  1102→// No circular references, no functions, deterministic order
+  1103→
+  1104→function hashSigExpr(expr: SigExpr): string {
+  1105→  return JSON.stringify(expr);
+  1106→}
+  1107→
+  1108→function hashFieldExpr(expr: FieldExpr): string {
+  1109→  return JSON.stringify(expr);
+  1110→}
+  1111→
+  1112→function hashEventExpr(expr: EventExpr): string {
+  1113→  return JSON.stringify(expr);
+  1114→}
+  1115→
+  1116→/**
+  1117→ * Create a new IRBuilder instance.
+  1118→ */
+  1119→export function createIRBuilder(): IRBuilder {
+  1120→  return new IRBuilderImpl();
+  1121→}
+  1122→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

@@ -1,0 +1,170 @@
+     1→/**
+     2→ * Dense Index Types for IR
+     3→ *
+     4→ * Branded types for dense numeric indices used in runtime lookups.
+     5→ * String IDs are for persistence and debugging; indices are for fast runtime access.
+     6→ */
+     7→
+     8→// =============================================================================
+     9→// Branded Index Types (Numeric)
+    10→// =============================================================================
+    11→
+    12→/** Dense index for nodes in the NodeTable. */
+    13→export type NodeIndex = number & { readonly __brand: 'NodeIndex' };
+    14→
+    15→/** Dense index for ports within a node. */
+    16→export type PortIndex = number & { readonly __brand: 'PortIndex' };
+    17→
+    18→
+    19→/** Dense index for value slots in the ValueStore. */
+    20→export type ValueSlot = number & { readonly __brand: 'ValueSlot' };
+    21→
+    22→/** Dense index for persistent state slots (cross-frame storage). */
+    23→export type StateSlotId = number & { readonly __brand: 'StateSlotId' };
+    24→
+    25→/** Dense index for steps in the Schedule. */
+    26→export type StepIndex = number & { readonly __brand: 'StepIndex' };
+    27→
+    28→/** Dense index for signal expressions. */
+    29→export type SigExprId = number & { readonly __brand: 'SigExprId' };
+    30→
+    31→/** Dense index for field expressions. */
+    32→export type FieldExprId = number & { readonly __brand: 'FieldExprId' };
+    33→
+    34→/** Dense index for event expressions. */
+    35→export type EventExprId = number & { readonly __brand: 'EventExprId' };
+    36→
+    37→/** Dense index for event slots (distinct from ValueSlot — events use boolean storage). */
+    38→export type EventSlotId = number & { readonly __brand: 'EventSlotId' };
+    39→
+    40→/** Dense index for transform chains. */
+    41→export type TransformChainId = number & { readonly __brand: 'TransformChainId' };
+    42→
+    43→// =============================================================================
+    44→// Branded ID Types (String)
+    45→// =============================================================================
+    46→
+    47→/** Stable string ID for nodes. */
+    48→export type NodeId = string & { readonly __brand: 'NodeId' };
+    49→
+    50→
+    51→/** Stable string ID for schedule steps. */
+    52→export type StepId = string & { readonly __brand: 'StepId' };
+    53→
+    54→/** Stable string ID for field expressions. */
+    55→export type ExprId = string & { readonly __brand: 'ExprId' };
+    56→
+    57→/** Stable string ID for state bindings. */
+    58→export type StateId = string & { readonly __brand: 'StateId' };
+    59→
+    60→
+    61→/**
+    62→ * Stable string ID for domain types (NEW).
+    63→ * Domain types classify elements (shape, circle, control, event).
+    64→ */
+    65→export type DomainTypeId = string & { readonly __brand: 'DomainTypeId' };
+    66→
+    67→/**
+    68→ * Stable string ID for instances (NEW).
+    69→ * Instances are specific instantiations of domain types (count, layout).
+    70→ */
+    71→export type InstanceId = string & { readonly __brand: 'InstanceId' };
+    72→
+    73→/** Stable string ID for slots. */
+    74→export type SlotId = string & { readonly __brand: 'SlotId' };
+    75→
+    76→// =============================================================================
+    77→// Factory Functions (Zero-cost casts)
+    78→// =============================================================================
+    79→
+    80→export function nodeIndex(n: number): NodeIndex {
+    81→  return n as NodeIndex;
+    82→}
+    83→
+    84→export function portIndex(n: number): PortIndex {
+    85→  return n as PortIndex;
+    86→}
+    87→
+    88→
+    89→export function valueSlot(n: number): ValueSlot {
+    90→  return n as ValueSlot;
+    91→}
+    92→
+    93→/**
+    94→ * Offset a value slot by a component index.
+    95→ * Used for reading/writing individual components of multi-component values (vec2, vec3, color).
+    96→ *
+    97→ * Example:
+    98→ *   const baseSlot = allocSlot(3); // vec3
+    99→ *   const xSlot = slotOffset(baseSlot, 0);
+   100→ *   const ySlot = slotOffset(baseSlot, 1);
+   101→ *   const zSlot = slotOffset(baseSlot, 2);
+   102→ */
+   103→export function slotOffset(base: ValueSlot, offset: number): ValueSlot {
+   104→  return ((base as number) + offset) as ValueSlot;
+   105→}
+   106→
+   107→export function stateSlotId(n: number): StateSlotId {
+   108→  return n as StateSlotId;
+   109→}
+   110→
+   111→export function stepIndex(n: number): StepIndex {
+   112→  return n as StepIndex;
+   113→}
+   114→
+   115→export function sigExprId(n: number): SigExprId {
+   116→  return n as SigExprId;
+   117→}
+   118→
+   119→export function fieldExprId(n: number): FieldExprId {
+   120→  return n as FieldExprId;
+   121→}
+   122→
+   123→export function eventExprId(n: number): EventExprId {
+   124→  return n as EventExprId;
+   125→}
+   126→
+   127→export function eventSlotId(n: number): EventSlotId {
+   128→  return n as EventSlotId;
+   129→}
+   130→
+   131→export function nodeId(s: string): NodeId {
+   132→  return s as NodeId;
+   133→}
+   134→
+   135→
+   136→export function stepId(s: string): StepId {
+   137→  return s as StepId;
+   138→}
+   139→
+   140→export function exprId(s: string): ExprId {
+   141→  return s as ExprId;
+   142→}
+   143→
+   144→export function stateId(s: string): StateId {
+   145→  return s as StateId;
+   146→}
+   147→
+   148→
+   149→/**
+   150→ * Create a DomainTypeId (NEW).
+   151→ */
+   152→export function domainTypeId(s: string): DomainTypeId {
+   153→  return s as DomainTypeId;
+   154→}
+   155→
+   156→/**
+   157→ * Create an InstanceId (NEW).
+   158→ */
+   159→export function instanceId(s: string): InstanceId {
+   160→  return s as InstanceId;
+   161→}
+   162→
+   163→export function slotId(s: string): SlotId {
+   164→  return s as SlotId;
+   165→}
+   166→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

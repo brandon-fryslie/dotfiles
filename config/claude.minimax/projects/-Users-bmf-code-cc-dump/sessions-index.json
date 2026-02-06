@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "sessionId": "8289e7ba-c9ce-4df0-8ef3-7b1648971270",
+      "fullPath": "/Users/bmf/code/dotfiles/config/claude.minimax/projects/-Users-bmf-code-cc-dump/8289e7ba-c9ce-4df0-8ef3-7b1648971270.jsonl",
+      "fileMtime": 1769663756839,
+      "firstPrompt": "minimax",
+      "summary": "cc-dump proxy target URL fix",
+      "messageCount": 12,
+      "created": "2026-01-29T04:04:31.322Z",
+      "modified": "2026-01-29T04:08:01.273Z",
+      "gitBranch": "master",
+      "projectPath": "/Users/bmf/code/cc-dump",
+      "isSidechain": false
+    }
+  ],
+  "originalPath": "/Users/bmf/code/cc-dump"
+}

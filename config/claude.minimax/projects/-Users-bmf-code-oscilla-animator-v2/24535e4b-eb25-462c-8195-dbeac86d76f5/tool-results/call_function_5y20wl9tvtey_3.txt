@@ -1,0 +1,647 @@
+     1→# Implementation Context: const-value
+     2→
+     3→## Overview
+     4→Replace loose `value: number | string | boolean` with strongly-typed ConstValue discriminated union. This enforces Invariant I5 (const literal shape matches payload) at compile time and runtime.
+     5→
+     6→---
+     7→
+     8→## Files to Modify
+     9→
+    10→1. **src/core/canonical-types.ts** (or src/compiler/ir/types.ts) — add ConstValue type
+    11→2. **src/compiler/ir/types.ts** — update SigExprConst and FieldExprConst
+    12→3. **All const construction sites** (~40 files, TypeScript will identify)
+    13→4. **src/compiler/passes-v2/axis-enforcement.ts** — add ConstValue validation
+    14→5. **src/compiler/passes-v2/__tests__/axis-enforcement.test.ts** — add tests
+    15→6. **src/core/__tests__/canonical-types.test.ts** — add constValueMatchesPayload tests
+    16→
+    17→---
+    18→
+    19→## Step 1: Define ConstValue Type
+    20→
+    21→**File**: `src/core/canonical-types.ts` (recommended) OR `src/compiler/ir/types.ts`
+    22→
+    23→**Location**: After CanonicalType definition, before helper functions
+    24→
+    25→```typescript
+    26→/**
+    27→ * Strongly-typed constant value representation.
+    28→ * 
+    29→ * INVARIANT I5 (15-FiveAxesTypeSystem-Conclusion.md:95-99):
+    30→ * ConstValue.kind MUST match CanonicalType.payload.kind
+    31→ * 
+    32→ * Enforcement:
+    33→ * 1. Compile time: TypeScript prevents wrong value types
+    34→ * 2. Runtime: Axis enforcement validates kind matches payload
+    35→ * 
+    36→ * Tuple values are readonly to prevent mutation and maintain
+    37→ * CanonicalType immutability contract.
+    38→ * 
+    39→ * @see constValueMatchesPayload for validation helper
+    40→ */
+    41→export type ConstValue =
+    42→  | { readonly kind: 'float'; readonly value: number }
+    43→  | { readonly kind: 'int'; readonly value: number }
+    44→  | { readonly kind: 'bool'; readonly value: boolean }
+    45→  | { readonly kind: 'vec2'; readonly value: readonly [number, number] }
+    46→  | { readonly kind: 'vec3'; readonly value: readonly [number, number, number] }
+    47→  | { readonly kind: 'color'; readonly value: readonly [number, number, number, number] }
+    48→  | { readonly kind: 'cameraProjection'; readonly value: string };
+    49→
+    50→/**
+    51→ * Validate that ConstValue.kind matches PayloadType.kind.
+    52→ * 
+    53→ * Used by axis enforcement pass to catch payload mismatches at runtime.
+    54→ * 
+    55→ * @returns true if kinds match, false otherwise
+    56→ * 
+    57→ * @example
+    58→ * const payload: PayloadType = { kind: 'float' };
+    59→ * const value: ConstValue = { kind: 'float', value: 42.0 };
+    60→ * constValueMatchesPayload(payload, value); // true
+    61→ * 
+    62→ * const wrongValue: ConstValue = { kind: 'vec2', value: [1, 2] };
+    63→ * constValueMatchesPayload(payload, wrongValue); // false
+    64→ */
+    65→export function constValueMatchesPayload(
+    66→  payload: PayloadType,
+    67→  constValue: ConstValue
+    68→): boolean {
+    69→  return payload.kind === constValue.kind;
+    70→}
+    71→```
+    72→
+    73→**Import additions**:
+    74→```typescript
+    75→// If ConstValue is in canonical-types.ts
+    76→export type { ConstValue } from './canonical-types';
+    77→export { constValueMatchesPayload } from './canonical-types';
+    78→
+    79→// PayloadType should already be defined/imported
+    80→import type { PayloadType } from './canonical-types';
+    81→```
+    82→
+    83→---
+    84→
+    85→## Step 2: Optional Helper Functions (Recommended)
+    86→
+    87→**File**: Same file as ConstValue definition
+    88→
+    89→**Location**: After constValueMatchesPayload
+    90→
+    91→```typescript
+    92→/**
+    93→ * Helper constructors for common ConstValue types.
+    94→ * These make construction sites more concise.
+    95→ */
+    96→
+    97→export function floatConst(value: number): ConstValue {
+    98→  return { kind: 'float', value };
+    99→}
+   100→
+   101→export function intConst(value: number): ConstValue {
+   102→  return { kind: 'int', value };
+   103→}
+   104→
+   105→export function boolConst(value: boolean): ConstValue {
+   106→  return { kind: 'bool', value };
+   107→}
+   108→
+   109→export function vec2Const(x: number, y: number): ConstValue {
+   110→  return { kind: 'vec2', value: [x, y] as const };
+   111→}
+   112→
+   113→export function vec3Const(x: number, y: number, z: number): ConstValue {
+   114→  return { kind: 'vec3', value: [x, y, z] as const };
+   115→}
+   116→
+   117→export function colorConst(r: number, g: number, b: number, a: number): ConstValue {
+   118→  return { kind: 'color', value: [r, g, b, a] as const };
+   119→}
+   120→
+   121→export function cameraProjectionConst(value: string): ConstValue {
+   122→  return { kind: 'cameraProjection', value };
+   123→}
+   124→```
+   125→
+   126→---
+   127→
+   128→## Step 3: Update Expression Interfaces
+   129→
+   130→**File**: `src/compiler/ir/types.ts`
+   131→
+   132→**Import addition** (if ConstValue is in canonical-types.ts):
+   133→```typescript
+   134→import type { CanonicalType, ConstValue } from '../../core/canonical-types';
+   135→```
+   136→
+   137→**Location 1: Line ~98 (SigExprConst)**
+   138→```typescript
+   139→// BEFORE
+   140→export interface SigExprConst {
+   141→  readonly kind: 'const';
+   142→  readonly type: CanonicalType;
+   143→  readonly value: number | string | boolean;  // <-- REPLACE
+   144→}
+   145→
+   146→// AFTER
+   147→export interface SigExprConst {
+   148→  readonly kind: 'const';
+   149→  readonly type: CanonicalType;
+   150→  readonly value: ConstValue;  // <-- NEW
+   151→}
+   152→```
+   153→
+   154→**Location 2: Line ~225-230 (FieldExprConst)**
+   155→```typescript
+   156→// BEFORE
+   157→export interface FieldExprConst {
+   158→  readonly kind: 'const';
+   159→  readonly type: CanonicalType;
+   160→  readonly value: number | string | boolean;  // <-- REPLACE
+   161→}
+   162→
+   163→// AFTER
+   164→export interface FieldExprConst {
+   165→  readonly kind: 'const';
+   166→  readonly type: CanonicalType;
+   167→  readonly value: ConstValue;  // <-- NEW
+   168→}
+   169→```
+   170→
+   171→---
+   172→
+   173→## Step 4: Find and Update Construction Sites
+   174→
+   175→**After Step 3, TypeScript will error at all construction sites.**
+   176→
+   177→**Search commands:**
+   178→```bash
+   179→# Find SigExprConst construction
+   180→grep -rn "kind: 'const'" src/ | grep -i sig
+   181→
+   182→# Find FieldExprConst construction
+   183→grep -rn "kind: 'const'" src/ | grep -i field
+   184→
+   185→# Find generic const construction
+   186→grep -rn "readonly value:" src/compiler/ir/
+   187→```
+   188→
+   189→**TypeScript will identify all sites:**
+   190→```bash
+   191→npm run typecheck 2>&1 | grep -E "SigExprConst|FieldExprConst|value"
+   192→```
+   193→
+   194→**Common patterns:**
+   195→
+   196→### Pattern 1: Numeric constant (float)
+   197→```typescript
+   198→// BEFORE
+   199→const expr: SigExprConst = {
+   200→  kind: 'const',
+   201→  type: floatType,
+   202→  value: 42.0  // Raw number
+   203→};
+   204→
+   205→// AFTER
+   206→import { floatConst } from '../../core/canonical-types';
+   207→const expr: SigExprConst = {
+   208→  kind: 'const',
+   209→  type: floatType,
+   210→  value: floatConst(42.0)  // Wrapped
+   211→};
+   212→
+   213→// OR inline:
+   214→const expr: SigExprConst = {
+   215→  kind: 'const',
+   216→  type: floatType,
+   217→  value: { kind: 'float', value: 42.0 }
+   218→};
+   219→```
+   220→
+   221→### Pattern 2: Boolean constant
+   222→```typescript
+   223→// BEFORE
+   224→const expr: SigExprConst = {
+   225→  kind: 'const',
+   226→  type: boolType,
+   227→  value: true  // Raw boolean
+   228→};
+   229→
+   230→// AFTER
+   231→import { boolConst } from '../../core/canonical-types';
+   232→const expr: SigExprConst = {
+   233→  kind: 'const',
+   234→  type: boolType,
+   235→  value: boolConst(true)
+   236→};
+   237→```
+   238→
+   239→### Pattern 3: Vec2 constant
+   240→```typescript
+   241→// BEFORE
+   242→const expr: SigExprConst = {
+   243→  kind: 'const',
+   244→  type: vec2Type,
+   245→  value: [1.0, 2.0]  // Raw array (WRONG TYPE)
+   246→};
+   247→
+   248→// AFTER
+   249→import { vec2Const } from '../../core/canonical-types';
+   250→const expr: SigExprConst = {
+   251→  kind: 'const',
+   252→  type: vec2Type,
+   253→  value: vec2Const(1.0, 2.0)
+   254→};
+   255→
+   256→// OR inline:
+   257→const expr: SigExprConst = {
+   258→  kind: 'const',
+   259→  type: vec2Type,
+   260→  value: { kind: 'vec2', value: [1.0, 2.0] as const }
+   261→};
+   262→```
+   263→
+   264→### Pattern 4: Dynamic value (inspect payload.kind)
+   265→```typescript
+   266→// BEFORE
+   267→function createConst(type: CanonicalType, rawValue: any): SigExprConst {
+   268→  return {
+   269→    kind: 'const',
+   270→    type,
+   271→    value: rawValue  // Unsafe
+   272→  };
+   273→}
+   274→
+   275→// AFTER
+   276→function createConst(type: CanonicalType, rawValue: any): SigExprConst {
+   277→  const constValue = convertToConstValue(type.payload, rawValue);
+   278→  return {
+   279→    kind: 'const',
+   280→    type,
+   281→    value: constValue
+   282→  };
+   283→}
+   284→
+   285→function convertToConstValue(payload: PayloadType, rawValue: any): ConstValue {
+   286→  switch (payload.kind) {
+   287→    case 'float':
+   288→      return { kind: 'float', value: Number(rawValue) };
+   289→    case 'int':
+   290→      return { kind: 'int', value: Math.floor(Number(rawValue)) };
+   291→    case 'bool':
+   292→      return { kind: 'bool', value: Boolean(rawValue) };
+   293→    case 'vec2':
+   294→      const [x, y] = rawValue;
+   295→      return { kind: 'vec2', value: [x, y] as const };
+   296→    case 'vec3':
+   297→      const [x3, y3, z] = rawValue;
+   298→      return { kind: 'vec3', value: [x3, y3, z] as const };
+   299→    case 'color':
+   300→      const [r, g, b, a] = rawValue;
+   301→      return { kind: 'color', value: [r, g, b, a] as const };
+   302→    case 'cameraProjection':
+   303→      return { kind: 'cameraProjection', value: String(rawValue) };
+   304→    default:
+   305→      throw new Error(`Unknown payload kind: ${(payload as any).kind}`);
+   306→  }
+   307→}
+   308→```
+   309→
+   310→**Estimate**: 40+ construction sites in:
+   311→- `src/compiler/ir-builder/` (IR construction)
+   312→- `src/compiler/passes-v2/` (normalization, optimization)
+   313→- `src/__tests__/` (test fixtures)
+   314→- `src/runtime/` (if runtime creates const expressions)
+   315→
+   316→---
+   317→
+   318→## Step 5: Integrate with Axis Enforcement
+   319→
+   320→**File**: `src/compiler/passes-v2/axis-enforcement.ts`
+   321→
+   322→**Import addition**:
+   323→```typescript
+   324→import { constValueMatchesPayload } from '../../core/canonical-types';
+   325→```
+   326→
+   327→**Location**: In validateAxes function, add new check after existing checks
+   328→
+   329→```typescript
+   330→export function validateAxes(patch: TypedPatch): AxisInvalidDiagnostic[] {
+   331→  const diagnostics: AxisInvalidDiagnostic[] = [];
+   332→
+   333→  // ... existing EventExpr, SigExpr, FieldExpr checks ...
+   334→
+   335→  // NEW: Check ConstValue matches payload
+   336→  const constExprs = [
+   337→    ...findAllConstSigExpr(patch),
+   338→    ...findAllConstFieldExpr(patch)
+   339→  ];
+   340→
+   341→  for (const expr of constExprs) {
+   342→    if (expr.kind === 'const') {
+   343→      const payload = expr.type.payload;
+   344→      const value = expr.value;
+   345→      
+   346→      if (!constValueMatchesPayload(payload, value)) {
+   347→        diagnostics.push({
+   348→          kind: 'AxisInvalid',
+   349→          location: getExprLocation(expr),
+   350→          reason: 'Const value kind must match payload kind (Invariant I5)',
+   351→          expressionKind: 'SigExprConst' or 'FieldExprConst',  // Derive from expr
+   352→          violation: `value.kind=${value.kind}, payload.kind=${payload.kind}`
+   353→        });
+   354→      }
+   355→    }
+   356→  }
+   357→
+   358→  return diagnostics;
+   359→}
+   360→
+   361→// Helper functions
+   362→function findAllConstSigExpr(patch: TypedPatch): SigExprConst[] {
+   363→  return patch.signals.filter(
+   364→    (expr): expr is SigExprConst => expr.kind === 'const'
+   365→  );
+   366→}
+   367→
+   368→function findAllConstFieldExpr(patch: TypedPatch): FieldExprConst[] {
+   369→  return patch.fields.filter(
+   370→    (expr): expr is FieldExprConst => expr.kind === 'const'
+   371→  );
+   372→}
+   373→```
+   374→
+   375→---
+   376→
+   377→## Step 6: Add Tests
+   378→
+   379→### File 1: Axis Enforcement Tests
+   380→
+   381→**File**: `src/compiler/passes-v2/__tests__/axis-enforcement.test.ts`
+   382→
+   383→**Location**: Add new describe block after existing tests
+   384→
+   385→```typescript
+   386→describe('Axis Enforcement: ConstValue Payload Matching', () => {
+   387→  test('Float const with float payload passes', () => {
+   388→    const expr: SigExprConst = {
+   389→      kind: 'const',
+   390→      type: {
+   391→        payload: { kind: 'float' },
+   392→        unit: { kind: 'none' },
+   393→        extent: defaultExtent()  // Helper for standard extent
+   394→      },
+   395→      value: { kind: 'float', value: 42.0 }
+   396→    };
+   397→    const patch: TypedPatch = { events: [], signals: [expr], fields: [] };
+   398→
+   399→    const diagnostics = validateAxes(patch);
+   400→    expect(diagnostics).toHaveLength(0);
+   401→  });
+   402→
+   403→  test('Bool const with bool payload passes', () => {
+   404→    const expr: SigExprConst = {
+   405→      kind: 'const',
+   406→      type: {
+   407→        payload: { kind: 'bool' },
+   408→        unit: { kind: 'none' },
+   409→        extent: defaultExtent()
+   410→      },
+   411→      value: { kind: 'bool', value: true }
+   412→    };
+   413→    const patch: TypedPatch = { events: [], signals: [expr], fields: [] };
+   414→
+   415→    const diagnostics = validateAxes(patch);
+   416→    expect(diagnostics).toHaveLength(0);
+   417→  });
+   418→
+   419→  test('Vec2 const with vec2 payload passes', () => {
+   420→    const expr: SigExprConst = {
+   421→      kind: 'const',
+   422→      type: {
+   423→        payload: { kind: 'vec2' },
+   424→        unit: { kind: 'none' },
+   425→        extent: defaultExtent()
+   426→      },
+   427→      value: { kind: 'vec2', value: [1.0, 2.0] as const }
+   428→    };
+   429→    const patch: TypedPatch = { events: [], signals: [expr], fields: [] };
+   430→
+   431→    const diagnostics = validateAxes(patch);
+   432→    expect(diagnostics).toHaveLength(0);
+   433→  });
+   434→
+   435→  test('Float const with vec2 payload fails', () => {
+   436→    const expr: SigExprConst = {
+   437→      kind: 'const',
+   438→      type: {
+   439→        payload: { kind: 'vec2' },  // Expects vec2
+   440→        unit: { kind: 'none' },
+   441→        extent: defaultExtent()
+   442→      },
+   443→      value: { kind: 'float', value: 42.0 }  // MISMATCH
+   444→    };
+   445→    const patch: TypedPatch = { events: [], signals: [expr], fields: [] };
+   446→
+   447→    const diagnostics = validateAxes(patch);
+   448→    expect(diagnostics).toHaveLength(1);
+   449→    expect(diagnostics[0].kind).toBe('AxisInvalid');
+   450→    expect(diagnostics[0].reason).toContain('Const value kind must match payload kind');
+   451→    expect(diagnostics[0].violation).toBe('value.kind=float, payload.kind=vec2');
+   452→  });
+   453→
+   454→  test('Vec2 const with float payload fails', () => {
+   455→    const expr: SigExprConst = {
+   456→      kind: 'const',
+   457→      type: {
+   458→        payload: { kind: 'float' },  // Expects float
+   459→        unit: { kind: 'none' },
+   460→        extent: defaultExtent()
+   461→      },
+   462→      value: { kind: 'vec2', value: [1.0, 2.0] as const }  // MISMATCH
+   463→    };
+   464→    const patch: TypedPatch = { events: [], signals: [expr], fields: [] };
+   465→
+   466→    const diagnostics = validateAxes(patch);
+   467→    expect(diagnostics).toHaveLength(1);
+   468→    expect(diagnostics[0].kind).toBe('AxisInvalid');
+   469→    expect(diagnostics[0].violation).toBe('value.kind=vec2, payload.kind=float');
+   470→  });
+   471→
+   472→  test('Int const with bool payload fails', () => {
+   473→    const expr: SigExprConst = {
+   474→      kind: 'const',
+   475→      type: {
+   476→        payload: { kind: 'bool' },
+   477→        unit: { kind: 'none' },
+   478→        extent: defaultExtent()
+   479→      },
+   480→      value: { kind: 'int', value: 1 }  // MISMATCH
+   481→    };
+   482→    const patch: TypedPatch = { events: [], signals: [expr], fields: [] };
+   483→
+   484→    const diagnostics = validateAxes(patch);
+   485→    expect(diagnostics).toHaveLength(1);
+   486→  });
+   487→
+   488→  // Add tests for: vec3, color, cameraProjection
+   489→});
+   490→
+   491→// Helper for default extent
+   492→function defaultExtent(): Extent {
+   493→  return {
+   494→    cardinality: { kind: 'inst', value: { kind: 'one' } },
+   495→    temporality: { kind: 'inst', value: { kind: 'continuous' } },
+   496→    binding: { kind: 'inst', value: { kind: 'unbound' } },
+   497→    perspective: { kind: 'inst', value: { kind: 'default' } },
+   498→    branch: { kind: 'inst', value: { kind: 'main' } }
+   499→  };
+   500→}
+   501→```
+   502→
+   503→### File 2: ConstValue Unit Tests
+   504→
+   505→**File**: `src/core/__tests__/canonical-types.test.ts`
+   506→
+   507→**Location**: Add new describe block after existing tests
+   508→
+   509→```typescript
+   510→describe('constValueMatchesPayload', () => {
+   511→  test('float value matches float payload', () => {
+   512→    const payload: PayloadType = { kind: 'float' };
+   513→    const value: ConstValue = { kind: 'float', value: 42.0 };
+   514→    
+   515→    expect(constValueMatchesPayload(payload, value)).toBe(true);
+   516→  });
+   517→
+   518→  test('float value does not match vec2 payload', () => {
+   519→    const payload: PayloadType = { kind: 'vec2' };
+   520→    const value: ConstValue = { kind: 'float', value: 42.0 };
+   521→    
+   522→    expect(constValueMatchesPayload(payload, value)).toBe(false);
+   523→  });
+   524→
+   525→  test('bool value matches bool payload', () => {
+   526→    const payload: PayloadType = { kind: 'bool' };
+   527→    const value: ConstValue = { kind: 'bool', value: true };
+   528→    
+   529→    expect(constValueMatchesPayload(payload, value)).toBe(true);
+   530→  });
+   531→
+   532→  test('vec2 value matches vec2 payload', () => {
+   533→    const payload: PayloadType = { kind: 'vec2' };
+   534→    const value: ConstValue = { kind: 'vec2', value: [1.0, 2.0] as const };
+   535→    
+   536→    expect(constValueMatchesPayload(payload, value)).toBe(true);
+   537→  });
+   538→
+   539→  test('vec3 value matches vec3 payload', () => {
+   540→    const payload: PayloadType = { kind: 'vec3' };
+   541→    const value: ConstValue = { kind: 'vec3', value: [1.0, 2.0, 3.0] as const };
+   542→    
+   543→    expect(constValueMatchesPayload(payload, value)).toBe(true);
+   544→  });
+   545→
+   546→  test('color value matches color payload', () => {
+   547→    const payload: PayloadType = { kind: 'color' };
+   548→    const value: ConstValue = { kind: 'color', value: [1.0, 0.5, 0.0, 1.0] as const };
+   549→    
+   550→    expect(constValueMatchesPayload(payload, value)).toBe(true);
+   551→  });
+   552→
+   553→  test('cameraProjection value matches cameraProjection payload', () => {
+   554→    const payload: PayloadType = { kind: 'cameraProjection' };
+   555→    const value: ConstValue = { kind: 'cameraProjection', value: 'perspective' };
+   556→    
+   557→    expect(constValueMatchesPayload(payload, value)).toBe(true);
+   558→  });
+   559→});
+   560→
+   561→describe('ConstValue immutability', () => {
+   562→  test('vec2 tuple is readonly', () => {
+   563→    const value: ConstValue = { kind: 'vec2', value: [1.0, 2.0] as const };
+   564→    
+   565→    // TypeScript should prevent mutation
+   566→    // Uncomment to verify:
+   567→    // @ts-expect-error — readonly tuple
+   568→    // value.value[0] = 99.0;
+   569→    
+   570→    expect(value.value).toEqual([1.0, 2.0]);
+   571→  });
+   572→
+   573→  test('vec3 tuple is readonly', () => {
+   574→    const value: ConstValue = { kind: 'vec3', value: [1.0, 2.0, 3.0] as const };
+   575→    expect(value.value).toEqual([1.0, 2.0, 3.0]);
+   576→  });
+   577→
+   578→  test('color tuple is readonly', () => {
+   579→    const value: ConstValue = { kind: 'color', value: [1.0, 0.5, 0.0, 1.0] as const };
+   580→    expect(value.value).toEqual([1.0, 0.5, 0.0, 1.0]);
+   581→  });
+   582→});
+   583→```
+   584→
+   585→---
+   586→
+   587→## Verification
+   588→
+   589→### TypeScript Compilation
+   590→```bash
+   591→npm run typecheck
+   592→# Should have ZERO errors
+   593→```
+   594→
+   595→### Unit Tests
+   596→```bash
+   597→npm test -- canonical-types.test.ts
+   598→npm test -- axis-enforcement.test.ts
+   599→```
+   600→
+   601→### Full Test Suite
+   602→```bash
+   603→npm test
+   604→# All tests should pass
+   605→```
+   606→
+   607→### Grep Verification
+   608→```bash
+   609→# Should return 0 results for raw value assignments in const expressions
+   610→grep -rn "value: [0-9]" src/compiler/ir/ | grep -E "SigExprConst|FieldExprConst"
+   611→```
+   612→
+   613→---
+   614→
+   615→## Adjacent Code Patterns
+   616→
+   617→### Existing discriminated unions (for reference)
+   618→```typescript
+   619→// From CanonicalType (existing pattern)
+   620→export type PayloadType =
+   621→  | { readonly kind: 'float' }
+   622→  | { readonly kind: 'int' }
+   623→  | { readonly kind: 'bool' }
+   624→  | { readonly kind: 'vec2' }
+   625→  | { readonly kind: 'vec3' }
+   626→  | { readonly kind: 'color' }
+   627→  | { readonly kind: 'cameraProjection' };
+   628→```
+   629→
+   630→ConstValue follows this exact pattern with added value field.
+   631→
+   632→### Existing const expression (for reference)
+   633→```typescript
+   634→// SigExpr (already has type field)
+   635→export interface SigExprConst {
+   636→  readonly kind: 'const';
+   637→  readonly type: CanonicalType;  // <-- Follow this pattern
+   638→  readonly value: ConstValue;    // <-- Add ConstValue
+   639→}
+   640→```
+   641→
+   642→ConstValue completes the type safety for const expressions.
+   643→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

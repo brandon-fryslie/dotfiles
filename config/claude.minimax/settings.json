@@ -1,0 +1,8 @@
+{
+  "enabledPlugins": {
+    "do-more@loom99": true,
+    "do@loom99": true,
+    "do-extra@loom99": true,
+    "typescript-lsp@claude-plugins-official": true
+  }
+}

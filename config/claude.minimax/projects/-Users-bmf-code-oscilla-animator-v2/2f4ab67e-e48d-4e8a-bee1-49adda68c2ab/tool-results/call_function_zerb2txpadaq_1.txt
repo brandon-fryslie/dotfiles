@@ -1,0 +1,24 @@
+     1→/**
+     2→ * Canonical Type System for Oscilla v2.5
+     3→ *
+     4→ * This module implements the 5-axis type system as specified in:
+     5→ * design-docs/spec/CANONICAL-ARCHITECTURE-oscilla-v2.5-20260109-160000.md
+     6→ *
+     7→ * The type system separates concerns into:
+     8→ * - PayloadType: What the value is made of (float, vec2, color, etc.)
+     9→ * - Extent: Where/when/about-what a value exists (5 independent axes)
+    10→ * - CanonicalType: Complete type contract (payload + extent + unit)
+    11→ * - NumericUnit: Optional unit annotation for numeric types (phase, radians, etc.)
+    12→ *
+    13→ * Key design principles:
+    14→ * - No optional fields - use discriminated unions (AxisTag pattern)
+    15→ * - Runtime erasure - all type info resolved at compile time
+    16→ * - Single source of truth - this is the authoritative type system
+    17→ */
+    18→
+    19→// =============================================================================
+    20→// Unit - Closed Discriminated Union (Spec §A3)
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>

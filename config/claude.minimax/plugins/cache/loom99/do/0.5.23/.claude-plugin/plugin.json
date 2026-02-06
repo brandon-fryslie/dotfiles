@@ -1,0 +1,11 @@
+{
+  "name": "do",
+  "version": "0.5.23",
+  "description": "do: stop trying. start doing.",
+  "author": {
+    "name": "Brandon Fryslie",
+    "email": ""
+  },
+  "license": "MIT",
+  "keywords": ["light-touch", "agentic", "harness"]
+}

@@ -1,0 +1,6 @@
+> oscilla-animator-v2@0.0.1 typecheck
+> tsc -b
+
+src/compiler/__tests__/instance-unification.test.ts(85,28): error TS2339: Property 'fieldArray' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(251,21): error TS2339: Property 'fieldArray' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(252,21): error TS2339: Property 'fieldArray' does not exist on type 'IRBuilderImpl'.

@@ -1,0 +1,49 @@
+> oscilla-animator-v2@0.0.1 typecheck
+> tsc -b
+
+src/blocks/__tests__/expression-blocks.test.ts(86,7): error TS2740: Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/compiler/__tests__/instance-unification.test.ts(63,27): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(85,28): error TS2339: Property 'fieldArray' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(104,29): error TS2339: Property 'fieldZipSig' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(121,24): error TS2339: Property 'fieldMap' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(134,24): error TS2339: Property 'fieldZipSig' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(146,24): error TS2339: Property 'fieldZip' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(161,11): error TS2339: Property 'fieldZip' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(171,27): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(174,24): error TS2339: Property 'fieldZip' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(184,24): error TS2339: Property 'fieldZip' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(185,24): error TS2339: Property 'fieldMap' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(198,28): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(199,28): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/__tests__/instance-unification.test.ts(202,24): error TS2339: Property 'fieldZip' does not exist on type 'IRBuilderImpl'.
+src/compiler/backend/lower-blocks.ts(819,9): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/compiler/backend/lower-blocks.ts(853,11): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/compiler/backend/lower-blocks.ts(893,5): error TS2740: Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/compiler/ir/__tests__/hash-consing.test.ts(130,23): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(132,25): error TS2339: Property 'ReduceField' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(133,25): error TS2339: Property 'ReduceField' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(206,21): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(207,21): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(251,21): error TS2339: Property 'fieldArray' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(252,21): error TS2339: Property 'fieldArray' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(426,28): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(427,28): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/__tests__/hash-consing.test.ts(428,28): error TS2339: Property 'Broadcast' does not exist on type 'IRBuilderImpl'.
+src/compiler/ir/IRBuilderImpl.ts(54,14): error TS2420: Class 'IRBuilderImpl' incorrectly implements interface 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/compiler/ir/IRBuilderImpl.ts(1100,3): error TS2740: Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/expr/__tests__/integration.test.ts(25,7): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/expr/__tests__/integration.test.ts(45,7): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/expr/__tests__/integration.test.ts(71,7): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/expr/__tests__/integration.test.ts(96,7): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/expr/__tests__/integration.test.ts(114,7): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/expr/__tests__/integration.test.ts(132,7): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.
+  Type 'IRBuilderImpl' is missing the following properties from type 'IRBuilder': ReduceField, Broadcast, fieldMap, fieldZip, and 2 more.
+src/expr/__tests__/integration.test.ts(149,7): error TS2345: Argument of type 'IRBuilderImpl' is not assignable to parameter of type 'IRBuilder'.

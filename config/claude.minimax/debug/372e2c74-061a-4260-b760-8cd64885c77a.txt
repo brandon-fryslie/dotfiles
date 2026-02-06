@@ -1,0 +1,644 @@
+2026-01-29T03:57:54.849Z [DEBUG] Failed to check enabledPlatforms: TypeError: undefined is not an object (evaluating 'mZ.join')
+2026-01-29T03:57:54.909Z [DEBUG] Watching for changes in setting files /Users/bmf/code/oscilla-animator-v2/.claude...
+2026-01-29T03:57:54.910Z [DEBUG] [init] configureGlobalMTLS starting
+2026-01-29T03:57:54.910Z [DEBUG] [init] configureGlobalMTLS complete
+2026-01-29T03:57:54.910Z [DEBUG] [init] configureGlobalAgents starting
+2026-01-29T03:57:54.910Z [DEBUG] [init] configureGlobalAgents complete
+2026-01-29T03:57:54.912Z [DEBUG] Applying permission update: Adding 14 allow rule(s) to destination 'localSettings': ["Bash(osascript:*)","mcp__cherry-chrome__chrome_list_connections","Bash(lsof:*)","Skill(do:it)","Skill(do:it-skill)","Skill(do:plan-skill)","Skill(do:plan)","Skill(superpowers:brainstorming)","Bash(pkill:*)","mcp__cherry-chrome__chrome","mcp__cherry-chrome__connect","mcp__chatgpt-convo__chatgpt","mcp__cherry-chrome__query_elements","Bash(bd list:*)"]
+2026-01-29T03:57:54.912Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-01-29T03:57:54.913Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:54.913Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:54.913Z [DEBUG] [STARTUP] Running setup()...
+2026-01-29T03:57:54.913Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-29T03:57:54.914Z [DEBUG] Loading skills from: managed=/Library/Application Support/ClaudeCode/.claude/skills, user=/Users/bmf/code/dotfiles/config/claude.minimax/skills, project=[/Users/bmf/code/oscilla-animator-v2/.claude/skills]
+2026-01-29T03:57:54.918Z [DEBUG] Error log sink initialized
+2026-01-29T03:57:54.919Z [DEBUG] getPluginSkills: Processing 0 enabled plugins
+2026-01-29T03:57:54.919Z [DEBUG] Total plugin skills loaded: 0
+2026-01-29T03:57:54.919Z [DEBUG] Total plugin commands loaded: 0
+2026-01-29T03:57:54.919Z [DEBUG] Registered 0 hooks from 0 plugins
+2026-01-29T03:57:54.919Z [DEBUG] [STARTUP] setup() completed in 6ms
+2026-01-29T03:57:54.919Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-01-29T03:57:54.920Z [DEBUG] Total plugin agents loaded: 0
+2026-01-29T03:57:54.920Z [DEBUG] Loaded 7 unique skills (managed: 0, user: 0, project: 7, legacy commands: 0)
+2026-01-29T03:57:54.920Z [DEBUG] getSkills returning: 7 skill dir commands, 0 plugin skills, 1 bundled skills
+2026-01-29T03:57:54.920Z [DEBUG] [STARTUP] Commands and agents loaded in 1ms
+2026-01-29T03:57:54.920Z [DEBUG] [STARTUP] Running showSetupScreens()...
+2026-01-29T03:57:54.923Z [DEBUG] [Perfetto] initializePerfettoTracing called, env value: undefined
+2026-01-29T03:57:54.925Z [DEBUG] [STARTUP] showSetupScreens() completed in 5ms
+2026-01-29T03:57:54.925Z [DEBUG] [LSP MANAGER] initializeLspServerManager() called
+2026-01-29T03:57:54.925Z [DEBUG] [LSP MANAGER] Created manager instance, state=pending
+2026-01-29T03:57:54.925Z [DEBUG] [LSP MANAGER] Starting async initialization (generation 1)
+2026-01-29T03:57:54.925Z [DEBUG] Total LSP servers loaded: 0
+2026-01-29T03:57:54.925Z [DEBUG] [STARTUP] MCP configs loaded in 13ms
+2026-01-29T03:57:54.928Z [DEBUG] MCP server "cherry-chrome": Starting connection with timeout of 30000ms
+2026-01-29T03:57:54.928Z [DEBUG] [LSP SERVER MANAGER] getAllLspServers returned 0 server(s)
+2026-01-29T03:57:54.928Z [DEBUG] LSP manager initialized with 0 servers
+2026-01-29T03:57:54.928Z [DEBUG] LSP server manager initialized successfully
+2026-01-29T03:57:54.928Z [DEBUG] LSP notification handlers registered successfully for all 0 server(s)
+2026-01-29T03:57:54.930Z [DEBUG] [Claude in Chrome] Found chrome profiles: Default
+2026-01-29T03:57:54.930Z [DEBUG] Watching for changes in skill/command directories: /Users/bmf/code/oscilla-animator-v2/.claude/skills...
+2026-01-29T03:57:54.935Z [DEBUG] Acquired mtime-based lock on running version: /Users/bmf/.local/share/claude/versions/2.1.20
+2026-01-29T03:57:54.935Z [DEBUG] [Claude in Chrome] Found brave profiles: Default
+2026-01-29T03:57:54.959Z [DEBUG] Git remote URL: git@github.com:brandon-fryslie/oscilla-animator-v2.git
+2026-01-29T03:57:54.959Z [DEBUG] Parsed repository: brandon-fryslie/oscilla-animator-v2 from git@github.com:brandon-fryslie/oscilla-animator-v2.git
+2026-01-29T03:57:54.959Z [DEBUG] Parsed repository: brandon-fryslie/oscilla-animator-v2 from URL: git@github.com:brandon-fryslie/oscilla-animator-v2.git
+2026-01-29T03:57:54.959Z [DEBUG] Path /Users/bmf/code/oscilla-animator-v2 already tracked for repo brandon-fryslie/oscilla-animator-v2
+2026-01-29T03:57:54.959Z [DEBUG] [Claude in Chrome] Extension not found in any browser
+2026-01-29T03:57:55.173Z [ERROR] MCP server "cherry-chrome" Server stderr: Cherry Chrome MCP Server running on stdio [MODE: SMART TOOLS]
+Set USE_LEGACY_TOOLS=true to use original granular tools
+2026-01-29T03:57:55.173Z [DEBUG] MCP server "cherry-chrome": Successfully connected to undefined server in 247ms
+2026-01-29T03:57:55.173Z [DEBUG] MCP server "cherry-chrome": Connection established with capabilities: {"hasTools":true,"hasPrompts":false,"hasResources":false,"serverVersion":{"name":"cherry-chrome-mcp","version":"0.1.0"}}
+2026-01-29T03:57:55.177Z [DEBUG] [Reconnection] computeInitialTeamContext: No teammate context set (not a teammate)
+2026-01-29T03:57:55.179Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.90920.1769659075179
+2026-01-29T03:57:55.179Z [DEBUG] Preserving file permissions: 100600
+2026-01-29T03:57:55.179Z [DEBUG] Temp file written successfully, size: 4100 bytes
+2026-01-29T03:57:55.179Z [DEBUG] Applied original permissions to temp file
+2026-01-29T03:57:55.179Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.90920.1769659075179 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-29T03:57:55.179Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-29T03:57:55.181Z [DEBUG] installed_plugins.json doesn't exist, returning empty V2 object
+2026-01-29T03:57:55.181Z [DEBUG] Initialized versioned plugins system with 0 plugins
+2026-01-29T03:57:55.181Z [DEBUG] Getting matching hook commands for SessionStart with query: startup
+2026-01-29T03:57:55.181Z [DEBUG] Found 0 hook matchers in settings
+2026-01-29T03:57:55.181Z [DEBUG] Matched 0 unique hooks for query "startup" (0 before deduplication)
+2026-01-29T03:57:55.181Z [DEBUG] [render] initLayout starting
+2026-01-29T03:57:55.181Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.187Z [DEBUG] [render] initLayout complete
+2026-01-29T03:57:55.187Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.188Z [DEBUG] [render] first ink render: 791ms since process start
+2026-01-29T03:57:55.225Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.225Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.229Z [DEBUG] [keybindings] KeybindingSetup initialized with 99 bindings, 0 warnings
+2026-01-29T03:57:55.231Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.231Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.231Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.232Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.233Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.234Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.236Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.236Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.238Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.239Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.239Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.239Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.239Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.266Z [DEBUG] [keybindings] Skipping file watcher - user customization disabled
+2026-01-29T03:57:55.266Z [DEBUG] [REPL:mount] REPL mounted, disabled=false
+2026-01-29T03:57:55.266Z [DEBUG] Official marketplace auto-install skipped: already_attempted
+2026-01-29T03:57:55.266Z [DEBUG] performStartupChecks called
+2026-01-29T03:57:55.266Z [DEBUG] Starting background plugin installations
+2026-01-29T03:57:55.266Z [DEBUG] performBackgroundPluginInstallations called
+2026-01-29T03:57:55.268Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-29T03:57:55.279Z [DEBUG] [claudeai-mcp] Checking gate (cached)...
+2026-01-29T03:57:55.279Z [DEBUG] [claudeai-mcp] Gate returned: false
+2026-01-29T03:57:55.279Z [DEBUG] [claudeai-mcp] Disabled via gate
+2026-01-29T03:57:55.279Z [DEBUG] Setting installation status: 0 marketplaces, 0 installable plugins, 0 uninstallable plugins
+2026-01-29T03:57:55.279Z [DEBUG] Loaded plugins - Enabled: 0, Disabled: 0, Commands: 0, Agents: 0, Errors: 0
+2026-01-29T03:57:55.287Z [DEBUG] FileHistory: Added snapshot for 72caf5f4-0305-498f-9655-89295cddb1fa, tracking 0 files
+2026-01-29T03:57:55.287Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.287Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.290Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.290Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.300Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.300Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.300Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.300Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.300Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.300Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.301Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.307Z [DEBUG] High write ratio: blit=121, write=882 (87.9% writes), screen=23x121
+2026-01-29T03:57:55.317Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.90920.1769659075317
+2026-01-29T03:57:55.317Z [DEBUG] Preserving file permissions: 100600
+2026-01-29T03:57:55.317Z [DEBUG] Temp file written successfully, size: 4100 bytes
+2026-01-29T03:57:55.317Z [DEBUG] Applied original permissions to temp file
+2026-01-29T03:57:55.317Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json.tmp.90920.1769659075317 to /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json
+2026-01-29T03:57:55.318Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/.claude.json written atomically
+2026-01-29T03:57:55.319Z [DEBUG] Plugin autoupdate: skipped (auto-updater disabled)
+2026-01-29T03:57:55.319Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/todos/372e2c74-061a-4260-b760-8cd64885c77a-agent-372e2c74-061a-4260-b760-8cd64885c77a.json.tmp.90920.1769659075319
+2026-01-29T03:57:55.319Z [DEBUG] Temp file written successfully, size: 2 bytes
+2026-01-29T03:57:55.319Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/todos/372e2c74-061a-4260-b760-8cd64885c77a-agent-372e2c74-061a-4260-b760-8cd64885c77a.json.tmp.90920.1769659075319 to /Users/bmf/code/dotfiles/config/claude.minimax/todos/372e2c74-061a-4260-b760-8cd64885c77a-agent-372e2c74-061a-4260-b760-8cd64885c77a.json
+2026-01-29T03:57:55.319Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/todos/372e2c74-061a-4260-b760-8cd64885c77a-agent-372e2c74-061a-4260-b760-8cd64885c77a.json written atomically
+2026-01-29T03:57:55.320Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.320Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.325Z [DEBUG] LSP Diagnostics: getLSPDiagnosticAttachments called
+2026-01-29T03:57:55.325Z [DEBUG] LSP Diagnostics: Checking registry - 0 pending
+2026-01-29T03:57:55.325Z [DEBUG] Hooks: Found 0 total hooks in registry
+2026-01-29T03:57:55.325Z [DEBUG] Hooks: checkForNewResponses returning 0 responses
+2026-01-29T03:57:55.327Z [DEBUG] Summarizing all 8 messages (~72 tokens)
+2026-01-29T03:57:55.328Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-29T03:57:55.328Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.328Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.c90; cc_entrypoint=cli
+2026-01-29T03:57:55.329Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-29T03:57:55.329Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-29T03:57:55.329Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-29T03:57:55.333Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.333Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.344Z [DEBUG] Stats cache does not exist, returning empty cache
+2026-01-29T03:57:55.345Z [DEBUG] Stats cache empty, processing all historical data in background
+2026-01-29T03:57:55.346Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.346Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.353Z [DEBUG] Stats cache saved successfully (lastComputedDate: 2026-01-28)
+2026-01-29T03:57:55.353Z [DEBUG] Stats cache updated with 3 sessions
+2026-01-29T03:57:55.353Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.353Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.358Z [DEBUG] Getting matching hook commands for UserPromptSubmit with query: undefined
+2026-01-29T03:57:55.358Z [DEBUG] Found 0 hook matchers in settings
+2026-01-29T03:57:55.358Z [DEBUG] Matched 0 unique hooks for query "no match query" (0 before deduplication)
+2026-01-29T03:57:55.364Z [DEBUG] Started caffeinate to prevent sleep
+2026-01-29T03:57:55.364Z [DEBUG] FileHistory: Making snapshot for message 5a956a94-474c-45e3-af6e-627f688f09bd
+2026-01-29T03:57:55.364Z [DEBUG] FileHistory: Added snapshot for 5a956a94-474c-45e3-af6e-627f688f09bd, tracking 0 files
+2026-01-29T03:57:55.366Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.366Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.366Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.366Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:55.371Z [DEBUG] Tool search disabled: ToolSearchTool is not available (may have been disallowed via disallowedTools).
+2026-01-29T03:57:55.371Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.371Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.6d2; cc_entrypoint=cli
+2026-01-29T03:57:55.371Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-29T03:57:55.371Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-29T03:57:55.371Z [DEBUG] Total plugin output styles loaded: 0
+2026-01-29T03:57:55.371Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-29T03:57:55.377Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-29T03:57:55.378Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-29T03:57:55.378Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-29T03:57:55.380Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.380Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.992Z [DEBUG] Auto tool search disabled: 3046 tokens (threshold: 20000, 10% of context) [source: query]
+2026-01-29T03:57:55.994Z [DEBUG] Skills and commands included in Skill tool: skill-lookup, refresh-indexes, motion, dockview-with-examples, doc-index, gap-analysis, dockview-api-only
+2026-01-29T03:57:55.994Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.994Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.994Z [DEBUG] attribution header x-anthropic-billing-header: cc_version=2.1.20.cbf; cc_entrypoint=cli
+2026-01-29T03:57:55.995Z [DEBUG] [API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: false, has Authorization header: false
+2026-01-29T03:57:55.995Z [DEBUG] [API:auth] OAuth token check starting
+2026-01-29T03:57:55.995Z [DEBUG] [API:auth] OAuth token check complete
+2026-01-29T03:57:55.996Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:55.996Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:57:56.019Z [ERROR] Error in non-streaming fallback: 400 {"type":"error","error":{"type":"invalid_request_error","message":"invalid params"}}
+2026-01-29T03:57:56.024Z [DEBUG] High write ratio: blit=363, write=872 (70.6% writes), screen=23x121
+2026-01-29T03:57:56.483Z [DEBUG] Ripgrep first use test: PASSED (mode=builtin, path=/Users/bmf/.local/share/claude/versions/2.1.20)
+2026-01-29T03:57:56.755Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:56.766Z [DEBUG] High write ratio: blit=363, write=966 (72.7% writes), screen=24x121
+2026-01-29T03:57:57.538Z [DEBUG] Stream started - received first chunk
+2026-01-29T03:57:57.617Z [DEBUG] [FileIndex] getProjectFiles called, respectGitignore=true
+2026-01-29T03:57:57.617Z [DEBUG] [FileIndex] getFilesUsingGit called
+2026-01-29T03:57:57.632Z [DEBUG] [FileIndex] git ls-files (tracked) took 8ms
+2026-01-29T03:57:57.633Z [DEBUG] [FileIndex] git ls-files: 2807 tracked files in 16ms
+2026-01-29T03:57:57.633Z [DEBUG] [FileIndex] using git ls-files result (2807 files)
+2026-01-29T03:57:57.641Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.642Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.642Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.642Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.642Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.642Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.642Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.659Z [DEBUG] [FileIndex] background untracked fetch: 0 files
+2026-01-29T03:57:57.960Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.960Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.960Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.960Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.960Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:57.960Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:58.374Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:58.617Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:58.617Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:58.617Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:58.617Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:58.617Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:58.617Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:59.816Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:59.816Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:59.816Z [DEBUG] Layout engine: yoga
+2026-01-29T03:57:59.817Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-29T03:58:00.093Z [DEBUG] Stream started - received first chunk
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.098Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.614Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.614Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.614Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.614Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.614Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.640Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.644Z [DEBUG] Stopped caffeinate, allowing sleep
+2026-01-29T03:58:00.645Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:58:00.645Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:58:00.646Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:00.681Z [DEBUG] High write ratio: blit=242, write=895 (78.7% writes), screen=22x121
+2026-01-29T03:58:01.440Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:01.440Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:01.441Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:01.441Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:01.441Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:01.667Z [DEBUG] Generated summary for session 62f3bb5c-cbe1-4727-8908-2915e2e1ec8a: "Find last commit for createDiagnostic function definition"
+2026-01-29T03:58:01.668Z [DEBUG] Session index: added 1, updated 0, removed 0, summaries generated 1 (total: 1)
+2026-01-29T03:58:02.410Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.410Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.410Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.410Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.410Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.410Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.410Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.681Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.682Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.682Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.682Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.751Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:02.751Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.634Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:58:03.634Z [DEBUG] [ToolSearch:optimistic] mode=tst-auto, ENABLE_TOOL_SEARCH=undefined, result=true
+2026-01-29T03:58:03.636Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.636Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.637Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.637Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.637Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.637Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.637Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.637Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.637Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.638Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.638Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.638Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.638Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.638Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.645Z [DEBUG] Install counts cache does not exist
+2026-01-29T03:58:03.645Z [DEBUG] Fetching install counts from https://raw.githubusercontent.com/anthropics/claude-plugins-official/refs/heads/stats/stats/plugin-installs.json
+2026-01-29T03:58:03.673Z [DEBUG] High write ratio: blit=363, write=776 (68.1% writes), screen=23x121
+2026-01-29T03:58:03.893Z [DEBUG] Install counts cache saved successfully
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.894Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:03.895Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.878Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.878Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.879Z [DEBUG] Full reset (shrink->below): prevHeight=44, nextHeight=23, viewport=37
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:04.883Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.538Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.538Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.543Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.939Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.939Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.942Z [DEBUG] Using cached install counts
+2026-01-29T03:58:06.942Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:06.943Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.350Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.350Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.351Z [DEBUG] Full reset (shrink->below): prevHeight=44, nextHeight=23, viewport=37
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.354Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.539Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.540Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:07.544Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.647Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:08.648Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.113Z [DEBUG] Added marketplace source: loom99
+2026-01-29T03:58:29.114Z [DEBUG] Found 0 plugins (0 enabled, 0 disabled)
+2026-01-29T03:58:29.114Z [DEBUG] Total plugin commands loaded: 0
+2026-01-29T03:58:29.114Z [DEBUG] Total plugin agents loaded: 0
+2026-01-29T03:58:29.116Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.117Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.119Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.119Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.120Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Using cached install counts
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.121Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:29.158Z [DEBUG] High write ratio: blit=484, write=1084 (69.1% writes), screen=34x121
+2026-01-29T03:58:31.828Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.828Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.828Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.828Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:31.829Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.499Z [DEBUG] Caching plugin from source: "/Users/bmf/code/loom99-claude-marketplace/plugins/do-more" to temporary path /Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/temp_local_1769659114499_esxdrs
+2026-01-29T03:58:34.545Z [DEBUG] Successfully cached plugin do-more to /Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/do-more
+2026-01-29T03:58:34.552Z [DEBUG] Using manifest version for do-more@loom99: 0.5.23
+2026-01-29T03:58:34.552Z [DEBUG] Saved 1 installed plugins to /Users/bmf/code/dotfiles/config/claude.minimax/plugins/installed_plugins.json
+2026-01-29T03:58:34.552Z [DEBUG] Added installed plugin: do-more@loom99 (scope: user)
+2026-01-29T03:58:34.552Z [DEBUG] Writing to temp file: /Users/bmf/code/dotfiles/config/claude.minimax/settings.json.tmp.90920.1769659114552
+2026-01-29T03:58:34.553Z [DEBUG] Temp file written successfully, size: 57 bytes
+2026-01-29T03:58:34.553Z [DEBUG] Renaming /Users/bmf/code/dotfiles/config/claude.minimax/settings.json.tmp.90920.1769659114552 to /Users/bmf/code/dotfiles/config/claude.minimax/settings.json
+2026-01-29T03:58:34.553Z [DEBUG] File /Users/bmf/code/dotfiles/config/claude.minimax/settings.json written atomically
+2026-01-29T03:58:34.555Z [DEBUG] Loading plugin do-more from source: "./plugins/do-more"
+2026-01-29T03:58:34.555Z [DEBUG] Using manifest version for do-more@loom99: 0.5.23
+2026-01-29T03:58:34.556Z [DEBUG] Plugin do-more@loom99 version 0.5.23 already cached at /Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/loom99/do-more/0.5.23
+2026-01-29T03:58:34.556Z [DEBUG] Copied local plugin do-more to versioned cache: /Users/bmf/code/dotfiles/config/claude.minimax/plugins/cache/loom99/do-more/0.5.23
+2026-01-29T03:58:34.556Z [DEBUG] Found 1 plugins (1 enabled, 0 disabled)
+2026-01-29T03:58:34.560Z [DEBUG] Loaded 3 agents from plugin do-more default directory
+2026-01-29T03:58:34.560Z [DEBUG] Total plugin agents loaded: 3
+2026-01-29T03:58:34.560Z [DEBUG] Loaded 13 commands from plugin do-more default directory
+2026-01-29T03:58:34.560Z [DEBUG] Total plugin commands loaded: 13
+2026-01-29T03:58:34.562Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.563Z [DEBUG] Using cached install counts
+2026-01-29T03:58:34.563Z [DEBUG] FileHistory: Making snapshot for message d1fed30b-c33d-4059-887e-9e3175e2acbd
+2026-01-29T03:58:34.563Z [DEBUG] FileHistory: Added snapshot for d1fed30b-c33d-4059-887e-9e3175e2acbd, tracking 0 files
+2026-01-29T03:58:34.564Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.564Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.564Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.564Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.565Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.565Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.565Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.565Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.565Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.565Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.565Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.566Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.567Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:34.573Z [DEBUG] Started caffeinate to prevent sleep
+2026-01-29T03:58:34.574Z [DEBUG] AutoUpdaterWrapper: Installation type: native
+2026-01-29T03:58:34.576Z [DEBUG] Stopped caffeinate, allowing sleep
+2026-01-29T03:58:34.611Z [DEBUG] High write ratio: blit=363, write=986 (73.1% writes), screen=26x121
+2026-01-29T03:58:34.611Z [DEBUG] Full reset (shrink->below): prevHeight=42, nextHeight=26, viewport=37
+2026-01-29T03:58:37.717Z [DEBUG] Layout engine: yoga
+2026-01-29T03:58:37.853Z [DEBUG] Getting matching hook commands for SessionEnd with query: prompt_input_exit
+2026-01-29T03:58:37.853Z [DEBUG] Found 0 hook matchers in settings
+2026-01-29T03:58:37.853Z [DEBUG] Matched 0 unique hooks for query "prompt_input_exit" (0 before deduplication)

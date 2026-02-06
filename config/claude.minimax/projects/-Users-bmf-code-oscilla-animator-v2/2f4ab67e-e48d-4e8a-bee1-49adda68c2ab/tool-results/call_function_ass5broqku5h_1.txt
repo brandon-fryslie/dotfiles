@@ -1,0 +1,6 @@
+src/blocks/array-blocks.ts:95:      elementsField = ctx.b.fieldArray(instanceId, signalTypeField(SHAPE, 'default'));
+src/compiler/__tests__/instance-unification.test.ts:85:      const arrayField = b.fieldArray(instance, type);
+src/compiler/ir/IRBuilder.ts:146:  fieldArray(instanceId: InstanceId, type: CanonicalType): FieldExprId;
+src/compiler/ir/IRBuilderImpl.ts:358:  fieldArray(instanceId: InstanceId, type: CanonicalType): FieldExprId {
+src/compiler/ir/__tests__/hash-consing.test.ts:251:      const id1 = b.fieldArray(inst, type);
+src/compiler/ir/__tests__/hash-consing.test.ts:252:      const id2 = b.fieldArray(inst, type);

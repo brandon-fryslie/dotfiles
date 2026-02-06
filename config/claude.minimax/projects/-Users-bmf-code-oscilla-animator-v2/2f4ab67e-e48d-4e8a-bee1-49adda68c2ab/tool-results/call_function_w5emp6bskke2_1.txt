@@ -1,0 +1,47 @@
+    80→  lower: ({ ctx, inputsById, config }) => {
+    81→    const count = (config?.count as number) ?? 100;
+    82→    const elementInput = inputsById.element;
+    83→
+    84→    // Create instance (layout is now handled via field kernels, not instance metadata)
+    85→    const instanceId = ctx.b.createInstance(DOMAIN_CIRCLE, count);
+    86→
+    87→    // Create field expressions
+    88→    // 1. Elements field - broadcasts the input signal across the array
+    89→    let elementsField;
+    90→    if (elementInput && elementInput.k === 'sig') {
+    91→      // Broadcast the signal to a field
+    92→      elementsField = ctx.b.Broadcast(elementInput.id, signalTypeField(SHAPE, 'default'));
+    93→    } else {
+    94→      // No input - use array field (identity)
+    95→      elementsField = ctx.b.fieldArray(instanceId, signalTypeField(SHAPE, 'default'));
+    96→    }
+    97→
+    98→    // 2. Intrinsic fields (index, t, active)
+    99→    const indexField = ctx.b.fieldIntrinsic(instanceId, 'index', signalTypeField(INT, 'default'));
+   100→    const tField = ctx.b.fieldIntrinsic(instanceId, 'normalizedIndex', signalTypeField(FLOAT, 'default'));
+   101→    // For static arrays, active is always true - we can use a constant broadcast
+   102→    const activeSignal = ctx.b.sigConst(true, canonicalType(BOOL));
+   103→    const activeField = ctx.b.Broadcast(activeSignal, signalTypeField(BOOL, 'default'));
+   104→
+   105→    const outType0 = ctx.outTypes[0];
+   106→    const outType1 = ctx.outTypes[1];
+   107→    const outType2 = ctx.outTypes[2];
+   108→    const outType3 = ctx.outTypes[3];
+   109→
+   110→    return {
+   111→      outputsById: {
+   112→        elements: { k: 'field', id: elementsField, slot: ctx.b.allocSlot(), type: outType0, stride: strideOf(outType0.payload) },
+   113→        index: { k: 'field', id: indexField, slot: ctx.b.allocSlot(), type: outType1, stride: strideOf(outType1.payload) },
+   114→        t: { k: 'field', id: tField, slot: ctx.b.allocSlot(), type: outType2, stride: strideOf(outType2.payload) },
+   115→        active: { k: 'field', id: activeField, slot: ctx.b.allocSlot(), type: outType3, stride: strideOf(outType3.payload) },
+   116→      },
+   117→      // Set instance context for downstream blocks
+   118→      instanceContext: instanceId,
+   119→    };
+   120→  },
+   121→});
+   122→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>
