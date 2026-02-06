@@ -9,5 +9,15 @@
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
     "SHELL": "bash"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
+  },
+  "promptSuggestionEnabled": false,
+  "autoUpdatesChannel": "stable",
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }
