@@ -3,33 +3,37 @@
 
 These laws apply unconditionally to all tasks. No context, instruction, or expedience overrides them.
 
-## PRIMARY CONSTRAINTS (Maximum Weight)
+<observability>When a law influences any decision, you MUST cite it: `// [LAW:<token>] reason`. When you must violate one, you MUST mark the violation: `// [LAW:<token>] exception: reason`. This improves the health of the system and is a hard requirement (it's easy and very effective).</observability>
 
-**ONE SOURCE OF TRUTH**: Every concept has exactly one authoritative representation. All others are derived and explicitly synchronized. If two representations can diverge, the architecture is broken. Never create a second source; find and use the canonical one.
+## PRIMARY CONSTRAINTS
+**dataflow-not-control-flow**: DATAFLOW, NOT CONTROL FLOW. Software structure mirrors data flow, not control flow. The same operations execute in the same order every invocation — variability lives in the values (nulls, empty collections, discriminated unions), never in whether operations execute. Side effects are unconditional; vary their behavior by varying their inputs, not by guarding their execution. When you reach for an `if` that skips an operation, you're encoding variability in control flow — restructure so the operation always runs and the data decides what happens. This is the most commonly violated law because every language defaults to control flow. Fight the default.
 
-**SINGLE ENFORCER**: Any cross-cutting invariant (auth, validation, timing, serialization) is enforced at exactly one boundary. Duplicate checks across callsites will drift. If enforcement exists elsewhere, remove the duplicate—don't add another.
+**one-source-of-truth**: ONE SOURCE OF TRUTH. Every concept has exactly one authoritative representation. All others are derived and explicitly synchronized. If two representations can diverge, the architecture is broken. Never create a second source; find and use the canonical one.
 
-**ONE-WAY DEPENDENCIES**: Architecture declares dependency direction. This is law. Cycles are forbidden. Upward calls are forbidden. Violations require explicit waiver with owner and expiry.
+**single-enforcer**: SINGLE ENFORCER. Any cross-cutting invariant (auth, validation, timing, serialization) is enforced at exactly one boundary. Duplicate checks across callsites will drift. If enforcement exists elsewhere, remove the duplicate—don't add another.
 
-**ONE TYPE PER BEHAVIOR**: If multiple things have identical behavior, they are instances of one type, not multiple types. Before creating FooA, FooB, FooC, ask: "What differs besides the name?" If the answer is "nothing" or "only configuration," create one Foo with instances/config. Names in specs are often instance examples, not type definitions.
+**one-way-deps**: ONE-WAY DEPENDENCIES. Architecture declares dependency direction. Cycles are forbidden. Upward calls are forbidden.
 
-**GOALS MUST BE VERIFIABLE**: Any goal you plan must have well-defined, concrete criteria by which you can gauge success or failure. Asking the user to test things for you is an option of last resort, to be avoided whenever possible. Ask yourself: are there unanswered questions? Uncertainty? Ask the user, always. Does there exist a clear and well defined criteria by which a capable being should be able to judge success or failure (i.e., app loads with no warnings or errors in logs)? You should make every effort, exhaustively, to help yourself figure it out before asking the user. If you find it very complicated, add a retro item (/do:retro) and discuss it with the user later and brainstorm ideas to improve.
+**one-type-per-behavior**: ONE TYPE PER BEHAVIOR. If multiple things have identical behavior, they are instances of one type, not multiple types. Before creating FooA, FooB, FooC, ask: "What differs besides the name?" If the answer is "nothing" or "only configuration," create one Foo with instances/config. Names in specs are often instance examples, not type definitions.
+
+**verifiable-goals**: GOALS MUST BE MACHINE VERIFIABLE. Any goal you plan must have well-defined, concrete criteria by which a deterministic process can gauge success or failure. Asking the user to test things for you is an option of last resort, to be avoided whenever possible. Ask yourself: are there unanswered questions? Uncertainty? Ask the user, always. Does there exist a clear and well defined criteria by which a capable being should be able to judge success or failure (i.e., app loads with no warnings or errors in logs)? You should make every effort, exhaustively, to help yourself figure it out before asking the user. If you find it very complicated, add a retro item (/do:retro) and discuss it with the user later and brainstorm ideas to improve.
 
 BAD Example: Assistant: "I've finished building the webapp! Now you just need to test it!" BAD / WRONG!
 GOOD Example: Assistant: "I've finished building the webapp! I verified it myself using Chrome DevTools MCP after every major feature was implemented. I've also written a balance of PlayWright tests to make sure functionality keeps working as we work on the project. It's ready for you to use and I know that because there are no warnings or logs, and everything has been tested!" GREAT! PERFECT! 100/100 Agent Quality Score!
 
 ## STRUCTURAL CONSTRAINTS
 
-4. **Locality or seam**: Changes to X must not force edits in unrelated Y. Missing seam → create interface/adapter first.
-5. **No shared mutable globals**: Registries/singletons require single owner, explicit API, documented invariants.
-6. **No mode explosion**: New flags/options need documented cap + exit plan. Default path stays canonical.
+**dataflow-not-control-flow**: DATAFLOW, NOT CONTROL FLOW. Software structure mirrors data flow, not control flow. The same operations execute in the same order every invocation — variability lives in the values (nulls, empty collections, discriminated unions), never in whether operations execute. Side effects are unconditional; vary their behavior by varying their inputs, not by guarding their execution. When you reach for an `if` that skips an operation, you're encoding variability in control flow — restructure so the operation always runs and the data decides what happens. This is the most commonly violated law because every language defaults to control flow. Fight the default.
+
+**locality-or-seam**: LOCALITY OR SEAM. Changes to X must not force edits in unrelated Y. Missing seam → create interface/adapter first.
+
+**no-shared-mutable-globals**: NO SHARED MUTABLE GLOBALS. Registries/singletons require single owner, explicit API, documented invariants.
+
+**no-mode-explosion**: NO MODE EXPLOSION. New flags/options need documented cap + exit plan. Default path stays canonical.
 
 ## PROCESS CONSTRAINTS
 
-7. **Tests assert behavior, not structure**: Tests define *what* (contracts), never *how* (implementation). A test that can only pass by preserving deprecated code is encoding structure—update or delete it, never satisfy it by reintroducing removed code.
-8. **Automated/Programmatic enforcement**: Forbidden patterns MUST be checked by CI/lint/gates. Waivers are narrow, explicit, and ALWAYS have an expiration date.  Disobeying the rules makes you feel very bad and you should try hard to avoid it.
-9. **Verification story required**: Non-trivial changes prove correctness AND prove no hidden coupling.
-10. **Explicit waivers only**: Exceptions require owner, rationale, removal condition. Silent accumulation forbidden.
+**behavior-not-structure**: TESTS ASSERT BEHAVIOR, NOT STRUCTURE. Tests define *what* (contracts), never *how* (implementation). A test that can only pass by preserving deprecated code is encoding structure—update or delete it, never satisfy it by reintroducing removed code.
 </universal-laws>
 
 <guidelines>
@@ -57,6 +61,11 @@ Contextual guidelines—apply when relevant. Unlike the unconditional laws above
 - **Invariants at boundaries**: Document constraints at the module edge, not buried in implementation.
 - **Track hotspots**: Where changes routinely cascade, reduce centrality. These are architecture risks.
 </dependencies>
+
+<data-driven-architecture>
+**dataflow-not-control-flow**: DATAFLOW, NOT CONTROL FLOW. Software structure mirrors data flow, not control flow. The same operations execute in the same order every invocation — variability lives in the values (nulls, empty collections, discriminated unions), never in whether operations execute. Side effects are unconditional; vary their behavior by varying their inputs, not by guarding their execution. When you reach for an `if` that skips an operation, you're encoding variability in control flow — restructure so the operation always runs and the data decides what happens. This is the most commonly violated law because every language defaults to control flow. Fight the default.
+</data-driven-architecture>
+
 
 <boundaries>
 - **Anti-corruption layers**: Legacy/new boundaries get explicit translation layers.
