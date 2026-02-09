@@ -13,3 +13,9 @@
     ~/.zshrc: config/zshrc.home
     ~/.config/tmux: config/tmux
     ~/.config/codex: config/codex
+
+- shell:
+    - description: Link IntelliJ live-plugins
+      command: scripts/link-intellij-live-plugins.sh
+      stdout: true
+      stderr: true
