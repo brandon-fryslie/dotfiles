@@ -9,7 +9,9 @@
       "Read(//Users/bmf/Library/**)",
       "Bash(bats:*)",
       "Read(//Users/bmf/.local/share/uv/tools/**)",
-      "Bash(just install:*)"
+      "Bash(just install:*)",
+      "Bash(tmux show-hooks:*)",
+      "Bash(tmux source-file:*)"
     ],
     "deny": [],
     "ask": []
