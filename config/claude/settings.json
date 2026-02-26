@@ -116,5 +116,6 @@
     "do-extra@loom99": true
   },
   "promptSuggestionEnabled": false,
-  "autoUpdatesChannel": "latest"
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true
 }
