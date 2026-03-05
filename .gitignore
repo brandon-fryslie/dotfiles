@@ -37,3 +37,10 @@ config/codex/history.jsonl
 config/codex/log/codex-tui.log
 config/codex/sessions/
 config/codex/skills/.system/
+
+# Backup snapshots
+config/codex/skills/*.backup.*/
+
+# Python build artifacts
+__pycache__/
+*.pyc
