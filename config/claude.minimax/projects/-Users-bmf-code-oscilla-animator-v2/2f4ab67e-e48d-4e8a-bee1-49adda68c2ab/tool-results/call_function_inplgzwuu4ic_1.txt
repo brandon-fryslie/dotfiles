@@ -1,2 +1,0 @@
-Exit code 137
-[Request interrupted by user for tool use]
