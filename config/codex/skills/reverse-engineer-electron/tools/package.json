@@ -1,0 +1,16 @@
+{
+  "name": "ast-compare",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "compare": "node compare.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@babel/generator": "^7.26.0",
+    "@babel/parser": "^7.26.0",
+    "@babel/traverse": "^7.26.0",
+    "esbuild": "^0.27.3",
+    "prettier": "^3.4.0"
+  }
+}
