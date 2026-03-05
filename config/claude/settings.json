@@ -77,7 +77,6 @@
       "mcp__cherry-chrome__connect",
       "mcp__chatgpt-convo__chatgpt",
       "mcp__cherry-chrome__query_elements",
-      "Bash(bd list:*)",
       "Bash(npm run typecheck:*)",
       "mcp__cherry-chatgpt__chatgpt_get_messages",
       "mcp__cherry-chatgpt__chatgpt_open",
@@ -90,7 +89,6 @@
     "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
   },
   "enabledPlugins": {
-    "beads@beads-marketplace": false,
     "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "code-review@claude-plugins-official": false,
     "feature-dev@claude-plugins-official": false,
@@ -116,5 +114,7 @@
     "do-extra@loom99": true
   },
   "promptSuggestionEnabled": false,
-  "autoUpdatesChannel": "latest"
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "effortLevel": "medium"
 }
