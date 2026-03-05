@@ -1,0 +1,54 @@
+{
+  "//": "Deterministic substring fingerprints for bundled third-party libraries. Add entries as you discover more.",
+  "react": [
+    "Invalid hook call",
+    "__REACT_DEVTOOLS_GLOBAL_HOOK__",
+    "react.element",
+    "react.fragment"
+  ],
+  "react-dom": [
+    "findDOMNode is deprecated",
+    "react-dom-client.production"
+  ],
+  "scheduler": [
+    "scheduler.production"
+  ],
+  "create-react-class": [
+    "create-react-class could not find the React object",
+    "DEFINE_MANY_MERGED",
+    "mixSpecIntoComponent",
+    "ReactClassInterface",
+    "bindAutoBindMethod"
+  ],
+  "lodash": [
+    "__lodash_hash_undefined__",
+    "Expected a function"
+  ],
+  "@sentry/browser": [
+    "@sentry/browser",
+    "Sentry"
+  ],
+  "object-assign": [
+    "Sindre Sorhus",
+    "object-assign"
+  ],
+  "invariant": [
+    "Minified exception occurred",
+    "framesToPop"
+  ],
+  "style-loader": [
+    "document.all&&!window.atob",
+    "HTMLIFrameElement"
+  ],
+  "css-loader": [
+    "sourceMappingURL=data:application/json",
+    "fixUrls requires window.location"
+  ],
+  "ajv": [
+    "patternProperties",
+    "exclusiveMaximum",
+    "json-schema-traverse",
+    "uri-js",
+    "fast-deep-equal"
+  ]
+}
