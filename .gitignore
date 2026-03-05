@@ -27,7 +27,6 @@ SPRINT-*.md
 
 config/tmux/plugins
 config/nvim/lazy-lock.json
-.beads
 .backup/
 .agent_logs/
 .env.keys
