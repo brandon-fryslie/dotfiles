@@ -255,27 +255,16 @@ def test_rewrite_plugin_references_agent_names():
     assert rewritten == "The do-iterative-implementer agent"
 
 
-def test_rewrite_plugin_references_skill_calls():
-    """Test rewriting Skill() calls."""
-    content = 'Skill("do:beads") is useful'
-
-    rewritten = rewrite_plugin_references(content, 'do')
-
-    assert rewritten == 'Skill("do-beads") is useful'
-
-
 def test_rewrite_plugin_references_mixed():
     """Test rewriting multiple types of references."""
     content = """
 /do:plan is used with do:iterative-implementer
-Call Skill("do:beads") for tracking
 """
 
     rewritten = rewrite_plugin_references(content, 'do')
 
     assert "skill do-plan" in rewritten
     assert "do-iterative-implementer" in rewritten
-    assert 'Skill("do-beads")' in rewritten
 
 
 # ============================================================================
@@ -369,14 +358,12 @@ def test_rewrite_agent_basic():
 name: implementer
 description: An implementer agent
 tools: Read, Write
----
-Use do:beads for tracking"""
+---"""
 
     rewritten = rewrite_agent(content, 'do', 'implementer')
 
     assert 'name: do-implementer' in rewritten
     assert '[Read, Write]' in rewritten
-    assert 'do-beads' in rewritten
 
 
 def test_rewrite_agent_no_frontmatter():

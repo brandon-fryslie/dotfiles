@@ -247,7 +247,6 @@ def rewrite_plugin_references(content: str, plugin_name: str) -> str:
     Handles patterns like:
     - /do:plan -> skill do-plan (command to skill invocation)
     - do:iterative-implementer -> do-iterative-implementer (agent/skill references)
-    - Skill("do:beads") -> Skill("do-beads")
 
     Args:
         content: Content to rewrite
