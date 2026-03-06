@@ -48,7 +48,7 @@ Outcome required:
 
 ### Gate 1 (Hard, Human Verified)
 
-A human verifies the app runs correctly from the modified-app workspace.
+Proceed only after recorded human approval for this gate.
 
 ### 2. Deterministic Unminification (No Behavior Change)
 
@@ -66,7 +66,7 @@ Outcome required:
 
 ### Gate 2 (Hard, Human Verified)
 
-A human verifies the app still runs correctly after unminification.
+Proceed only after recorded human approval for this gate.
 
 ### 3. Module Decomposition (No Behavior Change)
 
@@ -84,7 +84,7 @@ Outcome required:
 
 ### Gate 3 (Hard, Human Verified)
 
-A human verifies the app still runs correctly after module decomposition.
+Proceed only after recorded human approval for this gate.
 
 ### 4. Iterative Semantic Reverse Engineering
 
@@ -98,6 +98,7 @@ Absolute precondition:
 - If either connection is missing, stale, or broken, renaming is forbidden until both are reconnected.
 - Ensure the target file was deterministically unminified first (for example via Prettier).
 - If the file is still minified, renaming is forbidden.
+- Debugger connections must remain active while rename work is being performed. If a connection drops, stop renaming immediately.
 
 Per-iteration workflow:
 
@@ -106,8 +107,10 @@ Per-iteration workflow:
 - Choose next module by dependency order:
 - First preference: module with no dependents.
 - If none exist (for example circular graph), choose module with the least dependents.
+- If multiple modules are tied for least dependents, break the tie by flipping a coin.
 - Perform semantic renaming for that module using runtime/static evidence.
 - If needed, perform safe cross-module rename updates required by dependency links.
+- During this stage, non-rename logic edits are forbidden.
 
 Hard rule per module:
 
@@ -115,7 +118,7 @@ Hard rule per module:
 
 ### Gate 4 (Hard, Human Verified, Repeats Every Module)
 
-A human verifies the app still works correctly after each module rename.
+Proceed only after recorded human approval for each module gate.
 
 Then proceed to the next module.
 
@@ -127,7 +130,7 @@ Done criteria:
 
 - All modules renamed semantically.
 - No unresolved modules remain in the dependency hierarchy.
-- Final human verification confirms the app works correctly.
+- Final recorded human approval is present.
 
 ## Resume Expectations
 
@@ -139,6 +142,12 @@ On resume:
 - Continue from the next incomplete stage.
 - Never reset progress just because workspace is not at step 0.
 
+## Failure Protocol
+
+- If any gate or rename step fails, wait for human instructions and follow them exactly.
+- Restarting the app or continuing work is gated on recorded human approval.
+- Before continuing semantic renaming after a failure, both CDP and V8 debugger connections must be active again.
+
 ## What This Skill Must Never Do
 
 - Assume a fresh empty workspace.
@@ -147,3 +156,4 @@ On resume:
 - Skip human verification at hard gates.
 - Perform semantic renaming without active CDP and V8 connections through electric-cherry MCP.
 - Perform semantic renaming on minified files.
+- Perform non-rename logic edits during iterative semantic renaming.
