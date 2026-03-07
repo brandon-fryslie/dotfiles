@@ -1,6 +1,6 @@
 ---
 name: canonicalize-docs
-description: Analyze architecture/spec documents for contradictions, ambiguities, and inconsistencies. Produces an encyclopedia-style canonical specification series. Use when user asks to canonicalize docs, find contradictions in specs, create a canonical spec, or consolidate design documents. Input is a directory or file list (e.g., "design-docs/" or "spec.md arch.md api.md").
+description: Analyze architecture/spec documents for contradictions, ambiguities, and inconsistencies. Produces an encyclopedia-style canonical specification series.
 ---
 
 # Architecture Document Canonicalization
@@ -192,7 +192,6 @@ All timestamps: `YYYYMMDD-HHMMSS`
 
 ```yaml
 ---
-command: /canonicalize-architecture $ARGUMENTS
 files: [space-separated list of files processed this run]
 indexed: true
 source_files:
