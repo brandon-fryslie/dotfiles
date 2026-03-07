@@ -116,6 +116,5 @@
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
-  "effortLevel": "medium",
-  "model": "opus"
+  "effortLevel": "low"
 }
