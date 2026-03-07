@@ -1,5 +1,5 @@
-// add-to-classpath /Users/bmf/Library/Application Support/JetBrains/IntelliJIdea2025.3/plugins/python/lib/python.jar
 // add-to-classpath /Users/bmf/Library/Application Support/JetBrains/IntelliJIdea2025.3/plugins/python-ce/lib/python-ce.jar
+// add-to-classpath /Users/bmf/Library/Application Support/JetBrains/IntelliJIdea2025.3/plugins/python-ce/lib/modules/intellij.python.community.impl.jar
 // depends-on com.jetbrains.python.sdk
 // depends-on-plugin PythonCore
 // depends-on-plugin Pythonid
