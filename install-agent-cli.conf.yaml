@@ -17,11 +17,14 @@
     ~/.claude/settings.json: config/claude/settings.json
 
 - create:
+    - ~/.gemini
     - ~/.copilot
     - ~/.copilot/skills
     - ~/.codex
 
 - link:
+    ~/.gemini/GEMINI.md: config/gemini/GEMINI.md
+    ~/.gemini/skills: config/gemini/skills
     ~/.copilot/copilot-instructions.md: config/copilot/copilot-instructions.md
     ~/.copilot/skills/claude-plugin-sync: config/copilot/skills/claude-plugin-sync
     ~/.codex/skills: config/codex/skills
