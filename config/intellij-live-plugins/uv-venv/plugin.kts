@@ -1,26 +1,22 @@
-// add-to-classpath /Users/bmf/Library/Application Support/JetBrains/IntelliJIdea2025.3/plugins/python-ce/lib/python-ce.jar
-// add-to-classpath /Users/bmf/Library/Application Support/JetBrains/IntelliJIdea2025.3/plugins/python-ce/lib/modules/intellij.python.community.impl.jar
-// depends-on com.jetbrains.python.sdk
 // depends-on-plugin PythonCore
 // depends-on-plugin Pythonid
-// depends-on com.intellij.openai
-// depends-on com.intellij.platform.workspace.jps.entities
-// depends-on liveplugin.editor
-// depends-on com.intellij.openapi.actionSystem.*
 
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.projectRoots.Sdk
 import com.intellij.openapi.projectRoots.SdkModificator
-import com.intellij.openapi.projectRoots.impl.SdkConfigurationUtil
+import com.intellij.openapi.projectRoots.SdkType
 import com.intellij.openapi.roots.ProjectRootManager
-import com.jetbrains.python.sdk.PythonSdkType
 import liveplugin.registerAction
 import liveplugin.show
 import java.io.File
 import java.nio.file.Paths
 import java.nio.file.Files
-import java.io.InputStreamReader
+
+fun getPythonSdkType(): SdkType {
+    return SdkType.getAllTypes().firstOrNull { it.javaClass.name.contains("PythonSdkType") }
+        ?: error("Python SDK type not found — is the Python plugin installed?")
+}
 
 if (!isIdeStartup) show("Loading uv-venv plugin")
 
@@ -28,7 +24,7 @@ if (!isIdeStartup) show("Loading uv-venv plugin")
 // This specifically ignores the number on the end like (3) to avoid creating duplicates
 fun getExistingPythonSdk(pythonExecutablePath: String): Sdk? {
     show("Getting existing PythonSDK")
-    val allSdks = ProjectJdkTable.getInstance().getSdksOfType(PythonSdkType.getInstance())
+    val allSdks = ProjectJdkTable.getInstance().getSdksOfType(getPythonSdkType())
     var match: Sdk? = null
     allSdks.forEach {
         if (it.homePath == pythonExecutablePath) {
@@ -39,10 +35,10 @@ fun getExistingPythonSdk(pythonExecutablePath: String): Sdk? {
 }
 
 fun cleanupDuplicates() {
-    val allPythonSdks = ProjectJdkTable.getInstance().getSdksOfType(PythonSdkType.getInstance())
+    val allPythonSdks = ProjectJdkTable.getInstance().getSdksOfType(getPythonSdkType())
     val duplicates: MutableSet<Sdk> = mutableSetOf()
     allPythonSdks.forEach { sdk1: Sdk ->
-        val possibleDupes = ProjectJdkTable.getInstance().getSdksOfType(PythonSdkType.getInstance())
+        val possibleDupes = ProjectJdkTable.getInstance().getSdksOfType(getPythonSdkType())
         possibleDupes.forEach { sdk2: Sdk ->
             // if the executable path is the same, it's a dupe
             if (sdk1.homePath == sdk2.homePath) {
@@ -85,7 +81,7 @@ fun getPythonSdk(prm: ProjectRootManager): Sdk? {
     show("Getting Python SDK")
     // Get existing sdk, check if its a python sdk
     val projectSdk: Sdk? = prm.getProjectSdk()
-    if (projectSdk != null && projectSdk.sdkType is PythonSdkType) {
+    if (projectSdk != null && projectSdk.sdkType.javaClass.name.contains("PythonSdkType")) {
         return projectSdk
     } else {
         return null
@@ -213,17 +209,24 @@ registerAction(id = "Add uv python sdk", keyStroke = "ctrl shift A") { e: AnActi
         show("Python SDK already exists: ${sdk.name}")
     } else {
         show("Attempting to create python SDK w/ executable: ${pythonExecutable}")
-        val createdSdk = SdkConfigurationUtil.createAndAddSDK(pythonExecutable, PythonSdkType.getInstance())
-        requireNotNull(createdSdk) { "ERROR: Failed to configure Python SDK." }
-
-        show("Created new Python SDK: ${createdSdk.name}")
-        sdk = createdSdk
+        val sdkType = getPythonSdkType()
+        val sdkName = getProperVenvSdkName(venvPath)
+        val newSdk = ProjectJdkTable.getInstance().createSdk(sdkName, sdkType)
+        com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction {
+            val modificator = newSdk.sdkModificator
+            modificator.homePath = pythonExecutable
+            modificator.commitChanges()
+            ProjectJdkTable.getInstance().addJdk(newSdk)
+            prm.setProjectSdk(newSdk)
+        }
+        sdkType.setupSdkPaths(newSdk)
+        show("Created and set Python SDK: ${newSdk.name}")
+        return@registerAction
     }
 
     com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction {
-        fixSdkName(venvPath, sdk)
-        // Always set the project SDK to the found or created SDK (MUST be in write action)
+        fixSdkName(venvPath, sdk!!)
         prm.setProjectSdk(sdk)
     }
-    show("Set project SDK to: ${sdk.name}")
+    show("Set project SDK to: ${sdk!!.name}")
 }
