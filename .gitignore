@@ -44,3 +44,7 @@ config/codex/skills/*.backup.*/
 # Python build artifacts
 __pycache__/
 *.pyc
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
