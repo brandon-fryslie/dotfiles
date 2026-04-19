@@ -84,12 +84,23 @@
     ],
     "defaultMode": "acceptEdits"
   },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); PROMPT=$(echo \"$INPUT\" | jq -r '.prompt // empty'); if echo \"$PROMPT\" | grep -qi 'do it right'; then cat <<'INSTRUCTIONS'\n{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"## DO IT RIGHT — Full Scope Work Process\\n\\nThe user has triggered the \\\"do it right\\\" protocol. You MUST follow this process for every change:\\n\\n1. **Think through the full blast radius.** What reads this? What writes it? What assumes it? What tests it? What documents it?\\n2. **Consider what might need to change.** Not just what obviously does — what *might*.\\n3. **Actually investigate.** Do not guess. Read the code. Inspect the outcomes. Do the work to find out.\\n4. **Make multiple proposals.** Not one approach — several. Consider tradeoffs.\\n5. **Test each proposal.** Not in theory — actually try them.\\n6. **Pick the best one.** Based on evidence from step 5, not intuition from step 4.\\n7. **Implement all the way through.** Not just the focal point. Keep going until there is *nothing left that can benefit from being updated*.\\n\\nThis is not optional. This is the minimum bar. Do not declare done until the entire system is consistent with your change and you have verified it end-to-end as a user would.\"}}\nINSTRUCTIONS\nfi"
+          }
+        ]
+      }
+    ]
+  },
   "statusLine": {
     "type": "command",
     "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
   },
   "enabledPlugins": {
-    "chrome-devtools-mcp@chrome-devtools-plugins": false,
     "code-review@claude-plugins-official": false,
     "feature-dev@claude-plugins-official": false,
     "frontend-design@claude-plugins-official": true,
@@ -97,7 +108,6 @@
     "plugin-dev@claude-plugins-official": true,
     "pr-review-toolkit@claude-plugins-official": false,
     "pyright-lsp@claude-plugins-official": false,
-    "ralph-wiggum@claude-plugins-official": false,
     "repomix-commands@repomix": false,
     "repomix-explorer@repomix": false,
     "repomix-mcp@repomix": false,
@@ -105,16 +115,48 @@
     "figma@claude-plugins-official": false,
     "ralph-loop@claude-plugins-official": false,
     "code-simplifier@claude-plugins-official": false,
-    "brain-canvas@brain-canvas-marketplace": false,
     "superpowers@claude-plugins-official": false,
     "github@claude-plugins-official": false,
     "clangd-lsp@claude-plugins-official": false,
-    "do@loom99": true,
-    "do-more@loom99": true,
-    "do-extra@loom99": true
+    "do@loom99": false,
+    "do-more@loom99": false,
+    "do-extra@loom99": false,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": false,
+    "claude-code-setup@claude-plugins-official": false,
+    "explanatory-output-style@claude-plugins-official": true,
+    "playground@claude-plugins-official": true,
+    "learning-output-style@claude-plugins-official": false,
+    "gopls-lsp@claude-plugins-official": false,
+    "huggingface-skills@claude-plugins-official": false,
+    "pinecone@claude-plugins-official": false,
+    "claude-autoresearch@nestor-plugins": false,
+    "claude-guardian@nestor-plugins": false,
+    "claude-knowledge-graph@nestor-plugins": false,
+    "claude-spawn@nestor-plugins": false,
+    "claude-workflows@nestor-plugins": false,
+    "claude-worktrees@nestor-plugins": false
   },
+  "extraKnownMarketplaces": {
+    "pm-os": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/bmf/code/pm-os-main"
+      }
+    },
+    "nestor-plugins": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/NodeNestor/nestor-plugins.git"
+      }
+    }
+  },
+  "sandbox": {
+    "enabled": false
+  },
+  "effortLevel": "medium",
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
-  "skipDangerousModePermissionPrompt": true,
-  "effortLevel": "low"
+  "voiceEnabled": true,
+  "skipDangerousModePermissionPrompt": true
 }
