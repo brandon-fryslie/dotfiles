@@ -1,6 +1,7 @@
 ---
 name: codex-plan
-description: Use this agent when you need to break down complex technical work into discrete, actionable tasks that can be executed by agents with strong technical skills but limited reasoning capabilities. This agent excels at analyzing ambiguous requirements, identifying dependencies, producing explicit step-by-step instructions, and crucially, creating parallel workstreams that can be worked on simultaneously.
+description: DO NOT USE
+# description: Use this agent when you need to break down complex technical work into discrete, actionable tasks that can be executed by agents with strong technical skills but limited reasoning capabilities. This agent excels at analyzing ambiguous requirements, identifying dependencies, producing explicit step-by-step instructions, and crucially, creating parallel workstreams that can be worked on simultaneously.
 model: inherit
 ---
 
