@@ -1,3 +1,6 @@
+# nix via podman (no system volume required)
+alias nix='podman run --rm -it -v "$(pwd):/workspace" -w /workspace nixos/nix nix'
+
 # Uncomment to enable profiling
 # zmodload zsh/zprof
 
@@ -197,3 +200,11 @@ alias copp='copilot --yolo'
 # tabtab source for electron-forge package
 # uninstall by removing these lines or running `tabtab uninstall electron-forge`
 [[ -f /Users/bmf/.local/share/fnm/node-versions/v24.13.0/installation/lib/node_modules/electron-forge/node_modules/tabtab/.completions/electron-forge.zsh ]] && . /Users/bmf/.local/share/fnm/node-versions/v24.13.0/installation/lib/node_modules/electron-forge/node_modules/tabtab/.completions/electron-forge.zsh
+
+c1() {
+  cc-jstream claude "$@"
+}
+
+c2() {
+  cc-jstream -i claude "$@"
+}
