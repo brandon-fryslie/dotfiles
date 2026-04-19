@@ -9,7 +9,9 @@
       "Read(//Users/bmf/Library/**)",
       "Bash(bats:*)",
       "Read(//Users/bmf/.local/share/uv/tools/**)",
-      "Bash(just install:*)"
+      "Bash(just install:*)",
+      "Bash(rm .git/index.lock)",
+      "Bash(rtk git *)"
     ],
     "deny": [],
     "ask": []
