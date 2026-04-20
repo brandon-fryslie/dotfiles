@@ -21,6 +21,8 @@
     - ~/.copilot
     - ~/.copilot/skills
     - ~/.codex
+    - ~/.agents
+    - ~/.agents/skills
 
 - link:
     ~/.gemini/GEMINI.md: config/gemini/GEMINI.md
@@ -28,3 +30,5 @@
     ~/.copilot/copilot-instructions.md: config/copilot/copilot-instructions.md
     ~/.copilot/skills/claude-plugin-sync: config/copilot/skills/claude-plugin-sync
     ~/.codex/skills: config/codex/skills
+    ~/.agents/skills/firecrawl-agent: config/claude/skills/firecrawl-agent
+    ~/.agents/skills/firecrawl-browser: config/claude/skills/firecrawl-browser
