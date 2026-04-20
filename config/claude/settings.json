@@ -94,11 +94,101 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/bmf/.claude/hooks/tokenzip-rewrite.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/bmf/.claude/hooks/rtk-rewrite.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/bmf/.claude/hooks/gsd-prompt-guard.js\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/bmf/.claude/hooks/gsd-read-guard.js\"",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/bmf/.claude/hooks/gsd-validate-commit.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/bmf/.claude/hooks/gsd-check-update.js\""
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/bmf/.claude/hooks/gsd-session-state.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/Users/bmf/.claude/hooks/gsd-context-monitor.js\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/bmf/.claude/hooks/gsd-phase-boundary.sh",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
     "type": "command",
-    "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
+    "command": "node \"/Users/bmf/.claude/hooks/gsd-statusline.js\""
   },
   "enabledPlugins": {
     "code-review@claude-plugins-official": false,
@@ -109,7 +199,7 @@
     "pr-review-toolkit@claude-plugins-official": false,
     "pyright-lsp@claude-plugins-official": false,
     "repomix-commands@repomix": false,
-    "repomix-explorer@repomix": false,
+    "repomix-explorer@repomix": true,
     "repomix-mcp@repomix": false,
     "typescript-lsp@claude-plugins-official": false,
     "figma@claude-plugins-official": false,
@@ -135,19 +225,27 @@
     "claude-knowledge-graph@nestor-plugins": false,
     "claude-spawn@nestor-plugins": false,
     "claude-workflows@nestor-plugins": false,
-    "claude-worktrees@nestor-plugins": false
+    "claude-worktrees@nestor-plugins": false,
+    "swift-lsp@claude-plugins-official": true,
+    "absorbed-variance@do": true
   },
   "extraKnownMarketplaces": {
     "pm-os": {
       "source": {
-        "source": "directory",
-        "path": "/Users/bmf/code/pm-os-main"
+        "source": "git",
+        "url": "https://gitea.sanctuary.gdn/brandon-fryslie/pm-os.git"
       }
     },
     "nestor-plugins": {
       "source": {
         "source": "git",
         "url": "https://github.com/NodeNestor/nestor-plugins.git"
+      }
+    },
+    "do": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/bmf/code/do"
       }
     }
   },
