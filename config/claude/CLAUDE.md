@@ -265,5 +265,3 @@ Why right:
 </on-conditionals>
 
 </wisdom>
-
-@RTK.md
