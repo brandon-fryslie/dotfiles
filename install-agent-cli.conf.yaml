@@ -13,6 +13,7 @@
     ~/.claude/commands: config/claude/commands
     ~/.claude/commands-disabled: config/claude/commands-disabled
     ~/.claude/personal-synced: config/claude/personal-synced
+    ~/.claude/skills: config/claude/skills
     ~/.claude/CLAUDE.md: config/claude/CLAUDE.md
     ~/.claude/settings.json: config/claude/settings.json
 
@@ -30,5 +31,15 @@
     ~/.copilot/copilot-instructions.md: config/copilot/copilot-instructions.md
     ~/.copilot/skills/claude-plugin-sync: config/copilot/skills/claude-plugin-sync
     ~/.codex/skills: config/codex/skills
+    ~/.agents/skills/brainstorming: config/claude/skills/brainstorming
+    ~/.agents/skills/canonicalize-docs: config/claude/skills/canonicalize-docs
+    ~/.agents/skills/code-refactor: config/claude/skills/code-refactor
+    ~/.agents/skills/firecrawl: config/claude/skills/firecrawl
     ~/.agents/skills/firecrawl-agent: config/claude/skills/firecrawl-agent
     ~/.agents/skills/firecrawl-browser: config/claude/skills/firecrawl-browser
+    ~/.agents/skills/firecrawl-crawl: config/claude/skills/firecrawl-crawl
+    ~/.agents/skills/firecrawl-download: config/claude/skills/firecrawl-download
+    ~/.agents/skills/firecrawl-map: config/claude/skills/firecrawl-map
+    ~/.agents/skills/firecrawl-scrape: config/claude/skills/firecrawl-scrape
+    ~/.agents/skills/firecrawl-search: config/claude/skills/firecrawl-search
+    ~/.agents/skills/oscilla-naga-dsl-reference: config/claude/skills/oscilla-naga-dsl-reference
