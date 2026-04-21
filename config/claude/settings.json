@@ -94,6 +94,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/bmf/.claude/hooks/promptctl-open.sh"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
