@@ -82,7 +82,7 @@
       "mcp__cherry-chatgpt__chatgpt_open",
       "mcp__cherry-chatgpt__chatgpt_find_conversation"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   },
   "hooks": {
     "UserPromptSubmit": [
@@ -154,9 +154,10 @@
   "sandbox": {
     "enabled": false
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
-  "voiceEnabled": true,
-  "skipDangerousModePermissionPrompt": true
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true
 }
