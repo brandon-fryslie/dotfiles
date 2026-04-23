@@ -264,4 +264,14 @@ Why right:
 
 </on-conditionals>
 
+<ticket-lifecycle>
+# TICKET LIFECYCLE
+
+Tickets get closed after the work is verified and released. Never before that.
+
+"Verified" means the change has been observed working in its real environment — not just "tests pass" or "I implemented it." "Released" means it's actually shipped: merged to the main branch the user deploys from, deployed/published as appropriate to the project, and accessible to whoever consumes the work. Until both have happened, the ticket stays open even if the implementation feels finished.
+
+If you're tempted to close a ticket because "the code is written and the tests pass" — stop. That's the moment this rule exists for. Leave it open, report status, let the user close it (or explicitly tell you to).
+</ticket-lifecycle>
+
 </wisdom>
