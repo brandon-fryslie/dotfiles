@@ -43,3 +43,4 @@
     ~/.agents/skills/firecrawl-scrape: config/claude/skills/firecrawl-scrape
     ~/.agents/skills/firecrawl-search: config/claude/skills/firecrawl-search
     ~/.agents/skills/oscilla-naga-dsl-reference: config/claude/skills/oscilla-naga-dsl-reference
+    ~/.agents/skills/prompt-scaffold: config/agents/skills/prompt-scaffold
