@@ -68,3 +68,14 @@ Each tool may have multiple variants:
 ## Testing Philosophy
 
 Tests are designed to be "un-gameable" - they validate actual outcomes, not implementation details. See `TESTING.md` for the full philosophy.
+
+## Agent Skills
+
+- **Claude skills** -> `config/claude/skills/`
+- Other agent skills -> `config/agents/skills/<skill>/`
+
+`~/.claude/skills/` and `~/.agents/skills/` have **different frontmatter requirements**.  Claude Code supports additional functionality that is non-standard.  The other agents only support the official 'skill' standard. DO NOT attempt to merge them to make a 'single source of truth'.  You will break things!
+
+When authoring a new skill, write the SKILL.md directly under the correct `config/<name>/skills/` path. Never place files directly in `~/.claude/skills/` or `~/.agents/skills/` — they won't survive a fresh install.
+
+All symlinks must be configured via dotbot, and NEVER symlinked directly.
