@@ -31,16 +31,16 @@
     ~/.copilot/copilot-instructions.md: config/copilot/copilot-instructions.md
     ~/.copilot/skills/claude-plugin-sync: config/copilot/skills/claude-plugin-sync
     ~/.codex/skills: config/codex/skills
-    ~/.agents/skills/brainstorming: config/claude/skills/brainstorming
-    ~/.agents/skills/canonicalize-docs: config/claude/skills/canonicalize-docs
-    ~/.agents/skills/code-refactor: config/claude/skills/code-refactor
-    ~/.agents/skills/firecrawl: config/claude/skills/firecrawl
-    ~/.agents/skills/firecrawl-agent: config/claude/skills/firecrawl-agent
-    ~/.agents/skills/firecrawl-browser: config/claude/skills/firecrawl-browser
-    ~/.agents/skills/firecrawl-crawl: config/claude/skills/firecrawl-crawl
-    ~/.agents/skills/firecrawl-download: config/claude/skills/firecrawl-download
-    ~/.agents/skills/firecrawl-map: config/claude/skills/firecrawl-map
-    ~/.agents/skills/firecrawl-scrape: config/claude/skills/firecrawl-scrape
-    ~/.agents/skills/firecrawl-search: config/claude/skills/firecrawl-search
-    ~/.agents/skills/oscilla-naga-dsl-reference: config/claude/skills/oscilla-naga-dsl-reference
+    ~/.agents/skills/brainstorming: config/agents/skills/brainstorming
+    ~/.agents/skills/canonicalize-docs: config/agents/skills/canonicalize-docs
+    ~/.agents/skills/code-refactor: config/agents/skills/code-refactor
+    ~/.agents/skills/firecrawl: config/agents/skills/firecrawl
+    ~/.agents/skills/firecrawl-agent: config/agents/skills/firecrawl-agent
+    ~/.agents/skills/firecrawl-browser: config/agents/skills/firecrawl-browser
+    ~/.agents/skills/firecrawl-crawl: config/agents/skills/firecrawl-crawl
+    ~/.agents/skills/firecrawl-download: config/agents/skills/firecrawl-download
+    ~/.agents/skills/firecrawl-map: config/agents/skills/firecrawl-map
+    ~/.agents/skills/firecrawl-scrape: config/agents/skills/firecrawl-scrape
+    ~/.agents/skills/firecrawl-search: config/agents/skills/firecrawl-search
+    ~/.agents/skills/oscilla-naga-dsl-reference: config/agents/skills/oscilla-naga-dsl-reference
     ~/.agents/skills/prompt-scaffold: config/agents/skills/prompt-scaffold
