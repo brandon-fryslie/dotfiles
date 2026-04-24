@@ -98,7 +98,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
+    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/dist/index.mjs --style=powerline"
   },
   "enabledPlugins": {
     "code-review@claude-plugins-official": false,
@@ -154,10 +154,10 @@
   "sandbox": {
     "enabled": false
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "skipAutoPermissionPrompt": true
 }
