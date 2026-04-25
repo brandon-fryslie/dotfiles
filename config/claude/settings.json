@@ -98,7 +98,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/dist/index.mjs --style=powerline"
+    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/dist/index.mjs --style=powerline --config /Users/bmf/.claude/claude-powerline.json"
   },
   "enabledPlugins": {
     "code-review@claude-plugins-official": false,
