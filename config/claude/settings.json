@@ -98,8 +98,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/dist/index.mjs --style=powerline --config /Users/bmf/.claude/claude-powerline.json",
-    "refreshInterval": 30
+    "command": "pnpm dlx @promptctl/claude-powerline@0.2.3 --style=powerline --layout 'directory git | model context block weekly sessionId' --display autoWrap=false --show git=workingTree,upstream,timeSinceCommit --segment block.type=weighted,sessionId.length=8,sessionId.clickAction.kind=url,sessionId.clickAction.scheme=cpwl"
   },
   "enabledPlugins": {
     "code-review@claude-plugins-official": false,
@@ -159,6 +158,6 @@
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
-  "voiceEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true
 }
