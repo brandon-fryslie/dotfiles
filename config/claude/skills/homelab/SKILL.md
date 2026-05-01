@@ -88,6 +88,70 @@ Brandon runs a private homelab: four NixOS VMs on Proxmox at home, plus a NAS. T
 - **Constraints:** 8GB VRAM caps the model size (~7B params comfortably, 13B with quantization). If the model isn't already pulled, `api/tags` won't list it — file a ticket to request a new one (pulling large models is minutes of download).
 - **Not for:** production inference serving, multi-user concurrent load, or models that need >8GB VRAM.
 
+### Vault — secret storage
+
+- **URL:** `https://vault.sanctuary.gdn` (KV v2 backend at `secret/`, versioned and recoverable). For API keys, tokens, DB passwords — not blobs.
+- **Namespace:** each project gets `secret/consumer/<slug>/*`. Stay inside it; operator-owned paths (`secret/gitea`, etc.) will reject you.
+- **Auth:** a scoped token per project, stashed in macOS Keychain as `vault-token-<slug>`. Retrieve at runtime — never commit, never echo into a metric/notification body:
+
+  ```bash
+  export VAULT_ADDR=https://vault.sanctuary.gdn
+  export VAULT_TOKEN=$(security find-generic-password -s "vault-token-<slug>" -a "$USER" -w)
+  ```
+
+#### Reading and writing secrets
+
+The same `vault kv` commands handle both put-in and get-out — that's the whole API surface. `put` is creating *or* updating (KV v2 versions automatically); `get -field=` extracts a single value cleanly for shell pipelines.
+
+```bash
+# write (create or update; auto-versioned)
+vault kv put secret/consumer/<slug>/db username=app password='s3cret'
+vault kv patch secret/consumer/<slug>/db rotated_at=2026-04-27   # update one field, keep the rest
+
+# read
+vault kv get secret/consumer/<slug>/db
+vault kv get -field=password secret/consumer/<slug>/db
+vault kv list secret/consumer/<slug>
+
+# HTTP equivalent (KV-v2 inserts `data/` in the URL)
+curl -sk -X POST -H "X-Vault-Token: $VAULT_TOKEN" \
+  -d '{"data":{"password":"s3cret"}}' \
+  https://vault.sanctuary.gdn/v1/secret/data/consumer/<slug>/db
+curl -sk -H "X-Vault-Token: $VAULT_TOKEN" \
+  https://vault.sanctuary.gdn/v1/secret/data/consumer/<slug>/db | jq -r '.data.data.password'
+```
+
+Anything secret a project produces — a generated API key, a webhook signing secret, a freshly-rotated DB password — goes in the same way: one `vault kv put`. That is "how a credential gets into Vault."
+
+#### First-time provisioning (self-serve)
+
+If your project slug doesn't have a token yet, mint one yourself using the root token from Keychain. Do this once per slug.
+
+Run the whole thing in a subshell so the root token never enters your interactive environment, and pull only the one field you need from the seeds blob:
+
+```bash
+SLUG=<slug>
+(
+  export VAULT_ADDR=https://vault.sanctuary.gdn
+  VAULT_TOKEN=$(security find-generic-password -s "homelab-infra-vault-seeds" -a "$USER" -w \
+                 | jq -r .vault_root_token)
+  export VAULT_TOKEN
+
+  vault policy write "consumer-$SLUG" - <<EOF
+path "secret/data/consumer/$SLUG/*"     { capabilities = ["create","read","update","delete","list"] }
+path "secret/metadata/consumer/$SLUG/*" { capabilities = ["list","read","delete"] }
+EOF
+
+  vault token create -policy="consumer-$SLUG" -period=720h -display-name="$SLUG" \
+                     -format=json \
+    | jq -r .auth.client_token \
+    | xargs -I{} security add-generic-password -U -s "vault-token-$SLUG" -a "$USER" -w {}
+)
+```
+
+The subshell exits → `VAULT_TOKEN` and the seed blob are gone from process memory. The new token never appears in your shell history (piped straight to `security`). All subsequent reads/writes use `vault-token-<slug>` only.
+- **Hygiene:** read once at startup and cache; don't poll. One token per project. After a power cycle Vault may be sealed (`503 Vault is sealed`) — auto-unseals within ~2 min, don't retry-loop.
+
 ### ntfy — push notifications
 - **URL:** `https://ntfy.sanctuary.gdn`
 - **Send a notification:**
@@ -148,10 +212,11 @@ These are **non-negotiable**. Violating them turns a consumer project into a dri
 
 1. **Do not edit `~/code/home-infra`** from a consumer project. Not jobs, not terraform, not NixOS modules. If you think you need to, file a ticket instead.
 2. **Do not SSH into the VMs** (`ops`, `infra`, `runner`, `gpu`, `caddy`, `unraid`) from a consumer project to "quickly try something." There's no such thing as a quick local change here — it won't survive the next deploy, and it will confuse whoever debugs next.
-3. **Do not put Vault tokens, Gitea admin tokens, or infrastructure secrets into consumer project code.** Consumer projects only get their own narrow credentials (their Gitea PAT, their registry creds).
-4. **Do not hit service APIs with abusive patterns** — no write loops against VictoriaMetrics without batching, no 1000-req/s bursts against Ollama, no crawling Gitea with `git clone --mirror` on every repo.
-5. **Do not create Grafana dashboards in the UI and consider them persistent.** They aren't. Export JSON, file a ticket.
-6. **Do not write to NAS shares** your project wasn't granted.
+3. **Do not commit credentials.** Consumer projects only get narrow, scoped credentials — their own Gitea PAT, registry creds, a Vault token limited to `secret/consumer/<project>/*`. The cluster's root Vault token, Gitea admin tokens, and operator AppRoles never leave the operator's hands.
+4. **Do not read or write Vault paths outside your project's namespace.** `secret/consumer/<your-project>/*` is yours; everything else is operator-owned and your token won't open it.
+5. **Do not hit service APIs with abusive patterns** — no write loops against VictoriaMetrics without batching, no 1000-req/s bursts against Ollama, no crawling Gitea with `git clone --mirror` on every repo.
+6. **Do not create Grafana dashboards in the UI and consider them persistent.** They aren't. Export JSON, file a ticket.
+7. **Do not write to NAS shares** your project wasn't granted.
 
 ## Requesting Changes — `lit` Tickets
 
