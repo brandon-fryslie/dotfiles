@@ -41,6 +41,9 @@ config/codex/skills/.system/
 # Backup snapshots
 config/codex/skills/*.backup.*/
 
+# Local-only skill symlinks (point to external repos on this machine)
+config/claude/skills/pm-compass
+
 # Python build artifacts
 __pycache__/
 *.pyc
