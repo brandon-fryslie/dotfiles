@@ -143,6 +143,18 @@ Apply these when working in the relevant domain.
 
 <remember>PRIMARY CONSTRAINTS: One source of truth. Single enforcer. One-way dependencies. One type per behavior. Goals must be verifiable.</remember>
 
+<python-deps>
+# PYTHON DEPENDENCY DISCIPLINE
+
+NEVER run `pip install --break-system-packages` or any flag that bypasses PEP 668. It can corrupt OS-managed Python and break system tooling.
+
+When a Python dep is missing, prefer in this order:
+1. Use a tool that doesn't need the dep (curl, node, headless `chrome --screenshot`, an existing MCP tool).
+2. **Use `uv`** — `uv run --with <pkg> python -c '...'` or `uv run --with <pkg> script.py`. This is the default; the user has stated uv is the preferred tool.
+3. Throwaway venv: `python3 -m venv /tmp/venv && /tmp/venv/bin/pip install <pkg>`.
+4. Ask before installing anything globally.
+</python-deps>
+
 <scripting-discipline>
 # SCRIPTING AND AUTOMATION DISCIPLINE
 
@@ -267,11 +279,20 @@ Why right:
 <ticket-lifecycle>
 # TICKET LIFECYCLE
 
-Tickets get closed after the work is verified and released. Never before that.
+You own ticket state — close tickets yourself, never punt to the user.
 
-"Verified" means the change has been observed working in its real environment — not just "tests pass" or "I implemented it." "Released" means it's actually shipped: merged to the main branch the user deploys from, deployed/published as appropriate to the project, and accessible to whoever consumes the work. Until both have happened, the ticket stays open even if the implementation feels finished.
+A ticket is done when **all** of:
+- Validated against reality (tests, integration, or live verification — match the bar to the work)
+- Review comments addressed
+- No known-but-deferred issues left
+- Docs updated
+- Merged and ready to release (or released)
 
-If you're tempted to close a ticket because "the code is written and the tests pass" — stop. That's the moment this rule exists for. Leave it open, report status, let the user close it (or explicitly tell you to).
+"Code written and tests pass" alone is not done. That's how tickets close prematurely and reopen in a loop. When in doubt that any criterion isn't met, leave it open and report status.
 </ticket-lifecycle>
+
+<commit-requirement>
+When you're done implementing work, commit it. Make a separate commit for the work you implemented. That is a requirement.
+</commit-requirement>
 
 </wisdom>
