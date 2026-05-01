@@ -9,7 +9,7 @@ setopt share_history
 source ~/.rad-shell/rad-init.zsh
 
 # Editor configuration
-export VISUAL=idea
+export VISUAL=code
 export EDITOR=nvim
 
 AUTO_MENU=true
