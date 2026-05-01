@@ -400,7 +400,7 @@ multiline: false
 detect-urls: true
 
 ## Specify which editor to use for the /editor command
-editor: idea
+editor: code
 
 # Always ask when using architect!
 auto-accept-architect: false
