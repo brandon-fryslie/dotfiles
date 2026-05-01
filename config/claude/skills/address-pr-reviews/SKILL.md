@@ -46,7 +46,7 @@ Filter to `isResolved: false`. Keep each thread's `id` — you need it to post r
 
 Read the full comment chain and the referenced code (`path:line`). Then classify:
 
-- **Valid** — reviewer is right, apply the change.
+- **Valid** — reviewer is right, apply the change.  How do we know it's valid?  Ask these questions: Does the proposed change strengthen the architecture?  Is it aligned with the project goals?  Is it an improvement for users or for the project as a whole?  If so, you should address it as part of this work, BEFORE we merge the code.
 - **Valid but different fix** — reviewer identified a real problem but proposed the wrong solution. Apply a better fix.
 - **Invalid** — reviewer is wrong, or the suggestion violates the architectural laws (control-flow guards, defensive null checks, mode explosion, duplicate enforcement, etc.). Push back with reasoning.
 - **Already fixed** — resolved by a later commit. Just note it and resolve.
