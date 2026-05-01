@@ -98,7 +98,8 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "pnpm dlx @promptctl/claude-powerline@0.2.3 --style=powerline --layout 'directory git | model context block weekly sessionId' --display autoWrap=false --show git=workingTree,upstream,timeSinceCommit --segment block.type=weighted,sessionId.length=8,sessionId.clickAction.kind=url,sessionId.clickAction.scheme=cpwl"
+    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/bin/claude-powerline --style=powerline --layout 'directory gitTaculous | model context block weekly sessionId toolbar' --toolbar '▸{toolbar-toggle(session.id)} ?📂{open-vscode(projectDir)} ?📄{open-vscode(transcriptPath)}' --display autoWrap=false --segment block.type=weighted,sessionId.length=8,sessionId.clickAction.kind=url,sessionId.clickAction.scheme=cpwl,sessionId.clickAction.actions.0.verb=copy,sessionId.clickAction.actions.0.source=sessionId",
+    "refreshInterval": 1
   },
   "enabledPlugins": {
     "code-review@claude-plugins-official": false,
@@ -154,7 +155,7 @@
   "sandbox": {
     "enabled": false
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
