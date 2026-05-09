@@ -54,8 +54,10 @@ send_and_receive() {
   local before_lines
   before_lines=$(echo "$before" | wc -l)
 
-  # Send
-  tmux send-keys -t "$target" "$message" Enter
+  # Send (two calls with a gap — combined send+Enter races and drops the Enter)
+  tmux send-keys -t "$target" "$message"
+  sleep 1
+  tmux send-keys -t "$target" Enter
 
   # Wait
   if ! wait_for_claude "$target" "$timeout"; then
@@ -190,7 +192,9 @@ broadcast_message() {
   local -a targets=("$@")
 
   for target in "${targets[@]}"; do
-    tmux send-keys -t "$target" "$message" Enter
+    tmux send-keys -t "$target" "$message"
+    sleep 1
+    tmux send-keys -t "$target" Enter
     echo "Sent to $target" >&2
   done
 }
@@ -299,8 +303,9 @@ BEFORE_LINES=$(tmux capture-pane -t "$TARGET" -p -S -500 | wc -l)
 
 # Kick off the task
 tmux send-keys -t "$TARGET" \
-  "Please summarize the key architectural patterns used in this codebase. Focus on src/core/. When done, output ${SENTINEL} on its own line." \
-  Enter
+  "Please summarize the key architectural patterns used in this codebase. Focus on src/core/. When done, output ${SENTINEL} on its own line."
+sleep 1
+tmux send-keys -t "$TARGET" Enter
 
 # Wait for sentinel
 wait_for_sentinel "$TARGET" "$SENTINEL" 300 || { echo "timed out"; exit 1; }
