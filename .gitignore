@@ -51,3 +51,11 @@ __pycache__/
 # Dolt database files (added by bd init)
 .dolt/
 *.db
+
+config/claude.zai/*
+!config/claude.zai/agents/
+!config/claude.zai/commands/
+!config/claude.zai/skills/
+!config/claude.zai/CLAUDE.md
+!config/claude.zai/settings.json
+.claude/worktrees/
