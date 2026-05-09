@@ -2,17 +2,20 @@
   "env": {
     "ANTHROPIC_BASE_URL": "https://api.z.ai/api/anthropic",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.7",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-4.7",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.1",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-4.7",
-    "ANTHROPIC_MODEL": "glm-4.7",
+    "ANTHROPIC_MODEL": "glm-5.1",
+    "ANTHROPIC_AUTH_TOKEN": "4bafba6fe40b424d936e034bc264038c.169LPj6CpMYXMEjj",
     "ANTHROPIC_SMALL_FAST_MODEL": "glm-4.7",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
-    "SHELL": "bash"
+    "SHELL": "bash",
+    "OPENAI_BASE_URL": "http://127.0.0.1:62499"
   },
   "statusLine": {
     "type": "command",
-    "command": "npx -y @owloops/claude-powerline@latest --style=powerline"
+    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/bin/cc-candybar --style=powerline --layout 'directory gitTaculous | model context block weekly sessionId toolbar' --toolbar '▸{toolbar-toggle(session.id)} ?📂{open-vscode(projectDir)} ?📄{open-vscode(transcriptPath)}' --display autoWrap=false --segment block.type=weighted,sessionId.length=8,sessionId.clickAction.kind=url,sessionId.clickAction.scheme=cc-candybar,sessionId.clickAction.actions.0.verb=copy,sessionId.clickAction.actions.0.source=sessionId",
+    "refreshInterval": 1
   },
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "stable",
