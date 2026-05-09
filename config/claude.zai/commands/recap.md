@@ -17,4 +17,4 @@ Please recap each of these topics:
 
 You MUST WRITE IT to a file and provide the path to the file.  This file can be in a temp dir and doesn't need to be preserved.
 
-User instructions, if any: $ARGUMENTS%
+User instructions, if any: $ARGUMENTS
