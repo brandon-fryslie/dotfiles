@@ -1,0 +1,16 @@
+{
+  "enabledPlugins": {
+    "gopls-lsp@claude-plugins-official": true
+  },
+  "effortLevel": "medium",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "voiceEnabled": true,
+  "skipAutoPermissionPrompt": true,
+  "permissions": {
+    "defaultMode": "auto"
+  }
+}
