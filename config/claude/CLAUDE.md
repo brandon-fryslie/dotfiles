@@ -333,4 +333,24 @@ A ticket is done when **all** of:
 When you're done implementing work, commit it. Make a separate commit for the work you implemented. That is a requirement.
 </commit-requirement>
 
+<git-workflow>
+# GIT WORKFLOW — MANDATORY BEFORE ANY CODE WORK
+
+Follow these steps exactly at the start of every session that involves code changes. This is not a checklist to skim — every step is required. Deviation is a failure mode.
+
+1. Ensure working directory is clean (`git status` — no uncommitted changes)
+2. `git checkout master` (or the repo's default branch)
+3. `git branch -u origin/master`
+4. `git pull --rebase`
+
+**HARD GATE:** After step 4, you must be 0 commits ahead and 0 commits behind. If you are not, STOP. Do not touch any code. Tell the user the exact state and wait for instruction.
+
+5. `git checkout -b <descriptive-branch-name>` — all work on a branch, never directly on master
+6. Do work
+7. `git pull --rebase` once or twice a day during longer tasks
+8. Open a PR — never push directly to master
+
+Working on top of a diverged or stale master is always wrong. There is no scenario where it is acceptable to proceed past step 4 if the hard gate is not met.
+</git-workflow>
+
 </wisdom>
