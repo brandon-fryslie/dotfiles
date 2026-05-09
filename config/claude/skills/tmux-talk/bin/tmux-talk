@@ -1,97 +1,88 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-USAGE="Usage:
-  tmux-talk <target> <message> [timeout]   Send message, wait for response, print it
-  tmux-talk list                           List available tmux panes
+USAGE="tmux-talk — thin wrappers over tmux for agent-to-agent communication
 
-Arguments:
-  target   tmux pane address: session:window.pane  (e.g. work:0.0)
-  message  Text to send to the target pane
-  timeout  Seconds to wait for response (default: 120)"
+Subcommands:
+  list                           List all tmux panes with session:window.pane address and running command
+  send   <target> <message>      Send a message to a pane (handles the two-call timing requirement)
+  read-screen <target> [lines]   Capture pane content (default: 200 lines of scrollback)
+  wait   <target> [timeout]      Poll until the Claude idle prompt appears (default: 120s)
+  idle   <target>                Exit 0 if pane shows idle prompt, 1 otherwise
+
+target format: session:window.pane  (e.g. work:0.0, research:editor.0)"
 
 CMD="${1:-}"
 
-# -- subcommand: list --
+case "$CMD" in
 
-if [[ "$CMD" == "list" ]]; then
-  tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
-  exit 0
-fi
+  list)
+    tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    ;;
 
-# -- validate args --
-
-if [[ -z "$CMD" || -z "${2:-}" ]]; then
-  echo "$USAGE" >&2
-  exit 1
-fi
-
-TARGET="$1"
-MESSAGE="$2"
-TIMEOUT="${3:-120}"
-
-# -- verify target exists --
-
-if ! tmux list-panes -t "$TARGET" &>/dev/null; then
-  echo "tmux-talk: target '$TARGET' not found" >&2
-  echo "" >&2
-  echo "Available panes:" >&2
-  tmux list-panes -a -F "  #{session_name}:#{window_index}.#{pane_index}  (#{pane_current_command})" >&2
-  exit 1
-fi
-
-# -- verify target is idle before sending --
-
-CURRENT_CONTENT=$(tmux capture-pane -t "$TARGET" -p -S -10)
-if ! printf '%s' "$CURRENT_CONTENT" | grep -qE '^\s*>\s*$'; then
-  echo "tmux-talk: target '$TARGET' does not appear idle (no '>' prompt visible)" >&2
-  echo "  Waiting up to 30s for it to become idle..." >&2
-  IDLE_WAIT=0
-  while [ "$IDLE_WAIT" -lt 30 ]; do
-    sleep 2
-    IDLE_WAIT=$((IDLE_WAIT + 2))
-    CURRENT_CONTENT=$(tmux capture-pane -t "$TARGET" -p -S -10)
-    if printf '%s' "$CURRENT_CONTENT" | grep -qE '^\s*>\s*$'; then
-      break
+  send)
+    TARGET="${2:-}"
+    MESSAGE="${3:-}"
+    if [[ -z "$TARGET" || -z "$MESSAGE" ]]; then
+      echo "Usage: tmux-talk send <target> <message>" >&2
+      exit 1
     fi
-  done
-  if [ "$IDLE_WAIT" -ge 30 ]; then
-    echo "tmux-talk: target never became idle — aborting" >&2
+    # Two separate calls required — a combined send+Enter races the target's input handler
+    # and the Enter is silently dropped
+    tmux send-keys -t "$TARGET" "$MESSAGE"
+    sleep 1
+    tmux send-keys -t "$TARGET" Enter
+    ;;
+
+  read-screen)
+    TARGET="${2:-}"
+    LINES="${3:-200}"
+    if [[ -z "$TARGET" ]]; then
+      echo "Usage: tmux-talk read-screen <target> [lines]" >&2
+      exit 1
+    fi
+    tmux capture-pane -t "$TARGET" -p -S -"$LINES"
+    ;;
+
+  wait)
+    TARGET="${2:-}"
+    TIMEOUT="${3:-120}"
+    if [[ -z "$TARGET" ]]; then
+      echo "Usage: tmux-talk wait <target> [timeout]" >&2
+      exit 1
+    fi
+    INTERVAL=2
+    ELAPSED=0
+    PREV=""
+    while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+      sleep "$INTERVAL"
+      ELAPSED=$((ELAPSED + INTERVAL))
+      CURRENT=$(tmux capture-pane -t "$TARGET" -p -S -50)
+      if [ "$CURRENT" = "$PREV" ] && printf '%s' "$CURRENT" | grep -qE '^\s*>\s*$'; then
+        exit 0
+      fi
+      PREV="$CURRENT"
+    done
+    echo "tmux-talk wait: timed out after ${TIMEOUT}s waiting for idle prompt in '$TARGET'" >&2
     exit 1
-  fi
-fi
+    ;;
 
-# -- snapshot before sending --
+  idle)
+    TARGET="${2:-}"
+    if [[ -z "$TARGET" ]]; then
+      echo "Usage: tmux-talk idle <target>" >&2
+      exit 1
+    fi
+    CONTENT=$(tmux capture-pane -t "$TARGET" -p -S -10)
+    if printf '%s' "$CONTENT" | grep -qE '^\s*>\s*$'; then
+      exit 0
+    fi
+    exit 1
+    ;;
 
-BEFORE_LINES=$(tmux capture-pane -t "$TARGET" -p -S -500 | wc -l)
+  *)
+    echo "$USAGE" >&2
+    exit 1
+    ;;
 
-# -- send (two separate calls with a gap — combined send+Enter races and drops the Enter) --
-
-tmux send-keys -t "$TARGET" "$MESSAGE"
-sleep 1
-tmux send-keys -t "$TARGET" Enter
-
-# -- poll until response stabilizes and idle prompt returns --
-
-INTERVAL=2
-ELAPSED=0
-PREV=""
-
-while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
-  sleep "$INTERVAL"
-  ELAPSED=$((ELAPSED + INTERVAL))
-  CURRENT=$(tmux capture-pane -t "$TARGET" -p -S -100)
-  if [ "$CURRENT" = "$PREV" ] && printf '%s' "$CURRENT" | grep -qE '^\s*>\s*$'; then
-    break
-  fi
-  PREV="$CURRENT"
-done
-
-if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-  echo "tmux-talk: timed out after ${TIMEOUT}s waiting for response from '$TARGET'" >&2
-  exit 1
-fi
-
-# -- extract and print only the new content --
-
-tmux capture-pane -t "$TARGET" -p -S -500 | tail -n +"$BEFORE_LINES"
+esac
