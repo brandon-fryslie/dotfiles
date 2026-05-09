@@ -98,7 +98,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/bin/claude-powerline --style=powerline --layout 'directory gitTaculous | model context block weekly sessionId toolbar' --toolbar '▸{toolbar-toggle(session.id)} ?📂{open-vscode(projectDir)} ?📄{open-vscode(transcriptPath)}' --display autoWrap=false --segment block.type=weighted,sessionId.length=8,sessionId.clickAction.kind=url,sessionId.clickAction.scheme=cpwl,sessionId.clickAction.actions.0.verb=copy,sessionId.clickAction.actions.0.source=sessionId",
+    "command": "/Users/bmf/code/cc-candybar/bin/cc-candybar --layout 'directory gitTaculous | model context block weekly sessionId tray' --tray '▸{toolbar-toggle(session.id)}' --display autoWrap=false --segment block.type=weighted,sessionId.length=8,sessionId.clickAction.kind=url,sessionId.clickAction.scheme=cc-candybar,sessionId.clickAction.actions.0.verb=copy,sessionId.clickAction.actions.0.source=sessionId,sessionId.clickAction.actions.1.verb=open-vscode,sessionId.clickAction.actions.1.source=transcriptPath,sessionId.clickAction.actions.1.glyph=📄,sessionId.clickAction.actions.2.verb=open-vscode,sessionId.clickAction.actions.2.source=projectDir,sessionId.clickAction.actions.2.glyph=📂",
     "refreshInterval": 1
   },
   "enabledPlugins": {
@@ -155,10 +155,17 @@
   "sandbox": {
     "enabled": false
   },
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
+  "editorMode": "normal",
+  "verbose": false,
+  "preferredNotifChannel": "iterm2_with_bell",
+  "remoteControlAtStartup": true,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "model": "sonnet"
 }

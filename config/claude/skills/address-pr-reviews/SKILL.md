@@ -85,7 +85,9 @@ mutation($threadId:ID!) {
 }' -F threadId=THREAD_ID
 ```
 
-Only resolve threads *you* addressed. If you pushed back and the reviewer hasn't responded, leave it unresolved — resolution is their call in that case. Exception: if the user explicitly told you to resolve everything, resolve.
+**Resolve every thread you addressed, including ones you pushed back on.** Reviewers (especially automated ones like Copilot) typically do not respond, so leaving pushed-back threads "for them to decide" just means they accumulate forever and clog future review state. The pushback comment from step 5 is the durable record — if a human reviewer disagrees with your reasoning, they can re-open the thread, which is cheap. Open threads are not.
+
+The only thread you should leave unresolved is one where you've surfaced a genuine conflict to the user (see Rules) and are waiting for their input — and even then, resolve it as soon as the user decides.
 
 ## Rules
 
@@ -97,4 +99,4 @@ Only resolve threads *you* addressed. If you pushed back and the reviewer hasn't
 
 ## Output to user
 
-When done, report: threads addressed, threads pushed back on (with reasons), commits pushed, any threads left unresolved and why.
+When done, report: threads addressed (fix + resolution), threads pushed back on (with reasons + law citations), commits pushed. Every thread should end resolved — if any are still open, name them and the specific reason (almost always: an unresolved conflict surfaced to the user).
