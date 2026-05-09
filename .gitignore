@@ -55,7 +55,7 @@ __pycache__/
 config/claude.zai/*
 !config/claude.zai/agents/
 !config/claude.zai/commands/
-!config/claude.zai/skills/
+# !config/claude.zai/skills/
 !config/claude.zai/CLAUDE.md
 !config/claude.zai/settings.json
 .claude/worktrees/
