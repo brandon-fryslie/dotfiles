@@ -53,22 +53,27 @@ Always verify the target exists before sending. If the specified session/window 
 
 ## Sending a Message
 
-```bash
-# Send text + Enter (submits to the running process)
-tmux send-keys -t "<target>" "your message here" Enter
+Always use **two separate `send-keys` calls** — one for the text, one for Enter — with a 1–2 second sleep between them. A single call combining text and `Enter` races with the target process's input handler and the Enter is silently dropped.
 
-# Send without Enter (for multi-step construction)
-tmux send-keys -t "<target>" "partial text"
+```bash
+# Correct: two calls with a gap
+tmux send-keys -t "<target>" "your message here"
+sleep 1
+tmux send-keys -t "<target>" Enter
 ```
 
 **Quoting**: wrap the message in single quotes in the shell call to avoid unexpected expansions. If the message itself contains single quotes, use `$'...'` syntax or escape carefully.
 
 ```bash
 # Safe for most content
-tmux send-keys -t "work:0.0" 'Please summarize the architecture of this repo.' Enter
+tmux send-keys -t "work:0.0" 'Please summarize the architecture of this repo.'
+sleep 1
+tmux send-keys -t "work:0.0" Enter
 
 # Message with special characters
-tmux send-keys -t "work:0.0" $'What\'s the status of the refactor?' Enter
+tmux send-keys -t "work:0.0" $'What\'s the status of the refactor?'
+sleep 1
+tmux send-keys -t "work:0.0" Enter
 ```
 
 For Claude Code specifically: input is submitted line-by-line on Enter, same as terminal input.
@@ -117,7 +122,9 @@ tmux capture-pane -t "$TARGET" -p -S -500 > /tmp/before.txt
 BEFORE_LINES=$(wc -l < /tmp/before.txt)
 
 # Send message
-tmux send-keys -t "$TARGET" "your question" Enter
+tmux send-keys -t "$TARGET" "your question"
+sleep 1
+tmux send-keys -t "$TARGET" Enter
 
 # Wait for completion (see references/ for wait function)
 
