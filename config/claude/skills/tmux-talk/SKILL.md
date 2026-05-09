@@ -84,7 +84,7 @@ done
 
 **Long responses**: the default 200-line scrollback may truncate. Use `read-screen "$TARGET" 1000` for large outputs. If the response might exceed tmux's `history-limit` (default 2000 lines), instruct the remote Claude to write to a file instead.
 
-**Prompt detection is fuzzy**: `wait` looks for a bare `>` on its own line. If the remote process uses a different idle indicator, observe it with `read-screen` and adjust your polling logic.
+**Idle detection**: `wait` and `idle` require two conditions: a bare `>` on its own line AND no `ing…` visible. The `ing…` suffix appears on Claude's activity spinner lines (e.g. `✶ Baking…`, `✶ Thinking…`) and is the reliable "still working" signal — the spinner character varies but `ing…` is constant.
 
 **Don't send while generating**: `idle` tells you the current state. If you send into an actively-generating Claude instance, keystrokes queue and get misinterpreted.
 

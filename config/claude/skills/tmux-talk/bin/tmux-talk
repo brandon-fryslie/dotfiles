@@ -58,7 +58,9 @@ case "$CMD" in
       sleep "$INTERVAL"
       ELAPSED=$((ELAPSED + INTERVAL))
       CURRENT=$(tmux capture-pane -t "$TARGET" -p -S -50)
-      if [ "$CURRENT" = "$PREV" ] && printf '%s' "$CURRENT" | grep -qE '^\s*>\s*$'; then
+      if [ "$CURRENT" = "$PREV" ] \
+          && printf '%s' "$CURRENT" | grep -qE '^\s*>\s*$' \
+          && ! printf '%s' "$CURRENT" | grep -qF 'ing…'; then
         exit 0
       fi
       PREV="$CURRENT"
@@ -74,7 +76,8 @@ case "$CMD" in
       exit 1
     fi
     CONTENT=$(tmux capture-pane -t "$TARGET" -p -S -10)
-    if printf '%s' "$CONTENT" | grep -qE '^\s*>\s*$'; then
+    if printf '%s' "$CONTENT" | grep -qE '^\s*>\s*$' \
+        && ! printf '%s' "$CONTENT" | grep -qF 'ing…'; then
       exit 0
     fi
     exit 1
