@@ -51,6 +51,8 @@ query($owner:String!,$repo:String!,$num:Int!){
 
 If the result is `[]`, **the loop is done**. Step 1 already guaranteed no Copilot review is in flight, so `[]` is unambiguous. Report the PR is ready for the user to merge. **Don't merge yourself.**
 
+> **Pagination limit.** This query returns up to 100 unresolved threads (and 20 comments per thread). If the response array has exactly 100 entries, there may be more — surface to the user with a count and let them decide whether to triage manually or extend the query. PRs with more than 100 unresolved review threads are pathological and the loop won't try to handle them automatically.
+
 ### 3. For each unresolved thread
 
 Open the file at `path:line`. Read the comment body. Decide which bucket the thread falls into:
