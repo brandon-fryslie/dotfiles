@@ -33,8 +33,20 @@ COPILOT_USER_ID = 175728472  # stable web-UI user ID for copilot-pull-request-re
 # Plumbing
 # ---------------------------------------------------------------------------
 
+def _gh(*args: str) -> str:
+    """Run `gh` with stderr captured so CalledProcessError.stderr is populated.
+
+    [LAW:single-enforcer] every shell-out goes through here so main()'s error
+    handler can surface gh's own stderr as the one-line error — never to the
+    terminal as a separate stream that breaks the "one error line" contract.
+    """
+    return subprocess.check_output(
+        ["gh", *args], text=True, stderr=subprocess.PIPE
+    ).strip()
+
+
 def gh_token() -> str:
-    return subprocess.check_output(["gh", "auth", "token"], text=True).strip()
+    return _gh("auth", "token")
 
 
 def parse_pr_url(url: str) -> tuple[str, str, int]:
@@ -54,7 +66,11 @@ def http(method: str, url: str, headers: dict | None = None, body: bytes | str |
         with urllib.request.urlopen(req) as resp:
             return resp.status, resp.read()
     except urllib.error.HTTPError as e:
+        # HTTPError is a URLError subclass that carries a response body;
+        # treat it as a returned status, not a connection failure.
         return e.code, e.read()
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"HTTP {method} to {url} failed: {e.reason}") from e
 
 
 def copilot_headers(token: str) -> dict:
@@ -221,14 +237,13 @@ def is_copilot_review_pending(owner: str, repo: str, pr_num: int) -> bool:
         "      reviewRequests(first:50){"
         "        nodes{requestedReviewer{... on User{login} ... on Bot{login}}} } } } }"
     )
-    out = subprocess.check_output(
-        ["gh", "api", "graphql",
-         "-f", f"query={query}",
-         "-F", f"owner={owner}", "-F", f"repo={repo}", "-F", f"num={pr_num}",
-         "--jq", '[.data.repository.pullRequest.reviewRequests.nodes[].requestedReviewer.login] '
-                 '| any(. == "copilot-pull-request-reviewer" or . == "Copilot")'],
-        text=True,
-    ).strip()
+    out = _gh(
+        "api", "graphql",
+        "-f", f"query={query}",
+        "-F", f"owner={owner}", "-F", f"repo={repo}", "-F", f"num={pr_num}",
+        "--jq", '[.data.repository.pullRequest.reviewRequests.nodes[].requestedReviewer.login] '
+                '| any(. == "copilot-pull-request-reviewer" or . == "Copilot")',
+    )
     return out == "true"
 
 
@@ -327,6 +342,8 @@ def cmd_trigger(args: argparse.Namespace) -> None:
                 return r.status, r.read(), {k.lower(): v for k, v in r.headers.items()}
         except urllib.error.HTTPError as e:
             return e.code, e.read(), {}
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"HTTP {method} to {url} failed: {e.reason}") from e
 
     status, body, resp_headers = _send("GET", pr_url, {"Accept": "text/html"})
     if status != 200:
@@ -522,7 +539,10 @@ def main() -> None:
         stderr = (e.stderr or b"").decode("utf-8", "ignore").strip() if isinstance(e.stderr, bytes) else (e.stderr or "").strip()
         print(f"error: `{cmd}` failed (exit {e.returncode}){': ' + stderr if stderr else ''}", file=sys.stderr)
         sys.exit(e.returncode or 1)
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
+        # ValueError catches malformed-input failures like parse_pr_url's
+        # "Not a PR URL" — without it those surface as a Python traceback,
+        # breaking the one-line-error contract for user-input mistakes too.
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
 
