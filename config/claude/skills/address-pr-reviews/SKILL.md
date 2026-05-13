@@ -5,98 +5,101 @@ description: Address open PR review threads with judgment — read each thread, 
 
 # Address PR Review Threads
 
-Work through every unresolved review thread on a PR with judgment. **Do not blindly implement review feedback** — reviewers are sometimes wrong, miss context, or suggest changes that conflict with the architectural laws. Think first, then act.
+A script-driven loop. The bundled helper at `~/.claude/skills/address-pr-reviews/copilot-review.py` owns the state machine — you just run the step it tells you to run next, and do the judgment work it asks for in between.
 
-## Inputs
+## Quick start
 
-- **PR number** (optional): if not given, infer from current branch via `gh pr view --json number`.
-- **Wait duration** (optional): if the user asks you to wait (e.g. "wait 8 min"), sleep that long before fetching threads so new comments have time to land. Use `sleep` in a single background-safe Bash call; do not poll.
-
-## Procedure
-
-### 1. Fetch unresolved review threads
-
-Use the GraphQL API — `gh pr view` does not expose thread resolution state.
+If the user didn't give you a PR number, infer it from the current branch:
 
 ```bash
-gh api graphql -f query='
-query($owner:String!, $repo:String!, $num:Int!) {
-  repository(owner:$owner, name:$repo) {
-    pullRequest(number:$num) {
-      reviewThreads(first:100) {
-        nodes {
-          id
-          isResolved
-          isOutdated
-          path
-          line
-          comments(first:20) {
-            nodes { author{login} body createdAt }
-          }
-        }
-      }
-    }
-  }
-}' -F owner=OWNER -F repo=REPO -F num=NUM
+gh pr view --json url --jq .url
 ```
 
-Filter to `isResolved: false`. Keep each thread's `id` — you need it to post replies and resolve.
-
-### 2. For each unresolved thread, decide
-
-Read the full comment chain and the referenced code (`path:line`). Then classify:
-
-- **Valid** — reviewer is right, apply the change.  How do we know it's valid?  Ask these questions: Does the proposed change strengthen the architecture?  Is it aligned with the project goals?  Is it an improvement for users or for the project as a whole?  If so, you should address it as part of this work, BEFORE we merge the code.
-- **Valid but different fix** — reviewer identified a real problem but proposed the wrong solution. Apply a better fix.
-- **Invalid** — reviewer is wrong, or the suggestion violates the architectural laws (control-flow guards, defensive null checks, mode explosion, duplicate enforcement, etc.). Push back with reasoning.
-- **Already fixed** — resolved by a later commit. Just note it and resolve.
-
-**Cite laws when pushing back or when a law shaped your fix.** Reviewers pushing for `if x != nil` guards, silent fallbacks, or new config flags are the common cases where you say no.
-
-### 3. Comment the proposed solution *first*
-
-Before editing code, post a reply on the thread describing what you intend to do (or why you won't). This gives the reviewer a chance to object and creates a record of reasoning.
+Then start the loop:
 
 ```bash
-gh api graphql -f query='
-mutation($threadId:ID!, $body:String!) {
-  addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId, body:$body}) {
-    comment { id }
-  }
-}' -F threadId=THREAD_ID -F body="Proposal: ..."
+~/.claude/skills/address-pr-reviews/copilot-review.py step 1 <PR_URL>
 ```
 
-### 4. Apply the fix (if warranted)
+Read the script's output. It always ends with one of three blocks:
 
-Edit code. Stage, commit with a message referencing the concern (not the thread ID — threads are ephemeral, commits are forever). Push to the PR branch.
+- `=== NEXT: run step N ===` — just run the listed command.
+- `=== NEXT: agent work, then step N ===` — do the listed judgment work first (read files, decide, write a JSON file, apply code edits, commit), then run the listed command.
+- `=== DONE ===` — the loop converged. The script merged the PR. Report the iteration summary to the user.
 
-Batch multiple thread fixes into one commit when they're related; separate commits when they touch unrelated concerns.
+If the script exits non-zero with `Loop is blocked`, surface the specific reason to the user and stop.
 
-### 5. Comment the resolution
+## What the loop does
 
-Reply again on the thread with what you actually did — commit SHA, file/line if it moved, or "not changing because ..." if you rejected the feedback.
+Each iteration runs five steps:
 
-### 6. Resolve the thread
+| Step | Script does | Then you... |
+|---|---|---|
+| 1 | Waits for any in-progress Copilot review (gh polls every 30s, capped at 15min); snapshots HEAD | run step 2 |
+| 2 | Fetches unresolved threads + Copilot's full session reasoning to `/tmp/address-pr-<N>-iter-<I>-*` | decide on each thread, write decisions JSON, run step 3 |
+| 3 | Posts proposal comments on every thread | apply code fixes for valid/different_fix threads + commit, write resolutions JSON, run step 4 |
+| 4 | Posts resolution comments + resolves all addressed threads | run step 5 |
+| 5 | Compares HEAD against the step-1 snapshot. **Unchanged** → merges the PR (DONE). **Moved** → pushes, triggers fresh Copilot review, bumps iteration → return to step 1 | run step 1 (next iteration) or report DONE |
 
-```bash
-gh api graphql -f query='
-mutation($threadId:ID!) {
-  resolveReviewThread(input:{threadId:$threadId}) { thread { isResolved } }
-}' -F threadId=THREAD_ID
+State persists in `/tmp/address-pr-<NUM>.state.json` — safe to resume across context compaction. To restart from scratch, delete that file. <!-- [LAW:one-source-of-truth] workflow state has one home, in the state file, not in the agent's head -->
+
+The iteration cap is 3 (a 4th round of pushed fixes is treated as non-convergence and surfaced to the user).
+
+## Judgment work between steps
+
+The script is mechanical. You do the thinking in three places.
+
+### Between step 2 and step 3 — classify each thread
+
+Read `/tmp/address-pr-<N>-iter-<I>-threads.json` (unresolved threads) and `/tmp/address-pr-<N>-iter-<I>-suppressed.md` (Copilot's full session reasoning — includes comments that were dropped under the inline-comment cap and never posted as threads). Open the referenced code at `thread.path:thread.line`.
+
+The suppressed file's header includes `**Latest overview:** N comment(s) generated` or `**Latest overview:** no 'generated N comments' phrase`. That phrase, parsed from Copilot's submitted PR overview, is the **authoritative** signal for "did Copilot find anything this iteration." Absent phrase + `is_copilot_review_pending=false` (which step 1 already enforced) = clean review. If the phrase says `N` and you see fewer than `N` unresolved threads, the difference is almost always already-resolved findings from earlier iterations — not a missing review. Never trust stored-comment counts or event-stream stability over this number.
+
+For each thread, write an entry to `/tmp/address-pr-<N>-iter-<I>-decisions.json`:
+
+```json
+[{ "thread_id": "...", "decision": "valid", "proposal": "Proposal: ..." }]
 ```
 
-**Resolve every thread you addressed, including ones you pushed back on.** Reviewers (especially automated ones like Copilot) typically do not respond, so leaving pushed-back threads "for them to decide" just means they accumulate forever and clog future review state. The pushback comment from step 5 is the durable record — if a human reviewer disagrees with your reasoning, they can re-open the thread, which is cheap. Open threads are not.
+Decision buckets:
 
-The only thread you should leave unresolved is one where you've surfaced a genuine conflict to the user (see Rules) and are waiting for their input — and even then, resolve it as soon as the user decides.
+- **`valid`** — reviewer is right. The change strengthens architecture, aligns with project goals, or genuinely improves the work. Apply it.
+- **`different_fix`** — reviewer identified a real problem but proposed the wrong solution. Apply a better fix.
+- **`invalid`** — reviewer is wrong, or the suggestion violates an architectural law: defensive null guards, silent fallbacks, mode explosion, duplicate enforcement, control-flow guards in place of data-flow variance, etc. Push back. Cite the law in your proposal text (e.g. `[LAW:no-defensive-null-guards]`).
+- **`already_fixed`** — resolved by a later commit. Note and resolve.
+
+Cross-reference suppressed comments in the same review — sometimes a posted thread and a suppressed comment touch related concerns, and addressing them together gives a better fix.
+
+### Between step 3 and step 4 — apply fixes and write resolutions
+
+For threads classified `valid` or `different_fix`, edit the code and commit. Commit messages describe the **why** (the architectural concern), not "address review comment" — the thread is context, the commit must stand alone in `git log`. Batch related concerns; separate unrelated.
+
+If a worthwhile finding lives only in the suppressed Copilot reasoning (no thread exists to reply on), fix it in the same commit pass and mention it in your final report to the user — do **not** invent inline threads to "post" suppressed comments.
+
+Then write `/tmp/address-pr-<N>-iter-<I>-resolutions.json`:
+
+```json
+[{ "thread_id": "...", "resolution": "Resolution: ..." }]
+```
+
+One resolution entry per thread you addressed this iteration — including pushbacks (the resolution body is the durable record of *why you won't change it*).
+
+### After DONE — report to user
+
+The script's DONE block contains the iteration summary. Expand it for the user:
+
+- **Iterations run**, with per-iteration counts (threads addressed, code-change verdict, decision-bucket breakdown from `decision_counts`)
+- **Threads addressed across the run** — fixes vs pushbacks, with law citations on pushbacks
+- **Suppressed-comment findings addressed**, with file:line + commit SHA
+- **Commits pushed** during the run
+- **Final state** — merged (with merge result) or blocked (with reason)
 
 ## Rules
 
-- **Never silently ignore a thread.** Every unresolved thread gets either a fix+resolution or an explicit pushback comment.
-- **Never blindly apply suggestions.** Reviewer authority does not override architectural laws. If a suggestion would add a defensive null guard, a silent fallback, a new flag without exit plan, or a duplicate enforcement site — refuse and explain.
-- **One proposal comment, one resolution comment, per thread.** Don't spam.
-- **Commit messages describe the *why*, not "address review comment".** The review thread is context; the commit has to stand alone in `git log`.
+- **Never silently ignore a thread.** Every unresolved thread gets a fix+resolution or an explicit pushback. The script will refuse to skip threads — write `invalid` decisions with reasoning instead.
+- **Never blindly apply suggestions.** Architectural laws override reviewer authority. Refuse suggestions that would introduce defensive null guards, silent fallbacks, mode explosions, or duplicate enforcement, and cite the law you're invoking.
+- **Resolve every thread you addressed, including pushbacks.** Automated reviewers don't respond. The pushback comment is the durable record; if a human disagrees, they can re-open the thread cheaply. Open threads accumulate forever.
+- **Commit messages stand alone in `git log`.** No "address review comment" — describe the architectural concern.
 - **If threads conflict with each other**, surface the conflict to the user before acting. Don't pick a side silently.
-
-## Output to user
-
-When done, report: threads addressed (fix + resolution), threads pushed back on (with reasons + law citations), commits pushed. Every thread should end resolved — if any are still open, name them and the specific reason (almost always: an unresolved conflict surfaced to the user).
+- **Suppressed comments are not threads.** Address worthwhile ones in your fix commits and mention them in the final report.
+- **Don't track loop state yourself.** The script is the source of truth for iteration/step/HEAD-snapshot. Always run the step the previous output told you to run — don't skip ahead, don't second-guess. If you need to recover from an error, fix the underlying condition and re-run the same step. <!-- [LAW:one-source-of-truth] -->
