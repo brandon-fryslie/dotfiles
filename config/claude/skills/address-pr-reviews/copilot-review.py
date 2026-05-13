@@ -212,10 +212,10 @@ def is_copilot_review_pending(owner: str, repo: str, pr_num: int) -> bool:
     out = subprocess.check_output(
         ["gh", "pr", "view", str(pr_num), "--repo", f"{owner}/{repo}",
          "--json", "reviewRequests",
-         "--jq", "[.reviewRequests[].login] | join(\",\")"],
+         "--jq", '[.reviewRequests[].login] | any(. == "Copilot")'],
         text=True,
     ).strip()
-    return "Copilot" in out
+    return out == "true"
 
 
 # ---------------------------------------------------------------------------
@@ -365,31 +365,45 @@ def cmd_trigger(args: argparse.Namespace) -> None:
         sys.exit(1)
     print(f"Triggered Copilot review on {owner}/{repo}#{pr_num}", file=sys.stderr)
 
+    # GitHub processes /review-requests asynchronously. Block until Copilot
+    # appears in reviewRequests so the next `wait` call has unambiguous state:
+    # "Copilot in reviewRequests" = review in flight, "not in" = done. Without
+    # this, a wait call immediately after trigger could race the registration
+    # window and see "not pending" before the request lands. [LAW:single-enforcer]
+    print("Waiting up to 2min for Copilot to register as requested reviewer...", file=sys.stderr)
+    deadline = time.time() + 120
+    while not is_copilot_review_pending(owner, repo, pr_num):
+        if time.time() >= deadline:
+            print("Trigger fired but Copilot did not appear in reviewRequests within 2min.",
+                  file=sys.stderr)
+            print("This is unusual — the trigger probably failed silently. Exiting nonzero.",
+                  file=sys.stderr)
+            sys.exit(1)
+        time.sleep(5)
+    print("Copilot is now a requested reviewer.", file=sys.stderr)
+
 
 def cmd_wait(args: argparse.Namespace) -> None:
-    """Block until any in-flight Copilot review finishes.
+    """Block until any in-flight Copilot review finishes — idempotent.
 
-    Two phases:
-      1. If not pending, wait up to 2min for a recently-triggered review to
-         register (GitHub processes /review-requests asynchronously). If
-         nothing starts in 2min, exit cleanly — there's nothing to wait for.
-      2. Once pending, poll every 30s until Copilot leaves reviewRequests.
-         Capped at 15min so we never hang forever.
+    Pure "wait for completion": if Copilot is not currently in reviewRequests,
+    exit immediately (nothing to wait for). If Copilot IS in reviewRequests,
+    poll every 30s until it's gone, capped at 15min.
+
+    Idempotency means the loop can call this at the start of every iteration
+    without worrying about whether a trigger fired. The registration-window
+    wait lives inside `trigger` itself, so by the time `trigger` returns,
+    Copilot is guaranteed to be in reviewRequests if a review was actually
+    queued. [LAW:single-enforcer] one signal — reviewRequests membership —
+    owns review-state truth.
     """
     owner, repo, pr_num = parse_pr_url(args.pr_url)
 
-    if is_copilot_review_pending(owner, repo, pr_num):
-        print("Copilot review in flight. Polling until complete...", file=sys.stderr)
-    else:
-        print("Waiting up to 2min for a Copilot review to start...", file=sys.stderr)
-        deadline = time.time() + 120
-        while not is_copilot_review_pending(owner, repo, pr_num):
-            if time.time() >= deadline:
-                print("No Copilot review started. Nothing to wait for.", file=sys.stderr)
-                return
-            time.sleep(5)
-        print("Copilot review started. Polling until complete...", file=sys.stderr)
+    if not is_copilot_review_pending(owner, repo, pr_num):
+        print("No Copilot review in flight. Nothing to wait for.", file=sys.stderr)
+        return
 
+    print("Copilot review in flight. Polling until complete...", file=sys.stderr)
     start = time.time()
     last_log = 0
     while is_copilot_review_pending(owner, repo, pr_num):
@@ -449,7 +463,6 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         out.append(f"\n**Overview signal:** {count} comment(s) generated\n")
 
     if overview:
-        out.append("## Pull request overview\n")
         out.append(overview)
         out.append("")
 
