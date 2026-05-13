@@ -510,7 +510,21 @@ def main() -> None:
     pf.set_defaults(func=cmd_fetch)
 
     args = p.parse_args()
-    args.func(args)
+    # [LAW:single-enforcer] one place owns "convert internal failures to clean
+    # user-facing errors". gh shell-outs raise CalledProcessError; HTTP helpers
+    # raise RuntimeError on non-2xx. Both surface here as a one-line message
+    # plus the original error text, then nonzero exit — no Python traceback
+    # for predictable boundary failures (auth lapse, rate limit, network).
+    try:
+        args.func(args)
+    except subprocess.CalledProcessError as e:
+        cmd = " ".join(e.cmd) if isinstance(e.cmd, list) else str(e.cmd)
+        stderr = (e.stderr or b"").decode("utf-8", "ignore").strip() if isinstance(e.stderr, bytes) else (e.stderr or "").strip()
+        print(f"error: `{cmd}` failed (exit {e.returncode}){': ' + stderr if stderr else ''}", file=sys.stderr)
+        sys.exit(e.returncode or 1)
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
