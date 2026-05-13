@@ -208,11 +208,25 @@ def is_copilot_review_pending(owner: str, repo: str, pr_num: int) -> bool:
     GitHub adds Copilot to reviewRequests when a review is triggered and
     removes it when the review is submitted. This is the only authoritative
     signal — never event-stream stability, never stored-comment counts.
+
+    Must use GraphQL: `gh pr view --json reviewRequests` does NOT surface
+    Bot reviewers (returns []), so REST-based detection silently misses
+    Copilot. The GraphQL `requestedReviewer` field with a User/Bot type
+    spread returns the bot under login "copilot-pull-request-reviewer".
     """
+    query = (
+        "query($owner:String!,$repo:String!,$num:Int!){"
+        "  repository(owner:$owner,name:$repo){"
+        "    pullRequest(number:$num){"
+        "      reviewRequests(first:50){"
+        "        nodes{requestedReviewer{... on User{login} ... on Bot{login}}} } } } }"
+    )
     out = subprocess.check_output(
-        ["gh", "pr", "view", str(pr_num), "--repo", f"{owner}/{repo}",
-         "--json", "reviewRequests",
-         "--jq", '[.reviewRequests[].login] | any(. == "Copilot")'],
+        ["gh", "api", "graphql",
+         "-f", f"query={query}",
+         "-F", f"owner={owner}", "-F", f"repo={repo}", "-F", f"num={pr_num}",
+         "--jq", '[.data.repository.pullRequest.reviewRequests.nodes[].requestedReviewer.login] '
+                 '| any(. == "copilot-pull-request-reviewer" or . == "Copilot")'],
         text=True,
     ).strip()
     return out == "true"
