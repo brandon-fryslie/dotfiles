@@ -108,4 +108,3 @@ The "generated N comments" phrase is the most reliable count of how many finding
 - **Resolve every thread you addressed, including pushbacks.** Automated reviewers don't reply; the pushback comment is the record. Open threads accumulate forever.
 - **Don't invent suppressed-comment threads.** If a worthwhile finding lives only in Copilot's session reasoning (no inline thread to reply on), fix it in your commit pass and mention it in your final report.
 - **Conflicts between threads** — surface to the user before acting. Don't pick a side silently.
-- **Iteration cap.** After 3 full passes that each push code, stop and report. Convergence isn't happening; the user needs to see what's going on.
