@@ -7,7 +7,7 @@ STATE_FILE="$HOME/.claude/.last_laws_reminder"
 COOLDOWN_SECONDS=300  # 5 minutes
 
 # Long variant: forces active engagement by requiring application to current task
-REMINDER_LONG="Before proceeding, restate your personal summary of the <universal-laws>, and for each, give a concrete example of how it applies to the current task. "
+REMINDER_LONG="For the following request, please consider the universal laws and how any design or implementation you create will achieve it's highest quality expression through them.  You can improve your results substantially by express this directly in the chat.  Engaging with the laws is a must.  Although it may seem tedious and repetitive to repeatedly derive the concrete details from the abstract, that engagement is critical for applying abstract thinking concepts correctly at all stages of the SLDC.  This is not a checklist to satisfy, this is a philosophy for approaching any task. "
 
 # Short variant: still forces engagement with actual content, just less elaboration
 REMINDER_SHORT="Briefly summarize the <universal-laws> in their totality. "
