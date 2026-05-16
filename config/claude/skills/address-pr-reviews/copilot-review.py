@@ -25,7 +25,12 @@ from pathlib import Path
 
 API_BASE = "https://api.individual.githubcopilot.com"
 GITHUB_API = "https://api.github.com"
-COPILOT_BOT_LOGIN = "Copilot"
+# GitHub exposes Copilot under two distinct logins depending on the API:
+# REST `/pulls/{n}/comments` returns "Copilot" (Bot display name); GraphQL
+# `reviewThreads.comments.author` returns "copilot-pull-request-reviewer"
+# (the stable bot login). Match both — they refer to the same actor.
+# [LAW:one-source-of-truth] one set, used everywhere we identify the bot.
+COPILOT_LOGINS = frozenset({"Copilot", "copilot-pull-request-reviewer"})
 COPILOT_USER_ID = 175728472  # stable web-UI user ID for copilot-pull-request-reviewer
 
 
@@ -191,27 +196,62 @@ def parse_generated_comment_count(content: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def fetch_posted_inline_comments(owner: str, repo: str, pr_num: int, token: str) -> list[dict]:
-    url = f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{pr_num}/comments"
-    status, body = http("GET", url, github_headers(token))
-    if status != 200:
-        return []
-    return json.loads(body)
+def fetch_review_threads(owner: str, repo: str, pr_num: int) -> list[dict]:
+    """Return all review threads with their comments. Thread metadata (id,
+    isResolved) is joined to Copilot's session findings to produce the
+    canonical findings list. [LAW:one-source-of-truth] threads are a join
+    key for reasoning-derived findings, never a parallel primary source.
+    """
+    query = (
+        "query($owner:String!,$repo:String!,$num:Int!){"
+        "  repository(owner:$owner,name:$repo){"
+        "    pullRequest(number:$num){"
+        "      reviewThreads(first:100){"
+        "        nodes{ id isResolved path line"
+        "          comments(first:20){ nodes{ author{login} body } } } } } } }"
+    )
+    out = _gh(
+        "api", "graphql",
+        "-f", f"query={query}",
+        "-F", f"owner={owner}", "-F", f"repo={repo}", "-F", f"num={pr_num}",
+        "--jq", ".data.repository.pullRequest.reviewThreads.nodes",
+    )
+    return json.loads(out) if out else []
 
 
-def format_comment_block(sc: dict, posted_prefixes: set[str] | None = None) -> str:
-    body = sc.get("comment_content", "")
-    file_loc = sc.get("file_location") or sc.get("file") or sc.get("path") or "?"
-    start = sc.get("start_line") or sc.get("line") or "?"
-    end = sc.get("end_line") or ""
-    loc = f"{file_loc}:{start}" + (f"-{end}" if end and end != start else "")
-    ctype = sc.get("comment_type") or ""
-    sev = sc.get("severity") or ""
-    fixed = " (fixed)" if sc.get("fixed") else ""
-    status = ""
-    if posted_prefixes is not None:
-        status = " POSTED" if body[:80] in posted_prefixes else " SUPPRESSED"
-    return f"### [{ctype}/{sev}{fixed}]{status} `{loc}`\n\n{body}\n"
+def match_thread(sc: dict, threads: list[dict]) -> dict | None:
+    """Match a Copilot stored_comment to its inline thread, or None if suppressed.
+
+    Match by exact body of the Copilot-authored first comment in the thread.
+    Line numbers in the stored_comment record the file state at review time;
+    GitHub re-anchors thread positions as later commits land, so (path, line)
+    is not a stable join key. Body text IS stable — Copilot posts the same
+    text it stored. [LAW:single-enforcer] one join key, used everywhere.
+    """
+    body = (sc.get("comment_content") or "").strip()
+    if not body:
+        return None
+    for t in threads:
+        for c in (t.get("comments", {}).get("nodes") or []):
+            if (c.get("author") or {}).get("login") in COPILOT_LOGINS and (c.get("body") or "").strip() == body:
+                return t
+            break  # only the first comment is Copilot's; replies are not
+    return None
+
+
+def build_finding(sc: dict, threads: list[dict]) -> dict:
+    thread = match_thread(sc, threads)
+    return {
+        "file": sc.get("file_location") or sc.get("file") or sc.get("path"),
+        "line_start": sc.get("start_line") or sc.get("line"),
+        "line_end": sc.get("end_line") or sc.get("start_line") or sc.get("line"),
+        "body": sc.get("comment_content", ""),
+        "comment_type": sc.get("comment_type"),
+        "severity": sc.get("severity"),
+        "fixed": bool(sc.get("fixed")),
+        "thread_id": thread["id"] if thread else None,
+        "is_resolved": thread["isResolved"] if thread else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -451,62 +491,80 @@ def cmd_wait(args: argparse.Namespace) -> None:
 
 
 def cmd_fetch(args: argparse.Namespace) -> None:
-    """Dump the latest Copilot session's overview + comments.
+    """Emit Copilot's review findings as canonical JSON.
 
-    Useful when you want to see comments Copilot drafted but didn't post
-    (suppressed under the inline-comment cap) or to read the 'generated N
-    comments' overview phrase directly. Not required for the loop — the
-    posted threads are visible via `gh api graphql`.
+    [LAW:one-source-of-truth] Copilot's session reasoning is the single
+    source of review findings. Posted inline threads are a projection of
+    that source — this command joins them in by (path, line) so each
+    finding carries its thread_id (or null, for suppressed findings that
+    didn't make Copilot's inline-comment cap).
+
+    [LAW:single-enforcer] one place owns "what did Copilot find" — here.
+    Callers consume the JSON; they don't query the threads API separately.
+
+    Output schema:
+      {
+        "session_id": "...",
+        "overview": {
+          "phrase_present": bool,        # whether 'generated N comments' appeared
+          "comment_count": int | null,   # parsed N (null if absent)
+          "raw": str | null              # the markdown overview Copilot emitted
+        },
+        "findings": [
+          {
+            "file": str,
+            "line_start": int,
+            "line_end": int,
+            "body": str,
+            "comment_type": str | null,
+            "severity": str | null,
+            "fixed": bool,
+            "thread_id": str | null,     # non-null = posted as inline thread
+            "is_resolved": bool | null   # non-null iff thread_id is non-null
+          }, ...
+        ]
+      }
+
+    Unresolved findings are findings the agent must address: every finding
+    whose thread is not already resolved (thread_id null OR is_resolved
+    false). The loop's exit condition is "no unresolved findings".
     """
     owner, repo, pr_num = parse_pr_url(args.pr_url)
     token = gh_token()
 
     sessions = scrape_session_payloads(owner, repo, pr_num, token)
     if not sessions:
-        print(f"No Copilot review sessions found on {owner}/{repo}#{pr_num}.", file=sys.stderr)
-        sys.exit(2)
+        # No Copilot session exists yet on this PR. Emit empty findings so
+        # the agent's loop reads it as "nothing to address" and triggers a
+        # review on the next iteration. [LAW:dataflow-not-control-flow] the
+        # data (empty findings) drives the next action, no special-case branch.
+        result = {"session_id": None, "overview": {"phrase_present": False, "comment_count": None, "raw": None}, "findings": []}
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return
 
     latest = sessions[-1]
     sid = latest["session_id"]
-    print(f"Latest session: {sid}", file=sys.stderr)
 
     data = fetch_session_logs(sid, token)
     events = parse_sse_events(data)
     stored = [sc for e in events if (sc := event_store_comment(e))]
     full = session_full_content(events)
-    overview = session_pr_overview(events)
+    overview_raw = session_pr_overview(events)
     count = parse_generated_comment_count(full)
 
-    posted = fetch_posted_inline_comments(owner, repo, pr_num, token)
-    posted_prefixes = {
-        c.get("body", "")[:80]
-        for c in posted
-        if (c.get("user") or {}).get("login") == COPILOT_BOT_LOGIN
+    threads = fetch_review_threads(owner, repo, pr_num)
+    findings = [build_finding(sc, threads) for sc in stored]
+
+    result = {
+        "session_id": sid,
+        "overview": {
+            "phrase_present": count is not None,
+            "comment_count": count,
+            "raw": overview_raw,
+        },
+        "findings": findings,
     }
-
-    out: list[str] = []
-    out.append(f"# Copilot Session — {owner}/{repo}#{pr_num}\n")
-    out.append(f"Session: `{sid}`")
-    if count is None:
-        out.append("\n**Overview signal:** no 'generated N comments' phrase "
-                   "(clean review OR review still in flight)\n")
-    else:
-        out.append(f"\n**Overview signal:** {count} comment(s) generated\n")
-
-    if overview:
-        out.append(overview)
-        out.append("")
-
-    out.append(f"\n## Stored comments ({len(stored)})\n")
-    for sc in stored:
-        out.append(format_comment_block(sc, posted_prefixes))
-
-    text = "\n".join(out)
-    if args.output:
-        Path(args.output).write_text(text)
-        print(f"Wrote {args.output}", file=sys.stderr)
-    else:
-        sys.stdout.write(text)
+    sys.stdout.write(json.dumps(result, indent=2) + "\n")
 
 
 def main() -> None:
@@ -521,9 +579,8 @@ def main() -> None:
     pw.add_argument("pr_url")
     pw.set_defaults(func=cmd_wait)
 
-    pf = sub.add_parser("fetch", help="dump latest session's overview + comments")
+    pf = sub.add_parser("fetch", help="emit Copilot's review findings as JSON")
     pf.add_argument("pr_url")
-    pf.add_argument("-o", "--output", help="write to file instead of stdout")
     pf.set_defaults(func=cmd_fetch)
 
     args = p.parse_args()
