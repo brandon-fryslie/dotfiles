@@ -372,4 +372,10 @@ Follow these steps exactly at the start of every session that involves code chan
 Working on top of a diverged or stale master is always wrong. There is no scenario where it is acceptable to proceed past step 4 if the hard gate is not met.
 </git-workflow>
 
+<pr-followup>
+# AFTER OPENING A PR — INVOKE /address-pr-reviews
+
+The moment `gh pr create` (or any equivalent PR-opening action) succeeds, invoke the `/address-pr-reviews` skill on that PR in the same response. Do not wait to be told. Do not end the turn after opening the PR without invoking it. The skill owns the no-reviews-yet case (it will wait/poll/exit cleanly as appropriate); the requirement here is that *starting the address-review loop is part of opening the PR*, not a separate step the user has to trigger. This applies to every PR you open in every session, on every project, unconditionally.
+</pr-followup>
+
 </wisdom>
