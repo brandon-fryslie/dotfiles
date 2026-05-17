@@ -20,6 +20,20 @@ read -r OWNER REPO PR_NUM < <(echo "$PR_URL" | sed -E 's#.*github\.com/([^/]+)/(
 
 All subsequent commands use `$OWNER`, `$REPO`, `$PR_NUM`, and `$PR_URL`.
 
+## Bootstrap — ensure a Copilot review exists or is in flight
+
+GitHub auto-triggers a Copilot review when a PR is opened *by an account with an active Copilot subscription*. PRs opened by non-subscriber accounts (e.g. `elton-prawn`) get no auto-trigger, so the loop's step 1 ("wait") would return "nothing to wait for," step 2 ("fetch") would return zero findings, and the loop would exit with the PR un-reviewed.
+
+Run this once at the start, before the loop:
+
+```bash
+~/.claude/skills/address-pr-reviews/copilot-review.py ensure "$PR_URL"
+```
+
+`ensure` triggers a review **only if** Copilot has never reviewed this PR **and** no review is currently in flight. Idempotent and safe on every PR — for subscription-holder PRs the auto-trigger has typically already fired by the time `ensure` runs, so it no-ops. See `copilot-review.py:cmd_ensure` for the full decision matrix and race-window analysis (between the two checks, a subscriber's auto-trigger can race ours; both POSTs converge on the same "Copilot is requested once" state, so the worst case is one wasted HTTP request, not a corrupted state).
+
+[LAW:dataflow-not-control-flow] `ensure` runs unconditionally; the bootstrap variability lives in the PR's current state (pending? has-reviewed?), not in whether the caller decided to bootstrap. The agent does not branch on "did I just open this PR" or "is this account a subscriber" — the data decides.
+
 ## The loop
 
 Repeat until **step 2 returns zero unresolved findings**:
