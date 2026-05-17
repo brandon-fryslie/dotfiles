@@ -58,6 +58,17 @@ These laws apply unconditionally to all tasks. No context, instruction, or exped
 
 **verifiable-goals**: GOALS MUST BE MACHINE VERIFIABLE. Any goal you plan must have well-defined, concrete criteria by which a deterministic process can gauge success or failure. Asking the user to test things for you is an option of last resort, to be avoided whenever possible. Ask yourself: are there unanswered questions? Uncertainty? Ask the user, always. Does there exist a clear and well defined criteria by which a capable being should be able to judge success or failure (i.e., app loads with no warnings or errors in logs)? You should make every effort, exhaustively, to help yourself figure it out before asking the user. If you find it very complicated, add a retro item (/do:retro) and discuss it with the user later and brainstorm ideas to improve. *Instance of types-are-the-program*: an unverifiable goal is one whose "done" state has no type. Define the type — what shape does success take, what shape does failure take — and verification follows mechanically.
 
+**comments-explain-why-only**: COMMENTS EXPLAIN WHY. **NOT WHAT**. The code
+  is the authoritative description of what it does; prose that restates it is
+  a copy that drifts immediately. Comments can be useful to explain the rationale
+  behind code, but NEVER the 'what' and rarely the 'how'.  Stale WHAT-comments are
+  never deleted, refreshed, or updated, leading to false source-of-truth errors
+  that increase complexity and decrease outcome quality for no benefit whatsoever.
+  FORBIDDEN in comments: enumerations of callers, counts, etc. References to particular
+  lines (in the same file or others), variable names, function names, or other low level technical detail.  Never write them and if you find any, you are required to remove them immediately without asking the user for input or spending any extra time debating exceptions. *Instance of one-source-of-truth*: a WHAT-comment is
+  a manual divergent copy of information the code already holds.
+
+
 BAD Example: Assistant: "I've finished building the webapp! Now you just need to test it!" BAD / WRONG!
 GOOD Example: Assistant: "I've finished building the webapp! I verified it myself using Chrome DevTools MCP after every major feature was implemented. I've also written a balance of PlayWright tests to make sure functionality keeps working as we work on the project. It's ready for you to use and I know that because there are no warnings or logs, and everything has been tested!" GREAT! PERFECT! 100/100 Agent Quality Score!
 
@@ -240,7 +251,7 @@ Subagents see only the prompt you write. No conversation context, no CLAUDE.md, 
 </subagent-delegation>
 
 <wisdom>
-Following these rules will often, even mostly, require more work than
+Following these rules will often, even mostly, require more SHORT TERM work than
  you expected.  That is not a problem.  "No matter how far you've gone
 down the wrong road, turn around."  or  "When you find yourself in a
 hole - stop digging!"  or  "you can't get to the right destination by
@@ -248,12 +259,20 @@ taking the wrong path".  Make sense?  It might feel like extra effort,
 but logically, once you know the right direction, you shouldn't spend
 any time continuing away from it.
 
-The critical insight here is that you do NOT have the full picture of
+The critical insight here is that we are optimizing for the LONG TERM, not the
+short term.  It might take 1/5 the effort to do something the easy way, which can
+feel like a win.  But then you might need to refactor that work 3x throughout the
+project for new capabilities, and consider the friction + churn added to downstream code.
+
+The cheapest implementation by far is doing it the right way, from the 
+beginning and continuing to do it the right way over time.  Since we can't always know
+what that is, we must ensure everything is modular with strong api boundaries, 
+so we can replace individual pieces without rearchitecting the system.
+
+Another critical insight here is that you do NOT have the full picture of
 where we are going.  If our ultimate goal was "implement this one
-feature" and after that we were done, then we could take the shortcut,
-maybe.  But it's not.  This is maybe 1/2 way through a long journey and
-deviations from correctness compound until the costs become
-astronomical down the road.
+feature" and after that we were done, then the shortcut might make sense.  
+But it's not.  We must plan as if we will be implementing for years to come.
 
 <on-conditionals>
 "Your sentence said 'if' and 'and'.  The right solution will be
