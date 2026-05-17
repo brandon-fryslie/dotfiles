@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Copilot PR review helper — three operations.
+"""Copilot PR review helper — four operations.
 
-  trigger <PR_URL>   — kick off a fresh Copilot review (Safari session cookies)
+  ensure <PR_URL>    — bootstrap: trigger iff no review exists or is in flight
+  trigger <PR_URL>   — force a fresh Copilot review (Safari session cookies)
   wait <PR_URL>      — block until the in-flight Copilot review finishes
   fetch <PR_URL>     — dump the latest session's comments + overview
 
@@ -347,6 +348,36 @@ def is_copilot_review_pending(owner: str, repo: str, pr_num: int) -> bool:
     return out == "true"
 
 
+def has_copilot_reviewed_pr(owner: str, repo: str, pr_num: int) -> bool:
+    """True iff at least one submitted Copilot review exists on this PR.
+
+    Indicates "a review has happened at some point," regardless of whether
+    the agent has addressed its findings yet. Distinct from
+    is_copilot_review_pending, which indicates "a review is currently in
+    flight." Together they answer the bootstrap question — "should we kick
+    off a review on this PR" — without conflating the two states.
+
+    Uses the same Bot type spread as the pending check, queried against
+    `reviews` instead of `reviewRequests`. [LAW:one-source-of-truth] one
+    GraphQL view defines "Copilot has reviewed"; callers don't reimplement.
+    """
+    query = (
+        "query($owner:String!,$repo:String!,$num:Int!){"
+        "  repository(owner:$owner,name:$repo){"
+        "    pullRequest(number:$num){"
+        "      reviews(first:100){"
+        "        nodes{author{... on User{login} ... on Bot{login}}} } } } }"
+    )
+    out = _gh(
+        "api", "graphql",
+        "-f", f"query={query}",
+        "-F", f"owner={owner}", "-F", f"repo={repo}", "-F", f"num={pr_num}",
+        "--jq", '[.data.repository.pullRequest.reviews.nodes[].author.login] '
+                '| any(. == "copilot-pull-request-reviewer" or . == "Copilot")',
+    )
+    return out == "true"
+
+
 # ---------------------------------------------------------------------------
 # Safari cookies + CSRF dance (the reason this helper exists)
 # ---------------------------------------------------------------------------
@@ -514,6 +545,55 @@ def cmd_trigger(args: argparse.Namespace) -> None:
     print("Copilot is now a requested reviewer.", file=sys.stderr)
 
 
+def cmd_ensure(args: argparse.Namespace) -> None:
+    """Bootstrap: trigger a Copilot review iff none exists or is in flight.
+
+    Background. GitHub auto-triggers a Copilot review when a PR is opened by
+    an account with an active Copilot subscription. PRs opened by accounts
+    *without* a subscription get no auto-trigger — the address-pr-reviews
+    loop then reads "nothing in flight, no findings" and exits silently,
+    leaving the PR unreviewed. `ensure` closes that gap.
+
+    Decision matrix (pending × has-reviewed):
+      pending=true   any   → no-op (a review is happening; let it finish)
+      pending=false  true  → no-op (a past review exists; no bootstrap needed)
+      pending=false  false → trigger (true bootstrap case)
+
+    Idempotent: safe to call before the loop on any PR. For subscription-holder
+    PRs the auto-trigger has typically already fired by the time the agent
+    runs this command, so the pending-check or has-reviewed-check no-ops.
+
+    Race window analysis. Between the pending check and the has-reviewed
+    check (~200 ms of GraphQL), a subscriber's auto-trigger could fire and
+    register Copilot. Sequence outcomes:
+
+      1. pending check sees auto-trigger     → no-op, correct
+      2. pending check misses auto-trigger,
+         has-reviewed sees nothing,
+         we POST while auto-trigger also POSTs → /review-requests SETS state
+         (does not append), so both calls converge on "Copilot is requested
+         once". Cost is one wasted HTTP POST; state is correct.
+      3. pending check misses auto-trigger,
+         auto-trigger completes before
+         has-reviewed runs, has-reviewed=true → no-op, correct
+
+    No state-corruption case exists. The duplicate-POST cost in case 2 is
+    accepted; mitigation (e.g. a third pending re-check) would only narrow
+    the window, not close it, and isn't worth the latency.
+    """
+    owner, repo, pr_num = parse_pr_url(args.pr_url)
+
+    if is_copilot_review_pending(owner, repo, pr_num):
+        print("Copilot review already in flight. Nothing to bootstrap.", file=sys.stderr)
+        return
+    if has_copilot_reviewed_pr(owner, repo, pr_num):
+        print("Copilot has already reviewed this PR. Nothing to bootstrap.", file=sys.stderr)
+        return
+
+    print("No Copilot review on this PR; bootstrapping.", file=sys.stderr)
+    cmd_trigger(args)
+
+
 def cmd_wait(args: argparse.Namespace) -> None:
     """Block until any in-flight Copilot review finishes — idempotent.
 
@@ -632,7 +712,11 @@ def main() -> None:
     p = argparse.ArgumentParser(prog="copilot-review", description=__doc__.split("\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pt = sub.add_parser("trigger", help="kick off a fresh Copilot review")
+    pe = sub.add_parser("ensure", help="trigger a Copilot review iff none exists or is in flight (bootstrap)")
+    pe.add_argument("pr_url")
+    pe.set_defaults(func=cmd_ensure)
+
+    pt = sub.add_parser("trigger", help="force a fresh Copilot review")
     pt.add_argument("pr_url")
     pt.set_defaults(func=cmd_trigger)
 
