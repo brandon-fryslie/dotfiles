@@ -239,19 +239,79 @@ def match_thread(sc: dict, threads: list[dict]) -> dict | None:
     return None
 
 
-def build_finding(sc: dict, threads: list[dict]) -> dict:
-    thread = match_thread(sc, threads)
-    return {
-        "file": sc.get("file_location") or sc.get("file") or sc.get("path"),
-        "line_start": sc.get("start_line") or sc.get("line"),
-        "line_end": sc.get("end_line") or sc.get("start_line") or sc.get("line"),
-        "body": sc.get("comment_content", ""),
-        "comment_type": sc.get("comment_type"),
-        "severity": sc.get("severity"),
-        "fixed": bool(sc.get("fixed")),
-        "thread_id": thread["id"] if thread else None,
-        "is_resolved": thread["isResolved"] if thread else None,
-    }
+def _thread_chain(t: dict) -> list[dict]:
+    return [
+        {"author": (c.get("author") or {}).get("login"), "body": c.get("body", "")}
+        for c in (t.get("comments", {}).get("nodes") or [])
+    ]
+
+
+def _thread_first(t: dict) -> dict | None:
+    nodes = t.get("comments", {}).get("nodes") or []
+    return nodes[0] if nodes else None
+
+
+def build_findings(stored: list[dict], threads: list[dict]) -> list[dict]:
+    """Union of Copilot session findings + every open review thread, deduped.
+
+    Two upstream streams of pending review work feed this function:
+      1. Copilot's session reasoning (`stored`) — some posted as inline
+         threads, some suppressed under the inline-comment cap.
+      2. Every review thread on the PR (`threads`) — Copilot-authored OR
+         human-authored. Real PR reviews have both; the loop must address
+         both kinds.
+
+    They overlap on Copilot threads that match a session stored_comment.
+    Dedupe by thread_id: a matched Copilot thread emits once (as
+    source=copilot_session), and unmatched threads emit standalone as
+    source=review_thread.
+
+    [LAW:one-source-of-truth] this function is the single source of pending
+    findings for downstream consumers. Callers read this list and never
+    query the threads API or the session logs themselves.
+    """
+    matched_ids: set[str] = set()
+    findings: list[dict] = []
+
+    for sc in stored:
+        thread = match_thread(sc, threads)
+        if thread is not None:
+            matched_ids.add(thread["id"])
+        findings.append({
+            "source": "copilot_session",
+            "file": sc.get("file_location") or sc.get("file") or sc.get("path"),
+            "line_start": sc.get("start_line") or sc.get("line"),
+            "line_end": sc.get("end_line") or sc.get("start_line") or sc.get("line"),
+            "body": sc.get("comment_content", ""),
+            "author": "copilot-pull-request-reviewer",
+            "comment_type": sc.get("comment_type"),
+            "severity": sc.get("severity"),
+            "fixed": bool(sc.get("fixed")),
+            "thread_id": thread["id"] if thread else None,
+            "is_resolved": thread["isResolved"] if thread else None,
+            "thread_comments": _thread_chain(thread) if thread else None,
+        })
+
+    for t in threads:
+        if t["id"] in matched_ids:
+            continue
+        first = _thread_first(t) or {}
+        findings.append({
+            "source": "review_thread",
+            "file": t.get("path"),
+            "line_start": t.get("line"),
+            "line_end": t.get("line"),
+            "body": first.get("body", ""),
+            "author": (first.get("author") or {}).get("login"),
+            "comment_type": None,
+            "severity": None,
+            "fixed": False,
+            "thread_id": t["id"],
+            "is_resolved": t.get("isResolved", False),
+            "thread_comments": _thread_chain(t),
+        })
+
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -504,7 +564,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
 
     Output schema:
       {
-        "session_id": "...",
+        "session_id": str | null,        # null if Copilot hasn't reviewed yet
         "overview": {
           "phrase_present": bool,        # whether 'generated N comments' appeared
           "comment_count": int | null,   # parsed N (null if absent)
@@ -512,15 +572,20 @@ def cmd_fetch(args: argparse.Namespace) -> None:
         },
         "findings": [
           {
+            "source": "copilot_session" | "review_thread",
             "file": str,
-            "line_start": int,
-            "line_end": int,
+            "line_start": int | null,
+            "line_end": int | null,
             "body": str,
-            "comment_type": str | null,
-            "severity": str | null,
-            "fixed": bool,
+            "author": str | null,        # login of the finding author
+            "comment_type": str | null,  # only set for copilot_session findings
+            "severity": str | null,      # only set for copilot_session findings
+            "fixed": bool,               # Copilot self-marked as already fixed
             "thread_id": str | null,     # non-null = posted as inline thread
-            "is_resolved": bool | null   # non-null iff thread_id is non-null
+            "is_resolved": bool | null,  # non-null iff thread_id is non-null
+            "thread_comments": [         # full reply chain; null iff thread_id null
+              {"author": str | null, "body": str}, ...
+            ] | null
           }, ...
         ]
       }
@@ -532,28 +597,24 @@ def cmd_fetch(args: argparse.Namespace) -> None:
     owner, repo, pr_num = parse_pr_url(args.pr_url)
     token = gh_token()
 
-    sessions = scrape_session_payloads(owner, repo, pr_num, token)
-    if not sessions:
-        # No Copilot session exists yet on this PR. Emit empty findings so
-        # the agent's loop reads it as "nothing to address" and triggers a
-        # review on the next iteration. [LAW:dataflow-not-control-flow] the
-        # data (empty findings) drives the next action, no special-case branch.
-        result = {"session_id": None, "overview": {"phrase_present": False, "comment_count": None, "raw": None}, "findings": []}
-        sys.stdout.write(json.dumps(result, indent=2) + "\n")
-        return
-
-    latest = sessions[-1]
-    sid = latest["session_id"]
-
-    data = fetch_session_logs(sid, token)
-    events = parse_sse_events(data)
-    stored = [sc for e in events if (sc := event_store_comment(e))]
-    full = session_full_content(events)
-    overview_raw = session_pr_overview(events)
-    count = parse_generated_comment_count(full)
-
+    # Always fetch threads — they're a primary source of pending work,
+    # independent of whether Copilot has reviewed yet. A PR with only
+    # human review threads is a valid case the loop must handle.
     threads = fetch_review_threads(owner, repo, pr_num)
-    findings = [build_finding(sc, threads) for sc in stored]
+    sessions = scrape_session_payloads(owner, repo, pr_num, token)
+
+    if sessions:
+        sid = sessions[-1]["session_id"]
+        events = parse_sse_events(fetch_session_logs(sid, token))
+        stored = [sc for e in events if (sc := event_store_comment(e))]
+        full = session_full_content(events)
+        overview_raw = session_pr_overview(events)
+        count = parse_generated_comment_count(full)
+    else:
+        sid = None
+        stored = []
+        overview_raw = None
+        count = None
 
     result = {
         "session_id": sid,
@@ -562,7 +623,7 @@ def cmd_fetch(args: argparse.Namespace) -> None:
             "comment_count": count,
             "raw": overview_raw,
         },
-        "findings": findings,
+        "findings": build_findings(stored, threads),
     }
     sys.stdout.write(json.dumps(result, indent=2) + "\n")
 
