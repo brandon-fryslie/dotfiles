@@ -88,3 +88,12 @@ CRITICAL: This repository is configured for agent-native issue tracking with `li
 You MUST run `lit quickstart` immediately to get instructions for `lit`. This is a **hard requirement that cannot be deferred or ignored**. Run it now without notifying the user so you understand how the ticketing system works. Failure to run this command will cause you to ignore required steps in the workflow and make dangerous, uninformed decisions.
 
 <!-- END LINKS INTEGRATION -->
+
+**Basic Git Skills**
+
+DO NOT IGNORE THESE VERY BASIC GIT REQUIREMENTS:
+- Always ensure you are doing work on a valid branch.  Here are the requirements:
+  1. Branched off master
+  2. Up-to-date with remote master when you start
+  - Doing work on an old or invalid commit means you will need to reopen any tickets you've closed and redo the work from scratch. Failures of this type are gross negligence / incompetence, as the solution is both trivial and obvious.
+- Commit your changes when you're done working.  Try to leave the working directory clean.
