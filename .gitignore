@@ -58,4 +58,11 @@ config/claude.zai/*
 # !config/claude.zai/skills/
 !config/claude.zai/CLAUDE.md
 !config/claude.zai/settings.json
+
+config/claude.minimax/*
+!config/claude.minimax/agents/
+!config/claude.minimax/commands/
+# !config/claude.minimax/skills/
+!config/claude.minimax/CLAUDE.md
+!config/claude.minimax/settings.json
 .claude/worktrees/
