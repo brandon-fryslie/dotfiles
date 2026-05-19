@@ -11,7 +11,9 @@
       "Read(//Users/bmf/.local/share/uv/tools/**)",
       "Bash(just install:*)",
       "Bash(rm .git/index.lock)",
-      "Bash(rtk git *)"
+      "Bash(rtk git *)",
+      "Bash(tmux show-hooks:*)",
+      "Bash(tmux source-file:*)"
     ],
     "deny": [],
     "ask": []
