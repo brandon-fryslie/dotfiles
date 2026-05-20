@@ -48,10 +48,6 @@ config/claude/skills/pm-compass
 __pycache__/
 *.pyc
 
-# Dolt database files (added by bd init)
-.dolt/
-*.db
-
 config/claude.zai/*
 !config/claude.zai/agents/
 !config/claude.zai/commands/
