@@ -47,12 +47,16 @@ case "$CMD" in
     ENVELOPE=$(printf 'From: %s\n%s\nTo reply: Use /tmux-talk send %s <message>' \
                       "$FROM" "$MESSAGE" "$FROM")
 
-    # [LAW:no-shared-mutable-globals] use a private buffer name so concurrent
-    # `tmux-talk send` invocations can't clobber each other via tmux's global
-    # most-recent-buffer slot. -d on paste-buffer deletes the named buffer.
+    # [LAW:no-shared-mutable-globals] private buffer name so concurrent sends
+    # can't clobber each other via tmux's global most-recent-buffer slot.
+    # [LAW:single-enforcer] the EXIT trap owns the entire buffer lifecycle —
+    # no -d on paste-buffer, no duplicate cleanup. "Buffer already gone" is
+    # the success state for cleanup, so swallowing that one error class is
+    # correct, not defensive.
     BUFFER="tmux-talk-$$"
+    trap 'tmux delete-buffer -b "$BUFFER" 2>/dev/null || :' EXIT
     printf '%s' "$ENVELOPE" | tmux load-buffer -b "$BUFFER" -
-    tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p -d
+    tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
     sleep 1
     tmux send-keys -t "$TARGET" Enter
     ;;
