@@ -1,8 +1,10 @@
 # Warm Editorial Minimalism — Design System
 
-This is the spec. Tokens are the single source of truth; archetypes are
-compositions of tokens; a page is composition of archetypes. Nothing below
-hardcodes a value an archetype could read from a token.
+This is the spec. Tokens are the single source of truth for the **rebrand
+surface** — color, type, space, radii, shadow — and every archetype reads from
+them. Component-internal precision values (a few px in a control's padding, a
+1px texture dot, a layout breakpoint) stay inline; tokenizing every magic
+number would be churn without a rebrand value case.
 
 ---
 
@@ -137,7 +139,7 @@ muted lead line, one primary CTA. Whitespace is the design — don't crowd it.
 <header class="hero">
   <h1 class="serif" style="font-size:var(--t-hero)">Pricing</h1>
   <p class="lead muted">Simple, transparent pricing. Choose the plan that fits.</p>
-  <a class="btn btn-dark">Get started</a>
+  <button type="button" class="btn btn-dark">Get started</button>
 </header>
 ```
 
@@ -177,10 +179,15 @@ loud colored border — at most a thin `--ring` highlight or a small tag.
 ```
 
 ### Buttons
+Use `<button type="button">` for actions (Download, Get started, anything that
+triggers JS). Use `<a href>` only for real navigation. A styled `<a>` with no
+`href` is the most common a11y bug in marketing templates — it isn't
+keyboard-focusable and assistive tech doesn't announce it as interactive.
 ```css
 .btn { display: inline-flex; align-items: center; justify-content: center;
   gap: var(--s-2); padding: 0.75em 1.25em; border-radius: var(--r-btn);
-  font-size: var(--t-body); text-decoration: none; cursor: pointer; border: 0; }
+  font: inherit; font-size: var(--t-body); text-decoration: none;
+  cursor: pointer; border: 0; }
 .btn-dark  { background: var(--ink); color: var(--bg); }
 .btn-light { background: var(--on-surface); color: var(--surface); } /* on dark cards */
 .btn-ghost { background: transparent; color: var(--on-surface);
