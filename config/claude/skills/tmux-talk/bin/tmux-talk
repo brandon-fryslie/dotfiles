@@ -37,16 +37,15 @@ case "$CMD" in
     ;;
 
   send)
-    if [[ $# -lt 3 ]]; then
+    TARGET="${2:-}"
+    # Take every arg after the target as the message body so an unquoted
+    # natural-language reply doesn't silently drop everything past the first
+    # word. Bash positional slice avoids the shift+conditional dance.
+    MESSAGE="${*:3}"
+    if [[ -z "$TARGET" || -z "$MESSAGE" ]]; then
       echo "Usage: tmux-talk send <target> <message...>" >&2
       exit 1
     fi
-    TARGET="$2"
-    # Take every arg after the target as the message body so an unquoted
-    # natural-language reply doesn't silently drop everything past the first
-    # word. Quoting is still accepted; both forms produce the same MESSAGE.
-    shift 2
-    MESSAGE="$*"
     FROM=$(derive_self_address) || exit 1
 
     # [LAW:no-shared-mutable-globals] private buffer name so concurrent sends
