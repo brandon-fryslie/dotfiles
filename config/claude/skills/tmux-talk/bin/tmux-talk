@@ -56,7 +56,7 @@ case "$CMD" in
     # correct, not defensive.
     BUFFER="tmux-talk-$$"
     trap 'tmux delete-buffer -b "$BUFFER" 2>/dev/null || :' EXIT
-    printf 'From: %s\n%s\nTo reply: Use /tmux-talk send %s <message>' \
+    printf 'From: %s\n%s\nTo reply: Use /tmux-talk send %s <message...>' \
            "$FROM" "$MESSAGE" "$FROM" \
       | tmux load-buffer -b "$BUFFER" -
     tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p

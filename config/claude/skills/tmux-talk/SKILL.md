@@ -35,7 +35,7 @@ Every `send` wraps the message body with a `From:` header and a `To reply:` foot
 ```
 From: <sender-address>
 <your message>
-To reply: Use /tmux-talk send <sender-address> <message>
+To reply: Use /tmux-talk send <sender-address> <message...>
 ```
 
 The sender's address is auto-detected from the current tmux pane via `tmux display-message` — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). If `$TMUX` is unset, `send` and `whoami` hard-error rather than silently sending an empty `From:`.
