@@ -160,7 +160,7 @@ The loop exits with zero unresolved findings after a clean re-review. The PR is 
 gh pr merge "$PR_URL" --squash --delete-branch
 ```
 
-Squash is the repo's configured merge strategy. `--delete-branch` cleans up the remote branch (and the local one if checked out).
+Squash is the repo's configured merge strategy. `--delete-branch` cleans up the remote branch (and the local one if checked out). [LAW:one-source-of-truth] `gh pr merge`'s exit code is the canonical signal of merge success — failure (required checks not satisfied, merge conflict, branch protection) halts Finalize. Don't add a `gh pr view --json merged` check as a second source; the exit code is the truth. At that point the agent's job changes from "close out" to "fix the merge blocker."
 
 ### B. Close the lit ticket
 
@@ -168,7 +168,7 @@ Squash is the repo's configured merge strategy. `--delete-branch` cleans up the 
 lit done "$TICKET_ID"
 ```
 
-The ticket is the one this PR closed — pull it from the PR body, branch name, or the ticket you were working on in this session, and assign it to `$TICKET_ID`. `lit done` is a two-phase transition: the first call prints a preview with an apply token; capture it as `$TOKEN` and rerun with `--apply="$TOKEN"` to commit. If this PR genuinely has no associated lit ticket (out-of-band fix), this step is a no-op.
+The ticket is the one this PR closed — pull it from the PR body, branch name, or the ticket you were working on in this session, and assign it to `$TICKET_ID`. The code block above is the canonical case: a confidently identified `$TICKET_ID`. Don't run `lit done` with an empty, guessed, or unverified value. `lit done` is a two-phase transition: the first call prints a preview with an apply token; capture it as `$TOKEN` and rerun with `--apply="$TOKEN"` to commit. For an out-of-band PR with no associated lit ticket, Step B is a no-op — skip the command entirely and note the missing-ticket case in the recap so the next agent sees it.
 
 ### C. Recap the merged work
 
