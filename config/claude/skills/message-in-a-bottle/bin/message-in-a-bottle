@@ -59,13 +59,26 @@ USAGE
     printf '%s' "$MESSAGE" > "$MSGFILE"
 
     LOGFILE=$(mktemp -t bottle-log.XXXXXX)
-    SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 
-    # nohup ignores SIGHUP; redirected stdio keeps nohup.out from spawning;
-    # disown drops the job from this shell's table so the launcher exits clean.
+    # Resolve own path for both ./script and PATH-lookup invocations.
+    # `$0` lacks a slash on PATH lookup, so dirname/pwd would yield $PWD
+    # — wrong. `command -v` does PATH resolution; for paths containing
+    # slashes it returns as-is.
+    if [[ "$0" == */* ]]; then
+      SELF_RAW="$0"
+    else
+      SELF_RAW=$(command -v -- "$0") \
+        || { echo "cannot resolve own path from \$0=$0" >&2; exit 2; }
+    fi
+    SELF="$(cd "$(dirname "$SELF_RAW")" && pwd)/$(basename "$SELF_RAW")"
+
+    # nohup ignores SIGHUP, redirected stdio keeps nohup.out from spawning,
+    # and the backgrounded child gets reparented to init when this shell
+    # exits — `disown` would be belt-and-suspenders, but with `set -e` a
+    # disown failure would fire the trap and yank MSGFILE out from under
+    # the running worker. Leaving disown out closes that race entirely.
     nohup "$SELF" --worker "$TARGET" "$DELAY" "$MSGFILE" \
       </dev/null >>"$LOGFILE" 2>&1 &
-    disown
     trap - EXIT
 
     echo "bottle scheduled → $TARGET in ${DELAY}s (log: $LOGFILE)"
