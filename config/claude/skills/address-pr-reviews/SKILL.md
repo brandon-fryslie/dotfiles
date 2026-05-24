@@ -98,7 +98,7 @@ Schema:
 }
 ```
 
-**Unresolved findings** = every entry where `thread_id` is null OR `is_resolved` is false. If the unresolved findings list is empty, **the loop is done**. Step 1 already guaranteed no Copilot review is in flight, so empty is unambiguous. Report the PR is ready for the user to merge. **Don't merge yourself.**
+**Unresolved findings** = every entry where `thread_id` is null OR `is_resolved` is false. If the unresolved findings list is empty, **the loop is done**. Step 1 already guaranteed no Copilot review is in flight, so empty is unambiguous. Proceed to **Finalize** below.
 
 > **Read `thread_comments` before deciding.** A thread may already contain replies (yours from a prior iteration, a human's pushback on Copilot, or a back-and-forth between reviewers). The full chain is in `thread_comments`; the `body` field is just the first comment for quick scanning.
 
@@ -150,9 +150,33 @@ Commit messages describe the **why** (architectural concern), not "address revie
 
 ### 7. Go to step 1.
 
+## Finalize — when the loop exits clean
+
+The loop exits with zero unresolved findings after a clean re-review. The PR is reviewed; the work is done. [LAW:single-enforcer] this skill is the single place that closes a PR loop — merge, ticket-close, and recap live here, not scattered across callers or punted to the user. [LAW:dataflow-not-control-flow] finalize runs unconditionally on every clean exit; the data (the PR, the in-progress ticket, the merged commits) is what each step operates on. Per `<ticket-lifecycle>`, a ticket isn't done until it's merged and the work is recapped — this section is where that transition happens.
+
+### A. Merge the PR
+
+```bash
+gh pr merge "$PR_URL" --squash --delete-branch
+```
+
+Squash is the repo's configured merge strategy. `--delete-branch` cleans up the remote branch (and the local one if checked out).
+
+### B. Close the lit ticket
+
+```bash
+lit done <ticket-id>
+```
+
+The ticket is the one this PR closed — pull it from the PR body, branch name, or the ticket you were working on in this session. `lit done` is a two-phase transition: the first call prints a preview with an apply token, rerun with `--apply=<token>` to commit. If this PR genuinely has no associated lit ticket (out-of-band fix), this step is a no-op.
+
+### C. Recap the merged work
+
+Invoke `/recap` with a short note describing what was merged. The recap is the durable handoff to the next agent — what shipped, what's left, what to watch out for. Then stop. The loop is finished; the work is shipped; the recap is the closing artifact.
+
 ## Rules
 
-- **Don't merge.** Your job ends when step 2 returns zero unresolved findings after a completed re-review. The user merges.
+- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern.
 - **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback body (for posted threads) or in the commit message (for suppressed findings) — that text is the durable record of why the code is the way it is.
 - **Resolve every thread you addressed, including pushbacks.** Automated reviewers don't reply; the pushback comment is the record. Open threads accumulate forever.
 - **Suppressed findings get fixed in the commit pass and listed in your final report.** They have no thread; the commit message and the report are the only records.
