@@ -112,7 +112,7 @@ def cmd_context(args: argparse.Namespace) -> int:
             matches.append((m.index, match))
 
     if not matches:
-        print(f"no matches for {args.query!r} in session", file=sys.stderr)
+        print(f"no matches for {args.query.pattern!r} in session", file=sys.stderr)
         return 1
 
     windows: list[tuple[int, int]] = []
@@ -160,11 +160,24 @@ def cmd_message(args: argparse.Namespace) -> int:
     return 1
 
 
+DASH_SLUG_EPILOG = (
+    "Note: project slugs always start with '-' (e.g. -Users-bmf-…), so "
+    "invocations need a '--' separator with flags BEFORE and positionals "
+    "AFTER, e.g.\n"
+    "  show_session.py context -C 3 -- -Users-bmf-code-foo <session_id> 'query'\n"
+    "Standard Unix convention (same as 'git checkout -- <pathspec>')."
+)
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0],
+                                 epilog=DASH_SLUG_EPILOG,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    ctx = sub.add_parser("context", help="Print context around query matches")
+    ctx = sub.add_parser("context", help="Print context around query matches",
+                          epilog=DASH_SLUG_EPILOG,
+                          formatter_class=argparse.RawDescriptionHelpFormatter)
     ctx.add_argument("project", help="Project slug (e.g. -Users-bmf-code-foo)")
     ctx.add_argument("session_id", help="Session UUID")
     ctx.add_argument("query", type=regex_arg, help="Case-insensitive regex")
@@ -178,7 +191,9 @@ def main() -> int:
                      help="Words on each side of match (default: 50). "
                           "Non-matched messages show first/last (budget//2) each.")
 
-    msg = sub.add_parser("message", help="Print full body of one message by uuid")
+    msg = sub.add_parser("message", help="Print full body of one message by uuid",
+                          epilog=DASH_SLUG_EPILOG,
+                          formatter_class=argparse.RawDescriptionHelpFormatter)
     msg.add_argument("project")
     msg.add_argument("session_id")
     msg.add_argument("uuid")
