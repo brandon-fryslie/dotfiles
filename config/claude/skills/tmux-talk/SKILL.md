@@ -15,7 +15,8 @@ TALK=~/.claude/skills/tmux-talk/bin/tmux-talk
 
 ```bash
 tmux-talk list                        # discover all panes
-tmux-talk send   <target> <message>   # send a message (handles Enter timing)
+tmux-talk whoami                      # print this pane's tmux address
+tmux-talk send   <target> <message>   # send a message wrapped with From:/To-reply: envelope
 tmux-talk read-screen <target> [N]    # capture N lines of scrollback (default 200)
 tmux-talk wait   <target> [timeout]   # poll until idle prompt appears (default 120s)
 tmux-talk idle   <target>             # exit 0 if idle, 1 if not — use in conditionals
@@ -26,6 +27,20 @@ tmux-talk idle   <target>             # exit 0 if idle, 1 if not — use in cond
 tmux uses `session:window.pane`. When the user says "session X, window Y", map to `X:Y.0`.
 
 Run `tmux-talk list` to see all available panes with their addresses and running commands. Verify the target shows `cmd=claude` or `cmd=node`, not `zsh`/`bash`.
+
+## Message Envelope
+
+Every `send` wraps the message body with a `From:` header and a `To reply:` footer:
+
+```
+From: <sender-address>
+<your message>
+To reply: Use /tmux-talk send <sender-address> <message>
+```
+
+The sender's address is auto-detected from the current tmux pane via `tmux display-message` — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). If `$TMUX` is unset, `send` and `whoami` hard-error rather than silently sending an empty `From:`.
+
+The envelope is unconditional: every receiver sees the same shape, so reply routing is always present in the message itself.
 
 ## Typical Single-Turn Flow
 

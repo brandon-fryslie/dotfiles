@@ -5,12 +5,24 @@ USAGE="tmux-talk — thin wrappers over tmux for agent-to-agent communication
 
 Subcommands:
   list                           List all tmux panes with session:window.pane address and running command
-  send   <target> <message>      Send a message to a pane (handles the two-call timing requirement)
+  whoami                         Print this pane's tmux address (session:window.pane)
+  send   <target> <message>      Send a message to a pane, wrapped with From:/To-reply: envelope
   read-screen <target> [lines]   Capture pane content (default: 200 lines of scrollback)
   wait   <target> [timeout]      Poll until the Claude idle prompt appears (default: 120s)
   idle   <target>                Exit 0 if pane shows idle prompt, 1 otherwise
 
 target format: session:window.pane  (e.g. work:0.0, research:editor.0)"
+
+# [LAW:one-source-of-truth] single derivation for "what's my tmux address",
+# consumed by both `whoami` and `send`. Total contract: prints address on
+# stdout, or prints error on stderr and returns 1 — no empty-success state.
+derive_self_address() {
+  if [[ -z "${TMUX:-}" ]]; then
+    echo "tmux-talk: not running inside tmux — \$TMUX is unset" >&2
+    return 1
+  fi
+  tmux display-message -p '#{session_name}:#{window_index}.#{pane_index}'
+}
 
 CMD="${1:-}"
 
@@ -20,6 +32,10 @@ case "$CMD" in
     tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
     ;;
 
+  whoami)
+    derive_self_address
+    ;;
+
   send)
     TARGET="${2:-}"
     MESSAGE="${3:-}"
@@ -27,9 +43,14 @@ case "$CMD" in
       echo "Usage: tmux-talk send <target> <message>" >&2
       exit 1
     fi
-    # Two separate calls required — a combined send+Enter races the target's input handler
-    # and the Enter is silently dropped
-    tmux send-keys -t "$TARGET" "$MESSAGE"
+    FROM=$(derive_self_address) || exit 1
+    ENVELOPE=$(printf 'From: %s\n%s\nTo reply: Use /tmux-talk send %s <message>' \
+                      "$FROM" "$MESSAGE" "$FROM")
+
+    # Bracketed paste so embedded newlines paste as content rather than Enter.
+    # The trailing send-keys Enter then submits the whole envelope as one message.
+    printf '%s' "$ENVELOPE" | tmux load-buffer -
+    tmux paste-buffer -t "$TARGET" -p -d
     sleep 1
     tmux send-keys -t "$TARGET" Enter
     ;;
