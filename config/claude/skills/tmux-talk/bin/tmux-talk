@@ -44,8 +44,6 @@ case "$CMD" in
       exit 1
     fi
     FROM=$(derive_self_address) || exit 1
-    ENVELOPE=$(printf 'From: %s\n%s\nTo reply: Use /tmux-talk send %s <message>' \
-                      "$FROM" "$MESSAGE" "$FROM")
 
     # [LAW:no-shared-mutable-globals] private buffer name so concurrent sends
     # can't clobber each other via tmux's global most-recent-buffer slot.
@@ -55,7 +53,9 @@ case "$CMD" in
     # correct, not defensive.
     BUFFER="tmux-talk-$$"
     trap 'tmux delete-buffer -b "$BUFFER" 2>/dev/null || :' EXIT
-    printf '%s' "$ENVELOPE" | tmux load-buffer -b "$BUFFER" -
+    printf 'From: %s\n%s\nTo reply: Use /tmux-talk send %s <message>' \
+           "$FROM" "$MESSAGE" "$FROM" \
+      | tmux load-buffer -b "$BUFFER" -
     tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
     sleep 1
     tmux send-keys -t "$TARGET" Enter
