@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Warm Editorial Minimalism — starter</title>
+<!-- Free fonts in the genre: serif display + grotesque sans -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── TOKENS: the single source of truth. Re-brand by editing here only. ── */
+:root {
+  --bg:#f1efe9; --bg-2:#e9e7df; --ink:#1a1814; --ink-muted:#6b665d;
+  --hairline:rgba(26,24,20,0.10);
+  --surface:#161412; --surface-top:#211e1a; --on-surface:#f5f3ee;
+  --on-surface-muted:#9b958a; --ring:rgba(245,243,238,0.14);
+  --accent:#c8643c;
+  --dot:rgba(26,24,20,0.06); --dot-size:22px;
+  --font-display:"Instrument Serif",Georgia,serif;
+  --font-sans:"Inter",system-ui,sans-serif; --tracking-tag:0.14em;
+  --t-hero:clamp(3rem,7vw,5.5rem); --t-h2:clamp(2rem,4vw,3rem);
+  --t-price:clamp(2.5rem,4vw,3.25rem); --t-lead:clamp(1.05rem,1.6vw,1.25rem);
+  --t-body:1rem; --t-small:0.8125rem;
+  --s-1:0.5rem; --s-2:0.75rem; --s-3:1rem; --s-4:1.5rem; --s-5:2rem;
+  --s-6:3rem; --s-7:4.5rem; --s-8:7rem;
+  --r-card:22px; --r-btn:12px; --r-pill:999px;
+  --shadow-card:0 24px 48px -24px rgba(26,24,20,.45),0 2px 6px rgba(26,24,20,.08);
+}
+/* ── FOUNDATIONS ── */
+*{box-sizing:border-box;margin:0}
+body{font-family:var(--font-sans);color:var(--ink);background-color:var(--bg);
+  background-image:radial-gradient(var(--dot) 1px,transparent 1px);
+  background-size:var(--dot-size) var(--dot-size);-webkit-font-smoothing:antialiased;line-height:1.5}
+.wrap{max-width:1140px;margin-inline:auto;padding-inline:var(--s-4)}
+.serif{font-family:var(--font-display);font-weight:400;line-height:1.05}
+.muted{color:var(--ink-muted)}
+section{padding-block:var(--s-8)}
+/* ── NAV (floating pill) ── */
+.nav{position:sticky;top:var(--s-4);z-index:50;display:flex;align-items:center;
+  justify-content:space-between;gap:var(--s-4);
+  padding:var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  background:var(--surface);color:var(--on-surface);border-radius:var(--r-pill);
+  box-shadow:var(--shadow-card)}
+.nav .links{display:flex;gap:var(--s-4);align-items:center}
+.nav a{color:var(--on-surface-muted);text-decoration:none;font-size:var(--t-small)}
+.nav a:hover{color:var(--on-surface)}
+.brand{font-family:var(--font-display);font-size:1.4rem;color:var(--on-surface)}
+/* ── HERO ── */
+.hero{text-align:center;padding-block:var(--s-8)}
+.hero h1{font-size:var(--t-hero)}
+.hero p{font-size:var(--t-lead);margin-block:var(--s-4);max-width:42ch;margin-inline:auto}
+/* ── TOGGLE (segmented control) ── */
+.toggle{display:inline-flex;padding:4px;gap:2px;background:var(--surface);border-radius:var(--r-pill)}
+.toggle button{border:0;padding:.5em 1.25em;border-radius:var(--r-pill);
+  background:transparent;color:var(--on-surface-muted);cursor:pointer;font:inherit}
+.toggle button[aria-pressed="true"]{background:var(--on-surface);color:var(--surface)}
+/* ── PRICING GRID + CARD ── */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s-3);margin-top:var(--s-6)}
+.card{background:linear-gradient(180deg,var(--surface-top),var(--surface));
+  color:var(--on-surface);border-radius:var(--r-card);box-shadow:var(--shadow-card);
+  padding:var(--s-5);display:flex;flex-direction:column;gap:var(--s-4)}
+.tag{align-self:flex-start;padding:.3em .9em;font-size:var(--t-small);
+  text-transform:uppercase;letter-spacing:var(--tracking-tag);
+  color:var(--on-surface-muted);border:1px solid var(--ring);border-radius:var(--r-pill)}
+.price{font-family:var(--font-display);font-size:var(--t-price)}
+.price small{font-family:var(--font-sans);font-size:var(--t-body);color:var(--on-surface-muted)}
+.hr{height:1px;background:var(--ring);border:0}
+.features{list-style:none;display:grid;gap:var(--s-2);padding:0}
+.features li{display:flex;gap:var(--s-2);color:var(--on-surface-muted);font-size:var(--t-body)}
+.features li::before{content:"✓";color:var(--on-surface)}
+.card .btn{margin-top:auto}
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--s-2);
+  padding:.75em 1.25em;border-radius:var(--r-btn);font:inherit;font-size:var(--t-body);
+  text-decoration:none;cursor:pointer;border:0}
+.btn-dark{background:var(--ink);color:var(--bg)}
+.btn-light{background:var(--on-surface);color:var(--surface)}
+.btn-ghost{background:transparent;color:var(--on-surface);border:1px solid var(--ring)}
+.btn-block{width:100%}
+/* ── CTA band (inverted) ── */
+.cta{background:var(--surface);color:var(--on-surface);border-radius:var(--r-card);
+  text-align:center;padding:var(--s-7);box-shadow:var(--shadow-card)}
+.cta h2{font-family:var(--font-display);font-size:var(--t-h2);margin-bottom:var(--s-4)}
+/* ── FOOTER ── */
+footer{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;
+  gap:var(--s-3);padding-block:var(--s-6);font-size:var(--t-small);color:var(--ink-muted)}
+footer a{color:var(--ink-muted);text-decoration:none;margin-left:var(--s-4)}
+footer a:hover{color:var(--ink)}
+/* ── RESPONSIVE ── */
+@media(max-width:780px){.grid{grid-template-columns:1fr}.nav .links a:not(.btn){display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <nav class="nav">
+    <span class="brand">◈ Brand</span>
+    <div class="links">
+      <a href="#pricing">Pricing</a>
+      <a href="/changelog">Changelog</a>
+      <a href="/download" class="btn btn-light">Get the app</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <h1 class="serif">Pricing</h1>
+    <p class="muted">Simple, transparent pricing. Choose the plan that works best for you.</p>
+    <div class="toggle" role="group" aria-label="Billing period">
+      <button type="button" aria-pressed="true">Monthly</button>
+      <button type="button" aria-pressed="false">Yearly</button>
+    </div>
+  </header>
+
+  <section id="pricing" style="padding-top:0">
+    <div class="grid">
+      <article class="card">
+        <span class="tag">Basic</span>
+        <div class="price serif">Free <small>forever</small></div>
+        <hr class="hr">
+        <strong>Get started with:</strong>
+        <ul class="features">
+          <li>1000 words per week</li>
+          <li>Edit Mode</li>
+          <li>Works everywhere you type</li>
+          <li>Supports 99+ languages</li>
+        </ul>
+        <button type="button" class="btn btn-light btn-block">Download</button>
+      </article>
+
+      <article class="card">
+        <span class="tag">Pro</span>
+        <div class="price serif">$10 <small>/month</small></div>
+        <hr class="hr">
+        <strong>Everything in Basic, plus:</strong>
+        <ul class="features">
+          <li>Unlimited usage</li>
+          <li>Unlimited edit mode</li>
+          <li>Priority support</li>
+        </ul>
+        <button type="button" class="btn btn-light btn-block">Get started</button>
+      </article>
+
+      <article class="card">
+        <span class="tag">Teams</span>
+        <div class="price serif">$10 <small>/user/mo</small></div>
+        <hr class="hr">
+        <strong>Everything in Pro, plus:</strong>
+        <ul class="features">
+          <li>Centralized billing</li>
+          <li>Admin controls</li>
+        </ul>
+        <button type="button" class="btn btn-ghost btn-block" disabled>Coming soon</button>
+      </article>
+    </div>
+  </section>
+
+  <section>
+    <div class="cta">
+      <h2>Ready to get started?</h2>
+      <p class="muted" style="margin-bottom:var(--s-5)">Try it free. No card required.</p>
+      <button type="button" class="btn btn-light">Download for macOS</button>
+    </div>
+  </section>
+
+  <footer>
+    <span>© Brand 2026. All rights reserved.</span>
+    <span><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/changelog">Changelog</a></span>
+  </footer>
+
+</div>
+<script>
+  // Without this, the markup is dishonest: it advertises an interactive
+  // pressed-state control but the state never updates.
+  document.querySelectorAll('.toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.parentElement.querySelectorAll('button').forEach(b =>
+        b.setAttribute('aria-pressed', b === btn));
+    });
+  });
+</script>
+</body>
+</html>

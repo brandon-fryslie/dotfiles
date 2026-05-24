@@ -37,6 +37,7 @@ config/codex/history.jsonl
 config/codex/log/codex-tui.log
 config/codex/sessions/
 config/codex/skills/.system/
+config/codex/skills/.system/*.marker
 
 # Backup snapshots
 config/codex/skills/*.backup.*/
