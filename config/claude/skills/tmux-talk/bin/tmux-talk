@@ -6,7 +6,7 @@ USAGE="tmux-talk — thin wrappers over tmux for agent-to-agent communication
 Subcommands:
   list                           List all tmux panes with session:window.pane address and running command
   whoami                         Print this pane's tmux address (session:window.pane)
-  send   <target> <message>      Send a message to a pane, wrapped with From:/To-reply: envelope
+  send   <target> <message...>   Send a message to a pane, wrapped with From:/To-reply: envelope
   read-screen <target> [lines]   Capture pane content (default: 200 lines of scrollback)
   wait   <target> [timeout]      Poll until the Claude idle prompt appears (default: 120s)
   idle   <target>                Exit 0 if pane shows idle prompt, 1 otherwise

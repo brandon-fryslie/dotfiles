@@ -16,7 +16,7 @@ TALK=~/.claude/skills/tmux-talk/bin/tmux-talk
 ```bash
 tmux-talk list                        # discover all panes
 tmux-talk whoami                      # print this pane's tmux address
-tmux-talk send   <target> <message>   # send a message wrapped with From:/To-reply: envelope
+tmux-talk send   <target> <message...>  # send a message wrapped with From:/To-reply: envelope
 tmux-talk read-screen <target> [N]    # capture N lines of scrollback (default 200)
 tmux-talk wait   <target> [timeout]   # poll until idle prompt appears (default 120s)
 tmux-talk idle   <target>             # exit 0 if idle, 1 if not — use in conditionals
