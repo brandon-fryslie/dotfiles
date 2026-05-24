@@ -134,7 +134,7 @@ def main() -> int:
     shown = hits[:args.limit]
 
     if not shown:
-        print(f"no sessions matching {args.query!r} in {len(dirs)} project dir(s)")
+        print(f"no sessions matching {args.query.pattern!r} in {len(dirs)} project dir(s)")
         return 1
 
     for h in shown:
