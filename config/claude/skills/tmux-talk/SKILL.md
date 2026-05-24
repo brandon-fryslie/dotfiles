@@ -38,7 +38,7 @@ From: <sender-address>
 To reply: Use /tmux-talk send <sender-address> <message...>
 ```
 
-The sender's address is auto-detected from the current tmux pane via `tmux display-message -t "$TMUX_PANE"` — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). If `$TMUX` or `$TMUX_PANE` is unset, `send` and `whoami` hard-error rather than silently sending an empty `From:` line.
+The sender's address is auto-detected from the invoking pane — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). If `$TMUX` or `$TMUX_PANE` is unset, `send` and `whoami` hard-error rather than silently sending an empty `From:` line. (See `derive_self_address` in `bin/tmux-talk` for the exact derivation.)
 
 The envelope is unconditional: every receiver sees the same shape, so reply routing is always present in the message itself.
 
