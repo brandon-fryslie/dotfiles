@@ -32,7 +32,6 @@ from _session_lib import (
 
 @dataclass(frozen=True)
 class Message:
-    index: int
     uuid: str
     role: str
     timestamp: str
@@ -48,7 +47,6 @@ def load_messages(path: Path) -> list[Message]:
         if not text:
             continue
         msgs.append(Message(
-            index=len(msgs),
             uuid=ev.get("uuid", ""),
             role=ev.get("type", ""),
             timestamp=ev.get("timestamp", ""),
