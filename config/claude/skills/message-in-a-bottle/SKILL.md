@@ -22,7 +22,7 @@ A one-shot delayed self-message. The launcher returns immediately so the calling
 - `<delay-seconds>` — integer; how long the worker waits before `/clear`. Pick large enough that the calling agent has finished its turn (5–15s is typical; 10s is a safe default).
 - `<message...>` — everything after the delay; can be a slash command, plain text, multi-line, contain quotes — passed through a tempfile so shell-quoting hazards do not apply.
 
-The launcher prints `bottle scheduled → <target> in Ns (log: /tmp/bottle-log.XXXX)` and exits. The log captures worker progress and any tmux errors.
+The launcher prints `bottle scheduled → <target> in Ns (log: <tempfile>)` and exits — the tempfile lives under `$TMPDIR` (on macOS, typically `/var/folders/.../T/`; on Linux, typically `/tmp/`). The log captures worker progress and any tmux errors.
 
 ## Examples
 
@@ -52,7 +52,7 @@ It does not retry, it does not check for idleness, it does not validate the post
 
 - **Fixed delay**: if the calling agent is still streaming output when the worker fires, the `/clear` will queue as typed input and may not behave as intended. Pick a delay larger than the expected response time.
 - **Single pane**: the worker fires into the pane that invoked the launcher. There is no `--target` flag — that's intentional; the source of truth for "which pane" is `$TMUX_PANE`.
-- **No cancel**: once scheduled, the bottle fires. To cancel, find the background `bash` process (`ps -ax | grep message-in-a-bottle`) and kill it.
+- **No cancel**: once scheduled, the bottle fires. To cancel, find the background process (`pgrep -f message-in-a-bottle`) and kill it.
 
 ## Related
 

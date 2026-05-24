@@ -52,6 +52,10 @@ USAGE
     # as a value, bypassing every shell-quoting hazard between argv → worker
     # → tmux load-buffer. No escaping branches anywhere.
     MSGFILE=$(mktemp -t bottle-msg.XXXXXX)
+    # [LAW:single-enforcer] one trap owns MSGFILE until ownership transfers
+    # to the worker; cleared after a successful disown so the worker (the
+    # new owner) is the only thing that can delete it.
+    trap 'rm -f "$MSGFILE"' EXIT
     printf '%s' "$MESSAGE" > "$MSGFILE"
 
     LOGFILE=$(mktemp -t bottle-log.XXXXXX)
@@ -59,23 +63,25 @@ USAGE
 
     # nohup ignores SIGHUP; redirected stdio keeps nohup.out from spawning;
     # disown drops the job from this shell's table so the launcher exits clean.
-    nohup "$SELF" --worker "$TARGET" "$DELAY" "$MSGFILE" "$LOGFILE" \
+    nohup "$SELF" --worker "$TARGET" "$DELAY" "$MSGFILE" \
       </dev/null >>"$LOGFILE" 2>&1 &
     disown
+    trap - EXIT
 
     echo "bottle scheduled → $TARGET in ${DELAY}s (log: $LOGFILE)"
     ;;
 
   worker)
-    if [[ $# -ne 4 ]]; then
-      echo "internal error: worker expects exactly 4 args" >&2
+    if [[ $# -ne 3 ]]; then
+      echo "internal error: worker expects exactly 3 args" >&2
       exit 2
     fi
     TARGET="$1"
     DELAY="$2"
     MSGFILE="$3"
-    LOGFILE="$4"
 
+    # Log destination is owned by the launcher (via stdout redirect on the
+    # spawning nohup); the worker only writes to stdout. Single enforcer.
     BUFFER="bottle-$$"
 
     # [LAW:single-enforcer] one trap owns cleanup of both the message file
