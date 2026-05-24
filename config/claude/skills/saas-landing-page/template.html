@@ -22,8 +22,8 @@
   --t-hero:clamp(3rem,7vw,5.5rem); --t-h2:clamp(2rem,4vw,3rem);
   --t-price:clamp(2.5rem,4vw,3.25rem); --t-lead:clamp(1.05rem,1.6vw,1.25rem);
   --t-body:1rem; --t-small:0.8125rem;
-  --s-2:0.75rem; --s-3:1rem; --s-4:1.5rem; --s-5:2rem; --s-6:3rem;
-  --s-7:4.5rem; --s-8:7rem;
+  --s-1:0.5rem; --s-2:0.75rem; --s-3:1rem; --s-4:1.5rem; --s-5:2rem;
+  --s-6:3rem; --s-7:4.5rem; --s-8:7rem;
   --r-card:22px; --r-btn:12px; --r-pill:999px;
   --shadow-card:0 24px 48px -24px rgba(26,24,20,.45),0 2px 6px rgba(26,24,20,.08);
 }
@@ -97,9 +97,9 @@ footer a:hover{color:var(--ink)}
   <nav class="nav">
     <span class="brand">◈ Brand</span>
     <div class="links">
-      <a href="#">Pricing</a>
-      <a href="#">Changelog</a>
-      <a href="#" class="btn btn-light">Get the app</a>
+      <a href="#pricing">Pricing</a>
+      <a href="/changelog">Changelog</a>
+      <a href="/download" class="btn btn-light">Get the app</a>
     </div>
   </nav>
 
@@ -107,12 +107,12 @@ footer a:hover{color:var(--ink)}
     <h1 class="serif">Pricing</h1>
     <p class="muted">Simple, transparent pricing. Choose the plan that works best for you.</p>
     <div class="toggle" role="group" aria-label="Billing period">
-      <button aria-pressed="true">Monthly</button>
-      <button aria-pressed="false">Yearly</button>
+      <button type="button" aria-pressed="true">Monthly</button>
+      <button type="button" aria-pressed="false">Yearly</button>
     </div>
   </header>
 
-  <section style="padding-top:0">
+  <section id="pricing" style="padding-top:0">
     <div class="grid">
       <article class="card">
         <span class="tag">Basic</span>
@@ -165,9 +165,19 @@ footer a:hover{color:var(--ink)}
 
   <footer>
     <span>© Brand 2026. All rights reserved.</span>
-    <span><a href="#">Terms</a><a href="#">Privacy</a><a href="#">Changelog</a></span>
+    <span><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/changelog">Changelog</a></span>
   </footer>
 
 </div>
+<script>
+  // Without this, the markup is dishonest: it advertises an interactive
+  // pressed-state control but the state never updates.
+  document.querySelectorAll('.toggle button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      btn.parentElement.querySelectorAll('button').forEach(b =>
+        b.setAttribute('aria-pressed', b === btn));
+    });
+  });
+</script>
 </body>
 </html>

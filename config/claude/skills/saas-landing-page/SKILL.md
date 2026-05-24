@@ -26,8 +26,10 @@ token, don't patch the section.
    archetypes (nav, hero, pricing grid, billing toggle, feature card, CTA band,
    footer), and the anti-patterns that make a page look "generic AI". This is
    the spec; treat it as the single source of truth.
-2. **Copy `template.html`** as the starting skeleton. It's a self-contained,
-   working page whose rebrand surface (color, type, space, radii, shadow) is
+2. **Copy `template.html`** as the starting skeleton. It's a single-file
+   starter page (one external dependency: Google Fonts via CDN; the font
+   stacks include `system-ui` / `Georgia` fallbacks so it degrades cleanly
+   if blocked) whose rebrand surface (color, type, space, radii, shadow) is
    driven by the design tokens — change tokens at the top, every component
    updates coherently. A few component-internal precision values (toggle
    padding, dot size, layout breakpoint) stay inline by design; see
