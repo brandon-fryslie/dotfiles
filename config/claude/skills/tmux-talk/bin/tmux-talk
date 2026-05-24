@@ -16,12 +16,16 @@ target format: session:window.pane  (e.g. work:0.0, research:editor.0)"
 # [LAW:one-source-of-truth] single derivation for "what's my tmux address",
 # consumed by both `whoami` and `send`. Total contract: prints address on
 # stdout, or prints error on stderr and returns 1 — no empty-success state.
+# [LAW:types-are-the-program] precondition is BOTH $TMUX (server attached)
+# and $TMUX_PANE (which pane we're in) — without -t "$TMUX_PANE", tmux falls
+# back to the current client's active pane, which may not be the invoking
+# pane in multi-client setups.
 derive_self_address() {
-  if [[ -z "${TMUX:-}" ]]; then
-    echo "tmux-talk: not running inside tmux — \$TMUX is unset" >&2
+  if [[ -z "${TMUX:-}" || -z "${TMUX_PANE:-}" ]]; then
+    echo "tmux-talk: not running inside tmux — \$TMUX/\$TMUX_PANE not set" >&2
     return 1
   fi
-  tmux display-message -p '#{session_name}:#{window_index}.#{pane_index}'
+  tmux display-message -p -t "$TMUX_PANE" '#{session_name}:#{window_index}.#{pane_index}'
 }
 
 CMD="${1:-}"
