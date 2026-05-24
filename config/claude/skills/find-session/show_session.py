@@ -105,11 +105,15 @@ def cmd_context(args: argparse.Namespace) -> int:
     pat = args.query
     msgs = load_messages(path)
 
+    # One canonical display string per message: search AND truncation operate
+    # on this same flat string, so match offsets are valid by construction.
+    flats = [m.text.replace("\n", " ") for m in msgs]
+
     matches: list[tuple[int, re.Match]] = []
-    for m in msgs:
-        match = pat.search(m.text)
+    for i, flat in enumerate(flats):
+        match = pat.search(flat)
         if match:
-            matches.append((m.index, match))
+            matches.append((i, match))
 
     if not matches:
         print(f"no matches for {args.query.pattern!r} in session", file=sys.stderr)
@@ -131,14 +135,12 @@ def cmd_context(args: argparse.Namespace) -> int:
     for n, (s, e) in enumerate(windows, 1):
         print(f"=== match block {n} of {len(windows)} (messages {s}..{e}) ===")
         for i in range(s, e + 1):
-            msg = msgs[i]
-            flat = msg.text.replace("\n", " ")
             if i in match_re_map:
-                body = truncate_around_match(flat, match_re_map[i], args.word_budget)
-                print_message(msg, body, is_match=True)
+                body = truncate_around_match(flats[i], match_re_map[i], args.word_budget)
+                print_message(msgs[i], body, is_match=True)
             else:
-                body = truncate_head_tail(flat, head_tail_words)
-                print_message(msg, body, is_match=False)
+                body = truncate_head_tail(flats[i], head_tail_words)
+                print_message(msgs[i], body, is_match=False)
         print()
     return 0
 
