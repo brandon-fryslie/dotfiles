@@ -109,6 +109,20 @@ def positive_int(s: str) -> int:
     return n
 
 
+def safe_path_component(s: str) -> str:
+    """argparse type= for a single path component — no separators, no .. / .
+
+    Ensures the value can be combined with a trusted root via `root / s` without
+    escaping the root. Rejects '/' and '\\\\' (Path treats either as a separator;
+    a leading '/' even *replaces* the root since `Path('/a') / '/b' == Path('/b')`).
+    """
+    if not s or s in (".", "..") or "/" in s or "\\" in s:
+        raise argparse.ArgumentTypeError(
+            f"path component must not contain separators or be '.'/'..' (got {s!r})"
+        )
+    return s
+
+
 def iter_events(path: Path) -> Iterator[dict]:
     """Yield parsed JSONL events; malformed or non-object lines are skipped.
 

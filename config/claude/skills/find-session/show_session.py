@@ -26,6 +26,7 @@ from _session_lib import (
     nonneg_int,
     positive_int,
     regex_arg,
+    safe_path_component,
 )
 
 
@@ -182,8 +183,9 @@ def main() -> int:
     ctx = sub.add_parser("context", help="Print context around query matches",
                           epilog=DASH_SLUG_EPILOG,
                           formatter_class=argparse.RawDescriptionHelpFormatter)
-    ctx.add_argument("project", help="Project slug (e.g. -Users-bmf-code-foo)")
-    ctx.add_argument("session_id", help="Session UUID")
+    ctx.add_argument("project", type=safe_path_component,
+                     help="Project slug (e.g. -Users-bmf-code-foo)")
+    ctx.add_argument("session_id", type=safe_path_component, help="Session UUID")
     ctx.add_argument("query", type=regex_arg, help="Case-insensitive regex")
     ctx.add_argument("-C", type=nonneg_int, default=2, dest="context_n",
                      help="Symmetric messages before AND after each match (default: 2)")
@@ -198,8 +200,8 @@ def main() -> int:
     msg = sub.add_parser("message", help="Print full body of one message by uuid",
                           epilog=DASH_SLUG_EPILOG,
                           formatter_class=argparse.RawDescriptionHelpFormatter)
-    msg.add_argument("project")
-    msg.add_argument("session_id")
+    msg.add_argument("project", type=safe_path_component)
+    msg.add_argument("session_id", type=safe_path_component)
     msg.add_argument("uuid")
 
     args = ap.parse_args()
