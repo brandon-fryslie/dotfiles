@@ -52,10 +52,13 @@ USAGE
     # as a value, bypassing every shell-quoting hazard between argv → worker
     # → tmux load-buffer. No escaping branches anywhere.
     MSGFILE=$(mktemp -t bottle-msg.XXXXXX)
-    # [LAW:single-enforcer] one trap owns MSGFILE until ownership transfers
-    # to the worker; cleared after a successful disown so the worker (the
-    # new owner) is the only thing that can delete it.
-    trap 'rm -f "$MSGFILE"' EXIT
+    LOGFILE=""
+    # [LAW:single-enforcer] one trap covers both tempfiles until the worker
+    # is spawned; cleared right after `nohup` so the worker owns MSGFILE and
+    # the launcher's "log: ..." line is the only reference to LOGFILE.
+    # LOGFILE is "" until created below — `rm -f ""` is a safe no-op, so
+    # installing the trap before LOGFILE exists is fine.
+    trap 'rm -f -- "$MSGFILE" "$LOGFILE"' EXIT
     printf '%s' "$MESSAGE" > "$MSGFILE"
 
     # Resolve own path for both ./script and PATH-lookup invocations.
@@ -70,9 +73,9 @@ USAGE
     fi
     SELF="$(cd "$(dirname "$SELF_RAW")" && pwd)/$(basename "$SELF_RAW")"
 
-    # LOGFILE is created immediately before the nohup spawn so it cannot
-    # orphan: nothing between this line and `trap - EXIT` can fail in a
-    # way that leaves LOGFILE behind without scheduling the worker.
+    # LOGFILE created just before the spawn — short lifetime minimizes the
+    # window where a signal or freak `>>` failure could leave it behind,
+    # and the EXIT trap above covers it as a backstop until we clear it.
     LOGFILE=$(mktemp -t bottle-log.XXXXXX)
 
     # nohup ignores SIGHUP, redirected stdio keeps nohup.out from spawning,
