@@ -26,6 +26,7 @@ from _session_lib import (
     TEXT_TYPES,
     extract_text,
     iter_events,
+    regex_arg,
     session_dirs,
     slug_for,
 )
@@ -96,7 +97,8 @@ def fmt_date(iso: str, mtime: float) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("query", help="Topic substring to search (case-insensitive regex)")
+    ap.add_argument("query", type=regex_arg,
+                    help="Topic to search (case-insensitive regex)")
     ap.add_argument("--limit", type=int, default=20, help="Max sessions to print (default: 20)")
     ap.add_argument("--all", action="store_true",
                     help="Search every project, not just $PWD's")
@@ -106,7 +108,7 @@ def main() -> int:
                     help="Override working directory used for slug (default: $PWD)")
     args = ap.parse_args()
 
-    pat = re.compile(args.query, re.IGNORECASE)
+    pat = args.query
     slug = slug_for(Path(args.cwd))
     dirs = session_dirs(slug, args.all)
 
