@@ -83,15 +83,19 @@ def extract_text(event: dict) -> str:
 
 
 def iter_events(path: Path) -> Iterator[dict]:
-    """Yield parsed JSONL events; malformed lines are silently skipped.
+    """Yield parsed JSONL events; malformed or non-object lines are skipped.
 
     Malformed-line tolerance is intentional: transcripts are append-only logs
     and a torn final line during a crash is a known shape — failing the whole
-    scan on one bad line would be worse than skipping it.
+    scan on one bad line would be worse than skipping it. Non-object JSON
+    (a bare null, list, or string) is treated the same — the declared return
+    type is the contract; callers should be able to trust ev.get(...) works.
     """
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for line in f:
             try:
-                yield json.loads(line)
+                ev = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if isinstance(ev, dict):
+                yield ev

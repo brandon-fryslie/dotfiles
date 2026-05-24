@@ -45,38 +45,42 @@ class SessionHit:
 
 
 def scan_file(path: Path, pat: re.Pattern, project: str, root_label: str) -> SessionHit | None:
-    hit = SessionHit(
-        session_id=path.stem,
-        project=project,
-        root_label=root_label,
-        mtime=path.stat().st_mtime,
-    )
-    for ev in iter_events(path):
-        if ev.get("type") == "ai-title" and not hit.title:
-            hit.title = ev.get("aiTitle", "") or ""
+    try:
+        hit = SessionHit(
+            session_id=path.stem,
+            project=project,
+            root_label=root_label,
+            mtime=path.stat().st_mtime,
+        )
+        for ev in iter_events(path):
+            if ev.get("type") == "ai-title" and not hit.title:
+                hit.title = ev.get("aiTitle", "") or ""
 
-        if ev.get("type") == "user" and not hit.first_user_prompt:
-            hit.first_user_prompt = extract_text(ev)[:200]
+            if ev.get("type") == "user" and not hit.first_user_prompt:
+                hit.first_user_prompt = extract_text(ev)[:200]
 
-        ts = ev.get("timestamp")
-        if ts and ts > hit.last_ts:
-            hit.last_ts = ts
+            ts = ev.get("timestamp")
+            if ts and ts > hit.last_ts:
+                hit.last_ts = ts
 
-        if ev.get("type") not in TEXT_TYPES:
-            continue
-        text = extract_text(ev)
-        if not text:
-            continue
-        found = pat.findall(text)
-        if not found:
-            continue
-        hit.matches += len(found)
-        if not hit.first_snippet:
-            m = pat.search(text)
-            if m:
-                start = max(0, m.start() - 40)
-                end = min(len(text), m.end() + 80)
-                hit.first_snippet = text[start:end].replace("\n", " ").strip()
+            if ev.get("type") not in TEXT_TYPES:
+                continue
+            text = extract_text(ev)
+            if not text:
+                continue
+            found = pat.findall(text)
+            if not found:
+                continue
+            hit.matches += len(found)
+            if not hit.first_snippet:
+                m = pat.search(text)
+                if m:
+                    start = max(0, m.start() - 40)
+                    end = min(len(text), m.end() + 80)
+                    hit.first_snippet = text[start:end].replace("\n", " ").strip()
+    except OSError as e:
+        print(f"warning: skipping {path}: {e}", file=sys.stderr)
+        return None
 
     return hit if hit.matches else None
 
