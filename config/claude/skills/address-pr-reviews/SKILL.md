@@ -152,7 +152,7 @@ Commit messages describe the **why** (architectural concern), not "address revie
 
 ## Finalize — when the loop exits clean
 
-The loop exits with zero unresolved findings after a clean re-review. The PR is reviewed; the work is done. [LAW:single-enforcer] this skill is the single place that closes a PR loop — merge, ticket-close, and recap live here, not scattered across callers or punted to the user. [LAW:dataflow-not-control-flow] finalize runs unconditionally on every clean exit; the data (the PR, the in-progress ticket, the merged commits) is what each step operates on. Per `<ticket-lifecycle>`, a ticket isn't done until it's merged and the work is recapped — this section is where that transition happens.
+The loop exits with zero unresolved findings after a clean re-review. The PR is reviewed; the work is done. [LAW:single-enforcer] this skill is the single place that closes a PR loop — merge, ticket-close, and recap live here, not scattered across callers or punted to the user. [LAW:dataflow-not-control-flow] finalize runs unconditionally on every clean exit; the data (the PR, the in-progress ticket, the merged commits) is what each step operates on. Per `<ticket-lifecycle>`, the agent owns ticket close-out — Finalize is where that happens. The recap step is the durable handoff to the next agent (its own justification, not something `<ticket-lifecycle>` requires).
 
 ### A. Merge the PR
 
@@ -165,10 +165,10 @@ Squash is the repo's configured merge strategy. `--delete-branch` cleans up the 
 ### B. Close the lit ticket
 
 ```bash
-lit done <ticket-id>
+lit done "$TICKET_ID"
 ```
 
-The ticket is the one this PR closed — pull it from the PR body, branch name, or the ticket you were working on in this session. `lit done` is a two-phase transition: the first call prints a preview with an apply token, rerun with `--apply=<token>` to commit. If this PR genuinely has no associated lit ticket (out-of-band fix), this step is a no-op.
+The ticket is the one this PR closed — pull it from the PR body, branch name, or the ticket you were working on in this session, and assign it to `$TICKET_ID`. `lit done` is a two-phase transition: the first call prints a preview with an apply token; capture it as `$TOKEN` and rerun with `--apply="$TOKEN"` to commit. If this PR genuinely has no associated lit ticket (out-of-band fix), this step is a no-op.
 
 ### C. Recap the merged work
 
