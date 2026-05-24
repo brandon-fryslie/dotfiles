@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# message-in-a-bottle — schedule a delayed self-message into the current
+# tmux pane. The launcher returns immediately; a detached worker fires the
+# /clear and the message after a fixed delay.
+#
+# Modes:
+#   launcher:  message-in-a-bottle <delay-seconds> <message...>
+#   worker:    message-in-a-bottle --worker <target> <delay> <msgfile> <logfile>
+
+set -euo pipefail
+
+# [LAW:types-are-the-program] one discriminator at the entry; everything
+# downstream operates on validated, typed inputs for exactly one mode.
+if [[ "${1:-}" == "--worker" ]]; then
+  MODE=worker
+  shift
+else
+  MODE=launcher
+fi
+
+case "$MODE" in
+
+  launcher)
+    if [[ $# -lt 2 ]]; then
+      cat >&2 <<'USAGE'
+Usage: message-in-a-bottle <delay-seconds> <message...>
+
+  delay-seconds  integer seconds to wait before sending /clear + message
+  message        the rest of argv; slash command or plain text, multi-word ok
+
+The message lands in the invoking tmux pane after the delay. Must run inside tmux.
+USAGE
+      exit 2
+    fi
+
+    DELAY="$1"; shift
+    MESSAGE="$*"
+
+    # [LAW:no-defensive-null-guards] every precondition fails loudly at the
+    # boundary — no silent defaulting that would let an empty bottle ship.
+    [[ "$DELAY" =~ ^[0-9]+$ ]] || { echo "delay must be a non-negative integer" >&2; exit 2; }
+    [[ -n "$MESSAGE" ]]         || { echo "message must not be empty" >&2; exit 2; }
+    [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]] \
+      || { echo "not inside tmux (\$TMUX/\$TMUX_PANE unset)" >&2; exit 2; }
+
+    # [LAW:one-source-of-truth] target derived from $TMUX_PANE via tmux
+    # itself — never accepted as a flag; tmux is the authority.
+    TARGET=$(tmux display-message -p -t "$TMUX_PANE" \
+      '#{session_name}:#{window_index}.#{pane_index}')
+
+    # [LAW:dataflow-not-control-flow] the message flows through a tempfile
+    # as a value, bypassing every shell-quoting hazard between argv → worker
+    # → tmux load-buffer. No escaping branches anywhere.
+    MSGFILE=$(mktemp -t bottle-msg.XXXXXX)
+    printf '%s' "$MESSAGE" > "$MSGFILE"
+
+    LOGFILE=$(mktemp -t bottle-log.XXXXXX)
+    SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+
+    # nohup ignores SIGHUP; redirected stdio keeps nohup.out from spawning;
+    # disown drops the job from this shell's table so the launcher exits clean.
+    nohup "$SELF" --worker "$TARGET" "$DELAY" "$MSGFILE" "$LOGFILE" \
+      </dev/null >>"$LOGFILE" 2>&1 &
+    disown
+
+    echo "bottle scheduled → $TARGET in ${DELAY}s (log: $LOGFILE)"
+    ;;
+
+  worker)
+    if [[ $# -ne 4 ]]; then
+      echo "internal error: worker expects exactly 4 args" >&2
+      exit 2
+    fi
+    TARGET="$1"
+    DELAY="$2"
+    MSGFILE="$3"
+    LOGFILE="$4"
+
+    BUFFER="bottle-$$"
+
+    # [LAW:single-enforcer] one trap owns cleanup of both the message file
+    # and the tmux buffer; no scattered rm/delete-buffer calls elsewhere.
+    trap 'rm -f "$MSGFILE"; tmux delete-buffer -b "$BUFFER" 2>/dev/null || :' EXIT
+
+    log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
+
+    log "waking; target=$TARGET delay=${DELAY}s msgfile=$MSGFILE"
+    sleep "$DELAY"
+
+    log "sending /clear"
+    tmux send-keys -t "$TARGET" "/clear"
+    sleep 0.3
+    tmux send-keys -t "$TARGET" Enter
+
+    # /clear is near-instant but Claude Code re-renders the input frame
+    # asynchronously; pasting too soon races the redraw and loses keys.
+    sleep 1.5
+
+    log "pasting message"
+    tmux load-buffer -b "$BUFFER" "$MSGFILE"
+    tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
+    sleep 1
+    tmux send-keys -t "$TARGET" Enter
+
+    log "done"
+    ;;
+esac
