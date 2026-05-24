@@ -67,7 +67,7 @@ python3 ~/.claude/skills/find-session/show_session.py context [FLAGS] -- <projec
 - `<query>` — case-insensitive regex.
 - `-C N` — symmetric context: N messages before AND after each match (default 2). Mirrors `diff(1)`.
 - `-A N` / `-B N` — override one side independently.
-- `--word-budget N` — per-side words around the match in the matched message (default 50). Non-matched messages get first/last `N/2` words with `…` between.
+- `--word-budget N` — per-side words around the match in the matched message (default 50). Non-matched messages get first/last `N//2` words with `…` between.
 
 **`--` is required:** project slugs always begin with `-` (e.g. `-Users-bmf-…`), so without the `--` separator argparse mistakes the slug for a flag. Put all flags **before** `--`, all positionals **after**. This is standard Unix convention (the same `--` that `git checkout -- <pathspec>` uses).
 
