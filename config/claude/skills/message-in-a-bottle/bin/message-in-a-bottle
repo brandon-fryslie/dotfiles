@@ -5,7 +5,7 @@
 #
 # Modes:
 #   launcher:  message-in-a-bottle <delay-seconds> <message...>
-#   worker:    message-in-a-bottle --worker <target> <delay> <msgfile> <logfile>
+#   worker:    message-in-a-bottle --worker <target> <delay> <msgfile>
 
 set -euo pipefail
 

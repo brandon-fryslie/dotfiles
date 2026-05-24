@@ -20,7 +20,7 @@ A one-shot delayed self-message. The launcher returns immediately so the calling
 ```
 
 - `<delay-seconds>` — integer; how long the worker waits before `/clear`. Pick large enough that the calling agent has finished its turn (5–15s is typical; 10s is a safe default).
-- `<message...>` — everything after the delay; can be a slash command, plain text, multi-line, contain quotes — passed through a tempfile so shell-quoting hazards do not apply.
+- `<message...>` — everything after the delay; can be a slash command, plain text, multi-line, or contain quotes/backticks/dollar signs. Quote at invocation as you normally would (your shell still does word-splitting and `$VAR` expansion before the script sees argv); once captured, the message is staged in a tempfile and never re-quoted at any internal hop on its way to `tmux paste-buffer`.
 
 The launcher prints `bottle scheduled → <target> in Ns (log: <tempfile>)` and exits — the tempfile lives under `$TMPDIR` (on macOS, typically `/var/folders/.../T/`; on Linux, typically `/tmp/`). The log captures worker progress and any tmux errors.
 
