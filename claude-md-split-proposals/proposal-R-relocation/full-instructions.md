@@ -285,7 +285,7 @@ like you to remember.  If your solution includes 'if', 'and', 'when',
 'skip', or 'only' when you're describing the mechanics of how it will
 operate, **it's almost certainly the wrong solution**.  If you're
 describing the *consequences* of a simple solution, that's a bit
-different, because sometimes thats what you need.
+different, because sometimes that's what you need.
 
 Real world example:
 
@@ -308,7 +308,7 @@ Why wrong:
 - Every other piece of code becomes more complex as it must know these details and work around them
 - This code becomes very difficult to modify or replace - every other piece of code that interacts with it must change
 - Obvious signs: WHEN, AND, ONLY <- conditionals!
-- We recongized this and thought for a moment.  A better solution became clear!
+- We recognized this and thought for a moment.  A better solution became clear!
 
 <RIGHT>
 I'm overcomplicating this.
