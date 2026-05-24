@@ -58,8 +58,6 @@ USAGE
     trap 'rm -f "$MSGFILE"' EXIT
     printf '%s' "$MESSAGE" > "$MSGFILE"
 
-    LOGFILE=$(mktemp -t bottle-log.XXXXXX)
-
     # Resolve own path for both ./script and PATH-lookup invocations.
     # `$0` lacks a slash on PATH lookup, so dirname/pwd would yield $PWD
     # — wrong. `command -v` does PATH resolution; for paths containing
@@ -71,6 +69,11 @@ USAGE
         || { echo "cannot resolve own path from \$0=$0" >&2; exit 2; }
     fi
     SELF="$(cd "$(dirname "$SELF_RAW")" && pwd)/$(basename "$SELF_RAW")"
+
+    # LOGFILE is created immediately before the nohup spawn so it cannot
+    # orphan: nothing between this line and `trap - EXIT` can fail in a
+    # way that leaves LOGFILE behind without scheduling the worker.
+    LOGFILE=$(mktemp -t bottle-log.XXXXXX)
 
     # nohup ignores SIGHUP, redirected stdio keeps nohup.out from spawning,
     # and the backgrounded child gets reparented to init when this shell
