@@ -99,8 +99,13 @@ USAGE
     DELAY="$2"
     MSGFILE="$3"
 
-    # Log destination is owned by the launcher (via stdout redirect on the
-    # spawning nohup); the worker only writes to stdout. Single enforcer.
+    # [LAW:single-enforcer] launcher owns input validation (DELAY shape,
+    # MSGFILE existence) AND log destination (via nohup stdout redirect).
+    # `--worker` is a non-interface, not a public entry point, so the
+    # worker does not re-check — duplicating those checks would be
+    # drift-prone ceremony for states that cannot occur via the documented
+    # call path. Direct `--worker` invocations get whatever errors `sleep`
+    # and `tmux load-buffer` produce; that's deliberate.
     BUFFER="bottle-$$"
 
     # [LAW:single-enforcer] one trap owns cleanup of both the message file
