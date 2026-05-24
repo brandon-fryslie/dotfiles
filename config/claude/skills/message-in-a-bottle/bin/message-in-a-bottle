@@ -56,9 +56,9 @@ USAGE
     # [LAW:single-enforcer] one trap covers both tempfiles until the worker
     # is spawned; cleared right after `nohup` so the worker owns MSGFILE and
     # the launcher's "log: ..." line is the only reference to LOGFILE.
-    # LOGFILE is "" until created below — `rm -f ""` is a safe no-op, so
-    # installing the trap before LOGFILE exists is fine.
-    trap 'rm -f -- "$MSGFILE" "$LOGFILE"' EXIT
+    # ${LOGFILE:+...} elides the arg entirely while LOGFILE is still empty —
+    # avoids passing "" to rm, which GNU coreutils warns about.
+    trap 'rm -f -- "$MSGFILE" ${LOGFILE:+"$LOGFILE"}' EXIT
     printf '%s' "$MESSAGE" > "$MSGFILE"
 
     # Resolve own path for both ./script and PATH-lookup invocations.
