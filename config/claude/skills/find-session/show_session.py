@@ -23,6 +23,9 @@ from _session_lib import (
     extract_text,
     iter_events,
     locate_session_file,
+    nonneg_int,
+    positive_int,
+    regex_arg,
 )
 
 
@@ -99,7 +102,7 @@ def print_message(msg: Message, body: str, is_match: bool) -> None:
 
 def cmd_context(args: argparse.Namespace) -> int:
     path = locate_session_file(args.project, args.session_id)
-    pat = re.compile(args.query, re.IGNORECASE)
+    pat = args.query
     msgs = load_messages(path)
 
     matches: list[tuple[int, re.Match]] = []
@@ -164,14 +167,14 @@ def main() -> int:
     ctx = sub.add_parser("context", help="Print context around query matches")
     ctx.add_argument("project", help="Project slug (e.g. -Users-bmf-code-foo)")
     ctx.add_argument("session_id", help="Session UUID")
-    ctx.add_argument("query", help="Case-insensitive regex")
-    ctx.add_argument("-C", type=int, default=2, dest="context_n",
+    ctx.add_argument("query", type=regex_arg, help="Case-insensitive regex")
+    ctx.add_argument("-C", type=nonneg_int, default=2, dest="context_n",
                      help="Symmetric messages before AND after each match (default: 2)")
-    ctx.add_argument("-A", type=int, default=None, dest="after",
+    ctx.add_argument("-A", type=nonneg_int, default=None, dest="after",
                      help="Messages AFTER match (overrides -C)")
-    ctx.add_argument("-B", type=int, default=None, dest="before",
+    ctx.add_argument("-B", type=nonneg_int, default=None, dest="before",
                      help="Messages BEFORE match (overrides -C)")
-    ctx.add_argument("--word-budget", type=int, default=50,
+    ctx.add_argument("--word-budget", type=positive_int, default=50,
                      help="Words on each side of match (default: 50). "
                           "Non-matched messages show first/last (budget//2) each.")
 
@@ -192,7 +195,7 @@ def main() -> int:
         if args.cmd == "context":
             return cmd_context(args)
         return cmd_message(args)
-    except FileNotFoundError as e:
+    except OSError as e:
         print(str(e), file=sys.stderr)
         return 2
 

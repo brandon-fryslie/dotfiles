@@ -6,6 +6,7 @@ build on this module.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from collections.abc import Iterator
@@ -80,6 +81,32 @@ def extract_text(event: dict) -> str:
             )
         return ""
     return ""
+
+
+def regex_arg(s: str) -> re.Pattern:
+    """argparse type= for a case-insensitive regex CLI argument.
+
+    Validation lives at the CLI boundary so cmd_* bodies receive an already-
+    compiled pattern — no callsite ever sees a malformed-regex string.
+    """
+    try:
+        return re.compile(s, re.IGNORECASE)
+    except re.error as e:
+        raise argparse.ArgumentTypeError(f"invalid regex {s!r}: {e}")
+
+
+def nonneg_int(s: str) -> int:
+    n = int(s)
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {n}")
+    return n
+
+
+def positive_int(s: str) -> int:
+    n = int(s)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"must be >= 1, got {n}")
+    return n
 
 
 def iter_events(path: Path) -> Iterator[dict]:
