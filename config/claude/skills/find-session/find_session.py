@@ -26,6 +26,8 @@ from _session_lib import (
     TEXT_TYPES,
     extract_text,
     iter_events,
+    nonneg_int,
+    positive_int,
     regex_arg,
     session_dirs,
     slug_for,
@@ -99,11 +101,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("query", type=regex_arg,
                     help="Topic to search (case-insensitive regex)")
-    ap.add_argument("--limit", type=int, default=20, help="Max sessions to print (default: 20)")
+    ap.add_argument("--limit", type=positive_int, default=20,
+                    help="Max sessions to print (default: 20)")
     ap.add_argument("--all", action="store_true",
                     help="Search every project, not just $PWD's")
-    ap.add_argument("--snippet-len", type=int, default=120,
-                    help="Truncate snippet to N chars (default: 120)")
+    ap.add_argument("--snippet-len", type=nonneg_int, default=120,
+                    help="Truncate snippet to N chars (default: 120; 0 suppresses snippet)")
     ap.add_argument("--cwd", default=os.getcwd(),
                     help="Override working directory used for slug (default: $PWD)")
     args = ap.parse_args()

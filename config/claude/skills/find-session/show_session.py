@@ -66,6 +66,8 @@ def fmt_ts(iso: str) -> str:
 
 
 def truncate_head_tail(text: str, words_each: int) -> str:
+    if words_each <= 0:
+        return ""
     words = text.split()
     if len(words) <= 2 * words_each:
         return " ".join(words)
@@ -130,7 +132,7 @@ def cmd_context(args: argparse.Namespace) -> int:
             windows.append((s, e))
 
     match_re_map = {idx: m for idx, m in matches}
-    head_tail_words = max(1, args.word_budget // 2)
+    head_tail_words = args.word_budget // 2
 
     for n, (s, e) in enumerate(windows, 1):
         print(f"=== match block {n} of {len(windows)} (messages {s}..{e}) ===")
