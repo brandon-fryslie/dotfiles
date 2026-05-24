@@ -27,8 +27,11 @@ token, don't patch the section.
    footer), and the anti-patterns that make a page look "generic AI". This is
    the spec; treat it as the single source of truth.
 2. **Copy `template.html`** as the starting skeleton. It's a self-contained,
-   working page wired entirely off the token variables — change tokens at the
-   top, every component updates coherently.
+   working page whose rebrand surface (color, type, space, radii, shadow) is
+   driven by the design tokens — change tokens at the top, every component
+   updates coherently. A few component-internal precision values (toggle
+   padding, dot size, layout breakpoint) stay inline by design; see
+   `design-system.md` §2.
 3. **Compose, don't restyle.** Pick archetypes, fill in real copy, adjust *token
    values* (not per-component CSS) to shift the brand. Want cool/Linear instead
    of warm/spoke? Change ~6 tokens; the whole page follows.
