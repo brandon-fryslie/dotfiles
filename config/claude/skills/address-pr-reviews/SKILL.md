@@ -176,13 +176,25 @@ The ticket is the one this PR closed — pull it from the PR body, branch name, 
 
 Invoke `/recap` with a short note describing what was merged. The recap is the durable historical record — what shipped, what's left, what to watch out for. It lives in the project's recap log; future sessions browsing history read it there.
 
-### D. Hand off the next session via message-in-a-bottle — only with a known concrete handoff
+### D. Hand off the next session via message-in-a-bottle — when verified-ready planned work exists
 
-The bottle exists to deliver a **specific, planned, ready-to-pull next-session brief** to a fresh pane: the top of the `lit ready` queue when it's the obvious next move; a concrete follow-up this PR surfaced and queued as a ticket; an explicit instruction already agreed with the user. Bottle = handing off known good work.
+The bottle delivers a fresh session into work that is **planned AND well-defined AND aligned**. All three. Non-verification defaults to *don't fire*. Queue-non-empty alone is not enough — `lit ready` can hold tickets that are vague, exploratory, or going-the-wrong-direction. The agent must *read the candidate and affirmatively verify both predicates* before firing.
 
-Bottle is **not** a kickstarter. Firing `/next` against an empty or speculative queue tells the next agent "find something to do" — which is how agents wander into work no one planned. Empty queue, ambiguous next move, no agreed follow-up, "feels off" — **don't bottle**. The recap is the closing artifact; the user picks up.
+**Step 1 — Identify the candidate.** In priority order, take the first that exists:
+1. An explicit instruction the user gave during this session for what comes next.
+2. A concrete follow-up this PR surfaced and you queued as a ticket.
+3. The top of `lit ready` — read it with `lit show <id>`.
 
-When a concrete handoff exists, schedule it:
+No candidate at all → stop. The recap is the closing artifact.
+
+**Step 2 — Verify the candidate.** Both predicates must hold:
+
+- **Well-defined**: a fresh session could start work without asking the user clarifying questions. Acceptance criteria spell out what "done" looks like; scope is bounded; dependencies are met or the dependency chain is explicit. Probe-shaped titles ("explore X", "consider Y", "investigate Z", "look into Z") FAIL this check.
+- **Aligned**: the work continues a direction the user has actively supported. It must not contradict a decision made in the just-closed PR, depend on a hypothesis the user hasn't validated, or open a new exploratory thread. If your honest first instinct on reading the candidate is "I should ask the user whether they actually want this next" — it FAILS this check.
+
+Either predicate fails → don't bottle. Note what failed in the recap (or in a `lit comment` on the candidate ticket) so the user can clarify scope or re-rank the queue, then stop.
+
+**Step 3 — Fire.** When both predicates pass:
 
 ```bash
 ~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle 10 "$(cat <<'EOF'
@@ -190,21 +202,23 @@ Last session shipped PR #<num> — <one-line description of what merged>.
 <forward-looking notes the next agent should know: in-flight context,
 follow-ups this PR surfaced, things to watch out for>
 
-<concrete next instruction — e.g. /next when the ready queue's top is the
-obvious next move, or a precise pointer otherwise>
+<concrete next instruction — /next when the verified candidate is the
+top of lit ready; a precise pointer (ticket ID, instruction) otherwise>
 EOF
 )"
 ```
 
-[LAW:types-are-the-program] the close-out's last output is `Option<NextSessionBrief>` — *Some(concrete brief)* or *None*. The two arms map to two body shapes: *Some* wraps into a bottle + recap; *None* ends at the recap. Both arms are unconditional once the value is known; the discriminator is what's actually planned, not what the agent feels like doing. Making the empty bottle unrepresentable forces the real question — "is there real next work?" — to be answered honestly instead of papered over with a default `/next`.
+[LAW:types-are-the-program] the close-out's last output is `Option<VerifiedNextWork>`. *Some* requires a candidate that has passed BOTH the well-defined and aligned checks; *None* covers *no candidate exists* AND *candidate exists but failed verification*. Making "fire on a queue hit alone" unrepresentable forces the agent to do the verification work instead of trusting the queue or defaulting to fire-and-hope.
 
-[LAW:one-source-of-truth] when a bottle does fire, its content derives from the same authored recap text as step C — the recap is the past-tense canonical form; the bottle wraps it with a forward-looking action. Not two sources, one substrate consumed for two distinct purposes. The bottle script's tmux precondition fails loudly at its boundary — outside tmux, the handoff is meaningless and the failure is the right signal.
+[LAW:dataflow-not-control-flow] the discriminator is verified-readiness — a property derived from reading the ticket and current context, not from the agent's vibe about whether to fire. Both arms (Some/None) are unconditional once the verification has been done; the variability is in the candidate's content, not in whether the agent decides to look.
 
-Then stop. The loop is finished, the work is shipped, the recap is filed. The next session is scheduled when there was something concrete to hand off, otherwise the user picks up from the recap.
+[LAW:one-source-of-truth] when a bottle fires, its content derives from the same authored recap as step C — past-tense canonical form vs forward-looking action, one substrate consumed for two purposes. The bottle script's tmux precondition fails loudly outside tmux — the handoff is meaningless there.
+
+Then stop. The loop is finished, the work is shipped, the recap is filed. The next session is scheduled when verified-ready planned work exists; otherwise the user picks up.
 
 ## Rules
 
-- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The optional bottle handoff (step D) is opportunistic — it fires only when concrete next work is queued — and is *not* a duty.
+- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The optional bottle handoff (step D) fires only when a candidate next item passes both the well-defined and aligned checks — verification is the agent's work, and *not* firing is the correct default when either check fails.
 - **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback body (for posted threads) or in the commit message (for suppressed findings) — that text is the durable record of why the code is the way it is.
 - **Resolve every thread you addressed, including pushbacks.** Automated reviewers don't reply; the pushback comment is the record. Open threads accumulate forever.
 - **Suppressed findings get fixed in the commit pass and listed in your final report.** They have no thread; the commit message and the report are the only records.
