@@ -176,7 +176,13 @@ The ticket is the one this PR closed — pull it from the PR body, branch name, 
 
 Invoke `/recap` with a short note describing what was merged. The recap is the durable historical record — what shipped, what's left, what to watch out for. It lives in the project's recap log; future sessions browsing history read it there.
 
-### D. Hand off the next session via message-in-a-bottle
+### D. Hand off the next session via message-in-a-bottle — only with a known concrete handoff
+
+The bottle exists to deliver a **specific, planned, ready-to-pull next-session brief** to a fresh pane: the top of the `lit ready` queue when it's the obvious next move; a concrete follow-up this PR surfaced and queued as a ticket; an explicit instruction already agreed with the user. Bottle = handing off known good work.
+
+Bottle is **not** a kickstarter. Firing `/next` against an empty or speculative queue tells the next agent "find something to do" — which is how agents wander into work no one planned. Empty queue, ambiguous next move, no agreed follow-up, "feels off" — **don't bottle**. The recap is the closing artifact; the user picks up.
+
+When a concrete handoff exists, schedule it:
 
 ```bash
 ~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle 10 "$(cat <<'EOF'
@@ -184,20 +190,21 @@ Last session shipped PR #<num> — <one-line description of what merged>.
 <forward-looking notes the next agent should know: in-flight context,
 follow-ups this PR surfaced, things to watch out for>
 
-/next
+<concrete next instruction — e.g. /next when the ready queue's top is the
+obvious next move, or a precise pointer otherwise>
 EOF
 )"
 ```
 
-The bottle is the immediate handoff to the next session — clear the pane, paste a brief, fire `/next` (or whatever instruction the agent judges most useful). The recap (step C) is past-tense and durable; the bottle is forward-looking and ephemeral. They carry related but distinct content drawn from one understanding of what just happened.
+[LAW:types-are-the-program] the close-out's last output is `Option<NextSessionBrief>` — *Some(concrete brief)* or *None*. The two arms map to two body shapes: *Some* wraps into a bottle + recap; *None* ends at the recap. Both arms are unconditional once the value is known; the discriminator is what's actually planned, not what the agent feels like doing. Making the empty bottle unrepresentable forces the real question — "is there real next work?" — to be answered honestly instead of papered over with a default `/next`.
 
-[LAW:dataflow-not-control-flow] the bottle fires unconditionally on every clean Finalize; the agent's judgment lives in the *message content* (which framing, which next action), not in whether to schedule. [LAW:one-source-of-truth] step C and step D both derive from the same authored recap text — the recap is the past-tense canonical form; the bottle wraps it with a forward-looking action. Not two sources, one substrate consumed twice for two distinct purposes. The bottle script's tmux precondition fails loudly at its boundary — outside tmux, the handoff is meaningless and the failure is the right signal, not a fallback to skip.
+[LAW:one-source-of-truth] when a bottle does fire, its content derives from the same authored recap text as step C — the recap is the past-tense canonical form; the bottle wraps it with a forward-looking action. Not two sources, one substrate consumed for two distinct purposes. The bottle script's tmux precondition fails loudly at its boundary — outside tmux, the handoff is meaningless and the failure is the right signal.
 
-Then stop. The loop is finished, the work is shipped, the recap is filed, and the next session is scheduled.
+Then stop. The loop is finished, the work is shipped, the recap is filed. The next session is scheduled when there was something concrete to hand off, otherwise the user picks up from the recap.
 
 ## Rules
 
-- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap, schedule next session). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern.
+- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The optional bottle handoff (step D) is opportunistic — it fires only when concrete next work is queued — and is *not* a duty.
 - **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback body (for posted threads) or in the commit message (for suppressed findings) — that text is the durable record of why the code is the way it is.
 - **Resolve every thread you addressed, including pushbacks.** Automated reviewers don't reply; the pushback comment is the record. Open threads accumulate forever.
 - **Suppressed findings get fixed in the commit pass and listed in your final report.** They have no thread; the commit message and the report are the only records.
