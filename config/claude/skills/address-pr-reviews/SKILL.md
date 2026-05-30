@@ -176,49 +176,62 @@ The ticket is the one this PR closed — pull it from the PR body, branch name, 
 
 Invoke `/recap` with a short note describing what was merged. The recap is the durable historical record — what shipped, what's left, what to watch out for. It lives in the project's recap log; future sessions browsing history read it there.
 
-### D. Hand off the next session via message-in-a-bottle — when verified-ready planned work exists
+### D. Hand off the next session via message-in-a-bottle
 
-The bottle delivers a fresh session into work that is **planned AND well-defined AND aligned**. All three. Non-verification defaults to *don't fire*. Queue-non-empty alone is not enough — `lit ready` can hold tickets that are vague, exploratory, or going-the-wrong-direction. The agent must *read the candidate and affirmatively verify both predicates* before firing.
+The handoff has two terminal forms: fire the bottle (with content shaped by the candidate's classified state) or halt and surface a per-candidate failure table to the user. [LAW:types-are-the-program] the section's output is `Handoff = Bottle(direct_work) | Bottle(define_task) | HaltAndExplain(failure_table)` — variants of one typed value, dispatched mechanically from the classification step. Well-definedness is *not* a fire/no-fire gate; it shapes bottle content. The only halt case is project-level misalignment across every examined candidate.
 
-**Step 1 — Identify the candidate.** In priority order, take the first that exists:
+**These three arms are exhaustive — no "skip," "hold," or "ask instead" arm exists.** The user being present, the step feeling minor, or the `/clear` being disruptive are NOT inputs to this decision. Deviating requires citing a clause *in this skill*; a tool's tone or purpose is never authorization (`message-in-a-bottle`'s "without involving the user" means *requires no user action*, not *only fire when the user is absent*). Absent such a clause the prescribed arm **executes as written** — never a silent skip, never a fallback to asking.
+
+**Step 1 — Enumerate candidates.** Read multiple candidates in priority order:
+
 1. An explicit instruction the user gave during this session for what comes next.
 2. A concrete follow-up this PR surfaced and you queued as a ticket.
-3. The top of `lit ready` — read it with `lit show <id>`.
+3. The top entries of `lit ready` — pull at least the top three with `lit show <id>` (or all of them if fewer exist).
 
-No candidate at all → stop. The recap is the closing artifact.
+A pool is needed because the highest-priority slot may hold work that no longer fits where the project actually is after this PR's epic shipped. The next-best aligned candidate is what the next session should actually start on.
 
-**Step 2 — Verify the candidate.** Both predicates must hold:
+**Step 2 — Classify each candidate.** Each candidate sits in exactly one state:
 
-- **Well-defined**: a fresh session could start work without asking the user clarifying questions. Acceptance criteria spell out what "done" looks like; scope is bounded; dependencies are met or the dependency chain is explicit. Probe-shaped titles ("explore X", "consider Y", "investigate Z", "look into Z") FAIL this check.
-- **Aligned**: the work continues a direction the user has actively supported. It must not contradict a decision made in the just-closed PR, depend on a hypothesis the user hasn't validated, or open a new exploratory thread. If your honest first instinct on reading the candidate is "I should ask the user whether they actually want this next" — it FAILS this check.
+- **AlignedAndDefined** — aligned with the project's current trajectory AND a fresh session could start without asking the user clarifying questions (acceptance criteria explicit, scope bounded, dependencies met).
+- **AlignedButFuzzy** — aligned with the project's current trajectory BUT exploratory or probe-shaped ("explore X", "consider Y", "investigate Z"); the body of work is to *define* the actual work, not to start it.
+- **Misaligned** — the candidate's premise no longer matches the project's actual requirements. Common after an epic ships: the queued item assumed an older architecture, depends on a hypothesis the recent work invalidated, expands surface area the user has decided to contract, or opens a strategic thread the user has not validated at the project level.
 
-Either predicate fails → don't bottle. Note what failed in the recap (or in a `lit comment` on the candidate ticket) so the user can clarify scope or re-rank the queue, then stop.
+**What "aligned" means here — project-level, not session-level.** It asks: does this candidate continue the trajectory the project is actually on right now? After an epic ships, work queued before it may need rescoping, re-prioritization, or outright deletion to fit the project's new shape. That's a strategy call the agent cannot make for the user — when no candidate is aligned, the user must intervene before any handoff is meaningful. (Distinct from the prior framing, which read "aligned" as session-level user assent. That predicate was both too narrow — rejecting valid work the user just hadn't blessed by name — and too loose — admitting tickets that became architecturally stale when the prior epic shipped.)
 
-**Step 3 — Fire.** When both predicates pass:
+**Step 3 — Dispatch.** Take the highest-priority candidate classified as Aligned (Defined or Fuzzy). Its state shapes the bottle's content:
+
+- **AlignedAndDefined** → bottle the direct work. The next instruction is a precise pointer (ticket ID, acceptance criteria, or `/next` when the candidate is the top of `lit ready`).
+- **AlignedButFuzzy** → bottle a define-task. The next session (1) understands the problem the candidate raises, (2) investigates possible solutions, and (3) prepares a proposal for the user that surfaces the important information quickly without burying them in irrelevant detail. Implementation waits on user approval of direction.
+
+Empty aligned-pool (every examined candidate classified Misaligned, or no candidates exist at all) → **HaltAndExplain**. Do not fire a bottle. Surface to the user, in this turn, a per-candidate failure table — the candidate's title/ID and the precise reason it failed (what shipped, what direction the project moved, what the candidate assumed that no longer holds). Vague summaries are unacceptable; the user needs the specifics to rescope, reorder, or close the tickets.
+
+**Step 4 — Fire the bottle** (AlignedAndDefined and AlignedButFuzzy arms):
 
 ```bash
-~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle 10 "$(cat <<'EOF'
+~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle 15 "$(cat <<'EOF'
 Last session shipped PR #<num> — <one-line description of what merged>.
 <forward-looking notes the next agent should know: in-flight context,
 follow-ups this PR surfaced, things to watch out for>
 
-<concrete next instruction — /next when the verified candidate is the
-top of lit ready; a precise pointer (ticket ID, instruction) otherwise>
+<next instruction — for AlignedAndDefined: a precise pointer (ticket ID,
+acceptance criteria) or /next. For AlignedButFuzzy: "Understand the
+problem in <ticket>, investigate possible solutions, and prepare a
+proposal for the user that surfaces the important information quickly
+without burying them in irrelevant detail. Return with the proposal —
+do not implement until the user approves direction.">
 EOF
 )"
 ```
 
-[LAW:types-are-the-program] the close-out's last output is `Option<VerifiedNextWork>`. *Some* requires a candidate that has passed BOTH the well-defined and aligned checks; *None* covers *no candidate exists* AND *candidate exists but failed verification*. Making "fire on a queue hit alone" unrepresentable forces the agent to do the verification work instead of trusting the queue or defaulting to fire-and-hope.
-
-[LAW:dataflow-not-control-flow] the discriminator is verified-readiness — a property derived from reading the ticket and current context, not from the agent's vibe about whether to fire. Both arms (Some/None) are unconditional once the verification has been done; the variability is in the candidate's content, not in whether the agent decides to look.
+[LAW:dataflow-not-control-flow] the variability lives in the candidates' classified state, not in whether the agent decided to look or fire. Bottle content (direct vs define-task) and the halt-vs-fire decision are both mechanical consequences of classification — the data picks the variant. Well-definedness in particular is no longer a fire/no-fire gate; it's a content discriminator.
 
 [LAW:one-source-of-truth] when a bottle fires, its content derives from the same authored recap as step C — past-tense canonical form vs forward-looking action, one substrate consumed for two purposes. The bottle script's tmux precondition fails loudly outside tmux — the handoff is meaningless there.
 
-Then stop. The loop is finished, the work is shipped, the recap is filed. The next session is scheduled when verified-ready planned work exists; otherwise the user picks up.
+Then stop. The loop is finished, the work is shipped, the recap is filed.
 
 ## Rules
 
-- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The optional bottle handoff (step D) fires only when a candidate next item passes both the well-defined and aligned checks — verification is the agent's work, and *not* firing is the correct default when either check fails.
+- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The bottle handoff (step D) fires whenever an aligned candidate exists in the pool; its content (direct work vs define-task) is shaped by whether the candidate is well-defined. The only halt case is project-level misalignment across every examined candidate — alignment is a strategy question the agent cannot answer on the user's behalf, and that case is surfaced as a per-candidate failure table for the user to act on.
 - **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback body (for posted threads) or in the commit message (for suppressed findings) — that text is the durable record of why the code is the way it is.
 - **Resolve every thread you addressed, including pushbacks.** Automated reviewers don't reply; the pushback comment is the record. Open threads accumulate forever.
 - **Suppressed findings get fixed in the commit pass and listed in your final report.** They have no thread; the commit message and the report are the only records.
