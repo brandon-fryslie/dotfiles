@@ -117,6 +117,18 @@ USAGE
     log "waking; target=$TARGET delay=${DELAY}s msgfile=$MSGFILE"
     sleep "$DELAY"
 
+    # [LAW:dataflow-not-control-flow] unconditional cancel pre-step — runs
+    # every invocation; cancels in-flight Claude output if any, no-op
+    # otherwise. Same code path each time, the pane's state picks the
+    # effect. Two single Escape presses, well-spaced: Claude Code's fast
+    # double-Escape opens the prompt-history menu and would corrupt the
+    # subsequent /clear. 0.8s is comfortably above any double-tap threshold.
+    log "cancelling any in-flight response"
+    tmux send-keys -t "$TARGET" Escape
+    sleep 0.8
+    tmux send-keys -t "$TARGET" Escape
+    sleep 0.5
+
     log "sending /clear"
     tmux send-keys -t "$TARGET" "/clear"
     sleep 0.3
