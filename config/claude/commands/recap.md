@@ -1,6 +1,7 @@
 ---
 description: Guide for creating new slash commands
 argument-hint: [command-name] [description]
+context: fork
 ---
 
 Your exclusive job right now is to provide a recap of the most important unfinished / in-progress work.  It's critical that you provide this recap from what you know now, without using additional tools or reading additional files to generate the recap (you can use the Write tool to write it, if necessary).
