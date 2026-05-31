@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scroll-pinned stepper — minimal scrollytelling</title>
+<style>
+  /* Type/palette deliberately plain — this demo is about the mechanic, not the look. */
+  body { margin: 0; font: 16px/1.5 system-ui, sans-serif; color: #111; }
+
+  .intro, .outro { max-width: 40ch; margin: 0 auto; padding: 40vh 1rem; }
+
+  /* The scroller is one tall track. Its height — not JS — is what creates the
+     scroll distance the pinned graphic "freezes" against. */
+  .scroller { position: relative; }
+
+  /* The pin. position:sticky is the entire freeze effect — the graphic is exactly
+     one viewport tall and sticks to the top while the steps scroll past it.
+     [LAW:dataflow-not-control-flow] no JS toggles the pin; CSS positioning owns it. */
+  .graphic {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: #f4f4f4;
+  }
+
+  /* The single graphic node. Everything about its appearance is set from data in
+     render() — there is no per-step element and no per-step CSS rule.
+     [LAW:one-type-per-behavior] one box, N states, never N boxes. */
+  .figure {
+    width: 160px; height: 160px;
+    display: grid; place-items: center;
+    border-radius: 16px;
+    color: #fff; font-weight: 600;
+    transition: transform .5s ease, background-color .5s ease;
+    will-change: transform;
+  }
+
+  /* The foreground: text steps that actually scroll. Each is tall enough to give
+     the observer a clear "active" window. */
+  .steps { position: relative; }
+  .step {
+    min-height: 90vh;
+    display: flex; align-items: center;
+    max-width: 34ch;
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  .step p {
+    background: #fff;
+    padding: 1rem 1.25rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 18px rgba(0,0,0,.12);
+  }
+</style>
+</head>
+<body>
+
+  <section class="intro">
+    <h1>Scroll-pinned stepper</h1>
+    <p>Keep scrolling. The figure below freezes in place and changes as each step
+       passes, then releases when the steps run out.</p>
+  </section>
+
+  <section class="scroller">
+    <!-- Pinned layer: a single figure whose look is derived from the active step. -->
+    <div class="graphic" aria-hidden="true">
+      <div class="figure" id="figure"></div>
+    </div>
+
+    <!-- Foreground steps. data-step indexes into STEPS — the text and the graphic
+         state for a step are declared together, so they cannot drift.
+         [LAW:one-source-of-truth] -->
+    <div class="steps" id="steps"></div>
+  </section>
+
+  <section class="outro">
+    <p>The pin has released and you're scrolling normally again.</p>
+  </section>
+
+<script>
+  // [LAW:types-are-the-program] A step is { caption, state }. `state` carries ALL
+  // per-step variability, so render() never branches. Adding a step = adding an
+  // entry here and nothing else — the mechanical-ease test for a correct schema.
+  const STEPS = [
+    { caption: "We start with a single object, centered and calm.",
+      state: { label: "1", color: "#2563eb", scale: 1,   x: 0 } },
+    { caption: "It grows to draw your eye to the detail that matters.",
+      state: { label: "2", color: "#7c3aed", scale: 1.6, x: 0 } },
+    { caption: "Now it shifts aside to make room for what comes next.",
+      state: { label: "3", color: "#db2777", scale: 1.2, x: 120 } },
+    { caption: "It returns, settled, as the story resolves.",
+      state: { label: "4", color: "#059669", scale: 1,   x: 0 } },
+  ];
+
+  const figure = document.getElementById("figure");
+
+  // The pure render: appearance is a function of one state value. Runs the same
+  // way every time; only its input changes. [LAW:dataflow-not-control-flow]
+  const render = ({ label, color, scale, x }) => {
+    figure.textContent = label;
+    figure.style.backgroundColor = color;
+    figure.style.transform = `translateX(${x}px) scale(${scale})`;
+  };
+
+  // Build the step elements from the same array that drives the graphic.
+  const stepsEl = document.getElementById("steps");
+  STEPS.forEach((step, i) => {
+    const el = document.createElement("div");
+    el.className = "step";
+    el.dataset.step = i;
+    el.innerHTML = `<p>${step.caption}</p>`;
+    stepsEl.appendChild(el);
+  });
+
+  // [LAW:single-enforcer] Exactly one observer decides which step is active.
+  // rootMargin pins the trigger line near the viewport's vertical center, so a
+  // step becomes active when it reaches the middle of the screen.
+  let active = -1;
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      active = Number(entry.target.dataset.step);
+      render(STEPS[active].state);
+    }
+  }, { rootMargin: "-50% 0px -50% 0px", threshold: 0 });
+
+  document.querySelectorAll(".step").forEach((el) => observer.observe(el));
+
+  // Initial paint so the figure isn't blank before the first step triggers.
+  render(STEPS[0].state);
+</script>
+</body>
+</html>
