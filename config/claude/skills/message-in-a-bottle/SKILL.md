@@ -54,13 +54,12 @@ Hand off a specific instruction, keeping a compacted summary of this session:
 ## What the worker does
 
 1. Sleeps for the fixed delay.
-2. Sends one Escape to the originating tmux pane — cancels any in-flight Claude response. A single press (never a fast double-tap, which opens Claude Code's prompt-history menu).
-3. **Waits until the pane returns to the Claude idle prompt** before typing anything — the worker *observes* readiness (the streaming/working spinner always ends in `ing…`) rather than guessing a sleep duration. This closes the race where `/clear` was typed into a frame still tearing down a cancelled response.
+2. Sends one Escape to the originating tmux pane. Against a busy pane a single Escape both cancels the in-flight response **and** clears any queued messages, leaving the pane genuinely static; against an idle pane it's a no-op. (A single press — never a fast double-tap, which opens Claude Code's prompt-history menu.)
+3. **Waits until the visible screen holds still.** This is the load-bearing step. A slash command typed while the pane is still streaming is captured as *literal queued text and never run* — that is the failure where the reset "never lands" and the message dumps into the same session. A streaming pane ticks its elapsed-time counter every second, so it can't hold identical across the sampling gap; an idle pane matches on the first comparison. Screen-stability subsumes every spinner verb without parsing any of them.
 4. Sends `/clear` or `/compact` (whichever was chosen) followed by Enter.
-5. **Waits for idle again.** This is why one code path serves both resets: `/clear` returns to idle near-instantly, while `/compact` summarizes first — and "Compact**ing**…" also ends in `ing…`, so the same wait holds the message back until compaction finishes.
-6. Pastes the message via `tmux load-buffer` + `paste-buffer`, then Enter.
+5. Pastes the message via `tmux load-buffer` + `paste-buffer`, then Enter — with no second wait. `/clear` and `/compact` are handled identically: a message submitted during a `/compact` simply queues and fires when compaction finishes; one on a freshly `/clear`'d session lands immediately. The platform's own input queue does the sequencing, so the worker doesn't.
 
-The cancel is unconditional and idempotent — a no-op against an already-idle pane, a cancel against a still-streaming one, same code path either way. If the pane never reaches idle within the internal timeout (after the cancel, or after the reset), the worker aborts loudly to its log and does **not** paste into a busy pane — an explicit failure beats dumping the handoff into mid-stream.
+The Escape + wait-until-still is what makes the reset land. Everything downstream is one ordered burst the pane's input queue absorbs.
 
 ## Limits / sharp edges
 
