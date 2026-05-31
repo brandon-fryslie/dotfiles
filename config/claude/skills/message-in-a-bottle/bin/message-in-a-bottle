@@ -14,11 +14,14 @@ set -euo pipefail
 # consumer knob — it's tuned here if the agent-finish window ever changes.
 BOTTLE_DELAY_SECONDS=15
 
-# Upper bound on waiting for the pane to return to the Claude idle prompt
-# after a cancel or a reset. /clear reaches idle in well under a second;
-# /compact summarizes and can take far longer — one bound covers both.
-IDLE_TIMEOUT=180
-POLL_INTERVAL=1
+# Idle detection: the pane is idle iff its visible screen is unchanged across
+# two captures STABLE_GAP apart. A streaming pane ticks its elapsed-time
+# counter every second, so it can never hold still for a full gap; an idle
+# pane has no live element and is stable at once. The gap is > 1s so a tick
+# always falls inside it. MAX_STABLE_WAITS caps the wait so a pathologically
+# stuck pane can't hang the worker forever.
+STABLE_GAP=1.5
+MAX_STABLE_WAITS=120
 
 # [LAW:types-are-the-program] one discriminator at the entry; everything
 # downstream operates on validated, typed inputs for exactly one mode.
@@ -129,50 +132,53 @@ USAGE
     log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
     # [LAW:dataflow-not-control-flow] pane readiness is an observable, not a
-    # guessed duration. Poll until the Claude idle prompt returns — the
-    # streaming/working spinner always ends in 'ing…' (so does "Compacting…",
-    # which is why one wait covers both resets). This collapses a near-instant
-    # /clear and a slow /compact into one timing-blind code path, and closes
-    # the race where the reset was typed into a frame still tearing down a
-    # cancelled response. Heuristic established by the sibling skill tmux-talk.
-    wait_idle() {
-      local elapsed=0 screen
-      while (( elapsed < IDLE_TIMEOUT )); do
-        screen=$(tmux capture-pane -t "$TARGET" -p -S -10)
-        printf '%s' "$screen" | grep -qF 'ing…' || return 0
-        sleep "$POLL_INTERVAL"
-        elapsed=$(( elapsed + POLL_INTERVAL ))
+    # guessed duration. A slash command typed while the pane is still streaming
+    # is captured as literal queued text, never run — that is the whole bug.
+    # So: wait until the visible screen holds still. A streaming pane ticks its
+    # elapsed-time counter every second and can't stay identical across a gap
+    # wider than 1s; an idle pane has no live element and matches on the first
+    # comparison. Stability subsumes every spinner verb (gerunds, "Churned",
+    # "Cooked") without parsing any of them.
+    wait_until_idle() {
+      local prev cur n=0
+      prev=$(tmux capture-pane -t "$TARGET" -p)
+      while (( n < MAX_STABLE_WAITS )); do
+        sleep "$STABLE_GAP"
+        cur=$(tmux capture-pane -t "$TARGET" -p)
+        [[ "$cur" == "$prev" ]] && return 0
+        prev="$cur"
+        n=$(( n + 1 ))
       done
-      return 1
+      return 0
     }
 
     log "waking; target=$TARGET reset=/$RESET msgfile=$MSGFILE"
     sleep "$BOTTLE_DELAY_SECONDS"
 
     # [LAW:dataflow-not-control-flow] unconditional cancel — a no-op against an
-    # idle pane, a cancel against a still-streaming one. Same code path either
-    # way; the pane's state picks the effect. A single Escape (never a fast
-    # double-tap, which opens Claude Code's prompt-history menu) stops the
-    # current generation; wait_idle then confirms teardown is complete before
-    # anything is typed.
+    # idle pane; against a busy one a single Escape both stops the current
+    # generation and clears any queued messages, leaving the pane genuinely
+    # static. (Never a fast double-tap — that opens the prompt-history menu.)
+    # wait_until_idle then confirms the pane settled before the reset is typed,
+    # so the reset can't be swallowed as queued text.
     log "cancelling any in-flight response"
     tmux send-keys -t "$TARGET" Escape
-    wait_idle || { log "pane never reached idle after cancel; aborting before reset"; exit 1; }
+    wait_until_idle
 
     log "sending /$RESET"
     tmux send-keys -t "$TARGET" "/$RESET"
-    sleep 0.3
+    sleep 0.4
     tmux send-keys -t "$TARGET" Enter
 
-    # Let the reset's own spinner appear before polling, so /compact isn't read
-    # as already-idle in the gap between Enter and "Compacting…".
-    sleep "$POLL_INTERVAL"
-    wait_idle || { log "pane never reached idle after /$RESET; aborting before paste"; exit 1; }
-
+    # No wait after the reset — /clear and /compact are handled identically.
+    # The brief settle lets the reset register; a message submitted during a
+    # /compact simply queues and fires when compaction finishes, and one on a
+    # fresh /clear'd session lands immediately. Same paste either way.
+    sleep 1
     log "pasting message"
     tmux load-buffer -b "$BUFFER" "$MSGFILE"
     tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
-    sleep 1
+    sleep 0.5
     tmux send-keys -t "$TARGET" Enter
 
     log "done"
