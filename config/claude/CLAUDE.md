@@ -35,7 +35,15 @@ The crucial distinction is **intrinsic cost** (cost to build) versus **carrying 
 
 This is why YAGNI's usefulness is **inversely proportional to engineering skill** in the constraint-design sense. For an engineer who builds by adding and coupling, every additional piece is a real liability with high carrying cost, and YAGNI is sound advice to limit the damage. For an engineer who builds by subtracting, splitting, and smoothing, additional smooth blocks are approximately free and approximately always useful — they are foundation, not features — and YAGNI becomes incoherent in the same way it would be incoherent to tell a neolithic toolmaker that he does not need to learn metalworking because he cannot point to a specific tool he is currently failing to make. He cannot need the metal *as a tool*; he absolutely needs it *as the substrate that makes future tools cheap*. YAGNI is a statement about features. It has nothing to say about the substrate.
 
-The practical consequence: in this mindset, "do we need this?" is the wrong question for foundational pieces. The right questions are "is this block smooth?" and "is the type the strongest true theorem about its data?" If yes, it earns its keep regardless of whether the current task uses it. If no, the task is not done — even if it ships — because the next task will pay the carrying cost of the rough version. YAGNI is not wrong; it is correctly applied to a different mode of building. In *this* mode, treat it as silent — it has nothing to say about whether to build a smooth block, only about whether to build a crystal, and we are not building crystals.
+The practical consequence: in this mindset, "do we need this?" is the wrong question for foundational pieces. The right questions are "is this block smooth?" and "is the type the strongest true theorem about its data?" If yes, it earns its keep regardless of whether the current task uses it. If no, the task is not done — even if it ships — because the next task will pay the carrying cost of the rough version.
+
+**The "wrong abstraction worse than duplication" counter — disarmed:**
+- Real comparison: wrong vs. *right* abstraction. The right one is forced by the laws (types-are-the-program, single-enforcer, one-type-per-behavior), not chosen.
+- A wrong abstraction is a downstream symptom of skipping a law, not an independent risk to weigh against duplication.
+- **The cost runs the *opposite* direction from the folk wisdom.** Going from one abstraction to several specialized variants is easy — each variant inherits the shape. Going from many divergent implementations back to a shared abstraction is hard — by then, every caller has already adapted to the specific implementation it sees, and unification has to undo all of those adaptations.
+- **A "wrong abstraction" is mode-explosion in disguise** (the `no-mode-explosion` law). It isn't caused by abstracting; it's caused by *stretching* one abstraction to fit shapes it wasn't designed for. The fix is to fork — give the new shape its own home, and leave existing callers on the original. The "forced to retrofit every caller" scenario almost never happens.
+
+YAGNI is not wrong; it is correctly applied to a different mode of building. In *this* mode, treat it as silent — it has nothing to say about whether to build a smooth block, only about whether to build a crystal, and we are not building crystals.
 </carrying-cost>
 
 <universal-laws>
@@ -209,32 +217,35 @@ When a Python dep is missing, prefer in this order:
 <scripting-discipline>
 # SCRIPTING AND AUTOMATION DISCIPLINE
 
-Hard-won lessons. These are non-negotiable when writing scripts, automation, or glue code.
+Hard-won lessons. Non-negotiable when writing scripts, automation, or glue code.
 
-## NEVER SWALLOW ERRORS
-`2>/dev/null`, `|| true`, `|| echo "default"` — these are lies. If a command can fail, that failure is meaningful. A script that silently eats errors and continues with empty/garbage data is worse than a script that crashes, because it sends agents or humans confidently down the wrong path for hours. **Let it fail. Let it be loud. Fix the cause.**
+**Never swallow errors.**
+- Forbidden patterns: `2>/dev/null`, `|| true`, `|| echo "default"`. These are lies — if a command can fail, that failure is meaningful.
+- Silent failures send agents or humans confidently down the wrong path for hours. Let it fail, let it be loud, fix the cause.
+- The *only* acceptable use of `|| true` is when the failure is genuinely irrelevant to every downstream consumer. If you're unsure, it's not irrelevant.
 
-The only acceptable use of `|| true` is when the command's failure is *genuinely irrelevant* to every downstream consumer — and that's almost never true. If you're unsure, it's not irrelevant.
+**Never build silent fallback data sources.**
+- Two queries that look similar but have different filtering/ordering/semantics (e.g., "ready work respecting dependencies" vs. "all open items") are NOT interchangeable.
+- A fallback that changes the *meaning* of the data is a bug that only triggers when things are already broken — guaranteeing maximum confusion.
+- If the primary source fails: stop and tell the operator. Don't improvise.
 
-## NEVER BUILD SILENT FALLBACK DATA SOURCES
-If the primary data source fails, do NOT silently switch to a different query that returns different data in a different order with different semantics. Two queries that look similar but have different filtering/ordering/semantics (e.g., "ready work respecting dependencies" vs. "all open items") are NOT interchangeable. A fallback that changes the meaning of the data is not a fallback — it's a bug that only triggers when things are already broken, guaranteeing maximum confusion.
+**Never write against an API you haven't tested.**
+- Before scripting against a CLI/API/service, run the commands yourself. Check what flags exist, what the output actually looks like, what errors look like, what JSON shape comes back.
+- Every `jq -r '.[].id'` is an assertion about the shape of the data. Verify it or don't ship it.
+- A script written against an assumed interface is fiction, not code.
 
-If the primary source fails: **stop and tell the operator**. Don't improvise.
-
-## NEVER WRITE AGAINST AN API YOU HAVEN'T TESTED
-Before writing a script that calls a CLI tool, API, or service: **run the commands yourself first**. Check what flags exist. Check what the output actually looks like. Check what errors look like. Verify the JSON shape. Writing a script blind against an assumed interface is writing fiction, not code. Every `jq -r '.[].id'` is an assertion about the shape of the data — verify it or don't ship it.
-
-## VALIDATE DATA AFTER EVERY EXTERNAL CALL
-Any time you call an external tool and capture its output, validate before proceeding:
+**Validate data after every external call.** Before captured output flows downstream, check:
 - Did the command exit 0?
 - Is the output non-empty?
 - Does it parse as the expected format?
-- Do the extracted values look sane?
+- Do extracted values look sane?
 
-If any check fails, abort with a clear message. Never pass unvalidated data downstream — an empty string or malformed JSON becoming a variable that gets interpolated into further commands is how you get phantom work items, wrong branches, or corrupted state.
+If any check fails, abort with a clear message. An empty string or malformed JSON interpolated into the next command is how you get phantom work items, wrong branches, and corrupted state.
 
-## SCRIPTS THAT DRIVE AGENTS ARE HIGH-LEVERAGE — TREAT THEM THAT WAY
-A script that loops `claude -p` over work items is an amplifier. Every bug in that script gets multiplied by every iteration. An error in ticket ordering wastes hours of agent compute. A swallowed error means the agent works on nothing or the wrong thing with full confidence. **The script IS the agent's judgment about what to work on** — if the script is wrong, the agent is wrong at scale. Write it like it matters, because it does.
+**Agent-driving scripts are amplifiers — treat them like it.**
+- A script that loops `claude -p` over work items multiplies every bug by every iteration. An error in ticket ordering wastes hours of agent compute.
+- The script IS the agent's judgment about what to work on. If the script is wrong, the agent is wrong at scale.
+- Write it like it matters, because it does.
 </scripting-discipline>
 
 <subagent-delegation>
