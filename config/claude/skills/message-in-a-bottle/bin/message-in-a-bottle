@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 # message-in-a-bottle — schedule a delayed self-message into the current
-# tmux pane. The launcher returns immediately; a detached worker fires the
-# /clear and the message after a fixed delay.
+# tmux pane. The launcher returns immediately; a detached worker resets the
+# context (/clear or /compact) and pastes the message after a fixed delay.
 #
 # Modes:
-#   launcher:  message-in-a-bottle <delay-seconds> <message...>
-#   worker:    message-in-a-bottle --worker <target> <delay> <msgfile>
+#   launcher:  message-in-a-bottle <clear|compact> <message...>
+#   worker:    message-in-a-bottle --worker <target> <reset> <msgfile>
 
 set -euo pipefail
+
+# [LAW:one-source-of-truth] the fixed delay lives here once; both the
+# launcher's "in Ns" line and the worker's sleep read this same value. Not a
+# consumer knob — it's tuned here if the agent-finish window ever changes.
+BOTTLE_DELAY_SECONDS=15
+
+# Upper bound on waiting for the pane to return to the Claude idle prompt
+# after a cancel or a reset. /clear reaches idle in well under a second;
+# /compact summarizes and can take far longer — one bound covers both.
+IDLE_TIMEOUT=180
+POLL_INTERVAL=1
 
 # [LAW:types-are-the-program] one discriminator at the entry; everything
 # downstream operates on validated, typed inputs for exactly one mode.
@@ -23,23 +34,28 @@ case "$MODE" in
   launcher)
     if [[ $# -lt 2 ]]; then
       cat >&2 <<'USAGE'
-Usage: message-in-a-bottle <delay-seconds> <message...>
+Usage: message-in-a-bottle <clear|compact> <message...>
 
-  delay-seconds  integer seconds to wait before sending /clear + message
+  clear|compact  which context reset to fire before the message lands
   message        the rest of argv; slash command or plain text, multi-word ok
 
-The message lands in the invoking tmux pane after the delay. Must run inside tmux.
+The message lands in the invoking tmux pane after a fixed delay. Must run inside tmux.
 USAGE
       exit 2
     fi
 
-    DELAY="$1"; shift
+    RESET="$1"; shift
     MESSAGE="$*"
+
+    # [LAW:types-are-the-program] the reset is one of exactly two values;
+    # constrain it at the boundary so the worker can never see an illegal
+    # command. No downstream code re-checks — the input is typed from here on.
+    [[ "$RESET" == clear || "$RESET" == compact ]] \
+      || { echo "first arg must be 'clear' or 'compact' (got: $RESET)" >&2; exit 2; }
 
     # [LAW:no-defensive-null-guards] every precondition fails loudly at the
     # boundary — no silent defaulting that would let an empty bottle ship.
-    [[ "$DELAY" =~ ^[0-9]+$ ]] || { echo "delay must be a non-negative integer" >&2; exit 2; }
-    [[ -n "$MESSAGE" ]]         || { echo "message must not be empty" >&2; exit 2; }
+    [[ -n "$MESSAGE" ]] || { echo "message must not be empty" >&2; exit 2; }
     [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]] \
       || { echo "not inside tmux (\$TMUX/\$TMUX_PANE unset)" >&2; exit 2; }
 
@@ -83,11 +99,11 @@ USAGE
     # exits — `disown` would be belt-and-suspenders, but with `set -e` a
     # disown failure would fire the trap and yank MSGFILE out from under
     # the running worker. Leaving disown out closes that race entirely.
-    nohup "$SELF" --worker "$TARGET" "$DELAY" "$MSGFILE" \
+    nohup "$SELF" --worker "$TARGET" "$RESET" "$MSGFILE" \
       </dev/null >>"$LOGFILE" 2>&1 &
     trap - EXIT
 
-    echo "bottle scheduled → $TARGET in ${DELAY}s (log: $LOGFILE)"
+    echo "bottle scheduled → $TARGET (/$RESET) in ${BOTTLE_DELAY_SECONDS}s (log: $LOGFILE)"
     ;;
 
   worker)
@@ -96,16 +112,14 @@ USAGE
       exit 2
     fi
     TARGET="$1"
-    DELAY="$2"
+    RESET="$2"
     MSGFILE="$3"
 
-    # [LAW:single-enforcer] launcher owns input validation (DELAY shape,
+    # [LAW:single-enforcer] launcher owns input validation (RESET value,
     # MSGFILE existence) AND log destination (via nohup stdout redirect).
-    # `--worker` is a non-interface, not a public entry point, so the
-    # worker does not re-check — duplicating those checks would be
-    # drift-prone ceremony for states that cannot occur via the documented
-    # call path. Direct `--worker` invocations get whatever errors `sleep`
-    # and `tmux load-buffer` produce; that's deliberate.
+    # `--worker` is a non-interface, not a public entry point, so the worker
+    # does not re-check — duplicating those checks would be drift-prone
+    # ceremony for states that cannot occur via the documented call path.
     BUFFER="bottle-$$"
 
     # [LAW:single-enforcer] one trap owns cleanup of both the message file
@@ -114,29 +128,46 @@ USAGE
 
     log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
-    log "waking; target=$TARGET delay=${DELAY}s msgfile=$MSGFILE"
-    sleep "$DELAY"
+    # [LAW:dataflow-not-control-flow] pane readiness is an observable, not a
+    # guessed duration. Poll until the Claude idle prompt returns — the
+    # streaming/working spinner always ends in 'ing…' (so does "Compacting…",
+    # which is why one wait covers both resets). This collapses a near-instant
+    # /clear and a slow /compact into one timing-blind code path, and closes
+    # the race where the reset was typed into a frame still tearing down a
+    # cancelled response. Heuristic established by the sibling skill tmux-talk.
+    wait_idle() {
+      local elapsed=0 screen
+      while (( elapsed < IDLE_TIMEOUT )); do
+        screen=$(tmux capture-pane -t "$TARGET" -p -S -10)
+        printf '%s' "$screen" | grep -qF 'ing…' || return 0
+        sleep "$POLL_INTERVAL"
+        elapsed=$(( elapsed + POLL_INTERVAL ))
+      done
+      return 1
+    }
 
-    # [LAW:dataflow-not-control-flow] unconditional cancel pre-step — runs
-    # every invocation; cancels in-flight Claude output if any, no-op
-    # otherwise. Same code path each time, the pane's state picks the
-    # effect. Two single Escape presses, well-spaced: Claude Code's fast
-    # double-Escape opens the prompt-history menu and would corrupt the
-    # subsequent /clear. 0.8s is comfortably above any double-tap threshold.
+    log "waking; target=$TARGET reset=/$RESET msgfile=$MSGFILE"
+    sleep "$BOTTLE_DELAY_SECONDS"
+
+    # [LAW:dataflow-not-control-flow] unconditional cancel — a no-op against an
+    # idle pane, a cancel against a still-streaming one. Same code path either
+    # way; the pane's state picks the effect. A single Escape (never a fast
+    # double-tap, which opens Claude Code's prompt-history menu) stops the
+    # current generation; wait_idle then confirms teardown is complete before
+    # anything is typed.
     log "cancelling any in-flight response"
     tmux send-keys -t "$TARGET" Escape
-    sleep 0.8
-    tmux send-keys -t "$TARGET" Escape
-    sleep 0.5
+    wait_idle || { log "pane never reached idle after cancel; aborting before reset"; exit 1; }
 
-    log "sending /clear"
-    tmux send-keys -t "$TARGET" "/clear"
+    log "sending /$RESET"
+    tmux send-keys -t "$TARGET" "/$RESET"
     sleep 0.3
     tmux send-keys -t "$TARGET" Enter
 
-    # /clear is near-instant but Claude Code re-renders the input frame
-    # asynchronously; pasting too soon races the redraw and loses keys.
-    sleep 1.5
+    # Let the reset's own spinner appear before polling, so /compact isn't read
+    # as already-idle in the gap between Enter and "Compacting…".
+    sleep "$POLL_INTERVAL"
+    wait_idle || { log "pane never reached idle after /$RESET; aborting before paste"; exit 1; }
 
     log "pasting message"
     tmux load-buffer -b "$BUFFER" "$MSGFILE"
