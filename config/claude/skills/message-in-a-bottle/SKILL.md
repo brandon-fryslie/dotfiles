@@ -21,7 +21,7 @@ Once you call the launcher, your turn is over. Stop. No closing text, no parting
 
 [LAW:dataflow-not-control-flow] the launcher's return *is* the data signal that the agent's turn has ended; the agent observes that signal and exits. There is no branch on "should I add a closing paragraph" — the same code path runs every time, and the data (launcher returned) picks the effect (turn ends).
 
-This matters because the worker resets the same tmux pane after the delay. If you keep generating output, the worker has to cancel it and retry the reset until it verifiably registers — recoverable, but you're leaning on the backstop instead of the discipline. The worker cancels (Escape), submits the reset, and reads the pane back to confirm it ran before sending anything (see "What the worker does" below), so a disciplined finish and a rambling one both land; the discipline is what keeps the handoff fast and clean rather than salvaged.
+This matters because the worker resets the same tmux pane after the delay. It cancels (Escape), submits the reset, and reads the pane back to confirm the reset ran before sending anything (see "What the worker does" below) — so a disciplined finish and a rambling one both land. The discipline keeps the handoff fast and clean rather than salvaged.
 
 ## Invocation
 
@@ -29,12 +29,10 @@ This matters because the worker resets the same tmux pane after the delay. If yo
 ~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle <clear|compact> <message...>
 ```
 
-- `<clear|compact>` — which context reset to fire before the message lands. `clear` wipes the window; `compact` summarizes it first. Exactly these two values; anything else is rejected at the boundary.
-- `<message...>` — everything after the reset keyword; can be a slash command, plain text, multi-line, or contain quotes/backticks/dollar signs. Quote at invocation as you normally would (your shell still does word-splitting and `$VAR` expansion before the script sees argv); once captured, the message is staged in a tempfile and never re-quoted at any internal hop on its way to `tmux paste-buffer`.
+- `<clear|compact>` — which context reset to fire before the message lands. `clear` wipes the window; `compact` summarizes it first.
+- `<message...>` — everything after the reset keyword; a slash command, plain text, multi-line, or containing quotes/backticks/dollar signs. Quote it at invocation as usual (your shell does word-splitting and `$VAR` expansion before the script sees argv).
 
-There is **no delay knob** — the wait before firing is a fixed internal constant, tuned inside the skill if the agent-finish window ever changes. Consumers pick *what* gets reset and *what* the message is; never *how long* to wait.
-
-The launcher prints `bottle scheduled → <target> (/<reset>) in Ns (log: <tempfile>)` and exits — the tempfile lives under `$TMPDIR` (on macOS, typically `/var/folders/.../T/`; on Linux, typically `/tmp/`). The log captures worker progress and any tmux errors.
+The launcher prints `bottle scheduled → <target> (/<reset>) in Ns (log: <tempfile>)` and exits. The log captures worker progress and any tmux errors.
 
 ## Examples
 
@@ -53,17 +51,17 @@ Hand off a specific instruction, keeping a compacted summary of this session:
 
 ## What the worker does
 
-1. Sleeps for the fixed delay.
-2. **Attempts the reset and verifies it registered, retrying until it does.** Each attempt: send Escape (cancels any in-flight response and clears queued text; a no-op on an idle pane), type `/clear` or `/compact`, submit it, then *read the pane back* and check for the signature that only a reset which actually **ran** leaves — `/clear`'s fresh-session banner, `/compact`'s "Compacting"/"Compacted". A reset typed while the pane is busy is swallowed as literal queued text and never runs; reading back is the only way to know it took.
-3. **Only after a reset is verified** does it paste the message via `tmux load-buffer` + `paste-buffer` and Enter. `/clear` and `/compact` are handled identically here — a message submitted during a `/compact` queues and fires when compaction finishes; one on a freshly `/clear`'d session lands immediately.
+1. Sleeps for the delay.
+2. Sends Escape — cancels whatever was running in the pane — then submits `/clear` or `/compact`.
+3. Reads the pane back and checks for the marker that only a reset which actually **ran** leaves: `/clear`'s startup banner, `/compact`'s "Compacting conversation" / "Conversation compacted". (A reset typed into a busy pane is swallowed as literal queued text and never runs — reading back is how the worker knows the difference.)
+4. **Only if that marker is present** does it paste the message and submit it. `/clear` and `/compact` are handled identically: a message submitted during a `/compact` queues and fires when compaction finishes; one on a fresh `/clear`'d session lands immediately.
 
-The verification gate is the whole point: the paste lives *only* on the reset-confirmed branch, so it is **structurally impossible to send the message into a session that wasn't reset**. If the reset never registers after the capped retries, the worker **does not send the message** — it pastes a `MISFIRE` diagnostic into the (still-intact) session instead, so the failure is visible right where it happened rather than dumping the handoff into the wrong context.
+The verification gate is the whole point: the paste lives *only* on the reset-confirmed branch, so it is structurally impossible to send the message into a session that wasn't reset. If the reset didn't register, the message is **not** sent — the worker instead messages that (still-live) session asking the agent to surface the misfire to the user.
 
-## Limits / sharp edges
+## Operating notes
 
-- **No delay knob**: the wait before firing is a fixed internal constant, not a consumer argument. The primary safeguard against racing the agent's tail-end output is the agent's turn-ending discipline (see above) — the launcher invocation is the agent's last act of the turn. The cancel + verify-the-reset-registered retry is the backstop that makes the handoff land reliably even if discipline slips.
-- **Single pane**: the worker fires into the pane that invoked the launcher. There is no `--target` flag — that's intentional; the source of truth for "which pane" is `$TMUX_PANE`.
-- **No cancel**: once scheduled, the bottle fires. To cancel, find the background process (`pgrep -f 'message-in-a-bottle --worker'`) and kill it.
+- The bottle fires into the pane that invoked the launcher (`$TMUX_PANE`).
+- To cancel a scheduled bottle, kill its worker: `pgrep -f 'message-in-a-bottle --worker'`.
 
 ## Related
 

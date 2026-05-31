@@ -9,17 +9,11 @@
 
 set -euo pipefail
 
-# [LAW:one-source-of-truth] the fixed delay lives here once; both the
-# launcher's "in Ns" line and the worker's sleep read this same value. Not a
-# consumer knob — it's tuned here if the agent-finish window ever changes.
-BOTTLE_DELAY_SECONDS=15
-
-# The reset is sent in an attempt/verify loop: type it, read the pane back,
-# confirm it actually registered as a command (not queued as literal text),
-# and only then is the message allowed to flow. This caps the attempts so a
-# pane that genuinely cannot accept the reset can't loop forever.
-MAX_RESET_ATTEMPTS=4
-SETTLE=1.5
+# [LAW:one-source-of-truth] timing lives here once. BOTTLE_DELAY_SECONDS is how
+# long to wait before firing; SETTLE_SECONDS is how long to let the reset render
+# before reading the pane back to verify it ran.
+BOTTLE_DELAY_SECONDS=10
+SETTLE_SECONDS=5
 
 # [LAW:types-are-the-program] one discriminator at the entry; everything
 # downstream operates on validated, typed inputs for exactly one mode.
@@ -123,71 +117,50 @@ USAGE
     # ceremony for states that cannot occur via the documented call path.
     BUFFER="bottle-$$"
 
-    # [LAW:single-enforcer] one trap owns cleanup of both the message file
-    # and the tmux buffer; no scattered rm/delete-buffer calls elsewhere.
-    trap 'rm -f "$MSGFILE"; tmux delete-buffer -b "$BUFFER" 2>/dev/null || :' EXIT
+    # [LAW:single-enforcer] the trap owns only the message file; the paste
+    # buffer deletes itself on paste (paste-buffer -d).
+    trap 'rm -f "$MSGFILE"' EXIT
 
     log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
-    # [LAW:types-are-the-program] the reset value carries its own proof. Each
-    # reset, once it actually RUNS as a command, leaves a signature on the pane
-    # that mere queued-as-text never produces: /clear shows the fresh-session
-    # welcome banner; /compact shows its compaction/summary state. This marker
-    # is the verification — read the pane back and look for it.
-    # The marker must match only what RUNNING the reset produces, never the
-    # echoed/queued command text — else a reset swallowed as text would falsely
-    # verify. /clear's fresh banner and /compact's capital-C "Compacting"/
-    # "Compacted" never appear in the literal "/clear"/"/compact" a queued
-    # message shows.
+    # A reset that actually RAN leaves an app-generated marker on the visible
+    # screen that the echoed/queued command text never reproduces — so finding
+    # it can't be fooled by a reset that was swallowed as literal text.
     case "$RESET" in
-      clear)   REGISTERED_RE='Welcome back|Tips for getting started|Claude Code v[0-9]' ;;
-      compact) REGISTERED_RE='Compacting|Compacted' ;;
+      clear)   REGISTERED_RE='Claude Code v[0-9]' ;;
+      compact) REGISTERED_RE='Compacting conversation|Conversation compacted' ;;
     esac
 
-    reset_registered() {
-      tmux capture-pane -t "$TARGET" -p | grep -qE "$REGISTERED_RE"
-    }
-
-    log "waking; target=$TARGET reset=/$RESET msgfile=$MSGFILE"
+    log "waking; target=$TARGET reset=/$RESET"
     sleep "$BOTTLE_DELAY_SECONDS"
 
-    # [LAW:dataflow-not-control-flow] act-and-verify, not predict-then-hope. Each
-    # attempt: Escape (cancels any in-flight response AND clears queued text — a
-    # harmless no-op on an idle pane), then type the reset and submit it, then
-    # READ THE PANE to confirm it registered. A reset typed while the pane is
-    # busy is swallowed as queued text and never runs; reading back is the only
-    # way to know it took. Loop until verified or attempts exhausted.
-    registered=1
-    for attempt in $(seq 1 "$MAX_RESET_ATTEMPTS"); do
-      log "reset attempt $attempt/$MAX_RESET_ATTEMPTS: Escape + /$RESET"
-      tmux send-keys -t "$TARGET" Escape
-      sleep 1
-      tmux send-keys -t "$TARGET" "/$RESET"
-      sleep 0.5
-      tmux send-keys -t "$TARGET" Enter
-      sleep "$SETTLE"
-      if reset_registered; then registered=0; log "/$RESET registered"; break; fi
-      log "/$RESET did NOT register; retrying"
-    done
+    # [LAW:dataflow-not-control-flow] Escape cancels whatever was running — we
+    # never inspect what; cancelling is the point. Then submit the reset onto
+    # the now-ready prompt and let it render.
+    tmux send-keys -t "$TARGET" Escape
+    sleep 1
+    tmux send-keys -t "$TARGET" "/$RESET"
+    sleep 0.5
+    tmux send-keys -t "$TARGET" Enter
+    sleep "$SETTLE_SECONDS"
 
-    # [LAW:types-are-the-program] the paste is structurally downstream of a
-    # verified reset — it lives only on the registered branch, so the message
-    # CANNOT be sent into an un-reset session. The other branch never pastes;
-    # it surfaces the misfire instead (the session is intact, since the reset
-    # never ran, so the diagnostic is visible right where it happened).
-    if [[ "$registered" -eq 0 ]]; then
-      log "pasting message"
+    # [LAW:types-are-the-program] the message paste is reachable only after the
+    # reset is verified to have run — it cannot land in an un-reset session. No
+    # marker, no message: surface the misfire in the intact session instead.
+    if tmux capture-pane -t "$TARGET" -p | grep -qE "$REGISTERED_RE"; then
+      log "/$RESET registered; sending message"
       tmux load-buffer -b "$BUFFER" "$MSGFILE"
-      tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
+      tmux paste-buffer -d -b "$BUFFER" -t "$TARGET" -p
       sleep 0.5
       tmux send-keys -t "$TARGET" Enter
-      log "done"
     else
-      log "MISFIRE: /$RESET never registered after $MAX_RESET_ATTEMPTS attempts; message NOT sent"
-      # Surface it in the still-intact session, unsubmitted, so a human sees it.
-      printf 'message-in-a-bottle MISFIRE — /%s never registered after %d attempts; held message NOT sent. log: see worker output' \
-        "$RESET" "$MAX_RESET_ATTEMPTS" | tmux load-buffer -b "$BUFFER" -
-      tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
+      log "MISFIRE: /$RESET did not register; message NOT sent"
+      # The session was never reset, so it has a live agent — send it a fixed
+      # note it will surface to the user, rather than silently dropping the
+      # handoff. A fixed string, so send-keys -l carries it directly.
+      tmux send-keys -t "$TARGET" -l "message-in-a-bottle misfired: the scheduled /$RESET never registered, so the queued handoff was NOT sent. Please tell the user the bottle misfired."
+      sleep 0.5
+      tmux send-keys -t "$TARGET" Enter
     fi
     ;;
 esac
