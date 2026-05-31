@@ -14,14 +14,12 @@ set -euo pipefail
 # consumer knob — it's tuned here if the agent-finish window ever changes.
 BOTTLE_DELAY_SECONDS=15
 
-# Idle detection: the pane is idle iff its visible screen is unchanged across
-# two captures STABLE_GAP apart. A streaming pane ticks its elapsed-time
-# counter every second, so it can never hold still for a full gap; an idle
-# pane has no live element and is stable at once. The gap is > 1s so a tick
-# always falls inside it. MAX_STABLE_WAITS caps the wait so a pathologically
-# stuck pane can't hang the worker forever.
-STABLE_GAP=1.5
-MAX_STABLE_WAITS=120
+# The reset is sent in an attempt/verify loop: type it, read the pane back,
+# confirm it actually registered as a command (not queued as literal text),
+# and only then is the message allowed to flow. This caps the attempts so a
+# pane that genuinely cannot accept the reset can't loop forever.
+MAX_RESET_ATTEMPTS=4
+SETTLE=1.5
 
 # [LAW:types-are-the-program] one discriminator at the entry; everything
 # downstream operates on validated, typed inputs for exactly one mode.
@@ -131,56 +129,65 @@ USAGE
 
     log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
-    # [LAW:dataflow-not-control-flow] pane readiness is an observable, not a
-    # guessed duration. A slash command typed while the pane is still streaming
-    # is captured as literal queued text, never run — that is the whole bug.
-    # So: wait until the visible screen holds still. A streaming pane ticks its
-    # elapsed-time counter every second and can't stay identical across a gap
-    # wider than 1s; an idle pane has no live element and matches on the first
-    # comparison. Stability subsumes every spinner verb (gerunds, "Churned",
-    # "Cooked") without parsing any of them.
-    wait_until_idle() {
-      local prev cur n=0
-      prev=$(tmux capture-pane -t "$TARGET" -p)
-      while (( n < MAX_STABLE_WAITS )); do
-        sleep "$STABLE_GAP"
-        cur=$(tmux capture-pane -t "$TARGET" -p)
-        [[ "$cur" == "$prev" ]] && return 0
-        prev="$cur"
-        n=$(( n + 1 ))
-      done
-      return 0
+    # [LAW:types-are-the-program] the reset value carries its own proof. Each
+    # reset, once it actually RUNS as a command, leaves a signature on the pane
+    # that mere queued-as-text never produces: /clear shows the fresh-session
+    # welcome banner; /compact shows its compaction/summary state. This marker
+    # is the verification — read the pane back and look for it.
+    # The marker must match only what RUNNING the reset produces, never the
+    # echoed/queued command text — else a reset swallowed as text would falsely
+    # verify. /clear's fresh banner and /compact's capital-C "Compacting"/
+    # "Compacted" never appear in the literal "/clear"/"/compact" a queued
+    # message shows.
+    case "$RESET" in
+      clear)   REGISTERED_RE='Welcome back|Tips for getting started|Claude Code v[0-9]' ;;
+      compact) REGISTERED_RE='Compacting|Compacted' ;;
+    esac
+
+    reset_registered() {
+      tmux capture-pane -t "$TARGET" -p | grep -qE "$REGISTERED_RE"
     }
 
     log "waking; target=$TARGET reset=/$RESET msgfile=$MSGFILE"
     sleep "$BOTTLE_DELAY_SECONDS"
 
-    # [LAW:dataflow-not-control-flow] unconditional cancel — a no-op against an
-    # idle pane; against a busy one a single Escape both stops the current
-    # generation and clears any queued messages, leaving the pane genuinely
-    # static. (Never a fast double-tap — that opens the prompt-history menu.)
-    # wait_until_idle then confirms the pane settled before the reset is typed,
-    # so the reset can't be swallowed as queued text.
-    log "cancelling any in-flight response"
-    tmux send-keys -t "$TARGET" Escape
-    wait_until_idle
+    # [LAW:dataflow-not-control-flow] act-and-verify, not predict-then-hope. Each
+    # attempt: Escape (cancels any in-flight response AND clears queued text — a
+    # harmless no-op on an idle pane), then type the reset and submit it, then
+    # READ THE PANE to confirm it registered. A reset typed while the pane is
+    # busy is swallowed as queued text and never runs; reading back is the only
+    # way to know it took. Loop until verified or attempts exhausted.
+    registered=1
+    for attempt in $(seq 1 "$MAX_RESET_ATTEMPTS"); do
+      log "reset attempt $attempt/$MAX_RESET_ATTEMPTS: Escape + /$RESET"
+      tmux send-keys -t "$TARGET" Escape
+      sleep 1
+      tmux send-keys -t "$TARGET" "/$RESET"
+      sleep 0.5
+      tmux send-keys -t "$TARGET" Enter
+      sleep "$SETTLE"
+      if reset_registered; then registered=0; log "/$RESET registered"; break; fi
+      log "/$RESET did NOT register; retrying"
+    done
 
-    log "sending /$RESET"
-    tmux send-keys -t "$TARGET" "/$RESET"
-    sleep 0.4
-    tmux send-keys -t "$TARGET" Enter
-
-    # No wait after the reset — /clear and /compact are handled identically.
-    # The brief settle lets the reset register; a message submitted during a
-    # /compact simply queues and fires when compaction finishes, and one on a
-    # fresh /clear'd session lands immediately. Same paste either way.
-    sleep 1
-    log "pasting message"
-    tmux load-buffer -b "$BUFFER" "$MSGFILE"
-    tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
-    sleep 0.5
-    tmux send-keys -t "$TARGET" Enter
-
-    log "done"
+    # [LAW:types-are-the-program] the paste is structurally downstream of a
+    # verified reset — it lives only on the registered branch, so the message
+    # CANNOT be sent into an un-reset session. The other branch never pastes;
+    # it surfaces the misfire instead (the session is intact, since the reset
+    # never ran, so the diagnostic is visible right where it happened).
+    if [[ "$registered" -eq 0 ]]; then
+      log "pasting message"
+      tmux load-buffer -b "$BUFFER" "$MSGFILE"
+      tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
+      sleep 0.5
+      tmux send-keys -t "$TARGET" Enter
+      log "done"
+    else
+      log "MISFIRE: /$RESET never registered after $MAX_RESET_ATTEMPTS attempts; message NOT sent"
+      # Surface it in the still-intact session, unsubmitted, so a human sees it.
+      printf 'message-in-a-bottle MISFIRE — /%s never registered after %d attempts; held message NOT sent. log: see worker output' \
+        "$RESET" "$MAX_RESET_ATTEMPTS" | tmux load-buffer -b "$BUFFER" -
+      tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
+    fi
     ;;
 esac

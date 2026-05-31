@@ -21,7 +21,7 @@ Once you call the launcher, your turn is over. Stop. No closing text, no parting
 
 [LAW:dataflow-not-control-flow] the launcher's return *is* the data signal that the agent's turn has ended; the agent observes that signal and exits. There is no branch on "should I add a closing paragraph" — the same code path runs every time, and the data (launcher returned) picks the effect (turn ends).
 
-This matters because the worker resets the same tmux pane after the delay. If you keep generating output, the worker's cancel has to cut it off and then wait for the pane to settle before it can reset — recoverable, but you're relying on the backstop instead of the discipline. The worker cancels (Escape) and then waits for the pane to return to idle before typing the reset (see "What the worker does" below), so a disciplined finish and a rambling one both land; the discipline is what keeps the handoff fast and clean rather than salvaged.
+This matters because the worker resets the same tmux pane after the delay. If you keep generating output, the worker has to cancel it and retry the reset until it verifiably registers — recoverable, but you're leaning on the backstop instead of the discipline. The worker cancels (Escape), submits the reset, and reads the pane back to confirm it ran before sending anything (see "What the worker does" below), so a disciplined finish and a rambling one both land; the discipline is what keeps the handoff fast and clean rather than salvaged.
 
 ## Invocation
 
@@ -54,16 +54,14 @@ Hand off a specific instruction, keeping a compacted summary of this session:
 ## What the worker does
 
 1. Sleeps for the fixed delay.
-2. Sends one Escape to the originating tmux pane. Against a busy pane a single Escape both cancels the in-flight response **and** clears any queued messages, leaving the pane genuinely static; against an idle pane it's a no-op. (A single press — never a fast double-tap, which opens Claude Code's prompt-history menu.)
-3. **Waits until the visible screen holds still.** This is the load-bearing step. A slash command typed while the pane is still streaming is captured as *literal queued text and never run* — that is the failure where the reset "never lands" and the message dumps into the same session. A streaming pane ticks its elapsed-time counter every second, so it can't hold identical across the sampling gap; an idle pane matches on the first comparison. Screen-stability subsumes every spinner verb without parsing any of them.
-4. Sends `/clear` or `/compact` (whichever was chosen) followed by Enter.
-5. Pastes the message via `tmux load-buffer` + `paste-buffer`, then Enter — with no second wait. `/clear` and `/compact` are handled identically: a message submitted during a `/compact` simply queues and fires when compaction finishes; one on a freshly `/clear`'d session lands immediately. The platform's own input queue does the sequencing, so the worker doesn't.
+2. **Attempts the reset and verifies it registered, retrying until it does.** Each attempt: send Escape (cancels any in-flight response and clears queued text; a no-op on an idle pane), type `/clear` or `/compact`, submit it, then *read the pane back* and check for the signature that only a reset which actually **ran** leaves — `/clear`'s fresh-session banner, `/compact`'s "Compacting"/"Compacted". A reset typed while the pane is busy is swallowed as literal queued text and never runs; reading back is the only way to know it took.
+3. **Only after a reset is verified** does it paste the message via `tmux load-buffer` + `paste-buffer` and Enter. `/clear` and `/compact` are handled identically here — a message submitted during a `/compact` queues and fires when compaction finishes; one on a freshly `/clear`'d session lands immediately.
 
-The Escape + wait-until-still is what makes the reset land. Everything downstream is one ordered burst the pane's input queue absorbs.
+The verification gate is the whole point: the paste lives *only* on the reset-confirmed branch, so it is **structurally impossible to send the message into a session that wasn't reset**. If the reset never registers after the capped retries, the worker **does not send the message** — it pastes a `MISFIRE` diagnostic into the (still-intact) session instead, so the failure is visible right where it happened rather than dumping the handoff into the wrong context.
 
 ## Limits / sharp edges
 
-- **No delay knob**: the wait before firing is a fixed internal constant, not a consumer argument. The primary safeguard against racing the agent's tail-end output is the agent's turn-ending discipline (see above) — the launcher invocation is the agent's last act of the turn. The cancel + wait-for-idle is the backstop that makes the handoff land reliably even if discipline slips.
+- **No delay knob**: the wait before firing is a fixed internal constant, not a consumer argument. The primary safeguard against racing the agent's tail-end output is the agent's turn-ending discipline (see above) — the launcher invocation is the agent's last act of the turn. The cancel + verify-the-reset-registered retry is the backstop that makes the handoff land reliably even if discipline slips.
 - **Single pane**: the worker fires into the pane that invoked the launcher. There is no `--target` flag — that's intentional; the source of truth for "which pane" is `$TMUX_PANE`.
 - **No cancel**: once scheduled, the bottle fires. To cancel, find the background process (`pgrep -f 'message-in-a-bottle --worker'`) and kill it.
 
