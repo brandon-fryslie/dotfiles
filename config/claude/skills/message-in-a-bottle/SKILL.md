@@ -13,6 +13,8 @@ A one-shot delayed self-message. The launcher returns immediately so the calling
 - After wrapping up a PR / closing a ticket, when the next move is "pull the next ticket and start" — schedule `/next` and clear.
 - When you've finished gathering context and want to hand off cleanly to a fresh session with a precise instruction.
 
+**Whether the user is driving the session interactively is IRRELEVANT to whether a bottle fires.** Presence is not an input to this decision — not a gate, not a tiebreaker, not a "maybe skip it." The bottle fires on the *work's* state (is there well-defined, aligned next work?), never on whether a human is watching. "The user is here, so I'll skip the handoff" is always wrong reasoning.
+
 ## Turn-ending discipline — the launcher invocation is the last act of the turn
 
 Once you call the launcher, your turn is over. Stop. No closing text, no parting summary, no "bottle scheduled!" confirmation, no further tool calls, no end-of-turn insights. The launcher's `bottle scheduled → <target> in Ns` line is the only artifact this skill emits, and it is the last line your turn produces.
