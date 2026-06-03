@@ -27,12 +27,13 @@ fi
 case "$MODE" in
 
   launcher)
-    if [[ $# -lt 2 ]]; then
+    if [[ $# -lt 1 ]]; then
       cat >&2 <<'USAGE'
-Usage: message-in-a-bottle <clear|compact> <message...>
+Usage: message-in-a-bottle <clear|compact> [message...]
 
-  clear|compact  which context reset to fire before the message lands
-  message        the rest of argv; slash command or plain text, multi-word ok
+  clear|compact  which context reset to fire before the message lands (agent's call)
+  message        the rest of argv; slash command or plain text, multi-word ok.
+                 Defaults to /next when omitted.
 
 The message lands in the invoking tmux pane after a fixed delay. Must run inside tmux.
 USAGE
@@ -40,7 +41,10 @@ USAGE
     fi
 
     RESET="$1"; shift
-    MESSAGE="$*"
+    # [LAW:dataflow-not-control-flow] the message is a value carrying a canonical
+    # default — /next, the standard "pull the next ticket" handoff. Omitting argv
+    # selects that default; it never yields an empty bottle, so no guard follows.
+    MESSAGE="${*:-/next}"
 
     # [LAW:types-are-the-program] the reset is one of exactly two values;
     # constrain it at the boundary so the worker can never see an illegal
@@ -48,9 +52,9 @@ USAGE
     [[ "$RESET" == clear || "$RESET" == compact ]] \
       || { echo "first arg must be 'clear' or 'compact' (got: $RESET)" >&2; exit 2; }
 
-    # [LAW:no-defensive-null-guards] every precondition fails loudly at the
-    # boundary — no silent defaulting that would let an empty bottle ship.
-    [[ -n "$MESSAGE" ]] || { echo "message must not be empty" >&2; exit 2; }
+    # [LAW:no-defensive-null-guards] the tmux context is a real trust boundary —
+    # fail loudly when it's absent. The message needs no such guard: it carries a
+    # canonical default and is non-empty by construction.
     [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]] \
       || { echo "not inside tmux (\$TMUX/\$TMUX_PANE unset)" >&2; exit 2; }
 
