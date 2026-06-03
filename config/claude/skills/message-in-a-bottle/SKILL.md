@@ -1,6 +1,6 @@
 ---
 name: message-in-a-bottle
-description: Schedule a delayed self-message into the current Claude Code session. Spawns a detached worker that, after a fixed delay, resets the context — your choice of `/clear` or `/compact` — in this tmux pane and then pastes a message of the agent's choosing (the next ticket, the next instruction, a recap, anything). Use when the agent is about to finish a unit of work and wants a clean (or compacted) context window for whatever comes next without involving the user. Triggers on "leave myself a note for after /clear", "schedule the next ticket", "context handoff to a fresh session", "send myself X after I'm done", "drop a bottle with Y".
+description: Schedule a delayed self-message into the current Claude Code session. Spawns a detached worker that, after a fixed delay, resets the context — your choice of `/clear` or `/compact` — in this tmux pane and then pastes a message of the agent's choosing (the next ticket, the next instruction, a recap, anything). You MUST use this when you reach 300k–350k tokens of context: drop a bottle that hands off the current work to a fresh window before context runs out. Also use when the agent is about to finish a unit of work and wants a clean (or compacted) context window for whatever comes next without involving the user. Triggers on "leave myself a note for after /clear", "schedule the next ticket", "context handoff to a fresh session", "send myself X after I'm done", "drop a bottle with Y".
 ---
 
 # message-in-a-bottle
@@ -9,6 +9,7 @@ A one-shot delayed self-message. The launcher returns immediately so the calling
 
 ## When to use
 
+- **Mandatory at 300k–350k tokens of context.** When you cross this threshold, you MUST drop a bottle handing off the current work to a fresh window — do not keep working until context runs out.
 - At the end of a long-running task where the next task is already known but would benefit from a fresh context window.
 - After wrapping up a PR / closing a ticket, when the next move is "pull the next ticket and start" — schedule `/next` and clear.
 - When you've finished gathering context and want to hand off cleanly to a fresh session with a precise instruction.
