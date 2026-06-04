@@ -40,14 +40,42 @@ top-to-bottom — rank is *relative*, so build the global picture first, then mu
    a deterministic check could judge. No testable done → not groomed, however nice the prose.
 6. **Dead tickets are closed**, not carried.
 
-## The core judgment: detail ∝ distance-from-pull
+## The core judgment: detail has two independent axes
 
-The right amount of detail is **a function of where the ticket sits in the queue**, not
-a fixed template. There is no "every ticket needs sections X/Y/Z" — uniform templating
-is the bug. Over-detailing a far-off ticket is *actively harmful*: detail written against
-today's reality is a stale comment at ticket scope that silently rots before it's pulled.
+Detail is not one dial. Two orthogonal axes govern it, and they move independently:
 
-Calibrate by tier, and **rewrite bodies to hit the tier** (enrich the thin, trim the bloated):
+- **Completeness** — *how filled-in* a ticket is. This varies by distance-from-pull (the
+  tiers below). A far-off ticket is sparse; a next-up ticket is complete.
+- **Granularity** — *how deep into the "how"* a ticket is allowed to go. This is a **fixed
+  ceiling that never rises**, identical for every ticket regardless of tier.
+
+### The granularity ceiling (hard rule, all tiers)
+
+**The maximum granularity in any ticket is a specific file name. Nothing more granular —
+ever.** No function names. No line numbers. No code or pseudocode. No method signatures.
+
+A ticket describes **functionality, capability, behavior, outcome** — the *what*. The code
+is the one source of truth for the *how*. The moment a ticket names a function or pastes a
+snippet, it becomes a divergent copy of the implementation that rots the instant the code
+moves, and it steals the implementer's pull-time judgment. Naming a file is the floor of
+the implementer's map and is stable enough to survive; anything below it is the work itself,
+not a description of it.
+
+This ceiling does **not** rise as a ticket nears the top. A next-up ticket becomes *more
+complete* — clearer outcome, acceptance criteria, possibly which files are in play — but
+never *more granular*. "Make the parser reject unknown keys, in `config/loader.ts`" is the
+deepest a ticket goes; "add an `if (!allowed.has(k)) throw` to `validateKeys()`" is over the
+line. (Capability / functionality / file name are *examples* of the general rule — describe
+the what, cap granularity at file — not a required schema to fill in.)
+
+When grooming, this ceiling means most "too-detailed" tickets are *also too granular*:
+trimming them is partly shortening and partly **translating code-level detail back up into
+capability language**, deleting the function/line/code references entirely.
+
+### Completeness by tier
+
+Calibrate by tier, and **rewrite bodies to hit the tier** (enrich the thin, trim the bloated).
+The granularity ceiling above applies at every tier — these only set *completeness*:
 
 - **Top / next-up** (pullable, near the top of rank): implementer-ready. Must carry the
   problem, the *why*, concrete acceptance criteria, and the constraints/links needed to
@@ -87,10 +115,13 @@ decisions, that's a `needs-design` block to surface — not a place to invent th
    correctly-placed ticket alone is the right action, not a skipped one — that's what makes
    the skill a fixpoint.
 
-4. **Detail calibration.** For each surviving ticket, determine its tier from its rank
-   position and rewrite the description to fit (`lit update <id> --description "..."`).
-   Enrich the thin top, trim the bloated deep. Add a verifiable acceptance criterion to
-   every near-term ticket that lacks one.
+4. **Detail calibration.** For each surviving ticket, rewrite the description to fit
+   (`lit update <id> --description "..."`) along both axes. *Completeness:* enrich the thin
+   top, trim the bloated deep, add a verifiable acceptance criterion to every near-term
+   ticket that lacks one. *Granularity:* enforce the file-name ceiling on **every** ticket —
+   strip function names, line numbers, and code, translating that detail back up into
+   capability/behavior language. Granularity violations are independent of tier; a deep-backlog
+   ticket can be too granular, and a next-up ticket is still capped at file names.
 
 5. **Urgent flag.** Ensure `--priority 1` is set only on genuine exceptions; clear it
    elsewhere.
@@ -103,7 +134,8 @@ End with a terse audit so the user can review or undo:
 
 - **Reranked:** each move as `#id: rank A → B` with a one-line why.
 - **Closed:** each `#id (reason)` — recoverable via `lit open`.
-- **Rewritten:** which tickets were re-detailed and which direction (enriched / trimmed).
+- **Rewritten:** which tickets were re-detailed — completeness direction (enriched / trimmed)
+  and any granularity fixes (code/function/line detail translated up to capability language).
 - **Structure:** blocks/deps/parentage changed.
 - **Needs your call:** deletion candidates, genuinely ambiguous priorities, tickets that
   need design input before they can be made implementer-ready. These are *not* actioned.
