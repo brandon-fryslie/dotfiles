@@ -68,9 +68,14 @@ deepest a ticket goes; "add an `if (!allowed.has(k)) throw` to `validateKeys()`"
 line. (Capability / functionality / file name are *examples* of the general rule — describe
 the what, cap granularity at file — not a required schema to fill in.)
 
-When grooming, this ceiling means most "too-detailed" tickets are *also too granular*:
-trimming them is partly shortening and partly **translating code-level detail back up into
-capability language**, deleting the function/line/code references entirely.
+When grooming, this ceiling means most "too-detailed" tickets are *also too granular* — and
+the granular detail is **contamination, not raw material**. A ticket that ever held code-level
+specifics is presumed stale: if the function/line references have drifted, you cannot trust
+that the capability they implied is still accurate, so refining that text upward just launders
+rot into something that *looks* trustworthy. The durable thing in the ticket is its **intent** —
+what capability it wanted to exist. Recover the intent, discard the granular specifics
+entirely, verify the intent still holds against the current source of truth (the code), and
+re-express it at capability level. Regenerate from intent; never translate from the stale text.
 
 ### Completeness by tier
 
@@ -118,10 +123,12 @@ decisions, that's a `needs-design` block to surface — not a place to invent th
 4. **Detail calibration.** For each surviving ticket, rewrite the description to fit
    (`lit update <id> --description "..."`) along both axes. *Completeness:* enrich the thin
    top, trim the bloated deep, add a verifiable acceptance criterion to every near-term
-   ticket that lacks one. *Granularity:* enforce the file-name ceiling on **every** ticket —
-   strip function names, line numbers, and code, translating that detail back up into
-   capability/behavior language. Granularity violations are independent of tier; a deep-backlog
-   ticket can be too granular, and a next-up ticket is still capped at file names.
+   ticket that lacks one. *Granularity:* enforce the file-name ceiling on **every** ticket.
+   When a ticket carries function names, line numbers, or code, treat it as stale: recover its
+   **intent**, verify that intent against the current code, then rewrite the description from
+   that intent at capability level — discarding the granular text rather than translating it.
+   Granularity violations are independent of tier; a deep-backlog ticket can be too granular,
+   and a next-up ticket is still capped at file names.
 
 5. **Urgent flag.** Ensure `--priority 1` is set only on genuine exceptions; clear it
    elsewhere.
@@ -135,7 +142,9 @@ End with a terse audit so the user can review or undo:
 - **Reranked:** each move as `#id: rank A → B` with a one-line why.
 - **Closed:** each `#id (reason)` — recoverable via `lit open`.
 - **Rewritten:** which tickets were re-detailed — completeness direction (enriched / trimmed)
-  and any granularity fixes (code/function/line detail translated up to capability language).
+  and any granularity fixes (stale code/function/line detail discarded; capability re-derived
+  from intent and verified against current code). Note any ticket whose intent could not be
+  confirmed against the code — that's a "needs your call", not a silent rewrite.
 - **Structure:** blocks/deps/parentage changed.
 - **Needs your call:** deletion candidates, genuinely ambiguous priorities, tickets that
   need design input before they can be made implementer-ready. These are *not* actioned.
