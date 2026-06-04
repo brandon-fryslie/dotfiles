@@ -44,6 +44,7 @@ it is to fix. The loudest findings are where roughness compounds, not where it's
 
 ## The sheriff does not shoot
 
-Read-only by default. If the user wants the violations fixed, that's a separate deputization —
-hand the report to a follow-up (or `/absorbed-variance` for the structural ones). Auditing and
-remediating have different blast radius and trust; keep them separate jobs. [LAW:locality-or-seam]
+Read-only by default. If the user wants the violations actioned, that's a separate
+deputization — hand the report to `form-a-posse`, which plans the *how* and writes the lit
+tickets. Auditing, planning, and remediating have different blast radius and trust; keep them
+separate jobs. [LAW:locality-or-seam]
