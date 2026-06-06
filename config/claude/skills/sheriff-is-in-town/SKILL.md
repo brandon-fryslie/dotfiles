@@ -25,7 +25,14 @@ that. State the scope at the top of the report so it's unambiguous what was *not
    of behavior and shape, invisible to grep.
 2. **Map each violation to the one law it most breaks** — the canonical token, not a list.
    If it seems to break three, find the upstream one the other two descend from. [LAW:one-type-per-behavior]
-3. **Do not edit anything.** The sheriff reports; the town fixes. [LAW:single-enforcer]
+3. **Verify law-marker claims before trusting them.** A `// [LAW:<token>] reason` comment is
+   evidence, not authority: confirm the marked code actually satisfies the cited law. False
+   law markers are findings because future agents treat them as architectural ground truth.
+4. **Treat meaningful comments as claims.** Comments that say "only", "single", "derived",
+   "must", "never", "source of truth", or cite another file/system are testable. When such a
+   claim is false and it changes architectural judgment, report the lying claim with the same
+   blast-radius framing as code-shaped violations.
+5. **Do not edit anything.** The sheriff reports; the town fixes. [LAW:single-enforcer]
 
 ## Finding shape
 
