@@ -43,9 +43,10 @@ These are starting points for reading, not a substitute for reading. A candidate
 violate a universal law is not a finding.
 
 - **Boundary and type absorption:** scattered discriminator checks, repeated guards on the same
-  field, mode flags threaded through signatures, type switches over raw shapes, validate-don't-parse
-  boundaries, comments that say callers must ensure an invariant, and downstream checks that should
-  disappear after parsing.
+  field, mode flags threaded through signatures, raw `unknown` / `interface{}` / map-shaped
+  consumers, type switches over raw shapes, validate-don't-parse boundaries that return the same
+  untrusted shape after "validation", comments that say callers must ensure an invariant, and
+  downstream defensive checks after a supposed validation boundary.
 - **Enumeration gaps:** predicates, classifiers, validators, canonical checks, equality checks, or
   resource filters that recognize the happy shape instead of rejecting each wrong shape. Look for
   substring/prefix matching against exact producer formats, fingerprint checks that verify tokens
@@ -80,6 +81,11 @@ Each finding, terse:
 - **Blast radius:** who pays, and what future change it taxes (this is the severity signal)
 - **Fix direction:** the constraint that would make the violation unrepresentable — the type/seam
   that absorbs it, not a spot-patch. Point at the cure, don't apply it.
+
+For boundary/type absorption findings, the fix direction must name the handoff data `form-a-posse`
+will need: the raw shape or discriminator, the owning boundary, the absorbing constraint
+(parsed type, state machine, canonical source, or single enforcer), and the old residue expected
+to disappear. [LAW:verifiable-goals]
 
 ## Rank
 
