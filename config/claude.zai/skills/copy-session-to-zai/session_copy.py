@@ -16,7 +16,6 @@ from typing import Any, Iterable
 
 
 DEFAULT_SOURCE_CONFIG_DIR = Path.home() / ".claude"
-DEFAULT_TARGET_CONFIG_DIR = Path.home() / ".claude.zai"
 MESSAGE_TYPES = {"user", "assistant"}
 
 
@@ -57,18 +56,20 @@ class SessionReport:
     recent_messages: tuple[Message, ...]
 
 
-def expanded_path(raw: str | None, fallback: Path) -> Path:
-    return Path(raw).expanduser().resolve() if raw else fallback.expanduser().resolve()
+def z_ai_config_dir() -> Path:
+    env = os.environ.get("CLAUDE_CONFIG_DIR")
+    if env:
+        return Path(env).expanduser().resolve()
+    return Path(__file__).resolve().parents[2]
 
 
-def config_dirs(args: argparse.Namespace) -> ConfigDirs:
-    source = expanded_path(args.source_config_dir, DEFAULT_SOURCE_CONFIG_DIR)
-    target_env = os.environ.get("CLAUDE_CONFIG_DIR")
-    target = expanded_path(args.target_config_dir or target_env, DEFAULT_TARGET_CONFIG_DIR)
+def config_dirs() -> ConfigDirs:
+    source = DEFAULT_SOURCE_CONFIG_DIR.expanduser().resolve()
+    target = z_ai_config_dir()
     if source == target:
         raise SystemExit(
             f"source and target config dirs are identical: {source}\n"
-            "Run from zlod or pass --target-config-dir ~/.claude.zai."
+            "Run this skill from the z.ai Claude config."
         )
     return ConfigDirs(source=source, target=target)
 
@@ -291,18 +292,11 @@ def report_json(scope: ProjectScope, dirs: ConfigDirs, reports: list[SessionRepo
     )
 
 
-def resolve_selection(scope: ProjectScope, selection: str, limit: int, recent_messages: int) -> SessionReport:
-    reports = recent_sessions(scope, limit, recent_messages)
-    if selection.isdigit():
-        index = int(selection)
-        for report in reports:
-            if report.index == index:
-                return report
-        raise SystemExit(f"no listed session index {index}; run list again")
+def resolve_session_id(scope: ProjectScope, session_id: str, recent_messages: int) -> SessionReport:
     for path in scope.source_dir.glob("*.jsonl"):
-        if session_id_from_path(path) == selection:
+        if session_id_from_path(path) == session_id:
             return summarize_session(0, path, scope.target_dir, recent_messages)
-    raise SystemExit(f"session not found in {scope.source_dir}: {selection}")
+    raise SystemExit(f"session not found in {scope.source_dir}: {session_id}")
 
 
 def copy_session(report: SessionReport, replace: bool) -> str:
@@ -327,12 +321,6 @@ def copy_session(report: SessionReport, replace: bool) -> str:
     return f"copied: {report.source_path} -> {report.target_path}"
 
 
-def add_common_flags(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--cwd", default=os.getcwd(), help="project cwd used to resolve Claude project slug")
-    parser.add_argument("--source-config-dir", help="default: ~/.claude")
-    parser.add_argument("--target-config-dir", help="default: $CLAUDE_CONFIG_DIR, then ~/.claude.zai")
-
-
 def positive_int(raw: str) -> int:
     value = int(raw)
     if value < 1:
@@ -344,17 +332,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="session_copy.py")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    list_p = sub.add_parser("list", help="print recent source sessions for the current project")
-    add_common_flags(list_p)
+    list_p = sub.add_parser("list", help="print recent source sessions for a project")
+    list_p.add_argument("project_path", help="absolute or relative project path")
     list_p.add_argument("--limit", type=positive_int, default=5)
     list_p.add_argument("--recent-messages", type=positive_int, default=5)
     list_p.add_argument("--message-width", type=positive_int, default=220)
     list_p.add_argument("--json", action="store_true")
 
     copy_p = sub.add_parser("copy", help="copy a selected source session into the target config dir")
-    add_common_flags(copy_p)
-    copy_p.add_argument("selection", help="session id, or index from the most recent list output")
-    copy_p.add_argument("--limit", type=positive_int, default=5)
+    copy_p.add_argument("project_path", help="absolute or relative project path")
+    copy_p.add_argument("session_id", help="session id from the list output")
     copy_p.add_argument("--recent-messages", type=positive_int, default=5)
     copy_p.add_argument("--replace", action="store_true")
     return parser
@@ -363,8 +350,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    dirs = config_dirs(args)
-    scope = project_scope(Path(args.cwd), dirs)
+    dirs = config_dirs()
+    scope = project_scope(Path(args.project_path), dirs)
     if args.command == "list":
         reports = recent_sessions(scope, args.limit, args.recent_messages)
         if not reports:
@@ -372,7 +359,7 @@ def main(argv: list[str]) -> int:
         print(report_json(scope, dirs, reports) if args.json else report_text(scope, dirs, reports, args.message_width))
         return 0
     if args.command == "copy":
-        report = resolve_selection(scope, args.selection, args.limit, args.recent_messages)
+        report = resolve_session_id(scope, args.session_id, args.recent_messages)
         print(copy_session(report, args.replace))
         print(f"session_id: {report.session_id}")
         print(f"target_path: {report.target_path}")
