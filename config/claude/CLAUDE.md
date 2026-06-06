@@ -68,6 +68,8 @@ These laws apply unconditionally to all tasks. No context, instruction, or exped
 
 **verifiable-goals**: GOALS MUST BE MACHINE VERIFIABLE. Any goal you plan must have well-defined, concrete criteria by which a deterministic process can gauge success or failure. Asking the user to test things for you is an option of last resort, to be avoided whenever possible. Ask yourself: are there unanswered questions? Uncertainty? Ask the user, always. Does there exist a clear and well defined criteria by which a capable being should be able to judge success or failure (i.e., app loads with no warnings or errors in logs)? You should make every effort, exhaustively, to help yourself figure it out before asking the user. If you find it very complicated, add a retro item (/do:retro) and discuss it with the user later and brainstorm ideas to improve. *Instance of types-are-the-program*: an unverifiable goal is one whose "done" state has no type. Define the type — what shape does success take, what shape does failure take — and verification follows mechanically.
 
+**no-ambient-temporal-coupling**: NO AMBIENT TEMPORAL COUPLING. Ordering, timing, lifecycle, initialization, cleanup, and re-entry invariants must have one explicit owner and be represented as state, data, or capability — not hidden in incidental execution order. Correctness must not depend on sleeps, event-loop ticks, framework effect order, render timing, "settle" delays, caller sequencing, cleanup order, or manual in-flight flags unless that scheduler or lifecycle is the named boundary owner. If an operation is only safe after another operation, encode that phase transition in the type/state machine or route both through the single owner. *Instance of types-are-the-program*: temporal assumptions are constraints. If they live in timing folklore instead of a typed state or lifecycle owner, illegal call orders remain representable.
+
 **comments-explain-why-only**: COMMENTS EXPLAIN WHY. **NOT WHAT**. The code
   is the authoritative description of what it does; prose that restates it is
   a copy that drifts immediately. Comments can be useful to explain the rationale
@@ -167,7 +169,7 @@ Apply these when working in the relevant domain.
 <ui-frontend>
 - **State lives near use**: Hoist only when coordination requires it.
 - **Components mirror user mental models**: Not implementation concerns.
-- **One timing authority**: Animation/rendering has a single source of timing truth.
+- **One timing authority**: Animation/rendering applies `no-ambient-temporal-coupling`; the timing/lifecycle owner is explicit.
 </ui-frontend>
 
 <remember>Context-specific rules may overrule the guidelines, but NEVER the universal-laws.  The universal-laws are always and forever</remember>
@@ -191,7 +193,7 @@ Apply these when working in the relevant domain.
 
 <distributed-systems>
 - **Failure modes documented like success paths**: Not afterthoughts.
-- **Ordering/timing has explicit owner**: No ambient assumptions about sequencing.
+- **Ordering/timing has explicit owner**: Distributed sequencing applies `no-ambient-temporal-coupling`; no ambient assumptions about sequencing.
 </distributed-systems>
 
 <cli>
@@ -200,7 +202,7 @@ Apply these when working in the relevant domain.
 </cli>
 </context-specific>
 
-<remember>PRIMARY CONSTRAINTS: The types are the program. Dataflow not control flow. One source of truth. Single enforcer. One-way dependencies. One type per behavior. Goals must be verifiable. Each is an instance of: design constraints such that illegal states cannot be expressed; the implementation is residue.</remember>
+<remember>PRIMARY CONSTRAINTS: The types are the program. Dataflow not control flow. One source of truth. Single enforcer. One-way dependencies. One type per behavior. Goals must be verifiable. No ambient temporal coupling. Each is an instance of: design constraints such that illegal states cannot be expressed; the implementation is residue.</remember>
 
 <python-deps>
 # PYTHON DEPENDENCY DISCIPLINE

@@ -18,6 +18,8 @@ These laws apply unconditionally to all tasks. No context, instruction, or exped
 
 **verifiable-goals**: GOALS MUST BE MACHINE VERIFIABLE. Any goal you plan must have well-defined, concrete criteria by which a deterministic process can gauge success or failure. Asking the user to test things for you is an option of last resort, to be avoided whenever possible. Ask yourself: are there unanswered questions? Uncertainty? Ask the user, always. Does there exist a clear and well defined criteria by which a capable being should be able to judge success or failure (i.e., app loads with no warnings or errors in logs)? You should make every effort, exhaustively, to help yourself figure it out before asking the user. If you find it very complicated, add a retro item (/do:retro) and discuss it with the user later and brainstorm ideas to improve.
 
+**no-ambient-temporal-coupling**: NO AMBIENT TEMPORAL COUPLING. Ordering, timing, lifecycle, initialization, cleanup, and re-entry invariants must have one explicit owner and be represented as state, data, or capability — not hidden in incidental execution order. Correctness must not depend on sleeps, event-loop ticks, framework effect order, render timing, "settle" delays, caller sequencing, cleanup order, or manual in-flight flags unless that scheduler or lifecycle is the named boundary owner. If an operation is only safe after another operation, encode that phase transition in the type/state machine or route both through the single owner. *Instance of types-are-the-program*: temporal assumptions are constraints. If they live in timing folklore instead of a typed state or lifecycle owner, illegal call orders remain representable.
+
 BAD Example: Assistant: "I've finished building the webapp! Now you just need to test it!" BAD / WRONG!
 GOOD Example: Assistant: "I've finished building the webapp! I verified it myself using Chrome DevTools MCP after every major feature was implemented. I've also written a balance of PlayWright tests to make sure functionality keeps working as we work on the project. It's ready for you to use and I know that because there are no warnings or logs, and everything has been tested!" GREAT! PERFECT! 100/100 Agent Quality Score!
 
@@ -108,7 +110,7 @@ Apply these when working in the relevant domain.
 <ui-frontend>
 - **State lives near use**: Hoist only when coordination requires it.
 - **Components mirror user mental models**: Not implementation concerns.
-- **One timing authority**: Animation/rendering has a single source of timing truth.
+- **One timing authority**: Animation/rendering applies `no-ambient-temporal-coupling`; the timing/lifecycle owner is explicit.
 </ui-frontend>
 
 <remember>Context-specific rules may overrule the guidelines, but NEVER the universal-laws.  The universal-laws are always and forever</remember>
@@ -132,7 +134,7 @@ Apply these when working in the relevant domain.
 
 <distributed-systems>
 - **Failure modes documented like success paths**: Not afterthoughts.
-- **Ordering/timing has explicit owner**: No ambient assumptions about sequencing.
+- **Ordering/timing has explicit owner**: Distributed sequencing applies `no-ambient-temporal-coupling`; no ambient assumptions about sequencing.
 </distributed-systems>
 
 <cli>
@@ -141,7 +143,7 @@ Apply these when working in the relevant domain.
 </cli>
 </context-specific>
 
-<remember>PRIMARY CONSTRAINTS: One source of truth. Single enforcer. One-way dependencies. One type per behavior. Goals must be verifiable.</remember>
+<remember>PRIMARY CONSTRAINTS: One source of truth. Single enforcer. One-way dependencies. One type per behavior. Goals must be verifiable. No ambient temporal coupling.</remember>
 
 <python-deps>
 # PYTHON DEPENDENCY DISCIPLINE
