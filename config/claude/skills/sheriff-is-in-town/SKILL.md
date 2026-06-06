@@ -32,7 +32,44 @@ that. State the scope at the top of the report so it's unambiguous what was *not
    "must", "never", "source of truth", or cite another file/system are testable. When such a
    claim is false and it changes architectural judgment, report the lying claim with the same
    blast-radius framing as code-shaped violations.
-5. **Do not edit anything.** The sheriff reports; the town fixes. [LAW:single-enforcer]
+5. **Use candidate patterns to aim the audit.** The patterns below are heuristics, not laws.
+   They help find likely violations, but a finding is valid only when it maps to exactly one
+   universal law from `CLAUDE.md`. [LAW:one-source-of-truth]
+6. **Do not edit anything.** The sheriff reports; the town fixes. [LAW:single-enforcer]
+
+## Candidate Patterns
+
+These are starting points for reading, not a substitute for reading. A candidate that does not
+violate a universal law is not a finding.
+
+- **Boundary and type absorption:** scattered discriminator checks, repeated guards on the same
+  field, mode flags threaded through signatures, type switches over raw shapes, validate-don't-parse
+  boundaries, comments that say callers must ensure an invariant, and downstream checks that should
+  disappear after parsing.
+- **Enumeration gaps:** predicates, classifiers, validators, canonical checks, equality checks, or
+  resource filters that recognize the happy shape instead of rejecting each wrong shape. Look for
+  substring/prefix matching against exact producer formats, fingerprint checks that verify tokens
+  instead of invariants, tests duplicating produced literals, and shared sinks with multiple producers
+  but no producer discriminator.
+- **Type escape hatches:** `any`, `unknown`, laundering casts, non-null assertions, optional
+  chaining/defaults added to placate a type error, output unions caused by missing input context,
+  and signatures that force every caller to narrow the same way. Treat the escape hatch as evidence
+  of the missing upstream constraint.
+- **Temporal coupling:** empty-render/measure/rerender loops, framework ordering assumptions,
+  sleeps/ticks/animation frames used to let state settle, manual scheduler or re-entry flags, cleanup
+  order dependencies, and lifecycle assumptions owned by no explicit state machine or boundary.
+- **State and observability loops:** ref mirrors, write-then-read-self loops, components or modules
+  that publish to a store they immediately consume from, observability used as internal plumbing, and
+  event buses between code that already shares a direct owner.
+- **Boundary erosion:** god modules, diffuse public surfaces, deep imports into private paths,
+  bidirectional dependencies, parameter threading through many layers, capability leaks via giant
+  context objects, and features that force otherwise unrelated subsystems to know about each other.
+- **Source-of-truth drift:** duplicated state, parallel schema/type/DTO/cache/spec representations,
+  dual implementations, stale compatibility paths, silent fallbacks with different semantics, and
+  docs/tickets/prompts/comments that copy implementation detail below their proper abstraction level.
+- **Verification drift:** tests that assert structure instead of behavior, tests that construct
+  impossible states, acceptance criteria that are not machine-checkable, and audit/remediation work
+  that collapses distinct phases into one artifact.
 
 ## Finding shape
 
