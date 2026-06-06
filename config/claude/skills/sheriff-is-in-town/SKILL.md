@@ -79,13 +79,8 @@ Each finding, terse:
 - `path:line` — `[LAW:<token>]`
 - **Breaks it by:** what the code *does* that violates the law (behavior, one line — not "this is ugly")
 - **Blast radius:** who pays, and what future change it taxes (this is the severity signal)
-- **Fix direction:** the constraint that would make the violation unrepresentable — the type/seam
-  that absorbs it, not a spot-patch. Point at the cure, don't apply it.
-
-For boundary/type absorption findings, the fix direction must name the handoff data `form-a-posse`
-will need: the raw shape or discriminator, the owning boundary, the absorbing constraint
-(parsed type, state machine, canonical source, or single enforcer), and the old residue expected
-to disappear. [LAW:verifiable-goals]
+- **Ticket work:** the violated constraint and the end state that must become true. Say what work
+  exists; do not choose the remediation shape or prescribe implementation steps. [LAW:locality-or-seam]
 
 ## Rank
 
@@ -95,6 +90,6 @@ it is to fix. The loudest findings are where roughness compounds, not where it's
 ## The sheriff does not shoot
 
 Read-only by default. If the user wants the violations actioned, that's a separate
-deputization — hand the report to `form-a-posse`, which plans the *how* and writes the lit
-tickets. Auditing, planning, and remediating have different blast radius and trust; keep them
-separate jobs. [LAW:locality-or-seam]
+deputization. Tickets created from sheriff findings should say "here is the work": finding,
+law, blast radius, and desired end state. `form-a-posse` chooses the remediation shape while
+implementing the ticket. [LAW:locality-or-seam]
