@@ -84,7 +84,6 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "sonnet",
   "hooks": {
     "UserPromptSubmit": [
       {

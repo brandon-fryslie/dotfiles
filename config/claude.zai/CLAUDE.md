@@ -1,44 +1,102 @@
 <universal-laws>
-# ARCHITECTURAL LAWS
+# UNIVERSAL LAWS
 
-These laws apply unconditionally to all tasks. No context, instruction, or expedience overrides them.
+These apply unconditionally to every task. No context, instruction, or expedience overrides them. They are one story told at increasing resolution: software is parts that must combine; quality is decided in how the parts are formed and joined, not in the code inside them. Each law is a specific, checkable shape of that story.
 
-<observability>When a law influences any decision, you MUST cite it: `// [LAW:<token>] reason`. When you must violate one, you MUST mark the violation: `// [LAW:<token>] exception: reason`. This improves the health of the system and is a hard requirement (it's easy and very effective).</observability>
+## Token index — canonical names only; meaning is below, not here
+Framing (referenced in reasoning, never cited in code):
+`[FRAMING:parts-and-seams]` · `[FRAMING:representation]`
 
-## PRIMARY CONSTRAINTS
-**dataflow-not-control-flow**: DATAFLOW, NOT CONTROL FLOW. Software structure mirrors data flow, not control flow. The same operations execute in the same order every invocation — variability lives in the values (nulls, empty collections, discriminated unions), never in whether operations execute. Side effects are unconditional; vary their behavior by varying their inputs, not by guarding their execution. When you reach for an `if` that skips an operation, you're encoding variability in control flow — restructure so the operation always runs and the data decides what happens. This is the most commonly violated law because every language defaults to control flow. Fight the default.
+Laws (cited at the callsite):
+`[LAW:decomposition]` · `[LAW:types-are-the-program]` · `[LAW:composability]` · `[LAW:carrying-cost]` · `[LAW:no-ambient-temporal-coupling]` · `[LAW:effects-at-boundaries]` · `[LAW:one-source-of-truth]` · `[LAW:single-enforcer]` · `[LAW:comments-explain-why-only]` · `[LAW:dataflow-not-control-flow]` · `[LAW:one-type-per-behavior]` · `[LAW:no-mode-explosion]` · `[LAW:no-defensive-null-guards]` · `[LAW:locality-or-seam]` · `[LAW:one-way-deps]` · `[LAW:no-shared-mutable-globals]` · `[LAW:verifiable-goals]` · `[LAW:behavior-not-structure]` · `[LAW:no-silent-failure]`
 
-**one-source-of-truth**: ONE SOURCE OF TRUTH. Every concept has exactly one authoritative representation. All others are derived and explicitly synchronized. If two representations can diverge, the architecture is broken. Never create a second source; find and use the canonical one.
+## Citation protocol
+When a law influences a decision, cite it inline: `// [LAW:token] reason`. When you must violate one, mark it: `// [LAW:token] exception: reason`. The string you emit at the callsite is the same string that names the law below — one key, deliberately, so every use reinforces the concept. `[FRAMING:token]` names a higher-level idea you reference when reasoning; it never appears in code. Both namespaces are kept small on purpose; do not coin new tokens.
 
-**single-enforcer**: SINGLE ENFORCER. Any cross-cutting invariant (auth, validation, timing, serialization) is enforced at exactly one boundary. Duplicate checks across callsites will drift. If enforcement exists elsewhere, remove the duplicate—don't add another.
+---
 
-**one-way-deps**: ONE-WAY DEPENDENCIES. Architecture declares dependency direction. Cycles are forbidden. Upward calls are forbidden.
+## The root (framing)
 
-**one-type-per-behavior**: ONE TYPE PER BEHAVIOR. If multiple things have identical behavior, they are instances of one type, not multiple types. Before creating FooA, FooB, FooC, ask: "What differs besides the name?" If the answer is "nothing" or "only configuration," create one Foo with instances/config. Names in specs are often instance examples, not type definitions.
+**`[FRAMING:parts-and-seams]`** — A program is a set of parts joined at seams. Its quality is set almost entirely by two things: *how it is cut into parts*, and *how those parts are formed at their seams* — not by the code in the bodies, which is residue once the parts and seams are right. There are four faces to this, four questions you can ask of any part:
 
-**verifiable-goals**: GOALS MUST BE MACHINE VERIFIABLE. Any goal you plan must have well-defined, concrete criteria by which a deterministic process can gauge success or failure. Asking the user to test things for you is an option of last resort, to be avoided whenever possible. Ask yourself: are there unanswered questions? Uncertainty? Ask the user, always. Does there exist a clear and well defined criteria by which a capable being should be able to judge success or failure (i.e., app loads with no warnings or errors in logs)? You should make every effort, exhaustively, to help yourself figure it out before asking the user. If you find it very complicated, add a retro item (/do:retro) and discuss it with the user later and brainstorm ideas to improve.
+- **Decomposition** — *is this the right part?* Where the cut falls, what each unit is. → `[LAW:decomposition]`
+- **Representation** — *does the part tell the truth?* Whether its contract is honest and consistent. → `[FRAMING:representation]`, `[LAW:types-are-the-program]`
+- **Time** — *does it combine correctly in sequence?* Who owns ordering and lifecycle. → `[LAW:no-ambient-temporal-coupling]` *(face real; under-specified — revisit)*
+- **World** — *does it separate computing from acting?* Where the part touches the outside. → `[LAW:effects-at-boundaries]` *(face real; partially specified — revisit)*
 
-**no-ambient-temporal-coupling**: NO AMBIENT TEMPORAL COUPLING. Ordering, timing, lifecycle, initialization, cleanup, and re-entry invariants must have one explicit owner and be represented as state, data, or capability — not hidden in incidental execution order. Correctness must not depend on sleeps, event-loop ticks, framework effect order, render timing, "settle" delays, caller sequencing, cleanup order, or manual in-flight flags unless that scheduler or lifecycle is the named boundary owner. If an operation is only safe after another operation, encode that phase transition in the type/state machine or route both through the single owner. *Instance of types-are-the-program*: temporal assumptions are constraints. If they live in timing folklore instead of a typed state or lifecycle owner, illegal call orders remain representable.
+Decomposition and representation are fully worked below. Time and world are real and named so the structure is honest about them, but deliberately left brief; their corollaries are sound even though the faces themselves want more work later. When the parts are well-cut and truthful, they compose — and composition is the whole goal.
 
-BAD Example: Assistant: "I've finished building the webapp! Now you just need to test it!" BAD / WRONG!
-GOOD Example: Assistant: "I've finished building the webapp! I verified it myself using Chrome DevTools MCP after every major feature was implemented. I've also written a balance of PlayWright tests to make sure functionality keeps working as we work on the project. It's ready for you to use and I know that because there are no warnings or logs, and everything has been tested!" GREAT! PERFECT! 100/100 Agent Quality Score!
+**`[FRAMING:representation]`** — Every representation must be coherent and accurate, without exception. A representation is anything that stands for something else: a type, a comment, a name, a cache, a derived value, a schema. When a representation drifts from what it represents, it becomes a lie the rest of the system trusts. Types are the *strongest concrete instance* of this — a representation a machine checks for you — which is why `[LAW:types-are-the-program]` is the operational primary and this framing is the reason its corollaries (`[LAW:one-source-of-truth]`, `[LAW:comments-explain-why-only]`) belong to the same family. Prefer the most concrete, most mechanically-checked representation available: compile-time over runtime, runtime over documentation, documentation over hope.
 
-## STRUCTURAL CONSTRAINTS
+---
 
-**dataflow-not-control-flow**: DATAFLOW, NOT CONTROL FLOW. Software structure mirrors data flow, not control flow. The same operations execute in the same order every invocation — variability lives in the values (nulls, empty collections, discriminated unions), never in whether operations execute. Side effects are unconditional; vary their behavior by varying their inputs, not by guarding their execution. When you reach for an `if` that skips an operation, you're encoding variability in control flow — restructure so the operation always runs and the data decides what happens. This is the most commonly violated law because every language defaults to control flow. Fight the default.
+## The primaries
 
-**locality-or-seam**: LOCALITY OR SEAM. Changes to X must not force edits in unrelated Y. Missing seam → create interface/adapter first.
+**`[LAW:decomposition]`** — Cut the program at its real joints. Each part does one thing, and the boundaries fall where the domain actually separates, not where a single caller's convenience suggests. The test is whether the seam carries the whole truth of the part: a good cut leaves a part you can understand, test, move, and reuse by looking only at the part. A bad cut fuses concerns (selection *and* action, policy *and* mechanism) so the part serves exactly one site and resists every other. Names in a spec are usually examples of instances, not evidence of where to cut. When you cannot name what a part *is* in one phrase without "and," the cut is wrong.
 
-**no-defensive-null-guards**: NO DEFENSIVE NULL GUARDS. Null checks are only valid at trust boundaries (external input, user data, network responses) or when a value explicitly represents optionality. If a value should never be null, the fix is making it not null — not adding a guard that silently skips the operation. A null guard without an `else` that contains real, necessary behavior is control flow in disguise: it hides bugs by skipping work instead of failing loudly. If you find yourself writing `if (X) { do work; }` with no else, ask why X could be null and fix that instead. Scattered null guards are a symptom of broken initialization order or missing invariants — fix the architecture, not the callsite.
+**`[LAW:types-are-the-program]`** — The types *are* the program: not a description of it, not a linter, not a test suite. Choose the strongest theorem about your data that is still true — every legal state representable, every illegal state unrepresentable. Too weak (`any`, bags of optionals, `string` where four enum values are meant) and illegal states slip through, forcing every callsite to defend. Too strong but false (tighter than the domain allows) and the code must lie or break. The exactly-right type is *exactly as expressive as the domain*; state it once and everything downstream is free to assume it. Once the constraints are right, the implementation is residue — the body is forced and writing it is mechanical. So every rough bit in the body is the code asking you to fix a constraint: if the body wants to branch, the type is missing a discriminator; if it wants to guard, an upstream type permits a state it shouldn't; if it needs a comment to explain an invariant, the type didn't encode it. **When implementation feels hard, the constraints are wrong.** Fix the type; do not push through the body. The concrete face of `[FRAMING:representation]`.
 
-**no-shared-mutable-globals**: NO SHARED MUTABLE GLOBALS. Registries/singletons require single owner, explicit API, documented invariants.
+## The consequence — what right parts and true types buy
 
-**no-mode-explosion**: NO MODE EXPLOSION. New flags/options need documented cap + exit plan. Default path stays canonical.
+**`[LAW:composability]`** — A part composes when it **does one thing, completely, asking nothing**: it makes a closed promise about a general case, so it can be dropped into any context that wants that one thing and will deliver it with no negotiation. Three failure modes, one test. *Does more than one thing* → the fused part (`colorOddRows`) serves one caller; split it. *Completes only for a particular caller* → the promise secretly depends on facts not in the interface; lift those facts to the seam as values (the inlined `odd` check becomes a `predicate` parameter — `filter(isOdd, rows)`). *Asks for machinery before it will act* → the over-abstraction that can't move until you assemble its config; that is commitment pushed onto callers from the other side. You reach this state by subtraction: each pass removes one thing the part decided on a caller's behalf, until nothing snags. The check for done is not "does it work" or "do tests pass" — it is **does the part I am leaving compose better than the one I found.** Emerges from `[LAW:decomposition]` and `[LAW:types-are-the-program]` done together; neither alone is sufficient, because a perfectly typed part can still be badly cut.
 
-## PROCESS CONSTRAINTS
+**`[LAW:carrying-cost]`** — Distinguish *intrinsic cost* (to build a thing once) from *carrying cost* (to maintain, extend, work around, and reason about it forever). A part that composes (`[LAW:composability]`) has near-zero carrying cost: it doesn't couple to callers, doesn't constrain future code, and earns its keep across every project needing its shape. So for an engineer building by subtraction the economics invert — more good parts is *cheaper* than fewer, because each lowers the cost of all future work and carries almost nothing. YAGNI is advice about intrinsic cost under the assumption carrying cost is bounded, which holds only for non-composing parts; it speaks about *features* and has nothing to say about *substrate*. Doing it right now is cheaper than continuing wrong, regardless of effort already spent — no matter how far down the wrong road, turn around. The "wrong abstraction is worse than duplication" warning is `[LAW:no-mode-explosion]` in disguise: the cost is caused not by abstracting but by *stretching* one part over shapes it wasn't cut for; the fix is to fork, not to retrofit every caller. The right question for a foundational piece is never "do we need it" but "does it compose, and is its type the strongest true theorem."
 
-**behavior-not-structure**: TESTS ASSERT BEHAVIOR, NOT STRUCTURE. Tests define *what* (contracts), never *how* (implementation). A test that can only pass by preserving deprecated code is encoding structure—update or delete it, never satisfy it by reintroducing removed code.
+## The world faces
+
+**`[LAW:no-ambient-temporal-coupling]`** — Ordering, timing, lifecycle, initialization, cleanup, and re-entry have one explicit owner and are represented as state, data, or capability — never hidden in incidental execution order. Correctness must not depend on sleeps, event-loop ticks, effect order, render timing, "settle" delays, caller sequencing, or in-flight flags unless that scheduler is the named owner. If an operation is only safe after another, encode the phase transition in a typed state machine or route both through the single owner. The time face of `[FRAMING:parts-and-seams]`: a temporal assumption left in folklore is an illegal call order left representable — an instance of `[LAW:types-are-the-program]` in the dimension of sequence.
+
+**`[LAW:effects-at-boundaries]`** — A part either computes or acts on the world (IO, mutation, network, randomness, clock) — never both. Push effects to the edges; keep the interior pure. A pure interior can be reasoned about, tested, and composed in isolation; an effect mixed into logic makes the logic context-dependent and uncomposable, because the part now has an undeclared seam to the world. When an effect appears mid-computation, lift it to the boundary: let the pure core return a *description* of what to do, and perform it at the edge. The world face of `[FRAMING:parts-and-seams]`, and the spatial cousin of `[LAW:no-ambient-temporal-coupling]` — one localizes *where* a part touches the world, the other *when*. The "return a description, not the action" move is `[LAW:dataflow-not-control-flow]` applied to effects.
+
+## The representation corollaries — does the part tell the truth
+
+**`[LAW:one-source-of-truth]`** — Every concept has exactly one authoritative representation; all others are derived and explicitly synchronized. If two representations can diverge, the architecture is broken — find the canonical one, never mint a second. Caches and indexes are derived, never authoritative. An instance of `[FRAMING:representation]`: two things that can disagree are an under-constrained type, since the constraint that they agree is encoded nowhere.
+
+**`[LAW:single-enforcer]`** — Any cross-cutting invariant (auth, validation, serialization) is enforced at exactly one boundary. Duplicate checks across callsites drift; if enforcement already exists, remove the duplicate, never add another. The specialization of `[LAW:one-source-of-truth]` to enforcement — the single enforcer is where the invariant's type lives; every other check is residue from a missing type or a misplaced boundary.
+
+**`[LAW:comments-explain-why-only]`** — Comments explain *why*, never *what*, and rarely *how*. The code is the authoritative description of what it does; prose restating it is a copy that drifts immediately and is never refreshed. Forbidden in comments: enumerations of callers, counts, references to specific lines, variable names, or function names. Remove any you find, without debating exceptions. An instance of `[LAW:one-source-of-truth]`: a what-comment is a manual divergent copy; and if code needed explaining, the shape is wrong — fix the type, don't write the comment.
+
+## The dataflow corollaries — variability lives in values
+
+**`[LAW:dataflow-not-control-flow]`** — Structure mirrors data flow, not control flow. The same operations run in the same order every invocation; variability lives in the *values* (nulls, empty collections, discriminated unions), never in *whether* an operation runs. Side effects are unconditional — vary behavior by varying inputs, not by guarding execution. Most-violated law, because every language defaults to control flow; fight the default. Sharpest diagnostic: if describing the *mechanics* of your solution needs "if," "and," "when," "skip," or "only," variability has leaked into control flow and the solution is almost certainly wrong. An instance of `[LAW:types-are-the-program]`: variability in values is variability the type carries; variability in whether code runs is variability the type cannot constrain.
+
+**`[LAW:one-type-per-behavior]`** — If multiple things have identical behavior, they are instances of one type, not multiple types. Before creating FooA, FooB, FooC, ask what differs besides the name; if "nothing" or "only configuration," make one Foo with instances. An instance of `[LAW:dataflow-not-control-flow]`: the configuration is the value crossing one boundary; the type is the boundary, held fixed.
+
+**`[LAW:no-mode-explosion]`** — New flags and options need a documented cap and an exit plan; the default path stays canonical. An instance of `[LAW:dataflow-not-control-flow]`: prefer variability in values over variability in modes — values flow through a fixed boundary and can be reasoned about, while modes must be enumerated and tested combinatorially.
+
+**`[LAW:no-defensive-null-guards]`** — Null checks are valid only at trust boundaries (external input, network, user data) or where a value explicitly represents optionality. If a value should never be null, make it not-null upstream; don't add a guard that silently skips work. A null guard with no meaningful `else` is control flow in disguise, hiding bugs by skipping instead of failing loudly. If absence is genuine, encode it as a discriminated value handled by exhaustive match, not a check. An instance of `[LAW:dataflow-not-control-flow]`: the guard is the body asking you to lift optionality into the type.
+
+## The boundary corollaries — is this the right part
+
+**`[LAW:locality-or-seam]`** — Changes to X must not force edits in unrelated Y. A missing seam is a missing cut: the change cascades because no boundary carries the variability. Create the interface first; the seam *is* the part boundary. An instance of `[LAW:decomposition]`.
+
+**`[LAW:one-way-deps]`** — Dependency direction is declared. Cycles forbidden; upward calls forbidden. An instance of `[LAW:decomposition]`: a cycle is two parts sharing a hidden third that wants extracting and naming, so both can depend on it cleanly.
+
+**`[LAW:no-shared-mutable-globals]`** — Registries and singletons require a single owner, an explicit API, and documented invariants. An instance of `[LAW:decomposition]` and `[LAW:single-enforcer]`: an unowned global is a part with no real boundary — anything reads, anything writes — and the owner's API is the missing seam made manifest.
+
+## The process corollaries — correctness must be observable
+
+**`[LAW:verifiable-goals]`** — Every planned goal has concrete criteria a deterministic process can check (e.g. "app loads with no warnings or errors in logs"). Exhaust your own verification before asking the user to test — that is the last resort. Where uncertainty remains, ask before proceeding rather than guessing. Wrong: "it's built, now you test it." Right: "I verified it against defined criteria; there are no warnings or errors." An instance of `[LAW:types-are-the-program]`: an unverifiable goal is one whose "done" state has no type — define the shape of success and failure, and verification follows.
+
+**`[LAW:behavior-not-structure]`** — Tests assert *what* (contracts, the meaning of operations), never *how* (implementation). A test that can only pass by preserving deprecated code encodes structure — update or delete it, never satisfy it by reintroducing removed code. An instance of `[LAW:types-are-the-program]`: structure is already enforced by the type system, so a structure-asserting test is miscast; and if a test is the only thing keeping code alive, the type is missing the constraint that should have made the code load-bearing.
+
+**`[LAW:no-silent-failure]`** — Failure must be loud and explicit. Never swallow errors, never fall back silently to a different data source or default that changes meaning. `2>/dev/null`, `|| true`, and silent catches are lies — they send the next agent or human confidently down the wrong path. A fallback that alters the *meaning* of data is a bug that fires only when things are already broken, guaranteeing maximum confusion. If the primary path fails, stop and surface it. An instance of `[FRAMING:representation]`: a swallowed failure misrepresents failure as success, and it defeats `[LAW:verifiable-goals]` by hiding the signal verification depends on.
+
+---
+
+## Summary (recap at recency — verbatim tokens, relationships, no new definitions)
+The story compressed, for reinforcement. Software is `[FRAMING:parts-and-seams]`: parts joined at seams, with four faces — decomposition (the cut), representation (the truth), time, world.
+
+- **Cut the right parts.** `[LAW:decomposition]`, and its boundary corollaries `[LAW:locality-or-seam]`, `[LAW:one-way-deps]`, `[LAW:no-shared-mutable-globals]`.
+- **Make each part true.** `[FRAMING:representation]` → `[LAW:types-are-the-program]`, with `[LAW:one-source-of-truth]`, `[LAW:single-enforcer]`, `[LAW:comments-explain-why-only]` (don't let representations diverge), and `[LAW:dataflow-not-control-flow]`, `[LAW:one-type-per-behavior]`, `[LAW:no-mode-explosion]`, `[LAW:no-defensive-null-guards]` (variability lives in values, not branches).
+- **Mind the world.** `[LAW:no-ambient-temporal-coupling]` (when) and `[LAW:effects-at-boundaries]` (where) keep a part's contact with the outside declared, not scattered.
+- **The payoff.** Right parts + true types compose: `[LAW:composability]` — does one thing, completely, asking nothing — and composing parts have near-zero `[LAW:carrying-cost]`, which is why building more of them is cheaper than building fewer.
+- **Stay honest.** `[LAW:verifiable-goals]`, `[LAW:behavior-not-structure]`, `[LAW:no-silent-failure]` keep correctness observable.
+
+When in doubt, return to the root: design the parts and their seams so the parts compose; the body is residue.
 </universal-laws>
+
+# TODO: rewrite the rest
 
 <guidelines>
 Contextual guidelines—apply when relevant. Unlike the unconditional laws above, these are judgment calls.
@@ -67,7 +125,7 @@ Contextual guidelines—apply when relevant. Unlike the unconditional laws above
 </dependencies>
 
 <data-driven-architecture>
-**dataflow-not-control-flow**: DATAFLOW, NOT CONTROL FLOW. Software structure mirrors data flow, not control flow. The same operations execute in the same order every invocation — variability lives in the values (nulls, empty collections, discriminated unions), never in whether operations execute. Side effects are unconditional; vary their behavior by varying their inputs, not by guarding their execution. When you reach for an `if` that skips an operation, you're encoding variability in control flow — restructure so the operation always runs and the data decides what happens. This is the most commonly violated law because every language defaults to control flow. Fight the default.
+See `dataflow-not-control-flow` in PRIMARY CONSTRAINTS above. The structural form: when you find yourself reaching for an `if` that skips an operation, the constraint upstream is wrong — restructure so the operation always runs and the data decides what happens.
 </data-driven-architecture>
 
 
@@ -143,7 +201,7 @@ Apply these when working in the relevant domain.
 </cli>
 </context-specific>
 
-<remember>PRIMARY CONSTRAINTS: One source of truth. Single enforcer. One-way dependencies. One type per behavior. Goals must be verifiable. No ambient temporal coupling.</remember>
+<remember>PRIMARY CONSTRAINTS: The types are the program. Dataflow not control flow. One source of truth. Single enforcer. One-way dependencies. One type per behavior. Goals must be verifiable. No ambient temporal coupling. Each is an instance of: design constraints such that illegal states cannot be expressed; the implementation is residue.</remember>
 
 <python-deps>
 # PYTHON DEPENDENCY DISCIPLINE
@@ -160,32 +218,35 @@ When a Python dep is missing, prefer in this order:
 <scripting-discipline>
 # SCRIPTING AND AUTOMATION DISCIPLINE
 
-Hard-won lessons. These are non-negotiable when writing scripts, automation, or glue code.
+Hard-won lessons. Non-negotiable when writing scripts, automation, or glue code.
 
-## NEVER SWALLOW ERRORS
-`2>/dev/null`, `|| true`, `|| echo "default"` — these are lies. If a command can fail, that failure is meaningful. A script that silently eats errors and continues with empty/garbage data is worse than a script that crashes, because it sends agents or humans confidently down the wrong path for hours. **Let it fail. Let it be loud. Fix the cause.**
+**Never swallow errors.**
+- Forbidden patterns: `2>/dev/null`, `|| true`, `|| echo "default"`. These are lies — if a command can fail, that failure is meaningful.
+- Silent failures send agents or humans confidently down the wrong path for hours. Let it fail, let it be loud, fix the cause.
+- The *only* acceptable use of `|| true` is when the failure is genuinely irrelevant to every downstream consumer. If you're unsure, it's not irrelevant.
 
-The only acceptable use of `|| true` is when the command's failure is *genuinely irrelevant* to every downstream consumer — and that's almost never true. If you're unsure, it's not irrelevant.
+**Never build silent fallback data sources.**
+- Two queries that look similar but have different filtering/ordering/semantics (e.g., "ready work respecting dependencies" vs. "all open items") are NOT interchangeable.
+- A fallback that changes the *meaning* of the data is a bug that only triggers when things are already broken — guaranteeing maximum confusion.
+- If the primary source fails: stop and tell the operator. Don't improvise.
 
-## NEVER BUILD SILENT FALLBACK DATA SOURCES
-If the primary data source fails, do NOT silently switch to a different query that returns different data in a different order with different semantics. Two queries that look similar but have different filtering/ordering/semantics (e.g., "ready work respecting dependencies" vs. "all open items") are NOT interchangeable. A fallback that changes the meaning of the data is not a fallback — it's a bug that only triggers when things are already broken, guaranteeing maximum confusion.
+**Never write against an API you haven't tested.**
+- Before scripting against a CLI/API/service, run the commands yourself. Check what flags exist, what the output actually looks like, what errors look like, what JSON shape comes back.
+- Every `jq -r '.[].id'` is an assertion about the shape of the data. Verify it or don't ship it.
+- A script written against an assumed interface is fiction, not code.
 
-If the primary source fails: **stop and tell the operator**. Don't improvise.
-
-## NEVER WRITE AGAINST AN API YOU HAVEN'T TESTED
-Before writing a script that calls a CLI tool, API, or service: **run the commands yourself first**. Check what flags exist. Check what the output actually looks like. Check what errors look like. Verify the JSON shape. Writing a script blind against an assumed interface is writing fiction, not code. Every `jq -r '.[].id'` is an assertion about the shape of the data — verify it or don't ship it.
-
-## VALIDATE DATA AFTER EVERY EXTERNAL CALL
-Any time you call an external tool and capture its output, validate before proceeding:
+**Validate data after every external call.** Before captured output flows downstream, check:
 - Did the command exit 0?
 - Is the output non-empty?
 - Does it parse as the expected format?
-- Do the extracted values look sane?
+- Do extracted values look sane?
 
-If any check fails, abort with a clear message. Never pass unvalidated data downstream — an empty string or malformed JSON becoming a variable that gets interpolated into further commands is how you get phantom work items, wrong branches, or corrupted state.
+If any check fails, abort with a clear message. An empty string or malformed JSON interpolated into the next command is how you get phantom work items, wrong branches, and corrupted state.
 
-## SCRIPTS THAT DRIVE AGENTS ARE HIGH-LEVERAGE — TREAT THEM THAT WAY
-A script that loops `claude -p` over work items is an amplifier. Every bug in that script gets multiplied by every iteration. An error in ticket ordering wastes hours of agent compute. A swallowed error means the agent works on nothing or the wrong thing with full confidence. **The script IS the agent's judgment about what to work on** — if the script is wrong, the agent is wrong at scale. Write it like it matters, because it does.
+**Agent-driving scripts are amplifiers — treat them like it.**
+- A script that loops `claude -p` over work items multiplies every bug by every iteration. An error in ticket ordering wastes hours of agent compute.
+- The script IS the agent's judgment about what to work on. If the script is wrong, the agent is wrong at scale.
+- Write it like it matters, because it does.
 </scripting-discipline>
 
 <subagent-delegation>
@@ -204,7 +265,7 @@ Subagents see only the prompt you write. No conversation context, no CLAUDE.md, 
 </subagent-delegation>
 
 <wisdom>
-Following these rules will often, even mostly, require more work than
+Following these rules will often, even mostly, require more SHORT TERM work than
  you expected.  That is not a problem.  "No matter how far you've gone
 down the wrong road, turn around."  or  "When you find yourself in a
 hole - stop digging!"  or  "you can't get to the right destination by
@@ -212,12 +273,20 @@ taking the wrong path".  Make sense?  It might feel like extra effort,
 but logically, once you know the right direction, you shouldn't spend
 any time continuing away from it.
 
-The critical insight here is that you do NOT have the full picture of
+The critical insight here is that we are optimizing for the LONG TERM, not the
+short term.  It might take 1/5 the effort to do something the easy way, which can
+feel like a win.  But then you might need to refactor that work 3x throughout the
+project for new capabilities, and consider the friction + churn added to downstream code.
+
+The cheapest implementation by far is doing it the right way, from the 
+beginning and continuing to do it the right way over time.  Since we can't always know
+what that is, we must ensure everything is modular with strong api boundaries, 
+so we can replace individual pieces without rearchitecting the system.
+
+Another critical insight here is that you do NOT have the full picture of
 where we are going.  If our ultimate goal was "implement this one
-feature" and after that we were done, then we could take the shortcut,
-maybe.  But it's not.  This is maybe 1/2 way through a long journey and
-deviations from correctness compound until the costs become
-astronomical down the road.
+feature" and after that we were done, then the shortcut might make sense.  
+But it's not.  We must plan as if we will be implementing for years to come.
 
 <on-conditionals>
 "Your sentence said 'if' and 'and'.  The right solution will be
@@ -230,7 +299,7 @@ like you to remember.  If your solution includes 'if', 'and', 'when',
 'skip', or 'only' when you're describing the mechanics of how it will
 operate, **it's almost certainly the wrong solution**.  If you're
 describing the *consequences* of a simple solution, that's a bit
-different, because sometimes thats what you need.
+different, because sometimes that's what you need.
 
 Real world example:
 
@@ -253,7 +322,7 @@ Why wrong:
 - Every other piece of code becomes more complex as it must know these details and work around them
 - This code becomes very difficult to modify or replace - every other piece of code that interacts with it must change
 - Obvious signs: WHEN, AND, ONLY <- conditionals!
-- We recongized this and thought for a moment.  A better solution became clear!
+- We recognized this and thought for a moment.  A better solution became clear!
 
 <RIGHT>
 I'm overcomplicating this.
@@ -296,5 +365,31 @@ A ticket is done when **all** of:
 <commit-requirement>
 When you're done implementing work, commit it. Make a separate commit for the work you implemented. That is a requirement.
 </commit-requirement>
+
+<git-workflow>
+# GIT WORKFLOW — MANDATORY BEFORE ANY CODE WORK
+
+Follow these steps exactly at the start of every session that involves code changes. This is not a checklist to skim — every step is required. Deviation is a failure mode.
+
+1. Ensure working directory is clean (`git status` — no uncommitted changes)
+2. `git checkout master` (or the repo's default branch)
+3. `git branch -u origin/master`
+4. `git pull --rebase`
+
+**HARD GATE:** After step 4, you must be 0 commits ahead and 0 commits behind. If you are not, STOP. Do not touch any code. Tell the user the exact state and wait for instruction.
+
+5. `git checkout -b <descriptive-branch-name>` — all work on a branch, never directly on master
+6. Do work
+7. `git pull --rebase` once or twice a day during longer tasks
+8. Open a PR — never push directly to master
+
+Working on top of a diverged or stale master is always wrong. There is no scenario where it is acceptable to proceed past step 4 if the hard gate is not met.
+</git-workflow>
+
+<pr-followup>
+# AFTER OPENING A PR — INVOKE /address-pr-reviews
+
+The moment `gh pr create` (or any equivalent PR-opening action) succeeds, invoke the `/address-pr-reviews` skill on that PR in the same response. Do not wait to be told. Do not end the turn after opening the PR without invoking it. The skill owns the no-reviews-yet case (it will wait/poll/exit cleanly as appropriate); the requirement here is that *starting the address-review loop is part of opening the PR*, not a separate step the user has to trigger. This applies to every PR you open in every session, on every project, unconditionally.
+</pr-followup>
 
 </wisdom>
