@@ -33,10 +33,14 @@ import time
 # changes here — there is no second place that names the workflow.
 WORKFLOW_FILE = "code-review.yml"
 
-# A queued GitHub Actions run can take tens of seconds to register and minutes
-# to finish. Generous ceiling; loud failure past it (workflow not installed,
-# or the runner is wedged) rather than a silent infinite wait.
-WAIT_TIMEOUT_S = 900
+# Two distinct deadlines for two distinct faults — the deadline is derived from
+# observed run state, not a single wall. If no run registers within the short
+# window the workflow almost certainly isn't installed; fail fast and point at
+# /zai-pr-review. Once a run exists and is progressing, a deep review can run a
+# long time, so wait it out to the generous ceiling before calling the runner
+# wedged. Either way: loud failure, never a silent infinite wait.
+REGISTER_TIMEOUT_S = 300
+COMPLETION_TIMEOUT_S = 3600
 POLL_INTERVAL_S = 8
 
 
@@ -138,8 +142,9 @@ def latest_run(owner: str, repo: str, sha: str) -> dict | None:
 def cmd_wait(args: argparse.Namespace) -> None:
     owner, repo, pr_num = parse_pr(args.pr_url)
     sha = head_sha(owner, repo, pr_num)
-    deadline = time.time() + WAIT_TIMEOUT_S
-    while time.time() < deadline:
+    start = time.time()
+    run: dict | None = None
+    while True:
         run = latest_run(owner, repo, sha)
         if run and run.get("status") == "completed":
             print(json.dumps({
@@ -149,11 +154,21 @@ def cmd_wait(args: argparse.Namespace) -> None:
                 "url": run.get("html_url"),
             }))
             return
+        # The deadline tracks reality: a registered run earns the full
+        # completion ceiling, an absent one only the registration window.
+        deadline = COMPLETION_TIMEOUT_S if run else REGISTER_TIMEOUT_S
+        if time.time() - start >= deadline:
+            break
         time.sleep(POLL_INTERVAL_S)
+    if run is None:
+        raise RuntimeError(
+            f"No z.ai review run ({WORKFLOW_FILE}) registered for {sha} within "
+            f"{REGISTER_TIMEOUT_S}s. Is the workflow installed on this repo "
+            f"(run /zai-pr-review) and are Actions enabled?"
+        )
     raise RuntimeError(
-        f"z.ai review workflow ({WORKFLOW_FILE}) did not complete for {sha} "
-        f"within {WAIT_TIMEOUT_S}s. Is the workflow installed on this repo "
-        f"(run /zai-pr-review) and are Actions enabled?"
+        f"z.ai review run for {sha} did not complete within {COMPLETION_TIMEOUT_S}s "
+        f"(status: {run.get('status')}). The runner may be wedged: {run.get('html_url')}"
     )
 
 
