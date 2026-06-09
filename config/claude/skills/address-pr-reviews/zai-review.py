@@ -19,12 +19,11 @@ comments, i.e. ordinary resolvable review threads. So there is no separate
 `fetch` reads the threads and nothing else; the agent never queries elsewhere.
 
 Replies the agent posts with `gh api graphql` directly — the body is judgment,
-not mechanism. Resolution goes through `resolve` instead: not because the mutation
-is hard, but because resolution is the step agents silently drop, and a raw
-mutation whose `isResolved` return is discarded makes a skipped resolve, a failed
-resolve (permissions, vanished thread), and a real one all look identical.
-[LAW:single-enforcer] resolution has one verified path; [LAW:no-silent-failure]
-it exits non-zero unless GitHub confirms the thread is resolved.
+not mechanism. Resolution goes through `resolve` instead: it's the step agents
+drop, and one named command is something the loop can gate on. The raw mutation
+also discards its `isResolved` return, so a resolve that didn't actually flip the
+thread reads as success. [LAW:single-enforcer] one verified path;
+[LAW:no-silent-failure] it exits non-zero unless GitHub confirms isResolved:true.
 """
 
 from __future__ import annotations
@@ -184,6 +183,8 @@ def cmd_wait(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_resolve(args: argparse.Namespace) -> None:
+    # gh already exits non-zero on a GraphQL error; the isResolved check below
+    # is for the residual 200-OK case where the thread didn't actually flip.
     confirmed = _gh(
         "api", "graphql",
         "-f", "query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id})"
