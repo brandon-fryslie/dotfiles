@@ -79,6 +79,8 @@ Schema:
 
 **Unresolved findings** = every entry where `is_resolved` is false. `thread_id` is always present (every finding is a real review thread). If the unresolved list is empty, **the loop is done** — step 1 already guaranteed the run completed, so empty is unambiguous. Proceed to **Finalize** below.
 
+[LAW:verifiable-goals] this empty `fetch` is the **only** thing that establishes done. Never infer doneness from "I pushed my fixes" or "I addressed everything" — re-run `fetch` and read zero unresolved. A fixed-but-unresolved thread still counts as unresolved here, which is the safety net: it re-surfaces as `already_fixed`, and you resolve it now rather than leaving it open forever.
+
 > **Read `thread_comments` before deciding.** A thread may already contain replies (yours from a prior iteration, a human's pushback on the reviewer, or a back-and-forth). The full chain is in `thread_comments`; `body` is just the first comment for quick scanning.
 
 > **`line_start` may be `null`** for a file-level (non-line-anchored) comment. Open the file and read the `body`/`thread_comments` for context; the thread still resolves by `thread_id` like any other.
@@ -92,20 +94,22 @@ Open the file at `file:line_start`. Read `body` and the full `thread_comments` c
 - **invalid** — reviewer is wrong, or the suggestion violates an architectural law (defensive null guards, silent fallbacks, mode explosion, duplicate enforcement, control-flow in place of data-flow variance, etc.). Push back and **cite the law** (`[LAW:no-defensive-null-guards]`)
 - **already_fixed** — resolved by a later commit; note and resolve
 
-Every finding is a review thread, so every finding is handled the same way — post a proposal reply, apply the code change if warranted, post a resolution reply, then resolve the thread:
+Handling a finding is **one atomic unit with a single postcondition: the thread comes back `isResolved: true`.** It is not a checklist of independent steps — reply, (maybe) change code, resolve — with resolve as a droppable tail. Do the whole unit for the current finding and **verify it resolved before you open the next one**:
 
 ```bash
-# Reply (proposal or resolution)
+# Reply (proposal or resolution) — the body is your judgment, posted raw
 gh api graphql -f query='
 mutation($id:ID!,$body:String!){
   addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){ comment{id} } }
 ' -F id="$THREAD_ID" -F body="Proposal: ..."
 
-# Resolve
-gh api graphql -f query='
-mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{isResolved} } }
-' -F id="$THREAD_ID"
+# Resolve — goes through the helper, which verifies GitHub confirmed it
+~/.claude/skills/address-pr-reviews/zai-review.py resolve "$THREAD_ID"
 ```
+
+[LAW:single-enforcer] resolve through the helper, never a raw `resolveReviewThread` mutation. The helper exits non-zero unless GitHub returns `isResolved: true`, so a skipped resolve, a failed one (permissions, vanished thread), and a real one can no longer look alike. [LAW:no-silent-failure] if it exits non-zero the thread is **not** resolved — stop, don't advance.
+
+[LAW:no-ambient-temporal-coupling] resolution is gated, not deferred: the helper must succeed for the current finding **before** you open the next one. "I'll resolve them all after I push" is the exact path that drops them — there is no batch-resolve-later step.
 
 [LAW:dataflow-not-control-flow] there is no second path: the z.ai reviewer always posts a real thread, so `thread_id` is always present and reply-then-resolve is the one mechanism for every finding.
 
@@ -204,5 +208,5 @@ Then stop. The loop is finished, the work is shipped, the recap is filed.
 
 - **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The bottle handoff (step D) fires whenever an aligned candidate exists in the pool; its content (direct work vs define-task) is shaped by whether the candidate is well-defined. The only halt case is project-level misalignment across every examined candidate — alignment is a strategy question the agent cannot answer on the user's behalf, and that case is surfaced as a per-candidate failure table for the user to act on.
 - **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback reply on the thread — that text is the durable record of why the code is the way it is.
-- **Resolve every thread you addressed, including pushbacks.** The z.ai reviewer doesn't reply; your pushback comment is the record. Open threads accumulate forever.
+- **Resolve every thread you addressed, including pushbacks — through `zai-review.py resolve`, and only advance once it confirms.** The z.ai reviewer doesn't reply; your pushback comment is the record. Open threads accumulate forever. Resolution is the step that gets silently dropped, which is why it runs through the verifying helper, not a raw mutation.
 - **Conflicts between findings** — surface to the user before acting. Don't pick a side silently.

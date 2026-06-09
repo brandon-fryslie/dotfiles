@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Z.ai PR review helper — two operations.
+"""Z.ai PR review helper — three operations.
 
-  wait <PR_URL>    — block until the z.ai review workflow run for the PR's
-                     current head SHA has completed; print its conclusion.
-  fetch <PR_URL>   — dump every open review thread on the PR as canonical JSON.
+  wait <PR_URL>       — block until the z.ai review workflow run for the PR's
+                        current head SHA has completed; print its conclusion.
+  fetch <PR_URL>      — dump every open review thread on the PR as canonical JSON.
+  resolve <THREAD_ID> — resolve one review thread and fail loudly unless GitHub
+                        confirms it stuck.
 
 The z.ai reviewer is a GitHub Action (brandon-fryslie/zai-coding-agent-review),
 not a requested reviewer. Its lifecycle owner is therefore the *workflow run*,
@@ -16,8 +18,13 @@ comments, i.e. ordinary resolvable review threads. So there is no separate
 "session" stream to join: review threads ARE the findings. [LAW:one-source-of-truth]
 `fetch` reads the threads and nothing else; the agent never queries elsewhere.
 
-Replying to and resolving threads the agent does with `gh api graphql` directly
-(see SKILL.md) — those are reviewer-agnostic GitHub primitives that need no helper.
+Replies the agent posts with `gh api graphql` directly — the body is judgment,
+not mechanism. Resolution goes through `resolve` instead: not because the mutation
+is hard, but because resolution is the step agents silently drop, and a raw
+mutation whose `isResolved` return is discarded makes a skipped resolve, a failed
+resolve (permissions, vanished thread), and a real one all look identical.
+[LAW:single-enforcer] resolution has one verified path; [LAW:no-silent-failure]
+it exits non-zero unless GitHub confirms the thread is resolved.
 """
 
 from __future__ import annotations
@@ -173,6 +180,26 @@ def cmd_wait(args: argparse.Namespace) -> None:
 
 
 # ---------------------------------------------------------------------------
+# resolve — resolve one thread and verify GitHub confirms it
+# ---------------------------------------------------------------------------
+
+def cmd_resolve(args: argparse.Namespace) -> None:
+    confirmed = _gh(
+        "api", "graphql",
+        "-f", "query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id})"
+              "{thread{isResolved}}}",
+        "-F", f"id={args.thread_id}",
+        "--jq", ".data.resolveReviewThread.thread.isResolved",
+    )
+    if confirmed != "true":
+        raise RuntimeError(
+            f"resolveReviewThread did not confirm resolution for {args.thread_id} "
+            f"(got {confirmed!r}). The thread is NOT resolved — do not move on."
+        )
+    print(json.dumps({"thread_id": args.thread_id, "is_resolved": True}))
+
+
+# ---------------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Z.ai PR review helper")
@@ -181,6 +208,9 @@ def main() -> None:
         p = sub.add_parser(name)
         p.add_argument("pr_url")
         p.set_defaults(func=fn)
+    p_resolve = sub.add_parser("resolve")
+    p_resolve.add_argument("thread_id")
+    p_resolve.set_defaults(func=cmd_resolve)
     args = parser.parse_args()
     try:
         args.func(args)
