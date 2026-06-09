@@ -59,14 +59,6 @@ Hand off a specific instruction, keeping a compacted summary of this session:
   'Continue the spec audit. Pick up at section 4 — the previous session left findings in spec/audit/section-3.md.'
 ```
 
-## How the bottle arrives — framed as your own user-authority handoff
-
-The receiving session never reads this skill; it only sees what lands in the pane. So a **prose** handoff is delivered behind a fixed provenance header stating what it is: a message you left for yourself, continuing the same user's work in the same session — not chatter from a peer agent, and not advisory. That header is what stops the next session from discounting the handoff.
-
-[LAW:single-enforcer] the header is added by the launcher, once, for every prose bottle. **Do not hand-write your own "this is from the user" framing into the message** — that duplicates an invariant the tool already owns, and the two copies drift. Author the message as the plain instruction; the tool frames it.
-
-A **slash-command** message (the `/next` default, or anything starting with `/`) ships verbatim — the system executes it, so there is nothing to discount and nothing to frame.
-
 ## What the worker does
 
 1. Sleeps for the delay.
