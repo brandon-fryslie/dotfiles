@@ -107,9 +107,7 @@ mutation($id:ID!,$body:String!){
 ~/.claude/skills/address-pr-reviews/zai-review.py resolve "$THREAD_ID"
 ```
 
-[LAW:single-enforcer] resolve through the helper, never a raw `resolveReviewThread` mutation. The helper exits non-zero unless GitHub returns `isResolved: true`, so a skipped resolve, a failed one (permissions, vanished thread), and a real one can no longer look alike. [LAW:no-silent-failure] if it exits non-zero the thread is **not** resolved — stop, don't advance.
-
-[LAW:no-ambient-temporal-coupling] resolution is gated, not deferred: the helper must succeed for the current finding **before** you open the next one. "I'll resolve them all after I push" is the exact path that drops them — there is no batch-resolve-later step.
+[LAW:single-enforcer] resolve through the helper, never a raw `resolveReviewThread` mutation — it's the one verified path, exiting non-zero unless GitHub confirms `isResolved: true`, so a resolve that didn't take can't pass as done. [LAW:no-ambient-temporal-coupling] it's gated, not deferred: the helper must succeed for the current finding **before** you open the next. If it exits non-zero, the thread is **not** resolved — stop, don't advance. "Resolve them all after I push" is the exact path that drops them; there is no batch-resolve-later step.
 
 [LAW:dataflow-not-control-flow] there is no second path: the z.ai reviewer always posts a real thread, so `thread_id` is always present and reply-then-resolve is the one mechanism for every finding.
 
