@@ -1,13 +1,15 @@
 ---
 name: address-pr-reviews
-description: Address open PR review findings with judgment — read every finding (Copilot session reasoning AND human review threads), decide whether the feedback is right, fix or push back, resolve, and trigger a re-review. Repeat until clean. Use when the user says "address the PR review", "handle the review threads", "go through the review comments", or asks to respond to PR feedback on a specific PR or the current branch's PR.
+description: Address open PR review findings with judgment — read every finding (z.ai reviewer findings AND human review threads), decide whether the feedback is right, fix or push back, resolve, and re-review by pushing. Repeat until clean. Use when the user says "address the PR review", "handle the review threads", "go through the review comments", or asks to respond to PR feedback on a specific PR or the current branch's PR.
 ---
 
 # Address PR Review Findings
 
-Read every pending review finding on the PR, address each one, trigger a re-review, repeat until clean. Same model people use at a real company: handle Copilot's findings AND human-reviewer threads in one pass, push back with reasoning when you disagree, resolve, re-request review.
+Read every pending review finding on the PR, address each one, push your fixes (which re-runs the reviewer), repeat until clean. Same model people use at a real company: handle the z.ai reviewer's findings AND human-reviewer threads in one pass, push back with reasoning when you disagree, resolve, re-review.
 
-[LAW:one-source-of-truth] `fetch` is the single source of pending findings for this loop. It aggregates two upstream streams — every Copilot session finding (posted inline or suppressed under the inline-comment cap) AND every open review thread on the PR (Copilot-authored OR human-authored) — and dedupes them by `thread_id`. The agent reads this list; it never queries the threads API or the session logs separately.
+The reviewer is the **z.ai Coding Agent Review** GitHub Action (installed by the `/zai-pr-review` skill). It runs on `pull_request` (`opened`, `synchronize`) and posts a formal PR review with inline comments — i.e. ordinary resolvable review threads, authored by `github-actions`. Two consequences shape this whole skill: its lifecycle owner is the **workflow run** (not a requested reviewer), and a re-review is triggered by **pushing a commit** (not by a review-request API).
+
+[LAW:one-source-of-truth] `fetch` is the single source of pending findings for this loop: every open review thread on the PR — z.ai-authored OR human-authored — keyed by `thread_id`. There is no second stream. The z.ai reviewer's findings *are* review threads, so threads are the whole truth; the agent reads this list and never queries the threads API or any session log separately.
 
 ## Setup — derive PR_URL, OWNER, REPO, PR_NUM once
 
@@ -20,102 +22,77 @@ read -r OWNER REPO PR_NUM < <(echo "$PR_URL" | sed -E 's#.*github\.com/([^/]+)/(
 
 All subsequent commands use `$OWNER`, `$REPO`, `$PR_NUM`, and `$PR_URL`.
 
-## Bootstrap — ensure a Copilot review exists or is in flight
+## Preflight — confirm the reviewer is installed
 
-GitHub auto-triggers a Copilot review when a PR is opened *by an account with an active Copilot subscription*. PRs opened by non-subscriber accounts (e.g. `elton-prawn`) get no auto-trigger, so the loop's step 1 ("wait") would return "nothing to wait for," step 2 ("fetch") would return zero findings, and the loop would exit with the PR un-reviewed.
-
-Run this once at the start, before the loop:
+The z.ai reviewer is a GitHub Action, and it auto-runs on `pull_request: opened` for **any** account — there is no subscriber gating and nothing to trigger. So there is no `ensure` step: the only way this loop silently does nothing is if the workflow was never installed on the repo. Check that once, fail loudly if it's missing:
 
 ```bash
-~/.claude/skills/address-pr-reviews/copilot-review.py ensure "$PR_URL"
+gh api "repos/$OWNER/$REPO/actions/workflows/code-review.yml" --jq '.state' \
+  || { echo "z.ai review workflow not installed on $OWNER/$REPO — run /zai-pr-review in this repo and merge it to the default branch first."; exit 1; }
 ```
 
-`ensure` triggers a review **only if** Copilot has never reviewed this PR **and** no review is currently in flight. Idempotent and safe on every PR — for subscription-holder PRs the auto-trigger has typically already fired by the time `ensure` runs, so it no-ops. See `copilot-review.py:cmd_ensure` for the full decision matrix and race-window analysis (between the two checks, a subscriber's auto-trigger can race ours; both POSTs converge on the same "Copilot is requested once" state, so the worst case is one wasted HTTP request, not a corrupted state).
-
-[LAW:dataflow-not-control-flow] `ensure` runs unconditionally; the bootstrap variability lives in the PR's current state (pending? has-reviewed?), not in whether the caller decided to bootstrap. The agent does not branch on "did I just open this PR" or "is this account a subscriber" — the data decides.
+[LAW:no-silent-failure] a missing workflow is the one failure that would otherwise look like "clean review, zero findings." Surface it as a hard stop pointing at `/zai-pr-review`, never an empty pass. Everything else — whether a run is queued, in flight, or done — is handled by the loop's `wait`, which blocks on the workflow run itself.
 
 ## The loop
 
 Repeat until **step 2 returns zero unresolved findings**:
 
-### 1. Wait for any in-flight Copilot review to finish
+### 1. Wait for the z.ai review workflow run to finish
 
 ```bash
-~/.claude/skills/address-pr-reviews/copilot-review.py wait "$PR_URL"
+~/.claude/skills/address-pr-reviews/zai-review.py wait "$PR_URL"
 ```
 
-Idempotent — exits immediately if no review is in flight; blocks until Copilot is removed from `reviewRequests` if one is. That's the only authoritative signal that a review is submitted. Don't trust event-stream stability, stored-comment counts, or how recent the latest review object looks.
+Blocks until the z.ai workflow run for the PR's **current head SHA** reaches `completed`, then prints `{status, conclusion, sha, url}`. Keyed by head SHA, so a run from an earlier commit can never be mistaken for this commit's review. If the head SHA's run is already complete (nothing new pushed), it returns at once. The workflow run is the one authoritative "review is submitted" signal — don't trust event-stream timing or how recent a review object looks.
+
+[LAW:no-silent-failure] if `conclusion` is anything other than `success`, the reviewer itself errored (e.g. the z.ai API was unreachable) — its findings are absent, not empty. Stop and surface the run `url`; do not treat a failed run as a clean review.
 
 ### 2. Fetch all pending review findings
 
 ```bash
-~/.claude/skills/address-pr-reviews/copilot-review.py fetch "$PR_URL"
+~/.claude/skills/address-pr-reviews/zai-review.py fetch "$PR_URL"
 ```
 
-Emits canonical JSON: every Copilot session finding **plus** every open review thread on the PR (including human-reviewer threads), deduped by `thread_id`. The `source` discriminator tells you which stream produced each entry. `session_id` is `null` if Copilot hasn't reviewed yet — that's fine; human threads still surface.
+Emits canonical JSON: every open review thread on the PR — z.ai-authored (`github-actions`) and human-authored alike — keyed by `thread_id`. One shape per finding; no `source` discriminator, because there is only one source.
 
 Schema:
 
 ```json
 {
-  "session_id": "...",
-  "overview": { "phrase_present": true, "comment_count": 5, "raw": "..." },
   "findings": [
     {
-      "source": "copilot_session",
       "file": "path/to/file.py",
       "line_start": 42,
       "line_end": 42,
-      "body": "...",
-      "author": "copilot-pull-request-reviewer",
-      "comment_type": "issue",
-      "severity": "high",
-      "fixed": false,
+      "body": "This silently swallows the error — surface it instead.",
+      "author": "github-actions",
       "thread_id": "PRRT_xyz...",
       "is_resolved": false,
       "thread_comments": [
-        {"author": "copilot-pull-request-reviewer", "body": "..."},
-        {"author": "alice", "body": "actually I disagree because..."}
-      ]
-    },
-    {
-      "source": "review_thread",
-      "file": "path/to/other.py",
-      "line_start": 7,
-      "line_end": 7,
-      "body": "Please rename this — it shadows a stdlib name.",
-      "author": "alice",
-      "comment_type": null,
-      "severity": null,
-      "fixed": false,
-      "thread_id": "PRRT_abc...",
-      "is_resolved": false,
-      "thread_comments": [
-        {"author": "alice", "body": "Please rename this — it shadows a stdlib name."}
+        {"author": "github-actions", "body": "This silently swallows the error — surface it instead."},
+        {"author": "alice", "body": "agreed, fix incoming"}
       ]
     }
   ]
 }
 ```
 
-**Unresolved findings** = every entry where `thread_id` is null OR `is_resolved` is false. If the unresolved findings list is empty, **the loop is done**. Step 1 already guaranteed no Copilot review is in flight, so empty is unambiguous. Proceed to **Finalize** below.
+**Unresolved findings** = every entry where `is_resolved` is false. `thread_id` is always present (every finding is a real review thread). If the unresolved list is empty, **the loop is done** — step 1 already guaranteed the run completed, so empty is unambiguous. Proceed to **Finalize** below.
 
-> **Read `thread_comments` before deciding.** A thread may already contain replies (yours from a prior iteration, a human's pushback on Copilot, or a back-and-forth between reviewers). The full chain is in `thread_comments`; the `body` field is just the first comment for quick scanning.
+> **Read `thread_comments` before deciding.** A thread may already contain replies (yours from a prior iteration, a human's pushback on the reviewer, or a back-and-forth). The full chain is in `thread_comments`; `body` is just the first comment for quick scanning.
 
-> **Suppressed-finding count.** `overview.comment_count` is the number of findings Copilot generated this session. If you see fewer entries with `source: copilot_session` than that, Copilot truncated its own output mid-stream — surface the discrepancy to the user. If `comment_count` exceeds the inline-comment cap, expect suppressed Copilot findings (`thread_id: null`) in the list.
+> **`line_start` may be `null`** for a file-level (non-line-anchored) comment. Open the file and read the `body`/`thread_comments` for context; the thread still resolves by `thread_id` like any other.
 
 ### 3. For each unresolved finding
 
-Open the file at `file:line_start`. Read `body` and the full `thread_comments` chain. Classification rules are the same regardless of `source` — Copilot findings and human-reviewer threads get the same judgment treatment:
+Open the file at `file:line_start`. Read `body` and the full `thread_comments` chain. Classification is the same regardless of `author` — z.ai-authored findings and human-reviewer threads get the same judgment treatment:
 
 - **valid** — reviewer is right; apply the fix
 - **different_fix** — reviewer identified a real issue but proposed the wrong fix; apply a better one
 - **invalid** — reviewer is wrong, or the suggestion violates an architectural law (defensive null guards, silent fallbacks, mode explosion, duplicate enforcement, control-flow in place of data-flow variance, etc.). Push back and **cite the law** (`[LAW:no-defensive-null-guards]`)
 - **already_fixed** — resolved by a later commit; note and resolve
 
-Process the finding. The action varies by `thread_id`:
-
-**`thread_id` is non-null (posted inline)** — post a proposal reply, apply the code change if warranted, post a resolution reply, then resolve the thread:
+Every finding is a review thread, so every finding is handled the same way — post a proposal reply, apply the code change if warranted, post a resolution reply, then resolve the thread:
 
 ```bash
 # Reply (proposal or resolution)
@@ -130,7 +107,7 @@ mutation($id:ID!){ resolveReviewThread(input:{threadId:$id}){ thread{isResolved}
 ' -F id="$THREAD_ID"
 ```
 
-**`thread_id` is null (suppressed Copilot finding — only possible for `source: copilot_session`)** — there is no thread to reply on or resolve. Apply the code change directly (for `valid`/`different_fix`) and record the finding in your final report. The commit message is the durable record. Do **not** fabricate an inline thread to "post" a suppressed comment to. (Entries with `source: review_thread` always have a `thread_id`.)
+[LAW:dataflow-not-control-flow] there is no second path: the z.ai reviewer always posts a real thread, so `thread_id` is always present and reply-then-resolve is the one mechanism for every finding.
 
 ### 4. Address failing checks
 
@@ -140,15 +117,9 @@ Check the PR for any failing checks. Address them before continuing.
 
 Commit messages describe the **why** (architectural concern), not "address review comment" — each commit must stand alone in `git log`. Batch related concerns; separate unrelated.
 
-### 6. Trigger a fresh Copilot review
+Pushing **is** the re-review trigger: the new commit fires the workflow's `synchronize` event, which re-runs the z.ai reviewer on the new head SHA. There is no separate trigger step — the push you just did is it. (If an iteration made no code change — only pushbacks and resolves — the head SHA is unchanged, its run is already complete, and step 1 returns immediately; the loop converges via step 2's empty list. The rare case of forcing a re-run *without* a new commit is `gh run rerun <run-id>`.)
 
-```bash
-~/.claude/skills/address-pr-reviews/copilot-review.py trigger "$PR_URL"
-```
-
-`trigger` internally waits for Copilot to register in `reviewRequests` before returning — so the next iteration's step 1 (`wait`) will correctly see the review in flight.
-
-### 7. Go to step 1.
+### 6. Go to step 1.
 
 ## Finalize — when the loop exits clean
 
@@ -232,7 +203,6 @@ Then stop. The loop is finished, the work is shipped, the recap is filed.
 ## Rules
 
 - **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The bottle handoff (step D) fires whenever an aligned candidate exists in the pool; its content (direct work vs define-task) is shaped by whether the candidate is well-defined. The only halt case is project-level misalignment across every examined candidate — alignment is a strategy question the agent cannot answer on the user's behalf, and that case is surfaced as a per-candidate failure table for the user to act on.
-- **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback body (for posted threads) or in the commit message (for suppressed findings) — that text is the durable record of why the code is the way it is.
-- **Resolve every thread you addressed, including pushbacks.** Automated reviewers don't reply; the pushback comment is the record. Open threads accumulate forever.
-- **Suppressed findings get fixed in the commit pass and listed in your final report.** They have no thread; the commit message and the report are the only records.
+- **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback reply on the thread — that text is the durable record of why the code is the way it is.
+- **Resolve every thread you addressed, including pushbacks.** The z.ai reviewer doesn't reply; your pushback comment is the record. Open threads accumulate forever.
 - **Conflicts between findings** — surface to the user before acting. Don't pick a side silently.
