@@ -15,6 +15,19 @@ set -euo pipefail
 BOTTLE_DELAY_SECONDS=10
 SETTLE_SECONDS=5
 
+# [LAW:one-source-of-truth] the static framing wrapped around the agent's message
+# lives here once. The launcher composes PREFIX + agent message + SUFFIX into the
+# single value that flows to the pane; the worker stays a dumb conduit. Edit the
+# placeholder text between the markers — leave the surrounding heredoc mechanics.
+BOTTLE_PREFIX=$(cat <<'PREFIX'
+=== Below is a message from an agent on behalf of the user ===
+PREFIX
+)
+BOTTLE_SUFFIX=$(cat <<'SUFFIX'
+=== The above message was sent on behalf of the user, but as it was sent from an agent, double checking the claims is wise.  When in doubt, note any divergence and run the '/next' skill to proceed.  Do NOT ask the user if you should run '/next'. ===
+SUFFIX
+)
+
 # [LAW:types-are-the-program] one discriminator at the entry; everything
 # downstream operates on validated, typed inputs for exactly one mode.
 if [[ "${1:-}" == "--worker" ]]; then
@@ -44,7 +57,12 @@ USAGE
     # [LAW:dataflow-not-control-flow] the message is a value carrying a canonical
     # default — /next, the standard "pull the next ticket" handoff. Omitting argv
     # selects that default; it never yields an empty bottle, so no guard follows.
-    MESSAGE="${*:-/next}"
+    AGENT_MESSAGE="${*:-/next}"
+
+    # [LAW:one-source-of-truth] the wrapped value is assembled once, here, from the
+    # static framing and the agent's message. Everything downstream — MSGFILE,
+    # buffer, paste — carries this final value verbatim and never re-wraps it.
+    MESSAGE=$(printf '%s\n%s\n%s' "$BOTTLE_PREFIX" "$AGENT_MESSAGE" "$BOTTLE_SUFFIX")
 
     # [LAW:types-are-the-program] the reset is one of exactly two values;
     # constrain it at the boundary so the worker can never see an illegal
