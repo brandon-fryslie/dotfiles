@@ -1,15 +1,21 @@
 ---
 name: address-pr-reviews
-description: Address open PR review findings with judgment — read every finding (z.ai reviewer findings AND human review threads), decide whether the feedback is right, fix or push back, resolve, and re-review by pushing. Repeat until clean. Use when the user says "address the PR review", "handle the review threads", "go through the review comments", or asks to respond to PR feedback on a specific PR or the current branch's PR.
+description: Address open PR review findings with judgment — read every finding, decide whether the feedback is right, fix or push back, resolve, and re-review by pushing. Repeat until clean. Use when the user says "address the PR review", "handle the review threads", "go through the review comments", or asks to respond to PR feedback on a specific PR or the current branch's PR.
 ---
 
 # Address PR Review Findings
 
-Read every pending review finding on the PR, address each one, push your fixes (which re-runs the reviewer), repeat until clean. Same model people use at a real company: handle the z.ai reviewer's findings AND human-reviewer threads in one pass, push back with reasoning when you disagree, resolve, re-review.
+Read every pending review finding on the PR, address each one, push your fixes (which re-runs the reviewer), repeat until clean. Same model people use at a real company: handle reviewer findings AND human-reviewer threads in one pass, push back with reasoning when you disagree, resolve, re-review.
 
-The reviewer is the **z.ai Coding Agent Review** GitHub Action (installed by the `/zai-pr-review` skill). It runs on `pull_request` (`opened`, `synchronize`) and posts a formal PR review with inline comments — i.e. ordinary resolvable review threads, authored by `github-actions`. Two consequences shape this whole skill: its lifecycle owner is the **workflow run** (not a requested reviewer), and a re-review is triggered by **pushing a commit** (not by a review-request API).
+[LAW:one-source-of-truth] `provider.fetch` is the single source of pending findings for this loop — every open finding on the PR, keyed by `thread_id` (when available). There is no second stream.
 
-[LAW:one-source-of-truth] `fetch` is the single source of pending findings for this loop: every open review thread on the PR — z.ai-authored OR human-authored — keyed by `thread_id`. There is no second stream. The z.ai reviewer's findings *are* review threads, so threads are the whole truth; the agent reads this list and never queries the threads API or any session log separately.
+**Provider** — the active review backend is loaded from `provider.json` in the skill directory (or `PR_REVIEW_PROVIDER` env var). The provider contract is in `PROVIDER_CONTRACT.md`. To switch providers, change `provider.json`; the loop below does not change.
+
+```python
+# Load the provider once at the start of the loop
+import provider_loader
+provider = provider_loader.get()  # reads provider.json, validates CAPABILITIES
+```
 
 ## Setup — derive PR_URL, OWNER, REPO, PR_NUM once
 
@@ -24,36 +30,45 @@ All subsequent commands use `$OWNER`, `$REPO`, `$PR_NUM`, and `$PR_URL`.
 
 ## Preflight — confirm the reviewer is installed
 
-The z.ai reviewer is a GitHub Action, and it auto-runs on `pull_request: opened` for **any** account — there is no subscriber gating and nothing to trigger. So there is no `ensure` step: the only way this loop silently does nothing is if the workflow was never installed on the repo. Check that once, fail loudly if it's missing:
+When `provider.CAPABILITIES["setup_check"]` is `True`, run the preflight and halt on failure:
 
-```bash
-gh api "repos/$OWNER/$REPO/actions/workflows/code-review.yml" --jq '.state' \
-  || { echo "z.ai review workflow not installed on $OWNER/$REPO — run /zai-pr-review in this repo and merge it to the default branch first."; exit 1; }
+```python
+check = provider.setup_check(OWNER, REPO)
+if not check["installed"]:
+    raise SystemExit(f"Reviewer not installed: {check['message']}")
 ```
 
-[LAW:no-silent-failure] a missing workflow is the one failure that would otherwise look like "clean review, zero findings." Surface it as a hard stop pointing at `/zai-pr-review`, never an empty pass. Everything else — whether a run is queued, in flight, or done — is handled by the loop's `wait`, which blocks on the workflow run itself.
+[LAW:no-silent-failure] a missing reviewer is the one failure that would otherwise look like "clean review, zero findings." Surface it as a hard stop, never an empty pass.
 
 ## The loop
 
 Repeat until **step 2 returns zero unresolved findings**:
 
-### 1. Wait for the z.ai review workflow run to finish
+### 1. Trigger (if required) and wait for the review to finish
 
-```bash
-~/.claude/skills/address-pr-reviews/zai-review.py wait "$PR_URL"
+If `provider.CAPABILITIES["trigger"]` is `True`, request a review explicitly:
+
+```python
+provider.trigger(PR_URL)
 ```
 
-Blocks until the z.ai workflow run for the PR's **current head SHA** reaches `completed`, then prints `{status, conclusion, sha, url}`. Keyed by head SHA, so a run from an earlier commit can never be mistaken for this commit's review. If the head SHA's run is already complete (nothing new pushed), it returns at once. The workflow run is the one authoritative "review is submitted" signal — don't trust event-stream timing or how recent a review object looks.
+Then wait for the review to complete (all providers, always):
 
-[LAW:no-silent-failure] if `conclusion` is anything other than `success`, the reviewer itself errored (e.g. the z.ai API was unreachable) — its findings are absent, not empty. Stop and surface the run `url`; do not treat a failed run as a clean review.
+```python
+result = provider.wait(PR_URL)
+```
+
+Blocks until the review for the PR's **current head SHA** reaches `completed`, then returns `{status, conclusion, sha, url}`. If the head SHA's review is already complete (nothing new pushed), it returns at once.
+
+[LAW:no-silent-failure] if `conclusion` is anything other than `success`, the reviewer itself errored — its findings are absent, not empty. Stop and surface the run `url`; do not treat a failed run as a clean review.
 
 ### 2. Fetch all pending review findings
 
-```bash
-~/.claude/skills/address-pr-reviews/zai-review.py fetch "$PR_URL"
+```python
+data = provider.fetch(PR_URL)
 ```
 
-Emits canonical JSON: every open review thread on the PR — z.ai-authored (`github-actions`) and human-authored alike — keyed by `thread_id`. One shape per finding; no `source` discriminator, because there is only one source.
+Returns canonical JSON: every open finding on the PR keyed by `thread_id` (nullable for providers without GitHub threads). One shape per finding.
 
 Schema:
 
@@ -77,39 +92,45 @@ Schema:
 }
 ```
 
-**Unresolved findings** = every entry where `is_resolved` is false. `thread_id` is always present (every finding is a real review thread). If the unresolved list is empty, **the loop is done** — step 1 already guaranteed the run completed, so empty is unambiguous. Proceed to **Finalize** below.
+**Unresolved findings** = every entry where `is_resolved` is false. `thread_id` is non-null when the provider declares `resolve: True`. If the unresolved list is empty, **the loop is done** — step 1 already guaranteed the run completed, so empty is unambiguous. Proceed to **Finalize** below.
 
-[LAW:verifiable-goals] this empty `fetch` is the **only** thing that establishes done. Never infer doneness from "I pushed my fixes" or "I addressed everything" — re-run `fetch` and read zero unresolved. A fixed-but-unresolved thread still counts as unresolved here, which is the safety net: it re-surfaces as `already_fixed`, and you resolve it now rather than leaving it open forever.
+[LAW:verifiable-goals] this empty `fetch` is the **only** thing that establishes done. Never infer doneness from "I pushed my fixes" or "I addressed everything" — re-run `fetch` and read zero unresolved. A fixed-but-unresolved finding still counts as unresolved here, which is the safety net: it re-surfaces as `already_fixed`, and you resolve it now rather than leaving it open forever.
 
-> **Read `thread_comments` before deciding.** A thread may already contain replies (yours from a prior iteration, a human's pushback on the reviewer, or a back-and-forth). The full chain is in `thread_comments`; `body` is just the first comment for quick scanning.
+> **Read `thread_comments` before deciding.** A finding may already contain replies (yours from a prior iteration, a human's pushback on the reviewer, or a back-and-forth). The full chain is in `thread_comments`; `body` is just the first comment for quick scanning.
 
-> **`line_start` may be `null`** for a file-level (non-line-anchored) comment. Open the file and read the `body`/`thread_comments` for context; the thread still resolves by `thread_id` like any other.
+> **`line_start` may be `null`** for a file-level (non-line-anchored) comment. Open the file and read the `body`/`thread_comments` for context; the finding still resolves by `thread_id` like any other.
 
 ### 3. For each unresolved finding
 
-Open the file at `file:line_start`. Read `body` and the full `thread_comments` chain. Classification is the same regardless of `author` — z.ai-authored findings and human-reviewer threads get the same judgment treatment:
+Open the file at `file:line_start`. Read `body` and the full `thread_comments` chain. Classification is the same regardless of `author`:
 
 - **valid** — reviewer is right; apply the fix
 - **different_fix** — reviewer identified a real issue but proposed the wrong fix; apply a better one
 - **invalid** — reviewer is wrong, or the suggestion violates an architectural law (defensive null guards, silent fallbacks, mode explosion, duplicate enforcement, control-flow in place of data-flow variance, etc.). Push back and **cite the law** (`[LAW:no-defensive-null-guards]`)
 - **already_fixed** — resolved by a later commit; note and resolve
 
-Handling a finding is **one atomic unit with a single postcondition: the thread comes back `isResolved: true`.** It is not a checklist of independent steps — reply, (maybe) change code, resolve — with resolve as a droppable tail. Do the whole unit for the current finding and **verify it resolved before you open the next one**:
+Handling a finding is **one atomic unit with a single postcondition: the finding is resolved or acknowledged**. Do the whole unit for the current finding and verify it before opening the next.
+
+**Reply** (when the provider supports GitHub threads):
 
 ```bash
-# Reply (proposal or resolution) — the body is your judgment, posted raw
 gh api graphql -f query='
 mutation($id:ID!,$body:String!){
   addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){ comment{id} } }
 ' -F id="$THREAD_ID" -F body="Proposal: ..."
-
-# Resolve — goes through the helper, which verifies GitHub confirmed it
-~/.claude/skills/address-pr-reviews/zai-review.py resolve "$THREAD_ID"
 ```
 
-[LAW:single-enforcer] resolve through the helper, never a raw `resolveReviewThread` mutation — it's the one verified path, exiting non-zero unless GitHub confirms `isResolved: true`, so a resolve that didn't take can't pass as done. [LAW:no-ambient-temporal-coupling] it's gated, not deferred: the helper must succeed for the current finding **before** you open the next. If it exits non-zero, the thread is **not** resolved — stop, don't advance. "Resolve them all after I push" is the exact path that drops them; there is no batch-resolve-later step.
+**Resolve** — when `provider.CAPABILITIES["resolve"]` is `True`, resolve through the provider:
 
-[LAW:dataflow-not-control-flow] there is no second path: the z.ai reviewer always posts a real thread, so `thread_id` is always present and reply-then-resolve is the one mechanism for every finding.
+```python
+provider.resolve(THREAD_ID)
+```
+
+[LAW:single-enforcer] resolve through the provider, never a raw mutation — it's the one verified path that confirms resolution was accepted, so a resolve that didn't take can't pass as done. [LAW:no-ambient-temporal-coupling] it's gated, not deferred: the provider call must succeed for the current finding **before** you open the next. "Resolve them all after I push" is the exact path that drops them; there is no batch-resolve-later step.
+
+When `provider.CAPABILITIES["resolve"]` is `False`, findings have no resolvable thread — note each finding's disposition in a reply if the provider supports it, then move on. The loop converges when `fetch` returns zero open findings.
+
+[LAW:dataflow-not-control-flow] resolve vs. acknowledge is a value the capability flag carries — the same loop body runs every time; the flag picks the action.
 
 ### 4. Address failing checks
 
