@@ -96,7 +96,7 @@ def anchor(finding: dict, legal: dict[str, set[int]]) -> dict:
     path, line = finding.get("file"), finding.get("line")
     if path in legal and line in legal[path]:
         return {**finding, "anchored": True}
-    if path in legal and legal[path] and isinstance(line, int):
+    if path in legal and legal[path]:
         nearest = min(legal[path], key=lambda n: abs(n - line))
         body = (f"{finding['body']}\n\n*(anchored to nearest diff line "
                 f"{nearest}; reviewer cited line {line})*")
@@ -131,10 +131,21 @@ def _contract_violation(text: str) -> str | None:
             "JSON object is missing required keys: the contract is "
             '{"summary": str, "findings": [...]} — a bare finding object is not the envelope'
         )
+    # [LAW:types-are-the-program] the strongest true theorem about a finding:
+    # file/title/body are non-empty strings, line is an int — anchor() and
+    # _post_review() downstream assume exactly this, never re-check.
+    typed = {"file": str, "title": str, "body": str, "line": int}
     for i, f in enumerate(result["findings"]):
-        missing = {"file", "line", "title", "body"} - f.keys()
+        missing = typed.keys() - f.keys()
         if missing:
             return f"finding {i} is missing keys {sorted(missing)}"
+        for key, t in typed.items():
+            if not isinstance(f[key], t) or isinstance(f[key], bool):
+                return (
+                    f'finding {i} key "{key}" must be {t.__name__}, '
+                    f"got {f[key]!r} — a file-level concern still cites the "
+                    "nearest relevant diff line as an integer"
+                )
     return None
 
 
@@ -368,6 +379,13 @@ if __name__ == "__main__":
         else:
             out = globals()[args.command](args.pr_url)
         print(json.dumps(out, indent=2))
+    except subprocess.TimeoutExpired as e:
+        print(
+            f"ERROR ({args.command}): reviewer agent exceeded "
+            f"{REVIEW_TIMEOUT_S}s and was killed ({e.cmd[0]}).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
         msg = (e.stderr or "").strip() or str(e)
         print(f"ERROR ({args.command}): {msg}", file=sys.stderr)
