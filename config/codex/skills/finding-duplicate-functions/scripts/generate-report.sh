@@ -20,7 +20,9 @@ INPUT FORMAT:
 EXAMPLE:
     $(basename "$0") ./duplicates ./duplicates-report.md
 EOF
-    exit 0
+    # [LAW:no-silent-failure] exit code is the CLI contract: 0 only for -h,
+    # error paths pass 1 so callers (set -e, && chains) see the failure
+    exit "${1:-0}"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -29,7 +31,7 @@ fi
 
 if [[ -z "${1:-}" ]]; then
     echo "Error: duplicates directory required" >&2
-    usage
+    usage 1 >&2
 fi
 
 DUPLICATES_DIR="$1"
