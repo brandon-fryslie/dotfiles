@@ -15,19 +15,20 @@ An intelligent sync system that automatically syncs your most-used Claude Code e
    - Resolves transitive dependencies automatically
    - Ensures when you sync one extension, all its dependencies come along
 
-3. **name_mapping.py** - Handles naming differences between platforms
-   - Claude Code uses `/do:plan` syntax
-   - Copilot requires `do-plan` syntax
-   - Automatically rewrites all references consistently across files
-
-4. **manifest.py** - Manifest-based sync control
+3. **manifest.py** - Manifest-based sync control
    - Manual control: specify exactly which extensions to sync
    - Auto-sync: automatically sync most-used extensions
    - Configurable rules and priorities
 
-5. **sync_enhanced.py** - The main sync orchestrator
-   - Combines all modules into a single sync workflow
-   - Handles file transformation and deployment
+4. **sync.py** - The materializer (and a standalone sync-everything tool)
+   - Owns how every extension lands on disk: skill-directory symlinks,
+     agent frontmatter namespacing, command-to-skill transforms
+   - Writes the sync-record manifest (`~/.copilot/claude-sync-manifest.json`)
+     that unsync.py reads
+
+5. **sync_enhanced.py** - Selection-driven sync
+   - Picks which extensions to sync (usage stats + dependency graph + manifest)
+   - Delegates all materialization to sync.py's per-item functions
    - Provides dry-run mode for testing
 
 6. **copilot-with-sync** - Wrapper script
@@ -140,23 +141,24 @@ do:plan
 
 ### Reference Rewriting
 
-The sync automatically rewrites references to work in Copilot:
+Agents and commands are copied with their content transformed: frontmatter
+names are namespaced per plugin, command-only fields are stripped, and
+same-plugin references in the body are rewritten to Copilot naming:
 
 **Before (Claude Code)**:
 ```markdown
 Use /do:plan to create a plan.
-Then invoke Skill("do:it") to implement.
 Use subagent_type="do:project-evaluator"
 ```
 
 **After (Copilot)**:
 ```markdown
 Use skill do-plan to create a plan.
-Then invoke Skill("do-it") to implement.
 Use subagent_type="do-project-evaluator"
 ```
 
-All colons become hyphens, all slash-commands become skill invocations.
+Skills are symlinked as whole directories (so supporting files like `bin/`
+and `references/` keep working) and are not rewritten.
 
 ## CLI Commands
 
@@ -218,26 +220,25 @@ If a skill references an extension that doesn't exist, the sync will skip it gra
 ~/.copilot/skills/claude-plugin-sync/
 ├── claude_config.py          # Parse ~/.claude.json
 ├── dependency_graph.py       # Build dependency graphs
-├── name_mapping.py           # Handle naming differences
+├── name_mapping.py           # Name rewriting (not used by the sync path)
 ├── manifest.py               # Manifest-based control
-├── sync_enhanced.py          # Main sync orchestrator
-├── sync.py                   # Original sync (still used for helpers)
-├── test_sync.py              # Original tests
+├── sync_enhanced.py          # Selection-driven sync
+├── sync.py                   # Materializer + sync-everything tool
+├── test_sync.py              # Tests
 ├── SKILL.md                  # Skill metadata
 └── README.md                 # This file
 
 ~/.copilot/
-├── sync-manifest.json        # Your sync configuration
+├── sync-manifest.json        # Your sync selection configuration
+├── claude-sync-manifest.json # Record of what was synced (read by unsync.py)
 └── .last-sync                # Timestamp of last sync (for throttling)
 ```
 
 ### What Gets Synced
 
-- **Skills**: Copied to `~/.copilot/skills/<name>/SKILL.md`
-- **Agents**: Copied to `~/.copilot/agents/<name>.agent.md`
-- **Commands**: Transformed to skills in `~/.copilot/skills/<name>/SKILL.md`
-
-All content is rewritten to use Copilot-compatible naming.
+- **Skills**: Whole directory symlinked to `~/.copilot/skills/<plugin>-<name>/`
+- **Agents**: Rewritten and copied to `~/.copilot/agents/<plugin>-<name>.agent.md`
+- **Commands**: Transformed to skills in `~/.copilot/skills/<plugin>-<name>/SKILL.md`
 
 ## Future Enhancements
 

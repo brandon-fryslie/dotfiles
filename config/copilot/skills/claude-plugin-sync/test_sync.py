@@ -733,5 +733,168 @@ def test_clean_stale_commands_removes_dirs_skips_symlinks():
         assert source.exists()
 
 
+# ============================================================================
+# Enhanced Sync Tests (sync_enhanced routes through sync.py materializers)
+# ============================================================================
+
+from sync_enhanced import sync_extensions
+from dependency_graph import Extension, ExtensionType
+
+
+def make_paths(root: Path) -> dict:
+    """Build a paths dict for sync_extensions rooted in a temp directory."""
+    return {
+        'copilot_skills_dir': root / "copilot" / "skills",
+        'copilot_agents_dir': root / "copilot" / "agents",
+        'manifest_file': root / "copilot" / "claude-sync-manifest.json",
+    }
+
+
+def make_skill_extension(root: Path, plugin: str, skill: str,
+                         supporting_files: dict = None) -> Extension:
+    """Create a skill directory (with optional supporting files) and its Extension."""
+    skill_dir = root / "cache" / plugin / "skills" / skill
+    skill_dir.mkdir(parents=True)
+    skill_file = skill_dir / "SKILL.md"
+    skill_file.write_text(f"---\nname: {skill}\ndescription: test\n---\nUse bin/helper.sh\n")
+    for rel_path, content in (supporting_files or {}).items():
+        path = skill_dir / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    return Extension(name=skill, type=ExtensionType.SKILL, plugin=plugin, file_path=skill_file)
+
+
+def make_agent_extension(root: Path, plugin: str, agent: str) -> Extension:
+    """Create an agent file and its Extension."""
+    agents_dir = root / "cache" / plugin / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    agent_file = agents_dir / f"{agent}.md"
+    agent_file.write_text(f"---\nname: {agent}\ndescription: agent of {plugin}\n---\nAgent body\n")
+    return Extension(name=agent, type=ExtensionType.AGENT, plugin=plugin, file_path=agent_file)
+
+
+def make_command_extension(root: Path, plugin: str, command: str) -> Extension:
+    """Create a command file (with command-only frontmatter) and its Extension."""
+    commands_dir = root / "cache" / plugin / "commands"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    command_file = commands_dir / f"{command}.md"
+    command_file.write_text(
+        f"---\ndescription: {command} command\nargument-hint: <target>\n---\nCommand body of {plugin}\n"
+    )
+    return Extension(name=command, type=ExtensionType.COMMAND, plugin=plugin, file_path=command_file)
+
+
+def test_sync_extensions_skill_symlinks_whole_directory():
+    """A skill with supporting files is synced as the whole directory, not a lone SKILL.md."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        paths = make_paths(tmppath)
+        ext = make_skill_extension(tmppath, "plug", "myskill", supporting_files={
+            "bin/helper.sh": "#!/bin/sh\necho hi\n",
+            "references/doc.md": "supporting doc\n",
+        })
+
+        stats = sync_extensions([ext], paths)
+
+        target = paths['copilot_skills_dir'] / "plug-myskill"
+        assert stats['added_skills'] == 1
+        assert target.is_symlink()
+        assert target.resolve() == ext.file_path.parent.resolve()
+        # Supporting files reachable at the destination
+        assert (target / "SKILL.md").is_file()
+        assert (target / "bin" / "helper.sh").read_text() == "#!/bin/sh\necho hi\n"
+        assert (target / "references" / "doc.md").is_file()
+
+
+def test_sync_extensions_command_transformed_and_namespaced():
+    """A command is transformed to a valid Copilot skill in a namespaced dir."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        paths = make_paths(tmppath)
+        ext = make_command_extension(tmppath, "plug", "deploy")
+
+        stats = sync_extensions([ext], paths)
+
+        target_file = paths['copilot_skills_dir'] / "plug-deploy" / "SKILL.md"
+        assert stats['added_commands'] == 1
+        assert not (paths['copilot_skills_dir'] / "deploy").exists()  # no bare dir
+        assert target_file.is_file() and not target_file.parent.is_symlink()
+        content = target_file.read_text()
+        # transform_skill applied: disallowed command field stripped, name normalized
+        assert "argument-hint" not in content
+        assert "name: plug-deploy" in content
+        assert "Command body of plug" in content
+
+
+def test_sync_extensions_same_named_agents_namespaced_per_plugin():
+    """Same-named agents from two plugins get distinct internal names and files."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        paths = make_paths(tmppath)
+        exts = [make_agent_extension(tmppath, plugin, "impl") for plugin in ("alpha", "beta")]
+
+        stats = sync_extensions(exts, paths)
+
+        assert stats['added_agents'] == 2
+        alpha = paths['copilot_agents_dir'] / "alpha-impl.agent.md"
+        beta = paths['copilot_agents_dir'] / "beta-impl.agent.md"
+        # rewrite_agent applied: internal names are namespaced and distinct
+        assert "name: alpha-impl" in alpha.read_text()
+        assert "name: beta-impl" in beta.read_text()
+
+
+def test_sync_extensions_command_refuses_symlink_target():
+    """The .8 symlink-refusal invariant holds on the enhanced path too."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        paths = make_paths(tmppath)
+        ext = make_command_extension(tmppath, "plug", "deploy")
+
+        # A skill symlink already occupies the command's namespaced target
+        source = tmppath / "occupant"
+        source.mkdir()
+        paths['copilot_skills_dir'].mkdir(parents=True)
+        (paths['copilot_skills_dir'] / "plug-deploy").symlink_to(source)
+
+        stats = sync_extensions([ext], paths)
+
+        assert stats['added_commands'] == 0
+        assert (paths['copilot_skills_dir'] / "plug-deploy").is_symlink()
+        assert not (source / "SKILL.md").exists()  # never written through
+        manifest = json.loads(paths['manifest_file'].read_text())
+        assert manifest['commands'] == {}
+
+
+def test_sync_extensions_writes_shared_manifest_and_cleans_stale():
+    """Sync record lands in the shared manifest; deselected items are cleaned up."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        paths = make_paths(tmppath)
+        skill = make_skill_extension(tmppath, "plug", "keeper")
+        stale_skill = make_skill_extension(tmppath, "plug", "goner")
+        command = make_command_extension(tmppath, "plug", "deploy")
+
+        sync_extensions([skill, stale_skill, command], paths)
+
+        manifest = json.loads(paths['manifest_file'].read_text())
+        # manifest key == on-disk name, the unsync.py contract
+        assert set(manifest['skills'].keys()) == {"plug-keeper", "plug-goner"}
+        assert set(manifest['commands'].keys()) == {"plug-deploy"}
+        for key in manifest['skills']:
+            assert (paths['copilot_skills_dir'] / key).is_symlink()
+
+        # Second run deselects 'goner' and the command
+        stats = sync_extensions([skill], paths)
+
+        assert stats['removed_skills'] == 1
+        assert stats['removed_commands'] == 1
+        assert not (paths['copilot_skills_dir'] / "plug-goner").exists()
+        assert not (paths['copilot_skills_dir'] / "plug-deploy").exists()
+        assert (paths['copilot_skills_dir'] / "plug-keeper").is_symlink()
+        manifest = json.loads(paths['manifest_file'].read_text())
+        assert manifest['skills']['plug-keeper']['status'] == "active"
+        assert manifest['skills']['plug-goner']['status'] == "removed"
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

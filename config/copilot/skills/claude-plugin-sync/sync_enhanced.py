@@ -1,67 +1,111 @@
 #!/usr/bin/env python3
 """
 Enhanced sync tool that uses usage statistics, dependency graphs,
-and manifest control to sync Claude Code extensions to Copilot.
+and manifest control to select which Claude Code extensions to sync to Copilot.
+
+Selection (what to sync) lives here; materialization (how to sync) is owned
+entirely by sync.py's per-item functions, so the two tools cannot drift.
 """
 
 import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Set
+from typing import Dict, Iterable, Set
 
 from claude_config import ClaudeConfig
-from dependency_graph import DependencyScanner, Extension
+from dependency_graph import DependencyScanner, Extension, ExtensionType
 from manifest import SyncManifest, ManifestGenerator
-from name_mapping import NameMapper, ReferenceRewriter
 from sync import (
-    write_if_changed,
-    create_symlink,
+    sync_skill_item,
+    sync_agent_item,
+    sync_command_item,
     clean_stale_items,
     clean_stale_commands,
+    load_manifest,
+    create_manifest,
+    save_manifest,
+    preserve_removed_entries,
+    ALLOWED_SKILL_FIELDS,
     DEFAULT_PATHS
 )
 
 
-def sync_extension(extension: Extension, copilot_dir: Path, name_mapper: NameMapper,
-                   synced_set: Set[str], is_skill: bool = True) -> bool:
-    """Sync a single extension to Copilot.
+def sync_extensions(extensions: Iterable[Extension], paths: Dict[str, Path],
+                    remove_stale: bool = True) -> Dict[str, int]:
+    """Materialize a selected set of extensions into the Copilot directories.
+
+    Routes every extension through sync.py's per-item functions
+    ([LAW:single-enforcer] — one owner for naming, transforms, and the
+    manifest record) and records the result in the shared sync-record
+    manifest that unsync.py reads. The record manifest reflects the latest
+    sync run, whichever tool performed it.
 
     Args:
-        extension: Extension to sync
-        copilot_dir: Target directory (skills or agents)
-        name_mapper: NameMapper for consistent naming
-        synced_set: Set to track synced names (modified in place)
-        is_skill: True if syncing to skills, False if agents
+        extensions: Extensions to sync (skills, agents, commands)
+        paths: Path configuration (same shape as sync.DEFAULT_PATHS)
+        remove_stale: If True, remove previously synced items no longer selected
 
     Returns:
-        True if extension was added/updated
+        Dictionary with sync statistics
     """
-    # Get Copilot-compatible name
-    copilot_name = name_mapper.register_extension(extension.full_name)
+    skills_dir = paths['copilot_skills_dir']
+    agents_dir = paths['copilot_agents_dir']
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    agents_dir.mkdir(parents=True, exist_ok=True)
 
-    # Read and rewrite content
-    content = extension.file_path.read_text()
-    rewritten_content = ReferenceRewriter.rewrite_content(content, name_mapper)
+    previous_manifest = load_manifest(paths['manifest_file'])
+    manifest = create_manifest()
 
-    if is_skill:
-        # Skills are directories with SKILL.md
-        target_dir = copilot_dir / copilot_name
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_file = target_dir / "SKILL.md"
-    else:
-        # Agents are .agent.md files
-        if not copilot_name.endswith('.agent'):
-            copilot_name = f"{copilot_name}.agent"
-        target_file = copilot_dir / f"{copilot_name}.md"
-        # Ensure parent directory exists
-        target_file.parent.mkdir(parents=True, exist_ok=True)
+    synced_skills: Set[str] = set()
+    synced_agents: Set[str] = set()
+    synced_commands: Set[str] = set()
+    stats = {
+        'added_skills': 0,
+        'added_agents': 0,
+        'added_commands': 0,
+        'removed_skills': 0,
+        'removed_agents': 0,
+        'removed_commands': 0,
+        'total_synced': 0
+    }
 
-    # Write if changed
-    changed = write_if_changed(target_file, rewritten_content)
+    for ext in sorted(extensions, key=lambda e: e.full_name):
+        if ext.type is ExtensionType.SKILL:
+            # file_path is the SKILL.md; symlink the whole skill directory so
+            # supporting files (bin/, references/, scripts) survive the sync
+            if sync_skill_item(ext.name, ext.file_path.parent, ext.plugin,
+                               skills_dir, synced_skills, manifest):
+                stats['added_skills'] += 1
+        elif ext.type is ExtensionType.AGENT:
+            if sync_agent_item(ext.name, ext.file_path, ext.plugin,
+                               agents_dir, synced_agents, manifest):
+                stats['added_agents'] += 1
+        elif ext.type is ExtensionType.COMMAND:
+            if sync_command_item(ext.name, ext.file_path, ext.plugin,
+                                 skills_dir, synced_commands, manifest,
+                                 ALLOWED_SKILL_FIELDS):
+                stats['added_commands'] += 1
 
-    synced_set.add(copilot_name)
-    return changed
+    if remove_stale:
+        stats['removed_skills'] = clean_stale_items(
+            skills_dir, synced_skills,
+            set(previous_manifest.get('skills', {}).keys()), is_agents=False
+        )
+        stats['removed_agents'] = clean_stale_items(
+            agents_dir, synced_agents,
+            set(previous_manifest.get('agents', {}).keys()), is_agents=True
+        )
+        stats['removed_commands'] = clean_stale_commands(
+            skills_dir, synced_commands,
+            set(previous_manifest.get('commands', {}).keys())
+        )
+
+    preserve_removed_entries(manifest, previous_manifest)
+    save_manifest(paths['manifest_file'], manifest)
+
+    stats['total_synced'] = len(synced_skills) + len(synced_agents) + len(synced_commands)
+    return stats
 
 
 def run_sync(manifest_path: Path = None, dry_run: bool = False,
@@ -69,27 +113,17 @@ def run_sync(manifest_path: Path = None, dry_run: bool = False,
     """Run the enhanced sync process.
 
     Args:
-        manifest_path: Path to sync manifest (defaults to ~/.copilot/sync-manifest.json)
+        manifest_path: Path to selection manifest (defaults to ~/.copilot/sync-manifest.json)
         dry_run: If True, show what would be synced without actually syncing
         generate_manifest: If True, generate a new manifest from usage stats
 
     Returns:
         Dictionary with sync statistics
     """
-    stats = {
-        'added_skills': 0,
-        'added_agents': 0,
-        'removed_skills': 0,
-        'removed_agents': 0,
-        'total_synced': 0
-    }
-
     # Setup paths
     if manifest_path is None:
         manifest_path = Path.home() / ".copilot" / "sync-manifest.json"
 
-    copilot_skills_dir = DEFAULT_PATHS['copilot_skills_dir']
-    copilot_agents_dir = DEFAULT_PATHS['copilot_agents_dir']
     plugins_cache = Path.home() / ".claude" / "plugins" / "cache"
 
     print(f"Claude Plugin Enhanced Sync - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -126,41 +160,18 @@ def run_sync(manifest_path: Path = None, dry_run: bool = False,
             deps = graph.get_all_dependencies(ext.full_name)
             dep_indicator = f" (+{len(deps)} deps)" if deps else ""
             print(f"  - {ext.full_name} ({ext.type.value}){dep_indicator}")
-        return stats
+        return {
+            'added_skills': 0, 'added_agents': 0, 'added_commands': 0,
+            'removed_skills': 0, 'removed_agents': 0, 'removed_commands': 0,
+            'total_synced': 0
+        }
 
-    # Initialize name mapper
-    name_mapper = NameMapper()
-
-    # Pre-register all extensions for consistent naming
-    for ext in extensions_to_sync:
-        name_mapper.register_extension(ext.full_name)
-
-    # Track what we sync
-    synced_skills = set()
-    synced_agents = set()
-
-    # Sync extensions
+    # Sync extensions through the shared materializers
     print("\n[5/6] Syncing extensions...")
-    for ext in extensions_to_sync:
-        if ext.type.value in ['skill', 'command']:
-            changed = sync_extension(ext, copilot_skills_dir, name_mapper, synced_skills, is_skill=True)
-            if changed:
-                stats['added_skills'] += 1
-        elif ext.type.value == 'agent':
-            changed = sync_extension(ext, copilot_agents_dir, name_mapper, synced_agents, is_skill=False)
-            if changed:
-                stats['added_agents'] += 1
+    stats = sync_extensions(extensions_to_sync, DEFAULT_PATHS,
+                            remove_stale=manifest.remove_stale)
 
-    stats['total_synced'] = len(extensions_to_sync)
-
-    # Clean stale items
-    print("\n[6/6] Cleaning stale items...")
-    if manifest.remove_stale:
-        # For now, skip cleaning since we don't have previous manifest state
-        # In a real implementation, we'd track previously synced items
-        print("  ℹ Skipping stale cleanup (not implemented in this version)")
-
-    # Update manifest timestamp
+    print("\n[6/6] Updating selection manifest...")
     manifest.sync_timestamp = datetime.now()
     manifest.save(manifest_path)
 
@@ -168,10 +179,12 @@ def run_sync(manifest_path: Path = None, dry_run: bool = False,
     print("\n" + "="*60)
     print("SYNC COMPLETE")
     print("="*60)
-    print(f"Skills:  +{stats['added_skills']} (total: {len(synced_skills)})")
-    print(f"Agents:  +{stats['added_agents']} (total: {len(synced_agents)})")
-    print(f"Total:   {stats['total_synced']} extensions synced")
-    print(f"\nManifest: {manifest_path}")
+    print(f"Skills:   +{stats['added_skills']} -{stats['removed_skills']}")
+    print(f"Agents:   +{stats['added_agents']} -{stats['removed_agents']}")
+    print(f"Commands: +{stats['added_commands']} -{stats['removed_commands']}")
+    print(f"Total:    {stats['total_synced']} extensions synced")
+    print(f"\nSelection manifest: {manifest_path}")
+    print(f"Sync record:        {DEFAULT_PATHS['manifest_file']}")
 
     return stats
 
