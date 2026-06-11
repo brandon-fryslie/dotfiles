@@ -49,6 +49,14 @@ def _fetch_threads(owner: str, repo: str, pr_num: int) -> list[dict]:
         "--jq", ".data.repository.pullRequest.reviewThreads.nodes",
     )
     threads = json.loads(out) if out else []
+    # jq renders a null pullRequest as the string "null" with HTTP 200; that
+    # means the PR is missing or inaccessible — an error, never an empty
+    # finding set. [LAW:no-silent-failure]
+    if not isinstance(threads, list):
+        raise RuntimeError(
+            f"reviewThreads query returned {threads!r} for {owner}/{repo}#{pr_num} "
+            "— the PR is missing or inaccessible, not thread-free."
+        )
     # [LAW:no-silent-failure] the page caps are explicit; hitting one means
     # findings exist that this fetch did not return — that must halt, not
     # quietly read as the full set.
