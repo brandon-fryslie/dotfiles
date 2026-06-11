@@ -195,6 +195,25 @@ def test_corrupt_manifest_raises(tmp_path):
         unsync_all(paths)
 
 
+@pytest.mark.parametrize("content", [
+    "null",
+    "[]",
+    "42",
+    '{"skills": null}',
+    '{"skills": ["a-list"]}',
+    '{"skills": {"name": "not-an-object"}}',
+])
+def test_structurally_invalid_manifest_raises(tmp_path, content):
+    """Valid JSON with the wrong shape must abort, not crash or proceed."""
+    paths = make_paths(tmp_path)
+    paths['manifest_file'].write_text(content)
+    survivor = make_command_skill(paths, "anything")
+
+    with pytest.raises(ValueError):
+        unsync_all(paths)
+    assert survivor.exists()
+
+
 def test_remove_path_unlinks_symlink_to_dir(tmp_path):
     """is_dir() follows symlinks but rmtree refuses them — unlink wins."""
     source = tmp_path / "real-dir"

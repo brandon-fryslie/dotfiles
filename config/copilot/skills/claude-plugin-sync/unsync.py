@@ -12,7 +12,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 
 # [LAW:one-source-of-truth] manifest path and target dirs are defined by sync.py
 from sync import DEFAULT_PATHS
@@ -21,6 +21,25 @@ from sync import DEFAULT_PATHS
 def names_with_status(entries: Dict, status: str) -> Set[str]:
     """Names of manifest entries having the given status."""
     return {name for name, info in entries.items() if info.get("status") == status}
+
+
+def manifest_categories(manifest) -> Tuple[Dict, Dict, Dict]:
+    """Validate manifest shape and return (skills, agents, commands).
+
+    [LAW:single-enforcer] the manifest file is external input; this is the
+    one boundary where its shape is checked. Everything downstream assumes
+    dict-of-dicts and never re-guards.
+    """
+    if not isinstance(manifest, dict):
+        raise ValueError(f"manifest root must be an object, got {type(manifest).__name__}")
+
+    categories = []
+    for key in ("skills", "agents", "commands"):
+        entries = manifest.get(key, {})
+        if not isinstance(entries, dict) or not all(isinstance(info, dict) for info in entries.values()):
+            raise ValueError(f"manifest[{key!r}] must be an object of objects")
+        categories.append(entries)
+    return tuple(categories)
 
 
 def remove_path(item: Path) -> None:
@@ -78,10 +97,8 @@ def unsync_all(paths: Dict = DEFAULT_PATHS) -> int:
     with open(manifest_path) as f:
         manifest = json.load(f)
 
-    skills = manifest.get("skills", {})
-    agents = manifest.get("agents", {})
     # command-derived skills live in the skills dir under their manifest key
-    commands = manifest.get("commands", {})
+    skills, agents, commands = manifest_categories(manifest)
 
     removed_skills = remove_stale_items(
         paths['copilot_skills_dir'],
@@ -112,6 +129,9 @@ def main() -> None:
     # as if nothing were recorded would misreport "nothing to unsync"
     except json.JSONDecodeError as e:
         print(f"Error: manifest is not valid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error: invalid manifest: {e}", file=sys.stderr)
         sys.exit(1)
 
 
