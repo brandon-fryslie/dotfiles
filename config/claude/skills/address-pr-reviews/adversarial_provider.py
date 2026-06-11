@@ -61,13 +61,18 @@ def commentable_lines(diff_text: str) -> dict[str, set[int]]:
     new_line = 0
     in_hunk = False
     for raw in diff_text.splitlines():
-        if raw.startswith("+++ b/"):
-            path = raw[6:]
-            lines_by_path.setdefault(path, set())
-            in_hunk = False
-        elif raw.startswith("+++ /dev/null"):
+        # File sections begin at "diff --git"; an added content line can never
+        # render as one (it would carry a leading '+'). Header matches are
+        # only legal outside hunks — "+++ b/x" *inside* a hunk is an added
+        # line whose content is "++ b/x", not a header.
+        if raw.startswith("diff --git "):
             path = None
             in_hunk = False
+        elif not in_hunk and raw.startswith("+++ b/"):
+            path = raw[6:]
+            lines_by_path.setdefault(path, set())
+        elif not in_hunk and raw.startswith("+++ /dev/null"):
+            path = None
         elif raw.startswith("@@") and path is not None:
             m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw)
             if not m:
@@ -218,7 +223,16 @@ def _our_review_for(owner: str, repo: str, pr_num: int, sha: str) -> dict | None
         "api", f"repos/{owner}/{repo}/pulls/{pr_num}/reviews?per_page=100",
         "--jq", "[.[] | {body, html_url, state}]",
     )
-    for review in json.loads(out) if out else []:
+    reviews = json.loads(out) if out else []
+    # [LAW:no-silent-failure] reviews come oldest-first; past the page cap the
+    # marker review may exist unseen, which would break idempotency (duplicate
+    # review) or stall wait() — halt rather than answer from a partial set.
+    if len(reviews) >= 100:
+        raise RuntimeError(
+            "PR has 100+ posted reviews — pagination is not implemented and "
+            "the SHA-marker idempotency check is incomplete."
+        )
+    for review in reviews:
         m = MARKER_RE.search(review.get("body") or "")
         if m and m.group(1) == sha:
             return review

@@ -72,6 +72,19 @@ diff --git a/gone.py b/gone.py
 '''
 legal = ap.commentable_lines(diff)
 assert legal == {'foo.py': {10, 11, 12, 13}}, legal
+
+# An added line whose CONTENT starts with '++ b/' renders as '+++ b/...' —
+# it must count as a commentable line, not reset the file header.
+tricky = '''diff --git a/bar.py b/bar.py
+--- a/bar.py
++++ b/bar.py
+@@ -1,2 +1,3 @@
+ keep1
++++ b/not-a-header
+ keep3
+'''
+legal = ap.commentable_lines(tricky)
+assert legal == {'bar.py': {1, 2, 3}}, legal
 print('ok')
 "
   [ "$status" -eq 0 ]
