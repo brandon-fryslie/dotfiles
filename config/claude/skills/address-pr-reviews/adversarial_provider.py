@@ -103,10 +103,29 @@ def anchor(finding: dict, legal: dict[str, set[int]]) -> dict:
 # The reviewer agent — pure: context in, findings JSON out
 # ---------------------------------------------------------------------------
 
+def _extract_json_object(text: str) -> dict:
+    """Parse the reviewer's findings object out of its output.
+
+    LLM output is a trust boundary: fences or stray prose around the JSON are
+    legal inputs to normalize here, once — downstream code assumes the typed
+    shape. [LAW:single-enforcer] A reply with no JSON object at all is a hard
+    failure with the full evidence preserved."""
+    start = text.find("{")
+    if start == -1:
+        raise RuntimeError(f"Reviewer output contains no JSON object:\n{text}")
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"Reviewer output is not valid JSON ({e}). Raw output:\n{text}"
+        ) from e
+    return obj
+
+
 def _run_reviewer(prompt: str, model: str) -> dict:
     proc = subprocess.run(
         ["claude", "-p", "--model", model, "--output-format", "json",
-         "--allowedTools", "Read", "Grep", "Glob"],
+         "--allowedTools", "Read,Grep,Glob"],
         input=prompt, capture_output=True, text=True, timeout=REVIEW_TIMEOUT_S,
     )
     if proc.returncode != 0:
@@ -116,17 +135,11 @@ def _run_reviewer(prompt: str, model: str) -> dict:
     envelope = json.loads(proc.stdout)
     if envelope.get("is_error") or envelope.get("subtype") != "success":
         raise RuntimeError(f"Reviewer agent failed: {json.dumps(envelope)[:2000]}")
-    text = envelope["result"].strip()
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text)
-    try:
-        result = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(
-            f"Reviewer output is not valid JSON ({e}). Raw output:\n{text[:2000]}"
-        ) from e
+    result = _extract_json_object(envelope["result"].strip())
     if not isinstance(result.get("findings"), list) or "summary" not in result:
         raise RuntimeError(
-            f"Reviewer output missing required keys (summary, findings): {text[:2000]}"
+            "Reviewer output missing required keys (summary, findings): "
+            f"{json.dumps(result)[:2000]}"
         )
     for i, f in enumerate(result["findings"]):
         missing = {"file", "line", "title", "body"} - f.keys()
@@ -135,10 +148,7 @@ def _run_reviewer(prompt: str, model: str) -> dict:
     return result
 
 
-def _build_prompt(owner: str, repo: str, pr_num: int, sha: str) -> str:
-    diff = github_threads.gh("pr", "diff", str(pr_num), "--repo", f"{owner}/{repo}")
-    if not diff:
-        raise RuntimeError(f"PR #{pr_num} has an empty diff — nothing to review.")
+def _build_prompt(owner: str, repo: str, pr_num: int, sha: str, diff: str) -> str:
     meta = json.loads(github_threads.gh(
         "pr", "view", str(pr_num), "--repo", f"{owner}/{repo}",
         "--json", "title,body",
@@ -150,13 +160,21 @@ def _build_prompt(owner: str, repo: str, pr_num: int, sha: str) -> str:
          for f in prior],
         indent=1,
     )
-    template = PROMPT_FILE.read_text()
-    return (template
-            .replace("{pr_title}", meta.get("title") or "")
-            .replace("{pr_body}", (meta.get("body") or "")[:4000])
-            .replace("{head_sha}", sha)
-            .replace("{prior_threads}", prior_block)
-            .replace("{diff}", diff))
+    values = {
+        "pr_title":      meta.get("title") or "",
+        "pr_body":       (meta.get("body") or "")[:4000],
+        "head_sha":      sha,
+        "prior_threads": prior_block,
+        "diff":          diff,
+    }
+    # Single-pass substitution: substituted content is never rescanned, so a
+    # PR title/body containing "{diff}" (externally controlled text) cannot
+    # inject into later fields. [LAW:single-enforcer]
+    return re.sub(
+        r"\{(pr_title|pr_body|head_sha|prior_threads|diff)\}",
+        lambda m: values[m.group(1)],
+        PROMPT_FILE.read_text(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -240,11 +258,16 @@ def trigger(pr_url: str) -> dict:
     if _our_review_for(owner, repo, pr_num, sha):
         return {"triggered": True, "note": f"review for {sha[:9]} already posted"}
 
+    # [LAW:one-source-of-truth] one diff value feeds both the reviewer's
+    # context and the anchor domain — fetching it twice would let a push
+    # during the review anchor findings against a diff nobody reviewed.
+    diff = github_threads.gh("pr", "diff", str(pr_num), "--repo", f"{owner}/{repo}")
+    if not diff:
+        raise RuntimeError(f"PR #{pr_num} has an empty diff — nothing to review.")
+
     model = os.environ.get(MODEL_ENV, DEFAULT_MODEL)
-    result = _run_reviewer(_build_prompt(owner, repo, pr_num, sha), model)
-    legal = commentable_lines(
-        github_threads.gh("pr", "diff", str(pr_num), "--repo", f"{owner}/{repo}")
-    )
+    result = _run_reviewer(_build_prompt(owner, repo, pr_num, sha, diff), model)
+    legal = commentable_lines(diff)
     placed = [anchor(f, legal) for f in result["findings"]]
     posted = _post_review(
         owner, repo, pr_num, sha, result["summary"],

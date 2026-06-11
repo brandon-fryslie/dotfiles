@@ -48,7 +48,22 @@ def _fetch_threads(owner: str, repo: str, pr_num: int) -> list[dict]:
         "-F", f"owner={owner}", "-F", f"repo={repo}", "-F", f"num={pr_num}",
         "--jq", ".data.repository.pullRequest.reviewThreads.nodes",
     )
-    return json.loads(out) if out else []
+    threads = json.loads(out) if out else []
+    # [LAW:no-silent-failure] the page caps are explicit; hitting one means
+    # findings exist that this fetch did not return — that must halt, not
+    # quietly read as the full set.
+    if len(threads) >= 100:
+        raise RuntimeError(
+            "PR has 100+ review threads — pagination is not implemented and "
+            "this fetch is incomplete. Do not treat it as the full finding set."
+        )
+    for t in threads:
+        if len(t.get("comments", {}).get("nodes") or []) >= 20:
+            raise RuntimeError(
+                f"Thread {t['id']} has 20+ comments — pagination is not "
+                "implemented and the thread chain is incomplete."
+            )
+    return threads
 
 
 def _build_findings(threads: list[dict]) -> list[dict]:
