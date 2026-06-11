@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 # test-extract-functions.bats - Functional tests for the finding-duplicate-functions scripts
 #
-# TICKETS: dotfiles-script-audit-lbl.11, dotfiles-script-audit-lbl.19
+# TICKETS: dotfiles-script-audit-lbl.11, dotfiles-script-audit-lbl.19,
+#          dotfiles-script-audit-lbl.20
 #
 # BUG VALIDATED (.11):
 # extract-functions.sh ran rg with `2>/dev/null || true`, so an rg failure
@@ -32,6 +33,25 @@
 #   that exits 1 but dumps usage into the data stream fails
 # - Pins -h exit 0 per script, so a fix that makes usage always exit 1
 #   (over-correcting) also fails
+#
+# BUG VALIDATED (.20):
+# generate-report.sh rendered each confidence section with
+# `jq ... 2>/dev/null || true` while the summary counts ran unsuppressed.
+# An entry whose shape deviates (.functions null → jq map error) was counted
+# in the summary but silently dropped from the detail section — the report
+# said "HIGH | 1" above an empty HIGH section, exit 0, no diagnostic.
+# Separately, the report body was built inside `{ ... } > "$OUTPUT"`, so any
+# loud failure (unparseable JSON killing the summary jq) still truncated and
+# partially overwrote a pre-existing report before aborting.
+#
+# GAMING RESISTANCE (.20):
+# - Asserts the report file does NOT exist after a malformed-entry failure,
+#   so a fix that exits nonzero but still writes the lying report fails
+# - Asserts a pre-existing report survives byte-for-byte when input is
+#   unparseable, so keeping the `{...} > "$OUTPUT"` group redirect fails
+# - Pins the happy path end-to-end (summary count AND section detail agree),
+#   so a fix that fails on valid optional-field absence (over-correcting:
+#   .notes/.differences are legitimately optional) also fails
 
 bats_require_minimum_version 1.5.0
 
@@ -45,6 +65,11 @@ SCRIPT="$SCRIPTS_DIR/extract-functions.sh"
 # setup() would silently skip the bug pins on rg-free environments.
 require_extractor_tools() {
   require_command rg "brew install ripgrep"
+  require_command jq "brew install jq"
+}
+
+# The .20 report tests exercise jq directly but never run rg.
+require_jq() {
   require_command jq "brew install jq"
 }
 
@@ -131,4 +156,53 @@ teardown() {
   run --separate-stderr "$SCRIPTS_DIR/prepare-category-analysis.sh" -h
   [ "$status" -eq 0 ]
   [[ "$output" == *"Usage:"* ]]
+}
+
+# --- .20: per-section jq errors must be loud and must not produce a report ---
+
+@test "generate-report: malformed entry fails loudly, no report written" {
+  require_jq
+  mkdir -p "$WORK/dups"
+  # Counted by the summary (confidence matches) but .functions null kills the
+  # section jq — the swallowed version reported "HIGH | 1" over an empty section.
+  printf '%s\n' '[{"confidence":"HIGH","intent":"parse config","functions":null,"differences":null,"recommendation":{"survivor":"a","reason":"r"}}]' \
+    > "$WORK/dups/cat1.json"
+  run --separate-stderr "$SCRIPTS_DIR/generate-report.sh" "$WORK/dups" "$WORK/report.md"
+  [ "$status" -ne 0 ]
+  [[ "$stderr" == *"cat1.json"* ]]
+  [ ! -e "$WORK/report.md" ]
+}
+
+@test "generate-report: unparseable JSON preserves a pre-existing report byte-for-byte" {
+  require_jq
+  mkdir -p "$WORK/dups"
+  printf 'NOT JSON\n' > "$WORK/dups/bad.json"
+  printf 'sentinel: prior report\n' > "$WORK/report.md"
+  run --separate-stderr "$SCRIPTS_DIR/generate-report.sh" "$WORK/dups" "$WORK/report.md"
+  [ "$status" -ne 0 ]
+  run cat "$WORK/report.md"
+  [ "$output" = "sentinel: prior report" ]
+}
+
+@test "generate-report: valid input renders summary and sections in agreement" {
+  require_jq
+  mkdir -p "$WORK/dups"
+  # Optional fields deliberately absent (no .notes, null .differences on HIGH)
+  # so an over-correcting fix that hard-fails on legitimate optionality fails here.
+  cat > "$WORK/dups/utils.json" <<'EOF'
+[
+  {"confidence":"HIGH","intent":"slugify strings","functions":[{"name":"slug","file":"a.ts","line":1},{"name":"slugify","file":"b.ts","line":9}],"differences":null,"recommendation":{"survivor":"slugify","reason":"clearer name"}},
+  {"confidence":"MEDIUM","intent":"retry wrapper","functions":[{"name":"retry","file":"c.ts","line":3,"notes":"jittered"}],"differences":"backoff differs","recommendation":{"action":"merge","reason":"same contract"}},
+  {"confidence":"LOW","intent":"format date","functions":[{"name":"fmt","file":"d.ts","line":7}],"differences":"locale handling"}
+]
+EOF
+  run --separate-stderr "$SCRIPTS_DIR/generate-report.sh" "$WORK/dups" "$WORK/report.md"
+  [ "$status" -eq 0 ]
+  run cat "$WORK/report.md"
+  [[ "$output" == *"| HIGH | 1 |"* ]]
+  [[ "$output" == *"slugify strings"* ]]
+  [[ "$output" == *"| MEDIUM | 1 |"* ]]
+  [[ "$output" == *"retry wrapper"* ]]
+  [[ "$output" == *"| LOW | 1 |"* ]]
+  [[ "$output" == *"format date"* ]]
 }
