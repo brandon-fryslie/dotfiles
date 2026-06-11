@@ -37,6 +37,9 @@ from sync import (
     find_skills,
     find_agents,
     find_commands,
+    # Command sync
+    sync_commands,
+    clean_stale_commands,
     # Manifest management
     create_manifest,
     preserve_removed_entries,
@@ -627,6 +630,107 @@ def test_field_normalization_edge_cases():
 
     # Compatibility: truncated
     assert len(normalized['compatibility']) == 500
+
+
+# ============================================================================
+# Command Sync Tests
+# ============================================================================
+
+def make_plugin_with_command(root: Path, plugin_name: str, command_name: str) -> Path:
+    """Create a minimal plugin directory containing one command."""
+    plugin_path = root / plugin_name
+    commands_dir = plugin_path / "commands"
+    commands_dir.mkdir(parents=True)
+    (commands_dir / f"{command_name}.md").write_text(
+        f"---\ndescription: {plugin_name} {command_name}\n---\nBody of {plugin_name}\n"
+    )
+    return plugin_path
+
+
+def test_sync_commands_namespaces_dirs_and_manifest_keys():
+    """Two plugins providing the same command name get separate namespaced dirs."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        skills_dir = tmppath / "skills"
+        skills_dir.mkdir()
+        manifest = create_manifest()
+        synced = set()
+
+        for plugin in ("alpha", "beta"):
+            plugin_path = make_plugin_with_command(tmppath / "plugins", plugin, "review")
+            added = sync_commands(plugin_path, plugin, skills_dir, synced, manifest, ALLOWED_SKILL_FIELDS)
+            assert added == 1
+
+        # Two distinct namespaced dirs, neither clobbered the other
+        assert (skills_dir / "alpha-review" / "SKILL.md").is_file()
+        assert (skills_dir / "beta-review" / "SKILL.md").is_file()
+        assert "Body of alpha" in (skills_dir / "alpha-review" / "SKILL.md").read_text()
+        assert "Body of beta" in (skills_dir / "beta-review" / "SKILL.md").read_text()
+
+        # Two manifest entries; key equals on-disk dir name (unsync.py contract)
+        assert set(manifest["commands"].keys()) == {"alpha-review", "beta-review"}
+        assert synced == {"alpha-review", "beta-review"}
+        for key in manifest["commands"]:
+            assert (skills_dir / key).is_dir()
+
+
+def test_sync_commands_refuses_symlink_target(capsys):
+    """A pre-existing skill symlink at the command target is never written through."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        skills_dir = tmppath / "skills"
+        skills_dir.mkdir()
+
+        # Source skill directory in the "plugin cache" — must survive untouched
+        source_skill = tmppath / "cache" / "review-skill"
+        source_skill.mkdir(parents=True)
+        original_content = "---\nname: alpha-review\n---\nORIGINAL SKILL\n"
+        (source_skill / "SKILL.md").write_text(original_content)
+
+        # Skill symlink occupying the command's namespaced target
+        (skills_dir / "alpha-review").symlink_to(source_skill)
+
+        plugin_path = make_plugin_with_command(tmppath / "plugins", "alpha", "review")
+        manifest = create_manifest()
+        synced = set()
+        added = sync_commands(plugin_path, "alpha", skills_dir, synced, manifest, ALLOWED_SKILL_FIELDS)
+
+        # Command skipped: nothing written, nothing recorded
+        assert added == 0
+        assert synced == set()
+        assert manifest["commands"] == {}
+
+        # Source plugin untouched; symlink still a symlink
+        assert (source_skill / "SKILL.md").read_text() == original_content
+        assert (skills_dir / "alpha-review").is_symlink()
+
+        # Refusal is loud
+        assert "alpha:review" in capsys.readouterr().err
+
+
+def test_clean_stale_commands_removes_dirs_skips_symlinks():
+    """Stale real dirs are removed; a symlink at a stale path is left alone."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmppath = Path(tmpdir)
+        skills_dir = tmppath / "skills"
+        skills_dir.mkdir()
+
+        # Stale real dir from a previous sync (e.g. pre-namespacing bare name)
+        stale_dir = skills_dir / "review"
+        stale_dir.mkdir()
+        (stale_dir / "SKILL.md").write_text("old")
+
+        # Stale manifest entry whose path is now a symlink — not ours to delete
+        source = tmppath / "source"
+        source.mkdir()
+        (skills_dir / "linked").symlink_to(source)
+
+        removed = clean_stale_commands(skills_dir, {"alpha-review"}, {"review", "linked", "alpha-review"})
+
+        assert removed == 1
+        assert not stale_dir.exists()
+        assert (skills_dir / "linked").is_symlink()
+        assert source.exists()
 
 
 if __name__ == '__main__':
