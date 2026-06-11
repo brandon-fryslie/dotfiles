@@ -256,19 +256,18 @@ get_inputs() {
   fi
 
   local inputs
-  local rc
+  # [LAW:no-silent-failure] `|| rc=$?` keeps a failing substitution from
+  # aborting under set -e before the error branch can report it
+  local rc=0
   if has_yq; then
-    inputs=$(yq_get_watcher_array "$config_file" "$watcher_name" ".inputs")
-    rc=$?
+    inputs=$(yq_get_watcher_array "$config_file" "$watcher_name" ".inputs") || rc=$?
   elif has_python_yaml; then
-    inputs=$(python_parse "$config_file" "get-inputs" "$watcher_name")
-    rc=$?
+    inputs=$(python_parse "$config_file" "get-inputs" "$watcher_name") || rc=$?
   else
     echo "ERROR: yq or Python with PyYAML required for complex parsing" >&2
     return 1
   fi
 
-  local rc=$?
   if [[ $rc -ne 0 || -z "$inputs" ]]; then
     echo "ERROR: Watcher not found or has no inputs: $watcher_name" >&2
     return 1
@@ -281,6 +280,7 @@ get_inputs() {
 }
 
 # Get command name for a specific watcher
+get_command_name() {
   local config_file="$1"
   local watcher_name="$2"
 
@@ -291,26 +291,23 @@ get_inputs() {
     return 1
   fi
 
+  local result
+  local rc=0
+  if has_yq; then
+    result=$(yq_get_watcher_field "$config_file" "$watcher_name" ".command.name") || rc=$?
+  elif has_python_yaml; then
+    result=$(python_parse "$config_file" "get-command-name" "$watcher_name") || rc=$?
+  else
+    echo "ERROR: yq or Python with PyYAML required for complex parsing" >&2
+    return 1
+  fi
+
   if [[ $rc -ne 0 || "$result" == "null" ]]; then
     echo "ERROR: Watcher not found: $watcher_name" >&2
     return 1
   fi
 
   echo "$result"
-
-  if has_yq; then
-    local result rc
-    result=$(yq_get_watcher_field "$config_file" "$watcher_name" ".command.name")
-    rc=$?
-  elif has_python_yaml; then
-    result=$(python_parse "$config_file" "get-command-name" "$watcher_name")
-    rc=$?
-    python_parse "$config_file" "get-command-name" "$watcher_name"
-  else
-    echo "ERROR: yq or Python with PyYAML required for complex parsing" >&2
-  fi
-
-  fi
 }
 
 # Get command args for a specific watcher
@@ -326,13 +323,11 @@ get_command_args() {
   fi
 
   local args
-  local rc
+  local rc=0
   if has_yq; then
-    args=$(yq_get_watcher_array "$config_file" "$watcher_name" ".command.args")
-    rc=$?
+    args=$(yq_get_watcher_array "$config_file" "$watcher_name" ".command.args") || rc=$?
   elif has_python_yaml; then
-    args=$(python_parse "$config_file" "get-command-args" "$watcher_name")
-    rc=$?
+    args=$(python_parse "$config_file" "get-command-args" "$watcher_name") || rc=$?
   else
     echo "ERROR: yq or Python with PyYAML required for complex parsing" >&2
     return 1
@@ -365,13 +360,11 @@ get_output() {
   fi
 
   local output
-  local rc
+  local rc=0
   if has_yq; then
-    output=$(yq_get_watcher_field "$config_file" "$watcher_name" ".output")
-    rc=$?
+    output=$(yq_get_watcher_field "$config_file" "$watcher_name" ".output") || rc=$?
   elif has_python_yaml; then
-    output=$(python_parse "$config_file" "get-output" "$watcher_name")
-    rc=$?
+    output=$(python_parse "$config_file" "get-output" "$watcher_name") || rc=$?
   else
     echo "ERROR: yq or Python with PyYAML required for complex parsing" >&2
     return 1
@@ -399,13 +392,11 @@ get_enabled() {
   fi
 
   local enabled
-  local rc
+  local rc=0
   if has_yq; then
-    enabled=$(yq_get_watcher_field "$config_file" "$watcher_name" ".enabled")
-    rc=$?
+    enabled=$(yq_get_watcher_field "$config_file" "$watcher_name" ".enabled") || rc=$?
   elif has_python_yaml; then
-    enabled=$(python_parse "$config_file" "get-enabled" "$watcher_name")
-    rc=$?
+    enabled=$(python_parse "$config_file" "get-enabled" "$watcher_name") || rc=$?
   else
     echo "ERROR: yq or Python with PyYAML required for complex parsing" >&2
     return 1
