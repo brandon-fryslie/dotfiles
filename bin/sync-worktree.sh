@@ -69,8 +69,10 @@ MAIN_WT="$(find_worktree_for_branch "$MAIN_BRANCH" || true)"
 [[ -n "$MAIN_WT" ]] || die "could not find a worktree with branch '$MAIN_BRANCH' checked out"
 
 # same repo sanity
-CD1="$(git -C "$BRANCH_WT" rev-parse --git-common-dir)"
-CD2="$(git -C "$MAIN_WT"   rev-parse --git-common-dir)"
+# [FRAMING:representation] --git-common-dir prints a relative path from the
+# primary worktree but absolute from a linked one; force canonical form
+CD1="$(git -C "$BRANCH_WT" rev-parse --path-format=absolute --git-common-dir)"
+CD2="$(git -C "$MAIN_WT"   rev-parse --path-format=absolute --git-common-dir)"
 [[ "$CD1" == "$CD2" ]] || die "worktrees are not from the same repo"
 
 is_clean "$BRANCH_WT"
