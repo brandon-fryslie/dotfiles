@@ -718,6 +718,126 @@ def preserve_removed_entries(manifest: Dict, previous_manifest: Dict) -> None:
 # ============================================================================
 # Syncing Operations
 # ============================================================================
+# [LAW:single-enforcer] the *_item functions below are the only place each
+# extension kind is materialized into the Copilot dirs; every sync tool
+# (sync.py's per-plugin loops, sync_enhanced's selection-driven loop) routes
+# through them so naming, transforms, and manifest records cannot drift.
+
+def sync_skill_item(skill_name: str, skill_path: Path, plugin_name: str,
+                    skills_dir: Path, synced_skills: Set[str], manifest: Dict) -> bool:
+    """Sync a single skill: symlink the whole skill directory.
+
+    Args:
+        skill_name: Name of the skill
+        skill_path: Path to the skill directory (containing SKILL.md)
+        plugin_name: Name of the plugin
+        skills_dir: Target skills directory
+        synced_skills: Set to track synced skill names (modified in place)
+        manifest: Manifest dictionary (modified in place)
+
+    Returns:
+        True if the skill was added/updated
+    """
+    target_name = f"{plugin_name}-{skill_name}"
+    target_path = skills_dir / target_name
+
+    changed = create_symlink(skill_path, target_path)
+
+    synced_skills.add(target_name)
+    manifest["skills"][target_name] = {
+        "source": str(skill_path),
+        "plugin": plugin_name,
+        "status": "active"
+    }
+    return changed
+
+
+def sync_agent_item(agent_name: str, agent_path: Path, plugin_name: str,
+                    agents_dir: Path, synced_agents: Set[str], manifest: Dict) -> bool:
+    """Sync a single agent: rewrite frontmatter (namespacing) and copy.
+
+    Args:
+        agent_name: Name of the agent
+        agent_path: Path to the agent .md file
+        plugin_name: Name of the plugin
+        agents_dir: Target agents directory
+        synced_agents: Set to track synced agent names (modified in place)
+        manifest: Manifest dictionary (modified in place)
+
+    Returns:
+        True if the agent was added/updated
+    """
+    if agent_name.endswith('.agent'):
+        target_name = f"{plugin_name}-{agent_name}.md"
+    else:
+        target_name = f"{plugin_name}-{agent_name}.agent.md"
+
+    target_path = agents_dir / target_name
+
+    content = agent_path.read_text()
+    new_content = rewrite_agent(content, plugin_name, agent_name)
+
+    changed = write_if_changed(target_path, new_content)
+
+    synced_agents.add(target_name)
+    manifest["agents"][target_name] = {
+        "source": str(agent_path),
+        "plugin": plugin_name,
+        "status": "active"
+    }
+    return changed
+
+
+def sync_command_item(command_name: str, command_path: Path, plugin_name: str,
+                      skills_dir: Path, synced_commands: Set[str], manifest: Dict,
+                      allowed_fields: Set[str]) -> bool:
+    """Sync a single command: transform to a skill in a namespaced directory.
+
+    Args:
+        command_name: Name of the command
+        command_path: Path to the command .md file
+        plugin_name: Name of the plugin
+        skills_dir: Target skills directory
+        synced_commands: Set to track synced command names (modified in place)
+        manifest: Manifest dictionary (modified in place)
+        allowed_fields: Set of allowed frontmatter field names
+
+    Returns:
+        True if the command was added/updated
+    """
+    # [LAW:one-source-of-truth] namespace like skills/agents so two plugins
+    # providing the same command cannot silently overwrite each other;
+    # manifest key == on-disk dir name is the contract unsync.py relies on
+    target_name = f"{plugin_name}-{command_name}"
+    target_skill_dir = skills_dir / target_name
+
+    # [LAW:no-silent-failure] mkdir(exist_ok=True) accepts a symlink-to-dir,
+    # and the write below would follow it into the source plugin cache —
+    # refuse the collision loudly instead of corrupting or unlinking
+    if target_skill_dir.is_symlink():
+        print(
+            f"Warning: skipping command '{plugin_name}:{command_name}' — "
+            f"{target_skill_dir} is a symlink (name collides with an existing skill)",
+            file=sys.stderr
+        )
+        return False
+
+    target_skill_dir.mkdir(parents=True, exist_ok=True)
+    target_file = target_skill_dir / "SKILL.md"
+
+    content = command_path.read_text()
+    skill_content = transform_skill(content, plugin_name, command_name, allowed_fields)
+
+    changed = write_if_changed(target_file, skill_content)
+
+    synced_commands.add(target_name)
+    manifest["commands"][target_name] = {
+        "source": str(command_path),
+        "plugin": plugin_name,
+        "status": "active"
+    }
+    return changed
+
 
 def sync_skills(plugin_path: Path, plugin_name: str, skills_dir: Path,
                 synced_skills: Set[str], manifest: Dict) -> int:
@@ -737,18 +857,9 @@ def sync_skills(plugin_path: Path, plugin_name: str, skills_dir: Path,
     skills = find_skills(plugin_path)
 
     for skill_name, skill_path in skills:
-        target_name = f"{plugin_name}-{skill_name}"
-        target_path = skills_dir / target_name
-
-        if create_symlink(skill_path, target_path):
+        if sync_skill_item(skill_name, skill_path, plugin_name,
+                           skills_dir, synced_skills, manifest):
             added += 1
-
-        synced_skills.add(target_name)
-        manifest["skills"][target_name] = {
-            "source": str(skill_path),
-            "plugin": plugin_name,
-            "status": "active"
-        }
 
     return added
 
@@ -771,27 +882,9 @@ def sync_agents(plugin_path: Path, plugin_name: str, agents_dir: Path,
     agents = find_agents(plugin_path)
 
     for agent_name, agent_path in agents:
-        # Determine target name
-        if agent_name.endswith('.agent'):
-            target_name = f"{plugin_name}-{agent_name}.md"
-        else:
-            target_name = f"{plugin_name}-{agent_name}.agent.md"
-
-        target_path = agents_dir / target_name
-
-        # Rewrite and copy
-        content = agent_path.read_text()
-        new_content = rewrite_agent(content, plugin_name, agent_name)
-
-        if write_if_changed(target_path, new_content):
+        if sync_agent_item(agent_name, agent_path, plugin_name,
+                           agents_dir, synced_agents, manifest):
             added += 1
-
-        synced_agents.add(target_name)
-        manifest["agents"][target_name] = {
-            "source": str(agent_path),
-            "plugin": plugin_name,
-            "status": "active"
-        }
 
     return added
 
@@ -815,39 +908,9 @@ def sync_commands(plugin_path: Path, plugin_name: str, skills_dir: Path,
     commands = find_commands(plugin_path)
 
     for command_name, command_path in commands:
-        # [LAW:one-source-of-truth] namespace like skills/agents so two plugins
-        # providing the same command cannot silently overwrite each other;
-        # manifest key == on-disk dir name is the contract unsync.py relies on
-        target_name = f"{plugin_name}-{command_name}"
-        target_skill_dir = skills_dir / target_name
-
-        # [LAW:no-silent-failure] mkdir(exist_ok=True) accepts a symlink-to-dir,
-        # and the write below would follow it into the source plugin cache —
-        # refuse the collision loudly instead of corrupting or unlinking
-        if target_skill_dir.is_symlink():
-            print(
-                f"Warning: skipping command '{plugin_name}:{command_name}' — "
-                f"{target_skill_dir} is a symlink (name collides with an existing skill)",
-                file=sys.stderr
-            )
-            continue
-
-        target_skill_dir.mkdir(parents=True, exist_ok=True)
-        target_file = target_skill_dir / "SKILL.md"
-
-        # Transform command to skill
-        content = command_path.read_text()
-        skill_content = transform_skill(content, plugin_name, command_name, allowed_fields)
-
-        if write_if_changed(target_file, skill_content):
+        if sync_command_item(command_name, command_path, plugin_name,
+                             skills_dir, synced_commands, manifest, allowed_fields):
             added += 1
-
-        synced_commands.add(target_name)
-        manifest["commands"][target_name] = {
-            "source": str(command_path),
-            "plugin": plugin_name,
-            "status": "active"
-        }
 
     return added
 
