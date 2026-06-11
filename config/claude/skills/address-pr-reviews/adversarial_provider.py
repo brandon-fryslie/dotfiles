@@ -134,7 +134,8 @@ def _contract_violation(text: str) -> str | None:
     # [LAW:types-are-the-program] the strongest true theorem about a finding:
     # file/title/body are non-empty strings, line is an int — anchor() and
     # _post_review() downstream assume exactly this, never re-check.
-    typed = {"file": str, "title": str, "body": str, "line": int}
+    typed = {"file": str, "title": str, "body": str, "line": int, "severity": str}
+    severities = {"blocker", "major", "minor"}
     for i, f in enumerate(result["findings"]):
         missing = typed.keys() - f.keys()
         if missing:
@@ -146,6 +147,11 @@ def _contract_violation(text: str) -> str | None:
                     f"got {f[key]!r} — a file-level concern still cites the "
                     "nearest relevant diff line as an integer"
                 )
+        if f["severity"] not in severities:
+            return (
+                f'finding {i} severity must be one of {sorted(severities)}, '
+                f"got {f['severity']!r}"
+            )
     return None
 
 
@@ -267,7 +273,7 @@ def _post_review(owner: str, repo: str, pr_num: int, sha: str,
         "body": body,
         "comments": [
             {"path": f["file"], "line": f["line"], "side": "RIGHT",
-             "body": f"**{f['title']}** ({f.get('severity', 'unrated')})\n\n{f['body']}"}
+             "body": f"**{f['title']}** ({f['severity']})\n\n{f['body']}"}
             for f in anchored
         ],
     }
