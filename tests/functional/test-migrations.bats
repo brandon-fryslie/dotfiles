@@ -232,6 +232,44 @@ EOF
     rm -f "$TEST_MARKERS/9999-test-no-run.done"
 }
 
+@test "failed migrate_apply step reports failure, leaves no marker, and is retried" {
+    cd "$DOTFILES_ROOT"
+
+    # The ticket's concrete trigger: ~/.claude/plugins-config exists as a
+    # regular FILE, so migration 0001's mkdir -p and redirect both fail.
+    mkdir -p "$TEST_HOME/.claude"
+    touch "$TEST_HOME/.claude/plugins-config"
+
+    run bash -c "source migrations/run-migrations.sh"
+
+    # Failure must be loud, not reported as completion
+    assert_contains "$output" "0001-restore-claude-plugins-config failed"
+    assert_not_contains "$output" "0001-restore-claude-plugins-config completed"
+
+    # No marker — the migration must not be marked done
+    [ ! -f "$TEST_MARKERS/0001-restore-claude-plugins-config.done" ]
+
+    # Next run must retry it, not skip it
+    run bash -c "source migrations/run-migrations.sh"
+    assert_contains "$output" "Running: 0001-restore-claude-plugins-config"
+}
+
+@test "successful migrate_apply creates config, reports completion, and marks done" {
+    cd "$DOTFILES_ROOT"
+
+    # Fresh HOME: target file missing, so migration 0001 runs end to end
+    run bash -c "source migrations/run-migrations.sh"
+
+    assert_contains "$output" "0001-restore-claude-plugins-config completed"
+    assert_file_exists "$TEST_HOME/.claude/plugins-config/config.json"
+    assert_json_type "$TEST_HOME/.claude/plugins-config/config.json" "object"
+    [ -f "$TEST_MARKERS/0001-restore-claude-plugins-config.done" ]
+
+    # Marker means it is skipped on the next run
+    run bash -c "source migrations/run-migrations.sh"
+    assert_not_contains "$output" "Running: 0001-restore-claude-plugins-config"
+}
+
 # =============================================================================
 # Just Command Tests
 # =============================================================================
