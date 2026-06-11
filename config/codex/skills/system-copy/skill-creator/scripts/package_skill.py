@@ -11,7 +11,6 @@ Example:
 """
 
 import os
-import shutil
 import sys
 import tempfile
 import zipfile
@@ -69,27 +68,29 @@ def package_skill(skill_path, output_dir=None):
 
     skill_filename = output_path / f"{skill_name}.skill"
 
-    # [LAW:effects-at-boundaries] Stage the archive outside the scanned tree, then
-    # move it into place once complete — otherwise the lazy rglob walk finds the
+    # [LAW:effects-at-boundaries] Stage the archive under a temp name and move it
+    # into place only once complete — otherwise the lazy rglob walk finds the
     # half-written archive and packages it into itself when the output lands
-    # inside the skill folder. Staging also means a failed run leaves any
-    # pre-existing archive untouched.
-    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".skill")
+    # inside the skill folder. Staging in the destination directory keeps
+    # os.replace on one filesystem, so the move is atomic and a failed run
+    # leaves any pre-existing archive untouched.
+    tmp_fd, tmp_name = tempfile.mkstemp(prefix=f".{skill_name}.skill.", dir=output_path)
     os.close(tmp_fd)
     tmp_archive = Path(tmp_name)
     try:
         with zipfile.ZipFile(tmp_archive, "w", zipfile.ZIP_DEFLATED) as zipf:
             # Walk through the skill directory
             for file_path in skill_path.rglob("*"):
-                # A previous run's archive at the destination is not skill
-                # content — skip exactly that path, nothing else.
-                if file_path.is_file() and file_path != skill_filename:
+                # The two paths this run owns — a previous archive at the
+                # destination and the in-progress staging file — are not
+                # skill content; skip exactly those, nothing else.
+                if file_path.is_file() and file_path not in (skill_filename, tmp_archive):
                     # Calculate the relative path within the zip
                     arcname = file_path.relative_to(skill_path.parent)
                     zipf.write(file_path, arcname)
                     print(f"  Added: {arcname}")
 
-        shutil.move(tmp_archive, skill_filename)
+        os.replace(tmp_archive, skill_filename)
         print(f"\n[OK] Successfully packaged skill to: {skill_filename}")
         return skill_filename
 

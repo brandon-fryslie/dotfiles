@@ -93,6 +93,7 @@ teardown() {
   run "${PACKAGER[@]}" .
   [ "$status" -ne 0 ]
   cmp -s my-skill.skill "$WORK/baseline.skill"
+  [ -z "$(find "$SKILL" -name '.my-skill.skill.*')" ]
 }
 
 @test "a *.skill asset inside the skill is still packaged (no blanket exclusion)" {
