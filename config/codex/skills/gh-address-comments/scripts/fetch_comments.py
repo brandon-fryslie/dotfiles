@@ -19,6 +19,16 @@ import json
 import subprocess
 import sys
 from typing import Any
+from urllib.parse import urlparse
+
+# [LAW:one-type-per-behavior] the three paginated connections behave identically;
+# one table of instances drives cursor variables and output keys.
+# GraphQL connection field -> (cursor variable name, output JSON key)
+COLLECTIONS: dict[str, tuple[str, str]] = {
+    "comments": ("commentsCursor", "conversation_comments"),
+    "reviews": ("reviewsCursor", "reviews"),
+    "reviewThreads": ("threadsCursor", "review_threads"),
+}
 
 QUERY = """\
 query(
@@ -120,14 +130,30 @@ def gh_pr_view_json(fields: str) -> dict[str, Any]:
     return _run_json(["gh", "pr", "view", "--json", fields])
 
 
+def parse_base_repo(pr_url: str) -> tuple[str, str]:
+    """
+    Extract (owner, repo) of the BASE repository from a PR url.
+
+    PR numbers belong to the base repository; a PR's url is always rooted
+    there (https://<host>/<owner>/<repo>/pull/<n>), even for fork PRs.
+    `gh pr view` exposes no baseRepository field, so the url is the one
+    authoritative source available.  [LAW:one-source-of-truth]
+    """
+    parts = urlparse(pr_url).path.strip("/").split("/")
+    if len(parts) < 4 or parts[2] != "pull":
+        raise RuntimeError(f"Unrecognized PR url (expected .../<owner>/<repo>/pull/<n>): {pr_url}")
+    return parts[0], parts[1]
+
+
 def get_current_pr_ref() -> tuple[str, str, int]:
     """
     Resolve the PR for the current branch (whatever gh considers associated).
-    Works for cross-repo PRs too, by reading head repository owner/name.
+    Works for cross-repo PRs too: owner/repo come from the PR url (base
+    repository) — head repository fields would resolve a fork PR against the
+    fork, where the PR number does not exist.
     """
-    pr = gh_pr_view_json("number,headRepositoryOwner,headRepository")
-    owner = pr["headRepositoryOwner"]["login"]
-    repo = pr["headRepository"]["name"]
+    pr = gh_pr_view_json("number,url")
+    owner, repo = parse_base_repo(pr["url"])
     number = int(pr["number"])
     return owner, repo, number
 
@@ -136,13 +162,13 @@ def gh_api_graphql(
     owner: str,
     repo: str,
     number: int,
-    comments_cursor: str | None = None,
-    reviews_cursor: str | None = None,
-    threads_cursor: str | None = None,
+    cursors: dict[str, str | None],
 ) -> dict[str, Any]:
     """
     Call `gh api graphql` using -F variables, avoiding JSON blobs with nulls.
     Query is passed via stdin using query=@- to avoid shell newline/quoting issues.
+    `cursors` maps cursor variable name -> cursor; None means "from the start"
+    and is omitted (gh -F cannot express null).
     """
     cmd = [
         "gh",
@@ -157,35 +183,34 @@ def gh_api_graphql(
         "-F",
         f"number={number}",
     ]
-    if comments_cursor:
-        cmd += ["-F", f"commentsCursor={comments_cursor}"]
-    if reviews_cursor:
-        cmd += ["-F", f"reviewsCursor={reviews_cursor}"]
-    if threads_cursor:
-        cmd += ["-F", f"threadsCursor={threads_cursor}"]
+    for var, cursor in cursors.items():
+        if cursor:
+            cmd += ["-F", f"{var}={cursor}"]
 
     return _run_json(cmd, stdin=QUERY)
 
 
-def fetch_all(owner: str, repo: str, number: int) -> dict[str, Any]:
-    conversation_comments: list[dict[str, Any]] = []
-    reviews: list[dict[str, Any]] = []
-    review_threads: list[dict[str, Any]] = []
-
-    comments_cursor: str | None = None
-    reviews_cursor: str | None = None
-    threads_cursor: str | None = None
+def fetch_all(
+    owner: str,
+    repo: str,
+    number: int,
+    fetch_page=gh_api_graphql,  # [LAW:effects-at-boundaries] injectable so the paging logic tests without gh
+) -> dict[str, Any]:
+    nodes: dict[str, list[dict[str, Any]]] = {field: [] for field in COLLECTIONS}
+    # [LAW:types-are-the-program] per-collection state is (cursor, done): a lone
+    # cursor of None cannot distinguish "not started" from "exhausted", which is
+    # exactly the bug that re-appended exhausted collections' first pages.
+    cursors: dict[str, str | None] = {field: None for field in COLLECTIONS}
+    done: dict[str, bool] = {field: False for field in COLLECTIONS}
 
     pr_meta: dict[str, Any] | None = None
 
     while True:
-        payload = gh_api_graphql(
-            owner=owner,
-            repo=repo,
-            number=number,
-            comments_cursor=comments_cursor,
-            reviews_cursor=reviews_cursor,
-            threads_cursor=threads_cursor,
+        payload = fetch_page(
+            owner,
+            repo,
+            number,
+            {cursor_var: cursors[field] for field, (cursor_var, _) in COLLECTIONS.items()},
         )
 
         if "errors" in payload and payload["errors"]:
@@ -202,27 +227,25 @@ def fetch_all(owner: str, repo: str, number: int) -> dict[str, Any]:
                 "repo": repo,
             }
 
-        c = pr["comments"]
-        r = pr["reviews"]
-        t = pr["reviewThreads"]
+        for field in COLLECTIONS:
+            if done[field]:
+                # Exhausted: the query still returns a page for this connection
+                # (page 1 again when the final endCursor was null), but every
+                # node is already collected, so it must not be re-appended.
+                continue
+            conn = pr[field]
+            nodes[field].extend(conn.get("nodes") or [])
+            page = conn["pageInfo"]
+            cursors[field] = page["endCursor"]
+            done[field] = not page["hasNextPage"]
 
-        conversation_comments.extend(c.get("nodes") or [])
-        reviews.extend(r.get("nodes") or [])
-        review_threads.extend(t.get("nodes") or [])
-
-        comments_cursor = c["pageInfo"]["endCursor"] if c["pageInfo"]["hasNextPage"] else None
-        reviews_cursor = r["pageInfo"]["endCursor"] if r["pageInfo"]["hasNextPage"] else None
-        threads_cursor = t["pageInfo"]["endCursor"] if t["pageInfo"]["hasNextPage"] else None
-
-        if not (comments_cursor or reviews_cursor or threads_cursor):
+        if all(done.values()):
             break
 
     assert pr_meta is not None
     return {
         "pull_request": pr_meta,
-        "conversation_comments": conversation_comments,
-        "reviews": reviews,
-        "review_threads": review_threads,
+        **{out_key: nodes[field] for field, (_, out_key) in COLLECTIONS.items()},
     }
 
 
