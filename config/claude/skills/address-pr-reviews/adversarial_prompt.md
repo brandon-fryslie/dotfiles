@@ -68,3 +68,9 @@ context line). `findings` may be empty.
 ## The diff
 
 {diff}
+
+---
+
+Final reminder: your entire reply is a single JSON object with exactly the
+keys "summary" and "findings" — not a bare finding, not an array, no prose
+before or after.

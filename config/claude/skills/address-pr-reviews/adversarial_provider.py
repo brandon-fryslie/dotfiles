@@ -103,26 +103,42 @@ def anchor(finding: dict, legal: dict[str, set[int]]) -> dict:
 # The reviewer agent — pure: context in, findings JSON out
 # ---------------------------------------------------------------------------
 
-def _extract_json_object(text: str) -> dict:
-    """Parse the reviewer's findings object out of its output.
+def _contract_violation(text: str) -> str | None:
+    """Check the reviewer's output against the contract; return a human-
+    readable violation, or None when it conforms.
 
     LLM output is a trust boundary: fences or stray prose around the JSON are
-    legal inputs to normalize here, once — downstream code assumes the typed
-    shape. [LAW:single-enforcer] A reply with no JSON object at all is a hard
-    failure with the full evidence preserved."""
+    normalized here, once. Everything else — a bare finding, a top-level
+    array, missing keys — is a violation named precisely so it can be fed
+    back for one corrective attempt. [LAW:types-are-the-program]"""
     start = text.find("{")
+    array_start = text.find("[")
+    if array_start != -1 and (start == -1 or array_start < start):
+        return "output is a JSON array; the contract requires one object with keys summary, findings"
     if start == -1:
-        raise RuntimeError(f"Reviewer output contains no JSON object:\n{text}")
+        return "output contains no JSON object"
     try:
-        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+        result, _ = json.JSONDecoder().raw_decode(text[start:])
     except json.JSONDecodeError as e:
-        raise RuntimeError(
-            f"Reviewer output is not valid JSON ({e}). Raw output:\n{text}"
-        ) from e
-    return obj
+        return f"output is not valid JSON ({e})"
+    if not isinstance(result.get("findings"), list) or "summary" not in result:
+        return (
+            "JSON object is missing required keys: the contract is "
+            '{"summary": str, "findings": [...]} — a bare finding object is not the envelope'
+        )
+    for i, f in enumerate(result["findings"]):
+        missing = {"file", "line", "title", "body"} - f.keys()
+        if missing:
+            return f"finding {i} is missing keys {sorted(missing)}"
+    return None
 
 
-def _run_reviewer(prompt: str, model: str) -> dict:
+def _parse_result(text: str) -> dict:
+    result, _ = json.JSONDecoder().raw_decode(text[text.find("{"):])
+    return result
+
+
+def _claude_once(prompt: str, model: str) -> str:
     proc = subprocess.run(
         ["claude", "-p", "--model", model, "--output-format", "json",
          "--allowedTools", "Read,Grep,Glob"],
@@ -135,17 +151,33 @@ def _run_reviewer(prompt: str, model: str) -> dict:
     envelope = json.loads(proc.stdout)
     if envelope.get("is_error") or envelope.get("subtype") != "success":
         raise RuntimeError(f"Reviewer agent failed: {json.dumps(envelope)[:2000]}")
-    result = _extract_json_object(envelope["result"].strip())
-    if not isinstance(result.get("findings"), list) or "summary" not in result:
+    return envelope["result"].strip()
+
+
+def _run_reviewer(prompt: str, model: str) -> dict:
+    """One review, with a single bounded corrective retry on contract
+    violation — the violation is quoted back to the model. A second
+    violation is a hard failure carrying the full raw output as evidence.
+    [LAW:no-silent-failure]"""
+    text = _claude_once(prompt, model)
+    violation = _contract_violation(text)
+    if violation is None:
+        return _parse_result(text)
+    correction = (
+        f"{prompt}\n\n---\nYour previous reply violated the output contract: "
+        f"{violation}.\nYour previous reply was:\n{text[:6000]}\n\n"
+        "Re-emit your review now as a SINGLE JSON object with exactly the keys "
+        '"summary" and "findings" (the findings array may carry the same '
+        "content). Output nothing but that object."
+    )
+    text = _claude_once(correction, model)
+    violation = _contract_violation(text)
+    if violation is not None:
         raise RuntimeError(
-            "Reviewer output missing required keys (summary, findings): "
-            f"{json.dumps(result)[:2000]}"
+            f"Reviewer violated the output contract twice ({violation}). "
+            f"Raw output:\n{text}"
         )
-    for i, f in enumerate(result["findings"]):
-        missing = {"file", "line", "title", "body"} - f.keys()
-        if missing:
-            raise RuntimeError(f"Finding {i} missing keys {missing}: {f}")
-    return result
+    return _parse_result(text)
 
 
 def _build_prompt(owner: str, repo: str, pr_num: int, sha: str, diff: str) -> str:
