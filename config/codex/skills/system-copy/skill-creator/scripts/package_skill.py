@@ -63,7 +63,9 @@ def package_skill(skill_path, output_dir=None):
         output_path = Path(output_dir).resolve()
         output_path.mkdir(parents=True, exist_ok=True)
     else:
-        output_path = Path.cwd()
+        # resolve() so the destination-skip comparison below holds by
+        # construction, not by getcwd's POSIX symlink-free contract
+        output_path = Path.cwd().resolve()
 
     skill_filename = output_path / f"{skill_name}.skill"
 

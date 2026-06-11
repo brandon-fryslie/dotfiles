@@ -83,6 +83,7 @@ teardown() {
 
 @test "mid-walk failure: nonzero exit and pre-existing archive intact byte-for-byte" {
   require_packager
+  [ "$(id -u)" -ne 0 ] || skip "chmod 000 does not restrict reads for root"
   cd "$SKILL"
   run "${PACKAGER[@]}" .
   [ "$status" -eq 0 ]
