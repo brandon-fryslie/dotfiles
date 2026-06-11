@@ -45,16 +45,22 @@ migrate_check() {
 }
 
 migrate_apply() {
+    # [LAW:no-silent-failure] the runner's `if migrate_apply` suspends set -e
+    # inside this body, so every step must propagate failure explicitly —
+    # otherwise a failed step falls through and the migration is marked done.
+
     # Remove broken symlink if exists
     if [[ -L "$TARGET_FILE" ]]; then
-        rm "$TARGET_FILE"
+        rm "$TARGET_FILE" || return 1
     fi
 
     # Create directory if needed
-    mkdir -p "$TARGET_DIR"
+    mkdir -p "$TARGET_DIR" || return 1
 
     # Write the config file
-    echo "$CONFIG_CONTENT" > "$TARGET_FILE"
+    echo "$CONFIG_CONTENT" > "$TARGET_FILE" || return 1
 
-    return 0
+    # [LAW:verifiable-goals] success means a fresh check finds nothing left to
+    # do; migrate_check stays the one definition of the correct state.
+    ! migrate_check
 }
