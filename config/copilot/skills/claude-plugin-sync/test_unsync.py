@@ -6,6 +6,10 @@ and never touches anything it did not create.
 """
 
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -212,6 +216,28 @@ def test_structurally_invalid_manifest_raises(tmp_path, content):
     with pytest.raises(ValueError):
         unsync_all(paths)
     assert survivor.exists()
+
+
+def test_cli_removal_failure_exits_1_with_message(tmp_path):
+    """A filesystem error during removal aborts with a clear message, not a traceback."""
+    paths = make_paths(tmp_path)
+    make_command_skill(paths, "stale")
+    write_manifest(paths, commands={"stale": entry("removed")})
+    paths['copilot_skills_dir'].chmod(0o555)
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "unsync.py"],
+            env={**os.environ, "HOME": str(tmp_path)},
+            capture_output=True, text=True,
+            cwd=Path(__file__).parent,
+        )
+    finally:
+        paths['copilot_skills_dir'].chmod(0o755)
+
+    assert result.returncode == 1
+    assert result.stderr.startswith("Error: could not remove item:")
+    assert "Traceback" not in result.stderr
 
 
 def test_remove_path_unlinks_symlink_to_dir(tmp_path):

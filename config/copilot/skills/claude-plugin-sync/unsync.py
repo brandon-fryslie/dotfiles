@@ -133,6 +133,9 @@ def main() -> None:
     except ValueError as e:
         print(f"Error: invalid manifest: {e}", file=sys.stderr)
         sys.exit(1)
+    except OSError as e:
+        print(f"Error: could not remove item: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
