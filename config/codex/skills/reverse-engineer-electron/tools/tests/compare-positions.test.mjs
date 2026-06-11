@@ -116,6 +116,63 @@ test("collection-B lines come from the deminified source the agent wrote", () =>
   assert.equal(parseDetailRow(stdout, "tinyHelper").lineB, 15);
 });
 
+// A function whose normalization fails on exactly one side must not be
+// LCS-scored against normalized-domain tokens: the resulting low score reads
+// as a semantic difference when it is a normalization artifact. JSX inside a
+// .ts file is the trigger — babel's jsx plugin parses it, esbuild's ts
+// loader rejects it.
+test("normalization-failure fallback never cross-compares token domains", () => {
+  const tmp = mkTmpDir();
+  writeText(
+    path.join(tmp, "a", "main.js"),
+    'function render(n){const r=[];for(let i=0;i<n;i++){r.push(i*2+1)}return createElement("div",null,r.length)}\n' +
+      "function tinyHelper(x){return x+1}\n",
+  );
+  writeText(
+    path.join(tmp, "b", "main.ts"),
+    [
+      "const render = (count) => {",
+      "  const items = [];",
+      "  for (let i = 0; i < count; i++) {",
+      "    items.push(i * 2 + 1);",
+      "  }",
+      "  return <div>{items.length}</div>;",
+      "};",
+      "",
+      "function tinyHelper(x) {",
+      "  return x + 1;",
+      "}",
+      "",
+    ].join("\n"),
+  );
+
+  const res = spawnSync(
+    "node",
+    [path.join(TOOLS_DIR, "compare.mjs"), path.join(tmp, "a"), path.join(tmp, "b"), "--details"],
+    { cwd: tmp, encoding: "utf8" },
+  );
+  assert.equal(res.status, 0, `compare.mjs failed:\n${res.stdout}\n${res.stderr}`);
+
+  // The failure must be loud at extraction...
+  assert.match(res.stderr, /Normalize error/, `expected a normalize warning, got:\n${res.stderr}`);
+
+  // ...and the fallback entry must not be scored against the normalized pool.
+  const renderRow = res.stdout
+    .split("\n")
+    .find((l) => /^\s*\S+\s+\d+%\s+render \(/.test(l));
+  assert.ok(renderRow, `no detail row for render in:\n${res.stdout}`);
+  assert.match(
+    renderRow,
+    /-> \(no match\)/,
+    `cross-domain tokens must be excluded, not scored: ${renderRow}`,
+  );
+
+  // Same-domain matching is untouched in the same run.
+  const tinyRow = res.stdout.split("\n").find((l) => /tinyHelper \(line/.test(l));
+  assert.ok(tinyRow, `no detail row for tinyHelper in:\n${res.stdout}`);
+  assert.match(tinyRow, /100%/, `same-domain pair must still match exactly: ${tinyRow}`);
+});
+
 // Over-correction guard: fixing positions must not regress the reason
 // minification exists — stylistic rewrites (if/else vs ternary, renamed
 // params, statement layout) must still collapse to the same token stream.

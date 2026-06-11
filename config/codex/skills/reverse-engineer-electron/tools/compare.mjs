@@ -215,10 +215,17 @@ function extractFunctions(file, shouldMinify) {
   walkWithParent(ast, null, (node, parent) => {
     if (!isFunctionNode(node)) return;
 
+    // [LAW:one-source-of-truth] a token stream is only comparable within the
+    // domain that produced it. Each entry records its domain so a function
+    // that fell back to source tokens is never LCS-scored against normalized
+    // tokens — a cross-domain score reads as a semantic difference when it is
+    // really a normalization artifact.
     let tokens;
+    let domain = 'source';
     if (shouldMinify) {
       try {
         tokens = normalizedFunctionTokens(file.content.slice(node.start, node.end), loader);
+        domain = 'normalized';
       } catch (e) {
         console.warn(`  Normalize error ${file.path}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
         tokens = functionShapeTokens(node);
@@ -230,6 +237,7 @@ function extractFunctions(file, shouldMinify) {
     functions.push({
       name: resolveFunctionName(node, parent),
       tokens,
+      domain,
       hash: tokensToHash(tokens),
       nodeCount: tokens.length,
       file: file.path,
@@ -262,9 +270,10 @@ function buildFunctionIndex(files, shouldMinify) {
 // --- Find best match for a function in collection A ---
 
 function findBestMatch(fnB, indexA) {
-  // Exact hash match first
-  const exactMatches = indexA.byHash.get(fnB.hash);
-  if (exactMatches) {
+  // Exact hash match first (within the same token domain)
+  const exactMatches = (indexA.byHash.get(fnB.hash) || [])
+    .filter(fnA => fnA.domain === fnB.domain);
+  if (exactMatches.length > 0) {
     return { match: exactMatches[0], similarity: 1.0 };
   }
 
@@ -275,6 +284,7 @@ function findBestMatch(fnB, indexA) {
   const sizeB = fnB.tokens.length;
 
   for (const fnA of indexA.allFunctions) {
+    if (fnA.domain !== fnB.domain) continue;
     const sizeA = fnA.tokens.length;
 
     // Skip if sizes are too different (similarity can't exceed 2*min/(a+b))
