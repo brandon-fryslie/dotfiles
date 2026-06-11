@@ -815,7 +815,23 @@ def sync_commands(plugin_path: Path, plugin_name: str, skills_dir: Path,
     commands = find_commands(plugin_path)
 
     for command_name, command_path in commands:
-        target_skill_dir = skills_dir / command_name
+        # [LAW:one-source-of-truth] namespace like skills/agents so two plugins
+        # providing the same command cannot silently overwrite each other;
+        # manifest key == on-disk dir name is the contract unsync.py relies on
+        target_name = f"{plugin_name}-{command_name}"
+        target_skill_dir = skills_dir / target_name
+
+        # [LAW:no-silent-failure] mkdir(exist_ok=True) accepts a symlink-to-dir,
+        # and the write below would follow it into the source plugin cache —
+        # refuse the collision loudly instead of corrupting or unlinking
+        if target_skill_dir.is_symlink():
+            print(
+                f"Warning: skipping command '{plugin_name}:{command_name}' — "
+                f"{target_skill_dir} is a symlink (name collides with an existing skill)",
+                file=sys.stderr
+            )
+            continue
+
         target_skill_dir.mkdir(parents=True, exist_ok=True)
         target_file = target_skill_dir / "SKILL.md"
 
@@ -826,8 +842,8 @@ def sync_commands(plugin_path: Path, plugin_name: str, skills_dir: Path,
         if write_if_changed(target_file, skill_content):
             added += 1
 
-        synced_commands.add(command_name)
-        manifest["commands"][command_name] = {
+        synced_commands.add(target_name)
+        manifest["commands"][target_name] = {
             "source": str(command_path),
             "plugin": plugin_name,
             "status": "active"
@@ -851,7 +867,11 @@ def clean_stale_commands(skills_dir: Path, synced_commands: Set[str], previously
     for command_name in previously_synced:
         if command_name not in synced_commands:
             command_skill_dir = skills_dir / command_name
-            if command_skill_dir.exists() and command_skill_dir.is_dir():
+            # Commands are only ever materialized as real directories; a
+            # symlink here is someone else's (rmtree would raise on it anyway)
+            if command_skill_dir.is_symlink():
+                continue
+            if command_skill_dir.is_dir():
                 shutil.rmtree(command_skill_dir)
                 removed += 1
     return removed
