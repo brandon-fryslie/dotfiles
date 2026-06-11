@@ -85,6 +85,7 @@ fi
 extract_functions() {
     local dir="$1"
     local ctx="$2"
+    local status=0
 
     # Use ripgrep to find function definitions with context
     # Note: Class method pattern requires visibility/async/static to avoid matching if/for/while
@@ -100,7 +101,15 @@ extract_functions() {
         -e '^(async )?function \w+\s*\(' \
         "${GLOB_ARGS[@]}" \
         -A "$ctx" \
-        "$dir" 2>/dev/null || true
+        "$dir" || status=$?
+
+    # [LAW:no-silent-failure] rg exit 1 means "no matches" — an empty catalog is
+    # the true answer. Anything else (2 = error, 127 = rg not installed) must be
+    # fatal, or the script reports an empty catalog as success.
+    if (( status > 1 )); then
+        echo "Error: rg failed (exit $status)" >&2
+        return "$status"
+    fi
 }
 
 # Process ripgrep JSON output into our catalog format
@@ -233,7 +242,10 @@ process_output() {
 }
 
 # Main
-extract_functions "$SRC_DIR" "$CONTEXT_LINES" | process_output > "$OUTPUT"
+# [LAW:no-silent-failure] Capture first, write after: redirecting the pipeline
+# straight into $OUTPUT would leave a bogus empty catalog on disk when rg fails.
+catalog=$(extract_functions "$SRC_DIR" "$CONTEXT_LINES" | process_output)
+printf '%s\n' "$catalog" > "$OUTPUT"
 
 # Report stats to stderr
 if [[ "$OUTPUT" != "/dev/stdout" ]]; then
