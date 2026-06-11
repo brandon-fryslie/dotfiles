@@ -311,14 +311,22 @@ def trigger(pr_url: str) -> dict:
     """Run the adversarial reviewer for the current head SHA and post the
     review. Idempotent per SHA: an existing marker review means done."""
     owner, repo, pr_num = github_threads.parse_pr(pr_url)
-    sha = github_threads.head_sha(owner, repo, pr_num)
+    refs = json.loads(github_threads.gh(
+        "api", f"repos/{owner}/{repo}/pulls/{pr_num}",
+        "--jq", "{head: .head.sha, base: .base.sha}",
+    ))
+    sha = refs["head"]
     if _our_review_for(owner, repo, pr_num, sha):
         return {"triggered": True, "note": f"review for {sha[:9]} already posted"}
 
-    # [LAW:one-source-of-truth] one diff value feeds both the reviewer's
-    # context and the anchor domain — fetching it twice would let a push
-    # during the review anchor findings against a diff nobody reviewed.
-    diff = github_threads.gh("pr", "diff", str(pr_num), "--repo", f"{owner}/{repo}")
+    # [LAW:no-ambient-temporal-coupling] the diff is a pure function of the
+    # SHAs captured above — never "the PR's diff right now", which a push
+    # between calls would silently rebind. [LAW:one-source-of-truth] this one
+    # value feeds both the reviewer's context and the anchor domain.
+    diff = github_threads.gh(
+        "api", "-H", "Accept: application/vnd.github.diff",
+        f"repos/{owner}/{repo}/compare/{refs['base']}...{sha}",
+    )
     if not diff:
         raise RuntimeError(f"PR #{pr_num} has an empty diff — nothing to review.")
 
