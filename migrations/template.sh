@@ -25,7 +25,12 @@ migrate_check() {
 
 migrate_apply() {
     # Do the fix. Return 0 on success, 1 on failure.
+    #
+    # The runner calls `if migrate_apply`, which suspends set -e inside this
+    # body — every step must propagate failure explicitly (cmd || return 1).
+    # Never end with an unconditional `return 0`; end with `! migrate_check`
+    # so success means a fresh check finds nothing left to do.
 
     # TODO: implement fix
-    return 0
+    return 1
 }
