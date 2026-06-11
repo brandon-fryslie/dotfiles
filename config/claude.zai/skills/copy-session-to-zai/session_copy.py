@@ -57,10 +57,18 @@ class SessionReport:
 
 
 def z_ai_config_dir() -> Path:
+    # [LAW:no-silent-failure] No filesystem fallback: deriving the target from
+    # this file's resolved location follows the dotbot symlink into the git
+    # checkout, silently making the repo the copy target for private transcripts.
     env = os.environ.get("CLAUDE_CONFIG_DIR")
-    if env:
-        return Path(env).expanduser().resolve()
-    return Path(__file__).resolve().parents[2]
+    if not env:
+        raise SystemExit(
+            "CLAUDE_CONFIG_DIR is not set; the copy target cannot be derived "
+            "from the script location.\n"
+            "Run this skill from the z.ai Claude config, which sets "
+            "CLAUDE_CONFIG_DIR to its config root."
+        )
+    return Path(env).expanduser().resolve()
 
 
 def config_dirs() -> ConfigDirs:
