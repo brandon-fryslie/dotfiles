@@ -271,6 +271,89 @@ EOF
 }
 
 # =============================================================================
+# Multi-Migration / Interpreter Tests (ticket dotfiles-script-audit-lbl.14)
+# =============================================================================
+# BUG VALIDATED:
+# The runner iterated `for migration in $migration_files` — but it is sourced
+# from zsh (config/zshrc.home), which does not word-split unquoted expansions.
+# With a single migration it happened to work; the moment a second migration
+# existed, zsh handed the loop one newline-joined string, source failed on the
+# bogus path, set -e aborted, and NO migrations ran on any zsh login. Under
+# bash the same loop broke on a DOTFILES_DIR containing a space. Separately,
+# find errors were swallowed (2>/dev/null), so a wrong/unset DOTFILES_DIR was
+# indistinguishable from "no migrations".
+#
+# GAMING RESISTANCE:
+# - Runs the real runner under real zsh (zsh -f: no user rc files) against an
+#   isolated DOTFILES_DIR built in a temp dir — exactly the production
+#   sourcing context, with two migrations present
+# - Asserts the migrations' side effects actually happened (witness files +
+#   markers), not just exit status or output strings
+
+# Build an isolated DOTFILES_DIR at $1 containing the real runner and two
+# migrations that each drop a witness file when applied.
+make_migration_fixture() {
+    local dir="$1"
+    mkdir -p "$dir/migrations"
+    cp "$DOTFILES_ROOT/migrations/run-migrations.sh" "$dir/migrations/"
+    local n
+    for n in 0001 0002; do
+        cat > "$dir/migrations/$n-test-fixture.sh" << EOF
+migrate_check() { return 0; }
+migrate_apply() { touch "\$MARKERS_DIR/applied-$n"; }
+EOF
+    done
+}
+
+@test "runner sourced from zsh applies all migrations when more than one exists" {
+    FIXTURE=$(create_test_dir)
+    make_migration_fixture "$FIXTURE"
+
+    run env HOME="$TEST_HOME" DOTFILES_DIR="$FIXTURE" \
+        zsh -fc 'source "$DOTFILES_DIR/migrations/run-migrations.sh"'
+
+    [ "$status" -eq 0 ]
+    # Both migrations really ran: witness files and markers exist
+    [ -f "$TEST_MARKERS/applied-0001" ]
+    [ -f "$TEST_MARKERS/applied-0002" ]
+    [ -f "$TEST_MARKERS/0001-test-fixture.done" ]
+    [ -f "$TEST_MARKERS/0002-test-fixture.done" ]
+
+    cleanup_test_dir "$FIXTURE"
+}
+
+@test "runner executed by bash applies all migrations from a DOTFILES_DIR containing a space" {
+    FIXTURE=$(create_test_dir)/"with space"
+    make_migration_fixture "$FIXTURE"
+
+    run env HOME="$TEST_HOME" DOTFILES_DIR="$FIXTURE" \
+        bash "$FIXTURE/migrations/run-migrations.sh"
+
+    [ "$status" -eq 0 ]
+    [ -f "$TEST_MARKERS/applied-0001" ]
+    [ -f "$TEST_MARKERS/applied-0002" ]
+
+    cleanup_test_dir "$(dirname "$FIXTURE")"
+}
+
+@test "runner fails loudly when the migrations directory does not exist" {
+    FIXTURE=$(create_test_dir)
+    make_migration_fixture "$FIXTURE"
+
+    # Real runner sourced, but DOTFILES_DIR points somewhere wrong
+    run env HOME="$TEST_HOME" DOTFILES_DIR="$FIXTURE/nonexistent" \
+        zsh -fc "source '$FIXTURE/migrations/run-migrations.sh' 2>&1"
+
+    # Wrong DOTFILES_DIR must be distinguishable from "no migrations":
+    # nonzero exit and an explicit message naming the missing directory
+    [ "$status" -ne 0 ]
+    assert_contains "$output" "migrations directory not found"
+    assert_contains "$output" "$FIXTURE/nonexistent"
+
+    cleanup_test_dir "$FIXTURE"
+}
+
+# =============================================================================
 # Just Command Tests
 # =============================================================================
 

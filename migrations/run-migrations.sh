@@ -19,14 +19,24 @@
     MIGRATIONS_DIR="${DOTFILES_DIR:-$HOME/code/dotfiles}/migrations"
     MARKERS_DIR="${HOME}/.local/state/dotfiles-migrations"
 
+    # [LAW:no-silent-failure] a wrong/unset DOTFILES_DIR must be distinguishable
+    # from "no migrations to run"
+    if [[ ! -d "$MIGRATIONS_DIR" ]]; then
+        echo "[migrate] migrations directory not found: $MIGRATIONS_DIR" >&2
+        exit 1
+    fi
+
     # Ensure markers directory exists
     mkdir -p "$MARKERS_DIR"
 
-    migration_files=$(find "$MIGRATIONS_DIR" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-*.sh' -type f 2>/dev/null | sort)
+    migration_files=$(find "$MIGRATIONS_DIR" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-*.sh' -type f | sort)
 
     [[ -z "$migration_files" ]] && exit 0
 
-    for migration in $migration_files; do
+    # This file is sourced by zsh (which does not word-split unquoted
+    # expansions) and executed by bash; line-wise read is the one iteration
+    # form correct under both interpreters
+    while IFS= read -r migration; do
         name=$(basename "$migration" .sh)
         marker="$MARKERS_DIR/$name.done"
 
@@ -49,5 +59,5 @@
             # Already in correct state, mark as done
             touch "$marker"
         fi
-    done
+    done <<< "$migration_files"
 )
