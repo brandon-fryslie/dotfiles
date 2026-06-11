@@ -13,9 +13,16 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE="${SCRIPT_DIR}/config/claude/CLAUDE.md"
 
+# [LAW:one-source-of-truth] dotbot may have already symlinked the destination
+# to $SOURCE itself; cp onto the same inode fails "are identical" under set -e.
+# Same file means the desired end state already holds — nothing to do.
+copy_into_place() {
+  [[ "$1" -ef "$2" ]] || cp "$1" "$2"
+}
+
 if [[ "$NO_COPY" == false ]]; then
-  cp "$SOURCE" ~/.claude/CLAUDE.md
-  cp "$SOURCE" ~/.codex/CODEX.md
+  copy_into_place "$SOURCE" ~/.claude/CLAUDE.md
+  copy_into_place "$SOURCE" ~/.codex/CODEX.md
 fi
 
 echo ""
