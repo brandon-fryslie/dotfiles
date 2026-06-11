@@ -20,13 +20,13 @@
 #   "hook_event_name": "Stop",
 #   "stop_hook_active": true
 # }
-exit 0
 # don't loop forever right now, unless CLOD_LOOP_FOREVER == 1
 [[ $CLOD_LOOP_FOREVER == 1 ]] || exit 0
 
-# Read JSON from stdin and parse with jq
-session_id=$(jq -r '.session_id')
-transcript_path=$(jq -r '.transcript_path')
+# [LAW:one-source-of-truth] stdin is single-read; capture once so both extractions see the payload
+payload=$(cat)
+session_id=$(jq -r '.session_id' <<<"$payload")
+transcript_path=$(jq -r '.transcript_path' <<<"$payload")
 
 # Expand tilde in transcript_path
 transcript_path="${transcript_path/#\~/$HOME}"
