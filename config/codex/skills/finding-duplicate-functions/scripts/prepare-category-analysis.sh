@@ -22,7 +22,9 @@ EXAMPLE:
     $(basename "$0") categorized.json ./analysis
     # Creates: ./analysis/validation.json, ./analysis/file-ops.json, etc.
 EOF
-    exit 0
+    # [LAW:no-silent-failure] exit code is the CLI contract: 0 only for -h,
+    # error paths pass 1 so callers (set -e, && chains) see the failure
+    exit "${1:-0}"
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
@@ -31,7 +33,7 @@ fi
 
 if [[ -z "${1:-}" ]]; then
     echo "Error: categorized.json required" >&2
-    usage
+    usage 1 >&2
 fi
 
 CATEGORIZED="$1"
