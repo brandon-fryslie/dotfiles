@@ -12,10 +12,21 @@
 // formatted original files. The deminified-dir contains agent-produced .ts/.js files.
 
 import { parse } from '@babel/parser';
-import { transformSync } from 'esbuild';
-import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+
+// [LAW:one-source-of-truth] Identity hashes must come from the exact algorithm
+// and domain prepare.mjs wrote into manifest.json; similarity tokens must come
+// from the exact normalizer applied to both sides. Both contracts live in
+// shape.mjs — see the rationale there.
+import {
+  walkWithParent,
+  isFunctionNode,
+  resolveFunctionName,
+  functionShapeTokens,
+  tokensToHash,
+  normalizedFunctionTokens,
+} from './shape.mjs';
 
 // --- CLI ---
 
@@ -34,96 +45,6 @@ function parseArgs(argv) {
   }
 
   return { positional, opts };
-}
-
-// --- Shared helpers (same algorithms as compare.mjs) ---
-
-const SKIP_KEYS = new Set([
-  'type', 'start', 'end', 'loc', 'leadingComments',
-  'trailingComments', 'innerComments', 'extra', 'range', 'comments',
-]);
-
-function walk(node, visitor) {
-  if (!node || typeof node !== 'object') return;
-  if (node.type) visitor(node);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const val = node[key];
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (item && typeof item === 'object' && item.type) walk(item, visitor);
-      }
-    } else if (val && typeof val === 'object' && val.type) {
-      walk(val, visitor);
-    }
-  }
-}
-
-function walkWithParent(node, parent, visitor) {
-  if (!node || typeof node !== 'object') return;
-  if (node.type) visitor(node, parent);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const val = node[key];
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (item && typeof item === 'object' && item.type) walkWithParent(item, node, visitor);
-      }
-    } else if (val && typeof val === 'object' && val.type) {
-      walkWithParent(val, node, visitor);
-    }
-  }
-}
-
-function resolveFunctionName(node, parent) {
-  if (node.id?.name) return node.id.name;
-  if (!parent) return null;
-  if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
-  if (parent.type === 'Property' || parent.type === 'MethodDefinition') {
-    const key = parent.key;
-    return key?.name || (typeof key?.value === 'string' ? key.value : null);
-  }
-  if (parent.type === 'AssignmentExpression' && parent.left) {
-    if (parent.left.type === 'MemberExpression') {
-      const obj = parent.left.object?.name || '';
-      const prop = parent.left.property?.name || '';
-      return obj ? `${obj}.${prop}` : prop || null;
-    }
-    if (parent.left.type === 'Identifier') return parent.left.name;
-  }
-  return null;
-}
-
-function functionShapeTokens(node) {
-  const parts = [];
-  walk(node, (n) => {
-    switch (n.type) {
-      case 'Identifier':        break;
-      case 'StringLiteral':     parts.push('S'); break;
-      case 'NumericLiteral':    parts.push('N'); break;
-      case 'BooleanLiteral':    parts.push(n.value ? 'T' : 'F'); break;
-      case 'NullLiteral':       parts.push('null'); break;
-      case 'RegExpLiteral':     parts.push('R'); break;
-      case 'BigIntLiteral':     parts.push('BI'); break;
-      case 'TemplateLiteral':   parts.push('TL'); break;
-      case 'TemplateElement':   break;
-      case 'BinaryExpression':
-      case 'LogicalExpression':
-      case 'AssignmentExpression':
-        parts.push(n.operator); break;
-      case 'UnaryExpression':
-        parts.push(`U:${n.operator}`); break;
-      case 'UpdateExpression':
-        parts.push(`${n.prefix ? 'pre' : 'post'}${n.operator}`); break;
-      default:
-        parts.push(n.type);
-    }
-  });
-  return parts;
-}
-
-function tokensToHash(tokens) {
-  return createHash('sha256').update(tokens.join(',')).digest('hex').slice(0, 16);
 }
 
 // --- LCS similarity ---
@@ -174,29 +95,17 @@ function tokenSimilarity(tokensA, tokensB) {
   return (2 * lcs) / (tokensA.length + tokensB.length);
 }
 
-// --- Minification (normalize structure before comparison) ---
-
-function minifyCode(code, filepath) {
-  const loader = /\.tsx?$/.test(filepath) ? 'ts' : 'js';
-  try {
-    return transformSync(code, {
-      loader,
-      minify: true,
-      minifyWhitespace: true,
-      minifySyntax: true,
-      minifyIdentifiers: false,
-      target: 'esnext',
-      format: 'esm',
-    }).code;
-  } catch (e) {
-    console.warn(`  Minify error ${filepath}: ${e.message.split('\n')[0]}`);
-    return null;
-  }
-}
-
 // --- Build index from manifest + prepared files ---
-// Reads the prepared (formatted) files and extracts structural tokens for each function.
-// The manifest provides metadata; we re-parse the formatted files to get token sequences.
+//
+// Each function carries values from two separate domains:
+//   identity  — source-AST shape tokens of the prepared file, the domain
+//               prepare.mjs (and gate.mjs) hash into manifest.json. Re-derived
+//               here from the same file with the same shared algorithm, so the
+//               manifest lookup matches by construction.
+//   similarity — per-function normalized tokens, used only against deminified
+//               functions normalized the same way.
+// Re-minifying the whole file and hashing THAT was ticket .22: identity
+// computed in the similarity domain, so the lookup silently never matched.
 
 function buildIndexFromManifest(preparedDir) {
   const manifestPath = path.join(preparedDir, 'manifest.json');
@@ -210,7 +119,6 @@ function buildIndexFromManifest(preparedDir) {
     entriesByFile.set(entry.file, arr);
   }
 
-  // For each file, read the formatted source, minify, extract tokens
   const byHash = new Map();
   const allFunctions = [];
 
@@ -218,11 +126,7 @@ function buildIndexFromManifest(preparedDir) {
     const filePath = path.join(preparedDir, relPath);
     const rawCode = fs.readFileSync(filePath, 'utf8');
 
-    // Minify the formatted code to normalize structure
-    const minified = minifyCode(rawCode, relPath);
-    if (minified == null) continue;
-
-    const ast = parse(minified, {
+    const ast = parse(rawCode, {
       sourceType: 'module',
       plugins: [],
       errorRecovery: true,
@@ -230,26 +134,6 @@ function buildIndexFromManifest(preparedDir) {
     });
     if (!ast) continue;
 
-    // Extract functions from minified AST
-    const fns = [];
-    walkWithParent(ast, null, (node, parent) => {
-      const isFn = node.type === 'FunctionDeclaration' ||
-                   node.type === 'FunctionExpression' ||
-                   node.type === 'ArrowFunctionExpression';
-      if (!isFn) return;
-
-      const tokens = functionShapeTokens(node);
-      fns.push({
-        name: resolveFunctionName(node, parent),
-        tokens,
-        hash: tokensToHash(tokens),
-        tokenCount: tokens.length,
-        charStart: node.start ?? 0,
-      });
-    });
-
-    // Match extracted functions to manifest entries by shapeHash
-    // Build a lookup from shapeHash → manifest entries
     const manifestByHash = new Map();
     for (const entry of entries) {
       const arr = manifestByHash.get(entry.shapeHash) || [];
@@ -257,26 +141,46 @@ function buildIndexFromManifest(preparedDir) {
       manifestByHash.set(entry.shapeHash, arr);
     }
 
-    for (const fn of fns) {
-      // Try to find manifest entry with matching hash
-      const candidates = manifestByHash.get(fn.hash) || [];
-      const manifestEntry = candidates.shift() || null;
+    let unmatched = 0;
+    walkWithParent(ast, null, (node, parent) => {
+      if (!isFunctionNode(node)) return;
 
+      const identityTokens = functionShapeTokens(node);
+      const candidates = manifestByHash.get(tokensToHash(identityTokens)) || [];
+      const manifestEntry = candidates.shift() || null;
+      if (!manifestEntry) unmatched++;
+
+      let tokens;
+      try {
+        tokens = normalizedFunctionTokens(rawCode.slice(node.start, node.end), 'js');
+      } catch (e) {
+        console.warn(`  Normalize error ${relPath}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
+        tokens = identityTokens;
+      }
+
+      // Metadata prefers the manifest; on a miss it degrades to honest values
+      // from the source AST we just parsed — never to a fabricated line 0.
       const record = {
-        name: manifestEntry?.name || fn.name,
-        tokens: fn.tokens,
-        hash: fn.hash,
-        tokenCount: fn.tokenCount,
+        name: manifestEntry?.name ?? resolveFunctionName(node, parent),
+        tokens,
+        hash: tokensToHash(tokens),
+        tokenCount: tokens.length,
         file: relPath,
-        line: manifestEntry?.line ?? 0,
-        charOffset: manifestEntry?.charOffset ?? fn.charStart,
-        strings: manifestEntry?.strings || [],
+        line: manifestEntry?.line ?? node.loc?.start?.line ?? 0,
+        charOffset: manifestEntry?.charOffset ?? node.start ?? 0,
+        strings: manifestEntry?.strings ?? [],
       };
 
       allFunctions.push(record);
-      const arr = byHash.get(fn.hash) || [];
+      const arr = byHash.get(record.hash) || [];
       arr.push(record);
-      byHash.set(fn.hash, arr);
+      byHash.set(record.hash, arr);
+    });
+
+    if (unmatched > 0) {
+      // [LAW:no-silent-failure] A prepared file that disagrees with its
+      // manifest means the manifest is stale or the file was edited; say so.
+      console.warn(`  Manifest mismatch: ${unmatched} function(s) in ${relPath} have no manifest entry — re-run prepare.mjs`);
     }
   }
 
@@ -312,62 +216,39 @@ function discoverFiles(dir) {
   }));
 }
 
-function extractNameLines(code, filepath) {
-  const map = new Map();
-  const ast = parse(code, {
-    sourceType: 'module',
-    plugins: ['typescript', 'jsx', 'decorators'],
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-  });
-  if (!ast) return map;
-
-  walkWithParent(ast, null, (node, parent) => {
-    if (node.type.startsWith('TS')) return;
-    const isFn = node.type === 'FunctionDeclaration' ||
-                 node.type === 'FunctionExpression' ||
-                 node.type === 'ArrowFunctionExpression';
-    if (!isFn) return;
-    const name = resolveFunctionName(node, parent);
-    if (name && !map.has(name)) {
-      map.set(name, node.loc?.start?.line ?? 0);
-    }
-  });
-
-  return map;
-}
-
+// One pass over the source as the agent wrote it: names, lines, and char
+// offsets come straight from the file the user will open, while similarity
+// tokens are normalized per function — the same split as the prepared side.
 function buildDeminifiedIndex(dir) {
   const files = discoverFiles(dir);
   const results = [];
 
   for (const file of files) {
-    const nameLines = extractNameLines(file.content, file.relPath);
-
-    const minified = minifyCode(file.content, file.relPath);
-    if (minified == null) continue;
-
-    const ast = parse(minified, {
+    const ast = parse(file.content, {
       sourceType: 'module',
-      plugins: [],
+      plugins: ['typescript', 'jsx', 'decorators'],
       errorRecovery: true,
       allowReturnOutsideFunction: true,
     });
     if (!ast) continue;
 
-    walkWithParent(ast, null, (node, parent) => {
-      const isFn = node.type === 'FunctionDeclaration' ||
-                   node.type === 'FunctionExpression' ||
-                   node.type === 'ArrowFunctionExpression';
-      if (!isFn) return;
+    const loader = /\.tsx?$/.test(file.relPath) ? 'ts' : 'js';
 
-      const name = resolveFunctionName(node, parent);
-      const tokens = functionShapeTokens(node);
+    walkWithParent(ast, null, (node, parent) => {
+      if (!isFunctionNode(node)) return;
+
+      let tokens;
+      try {
+        tokens = normalizedFunctionTokens(file.content.slice(node.start, node.end), loader);
+      } catch (e) {
+        console.warn(`  Normalize error ${file.relPath}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
+        tokens = functionShapeTokens(node);
+      }
 
       results.push({
         file: file.relPath,
-        name,
-        line: name ? (nameLines.get(name) ?? '?') : '?',
+        name: resolveFunctionName(node, parent),
+        line: node.loc?.start?.line ?? 0,
         tokens,
         hash: tokensToHash(tokens),
         tokenCount: tokens.length,
