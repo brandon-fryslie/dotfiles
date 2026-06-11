@@ -4,7 +4,7 @@
  * Handles word boundaries, regex flags, string literals, and scoped variables.
  */
 import { readFileSync, writeFileSync } from 'fs';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { resolve } from 'path';
 
 const filePath = resolve('app/main.js');
@@ -119,7 +119,9 @@ console.log('Renames applied successfully.');
 
 // Verify syntax
 try {
-  execSync(`node --check ${filePath}`, { stdio: 'pipe' });
+  // [LAW:no-silent-failure] argv array, not shell-string interpolation: a path
+  // with a space would be checked truncated, misreporting a good rename as broken.
+  execFileSync('node', ['--check', filePath], { stdio: 'pipe' });
   console.log('Syntax check PASSED');
 } catch (e) {
   console.error('SYNTAX ERROR:', e.stderr?.toString());
