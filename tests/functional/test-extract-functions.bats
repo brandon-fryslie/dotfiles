@@ -40,10 +40,15 @@ load '../helpers/test-helpers'
 SCRIPTS_DIR="$BATS_TEST_DIRNAME/../../config/codex/skills/finding-duplicate-functions/scripts"
 SCRIPT="$SCRIPTS_DIR/extract-functions.sh"
 
-setup() {
+# Only the .11 tests run the extractor against real fixture trees; the .19
+# arg-handling tests exit before any tool runs, so gating them on rg/jq in
+# setup() would silently skip the bug pins on rg-free environments.
+require_extractor_tools() {
   require_command rg "brew install ripgrep"
   require_command jq "brew install jq"
+}
 
+setup() {
   WORK=$(create_test_dir)
   mkdir -p "$WORK/src" "$WORK/empty"
   printf 'export function fooBar(x) {\n  return x + 1;\n}\n' > "$WORK/src/a.ts"
@@ -55,6 +60,7 @@ teardown() {
 }
 
 @test "matches found: exit 0 and catalog contains the function" {
+  require_extractor_tools
   run "$SCRIPT" -o "$WORK/out.json" "$WORK/src"
   [ "$status" -eq 0 ]
   run jq -r '.[0].name' "$WORK/out.json"
@@ -62,6 +68,7 @@ teardown() {
 }
 
 @test "no matches (rg exit 1): exit 0 with an empty catalog" {
+  require_extractor_tools
   run "$SCRIPT" -o "$WORK/out.json" "$WORK/empty"
   [ "$status" -eq 0 ]
   run jq -c '.' "$WORK/out.json"
@@ -69,6 +76,7 @@ teardown() {
 }
 
 @test "rg error (bad glob): nonzero exit, stderr surfaced, no catalog written" {
+  require_extractor_tools
   run "$SCRIPT" -t '{{' -o "$WORK/out.json" "$WORK/src"
   [ "$status" -ne 0 ]
   [[ "$output" == *"rg failed"* ]]
@@ -76,6 +84,7 @@ teardown() {
 }
 
 @test "rg missing from PATH: nonzero exit, no catalog written" {
+  require_extractor_tools
   run -127 env PATH=/usr/bin:/bin "$SCRIPT" -o "$WORK/out.json" "$WORK/src"
   [ ! -e "$WORK/out.json" ]
 }
