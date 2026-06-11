@@ -187,6 +187,52 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# ERROR HANDLING: A failed merge must not destroy the previous output
+# GAMING RESISTANCE: Verifies the last good output file survives a jq failure,
+# byte-for-byte — cannot pass by exiting nonzero alone
+@test "merge-json.sh preserves existing output when merge fails" {
+  # Existing good output from a previous successful merge
+  echo '{"lastGood": "config"}' > "$TEST_DIR/output.json"
+
+  # Valid base plus a mid-edit broken input (the launchd watcher scenario)
+  echo '{"valid": "json"}' > "$TEST_DIR/base.json"
+  echo '{invalid json}' > "$TEST_DIR/invalid.json"
+
+  run "$DOTFILES_ROOT/scripts/merge-json.sh" \
+    "$TEST_DIR/output.json" \
+    "$TEST_DIR/base.json" \
+    "$TEST_DIR/invalid.json"
+
+  [ "$status" -ne 0 ]
+
+  # Previous output must be intact, not truncated or replaced
+  assert_file_exists "$TEST_DIR/output.json"
+  assert_json_value "$TEST_DIR/output.json" ".lastGood" "config"
+
+  # No temp file residue left behind
+  run bash -c "ls \"$TEST_DIR\"/.merge-json.* 2>/dev/null"
+  [ "$status" -ne 0 ]
+}
+
+# ERROR HANDLING: Output file listed among inputs must be read, not truncated
+# GAMING RESISTANCE: Validates the output's prior content participates in the merge
+@test "merge-json.sh handles output file among inputs" {
+  echo '{"fromOutput": "kept", "editor": "vim"}' > "$TEST_DIR/output.json"
+  echo '{"editor": "idea"}' > "$TEST_DIR/override.json"
+
+  run "$DOTFILES_ROOT/scripts/merge-json.sh" \
+    "$TEST_DIR/output.json" \
+    "$TEST_DIR/output.json" \
+    "$TEST_DIR/override.json"
+
+  [ "$status" -eq 0 ]
+
+  assert_json_type "$TEST_DIR/output.json" "object"
+  # Prior output content was read as an input, not lost to truncation
+  assert_json_value "$TEST_DIR/output.json" ".fromOutput" "kept"
+  assert_json_value "$TEST_DIR/output.json" ".editor" "idea"
+}
+
 # ERROR HANDLING: Script should fail if jq is not available
 # GAMING RESISTANCE: Tests dependency checking
 @test "merge-json.sh checks for jq availability" {

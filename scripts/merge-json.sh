@@ -21,6 +21,13 @@ FILTER="reduce inputs as \$item ({}; . * \$item)"
 
 # Merge files
 # Use -n (null-input) to start with empty object, not first file
-jq -n "$FILTER" "${INPUTS[@]}" > "$OUTPUT"
+# [LAW:no-silent-failure] Write to a temp file and rename only after jq
+# succeeds: redirecting straight to $OUTPUT truncates it before jq runs,
+# so a failed merge (or $OUTPUT appearing among the inputs) would destroy
+# the last good merged config.
+TMP=$(mktemp "$(dirname "$OUTPUT")/.merge-json.XXXXXX")
+trap 'rm -f "$TMP"' EXIT
+jq -n "$FILTER" "${INPUTS[@]}" > "$TMP"
+mv "$TMP" "$OUTPUT"
 
 echo "✓ Merged ${#INPUTS[@]} files into $OUTPUT"
