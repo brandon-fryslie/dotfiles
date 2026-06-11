@@ -47,7 +47,9 @@ case "$ACTION" in
   window)
     WINDOW_NAME="${3:-}"
     COMMAND="${4:-bash}"
-    shift 4 2>/dev/null || true
+    # [LAW:dataflow-not-control-flow] a failed over-shift leaves "$@" holding
+    # the action/session/name, which would flow into the window's command line
+    shift 4 2>/dev/null || shift 3 2>/dev/null || true
 
     if [ -z "$WINDOW_NAME" ]; then
       echo "Error: Window name required" >&2
@@ -60,17 +62,12 @@ case "$ACTION" in
       exit 1
     fi
 
-    # Create new window in session
-    if [ $# -gt 0 ]; then
-      tmux new-window -t "$SESSION_NAME:" -n "$WINDOW_NAME" "$COMMAND" "$@"
-    else
-      tmux new-window -t "$SESSION_NAME:" -n "$WINDOW_NAME" "$COMMAND"
-    fi
+    # [LAW:one-source-of-truth] tmux reports the created window's index
+    # directly; re-deriving it by name lookup misidentifies windows whose
+    # names share a substring
+    INDEX=$(tmux new-window -P -F '#{window_index}' -t "$SESSION_NAME:" -n "$WINDOW_NAME" "$COMMAND" "$@")
 
     sleep 0.3
-
-    # Get the window index that was just created
-    INDEX=$(tmux list-windows -t "$SESSION_NAME" -F '#{window_index} #{window_name}' | grep "$WINDOW_NAME" | tail -1 | cut -d' ' -f1)
 
     echo "Created window '$WINDOW_NAME' in session '$SESSION_NAME'"
     echo "Window index: $INDEX"
