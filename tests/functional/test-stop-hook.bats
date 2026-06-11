@@ -80,4 +80,6 @@ payload() {
   run env CLOD_LOOP_FOREVER=1 HOME="$HOOK_HOME" "$SCRIPT" <<<'not json'
   [ "$status" -ne 0 ]
   [ "$status" -ne 2 ]
+  [[ "$output" == *"parse error"* ]]
+  [ ! -e "$HOOK_HOME/.claude/stop-hook-counters" ]
 }
