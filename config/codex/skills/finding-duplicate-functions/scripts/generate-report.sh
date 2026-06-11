@@ -42,28 +42,45 @@ if [[ ! -d "$DUPLICATES_DIR" ]]; then
     exit 1
 fi
 
-# Generate the report
-{
+# [LAW:single-enforcer] every section renders through this one loop, so a jq
+# failure on any file is fatal with the file named — never swallowed. The
+# summary counts and these sections derive from the same data; letting one
+# fail silently lets the report contradict itself. [LAW:one-source-of-truth]
+render_section() {
+    local program=$1
+    local f category
+    for f in "$DUPLICATES_DIR"/*.json; do
+        [[ -f "$f" ]] || continue
+        category=$(basename "$f" .json)
+        jq -r --arg cat "$category" "$program" "$f" \
+            || { echo "Error: failed to render entries from $f" >&2; exit 1; }
+    done
+}
+
+# Count totals
+high_count=0
+medium_count=0
+low_count=0
+
+for f in "$DUPLICATES_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
+    h=$(jq '[.[] | select(.confidence == "HIGH")] | length' "$f")
+    m=$(jq '[.[] | select(.confidence == "MEDIUM")] | length' "$f")
+    l=$(jq '[.[] | select(.confidence == "LOW")] | length' "$f")
+    high_count=$((high_count + h))
+    medium_count=$((medium_count + m))
+    low_count=$((low_count + l))
+done
+
+# [LAW:effects-at-boundaries] capture-then-write (same pattern as
+# extract-functions.sh): the whole report is built before $OUTPUT is touched,
+# so a failure aborts with the existing file intact instead of leaving a
+# truncated artifact.
+report=$(
     echo "# Duplicate Functions Report"
     echo ""
     echo "Generated: $(date '+%Y-%m-%d %H:%M')"
     echo ""
-
-    # Count totals
-    high_count=0
-    medium_count=0
-    low_count=0
-
-    for f in "$DUPLICATES_DIR"/*.json; do
-        [[ -f "$f" ]] || continue
-        h=$(jq '[.[] | select(.confidence == "HIGH")] | length' "$f")
-        m=$(jq '[.[] | select(.confidence == "MEDIUM")] | length' "$f")
-        l=$(jq '[.[] | select(.confidence == "LOW")] | length' "$f")
-        high_count=$((high_count + h))
-        medium_count=$((medium_count + m))
-        low_count=$((low_count + l))
-    done
-
     echo "## Summary"
     echo ""
     echo "| Confidence | Count | Action |"
@@ -72,80 +89,56 @@ fi
     echo "| MEDIUM | $medium_count | Investigate further |"
     echo "| LOW | $low_count | Review if time permits |"
     echo ""
-
-    # HIGH confidence section
     echo "---"
     echo ""
     echo "## HIGH Confidence Duplicates"
     echo ""
     echo "These functions are definitely duplicates. Consolidate them."
     echo ""
-
-    for f in "$DUPLICATES_DIR"/*.json; do
-        [[ -f "$f" ]] || continue
-        category=$(basename "$f" .json)
-
-        jq -r --arg cat "$category" '
-            .[] | select(.confidence == "HIGH") |
-            "### \(.intent)\n\n" +
-            "**Category:** \($cat)\n\n" +
-            "**Functions:**\n" +
-            (.functions | map("- `\(.name)` in `\(.file):\(.line)`" + if .notes then " - \(.notes)" else "" end) | join("\n")) +
-            "\n\n" +
-            "**Differences:** \(.differences // "None - identical implementations")\n\n" +
-            "**Recommendation:** Keep `\(.recommendation.survivor)` - \(.recommendation.reason)\n\n" +
-            "---\n"
-        ' "$f" 2>/dev/null || true
-    done
-
-    # MEDIUM confidence section
+    render_section '
+        .[] | select(.confidence == "HIGH") |
+        "### \(.intent)\n\n" +
+        "**Category:** \($cat)\n\n" +
+        "**Functions:**\n" +
+        (.functions | map("- `\(.name)` in `\(.file):\(.line)`" + if .notes then " - \(.notes)" else "" end) | join("\n")) +
+        "\n\n" +
+        "**Differences:** \(.differences // "None - identical implementations")\n\n" +
+        "**Recommendation:** Keep `\(.recommendation.survivor)` - \(.recommendation.reason)\n\n" +
+        "---\n"
+    '
     echo ""
     echo "## MEDIUM Confidence Duplicates"
     echo ""
     echo "These functions likely do the same thing. Investigate before consolidating."
     echo ""
-
-    for f in "$DUPLICATES_DIR"/*.json; do
-        [[ -f "$f" ]] || continue
-        category=$(basename "$f" .json)
-
-        jq -r --arg cat "$category" '
-            .[] | select(.confidence == "MEDIUM") |
-            "### \(.intent)\n\n" +
-            "**Category:** \($cat)\n\n" +
-            "**Functions:**\n" +
-            (.functions | map("- `\(.name)` in `\(.file):\(.line)`" + if .notes then " - \(.notes)" else "" end) | join("\n")) +
-            "\n\n" +
-            "**Differences:** \(.differences)\n\n" +
-            "**Recommendation:** \(.recommendation.action) - \(.recommendation.reason)\n\n" +
-            "---\n"
-        ' "$f" 2>/dev/null || true
-    done
-
-    # LOW confidence section
+    render_section '
+        .[] | select(.confidence == "MEDIUM") |
+        "### \(.intent)\n\n" +
+        "**Category:** \($cat)\n\n" +
+        "**Functions:**\n" +
+        (.functions | map("- `\(.name)` in `\(.file):\(.line)`" + if .notes then " - \(.notes)" else "" end) | join("\n")) +
+        "\n\n" +
+        "**Differences:** \(.differences)\n\n" +
+        "**Recommendation:** \(.recommendation.action) - \(.recommendation.reason)\n\n" +
+        "---\n"
+    '
     echo ""
     echo "## LOW Confidence (Possibly Related)"
     echo ""
     echo "These functions might be related. Review if time permits."
     echo ""
-
-    for f in "$DUPLICATES_DIR"/*.json; do
-        [[ -f "$f" ]] || continue
-        category=$(basename "$f" .json)
-
-        jq -r --arg cat "$category" '
-            .[] | select(.confidence == "LOW") |
-            "### \(.intent)\n\n" +
-            "**Category:** \($cat)\n\n" +
-            "**Functions:**\n" +
-            (.functions | map("- `\(.name)` in `\(.file):\(.line)`") | join("\n")) +
-            "\n\n" +
-            "**Notes:** \(.differences)\n\n" +
-            "---\n"
-        ' "$f" 2>/dev/null || true
-    done
-
-} > "$OUTPUT"
+    render_section '
+        .[] | select(.confidence == "LOW") |
+        "### \(.intent)\n\n" +
+        "**Category:** \($cat)\n\n" +
+        "**Functions:**\n" +
+        (.functions | map("- `\(.name)` in `\(.file):\(.line)`") | join("\n")) +
+        "\n\n" +
+        "**Notes:** \(.differences)\n\n" +
+        "---\n"
+    '
+)
+printf '%s\n' "$report" > "$OUTPUT"
 
 echo "Report generated: $OUTPUT" >&2
 echo "  HIGH confidence: $high_count groups" >&2
