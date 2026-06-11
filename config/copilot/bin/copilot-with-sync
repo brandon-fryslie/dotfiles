@@ -62,11 +62,17 @@ run_sync() {
 
 # Main logic
 main() {
+    # [LAW:dataflow-not-control-flow] --force-sync is a value feeding the one
+    # sync decision; the copilot launch below is unconditional, so the flag can
+    # never drop the launch or its arguments.
+    local force_sync="$1"
+    shift
+
     # Check if sync script exists
     if [[ ! -f "$SYNC_SCRIPT" ]]; then
         echo -e "${YELLOW}Warning: Sync script not found at $SYNC_SCRIPT${NC}"
         echo -e "${YELLOW}Running Copilot without sync...${NC}\n"
-    elif should_sync; then
+    elif [[ "$force_sync" == "1" ]] || should_sync; then
         # Run sync (suppress output if user wants quiet mode)
         if [[ "${COPILOT_QUIET_SYNC:-0}" == "1" ]]; then
             run_sync >/dev/null 2>&1 || true
@@ -80,10 +86,10 @@ main() {
 }
 
 # Handle --force-sync flag
+force_sync=0
 if [[ "${1:-}" == "--force-sync" ]]; then
+    force_sync=1
     shift
-    run_sync
-    exit $?
 fi
 
 # Handle --help
@@ -94,7 +100,7 @@ Usage: copilot-with-sync [OPTIONS] [copilot args...]
 Wrapper that syncs Claude Code plugins before launching Copilot CLI.
 
 Options:
-  --force-sync     Force sync even if recently synced
+  --force-sync     Sync before launching even if recently synced
   -h, --help       Show this help message
 
 Environment Variables:
@@ -112,4 +118,4 @@ EOF
     exit 0
 fi
 
-main "$@"
+main "$force_sync" "$@"
