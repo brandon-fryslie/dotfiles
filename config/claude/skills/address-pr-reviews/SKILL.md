@@ -15,6 +15,7 @@ Read every pending review finding on the PR, address each one, push your fixes (
 # Load the provider once at the start of the loop
 import provider_loader
 provider = provider_loader.get()  # reads provider.json, validates CAPABILITIES
+# or pin one explicitly for this session: provider_loader.get("adversarial")
 ```
 
 ## Setup — derive PR_URL, OWNER, REPO, PR_NUM once
