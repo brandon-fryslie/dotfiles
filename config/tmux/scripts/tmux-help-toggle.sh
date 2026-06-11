@@ -12,8 +12,9 @@ if [ -n "$HELP_PANE" ] && [ "$HELP_PANE" != "0" ] && tmux list-panes -F "#{pane_
   tmux set -g @help_pane_id ""
 else
   echo "Creating new help pane" >> /tmp/tmux-help-errors.log
-  tmux split-window -v -l 5 -d "$HOME/.config/tmux/scripts/tmux-help-pane.sh" 2>&1 >> /tmp/tmux-help-errors.log
-  NEW_PANE="$(tmux list-panes -F "#{pane_id}" | tail -1)"
+  # [LAW:one-source-of-truth] -P prints the created pane's id; a follow-up
+  # list-panes|tail -1 returns the wrong pane when the active pane isn't last.
+  NEW_PANE="$(tmux split-window -v -l 5 -d -PF "#{pane_id}" "$HOME/.config/tmux/scripts/tmux-help-pane.sh" 2>> /tmp/tmux-help-errors.log)"
   echo "New pane: $NEW_PANE" >> /tmp/tmux-help-errors.log
   tmux set -g @help_pane_id "$NEW_PANE"
 fi
