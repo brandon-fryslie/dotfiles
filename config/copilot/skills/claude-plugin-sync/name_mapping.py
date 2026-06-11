@@ -244,13 +244,19 @@ class ReferenceRewriter:
 
     @classmethod
     def extract_references(cls, content: str) -> Set[str]:
-        """Extract all extension references from content.
+        """Extract every syntactic extension reference from content.
+
+        Purely syntactic and deliberately unfiltered: extraction serves
+        dependency *discovery*, which runs before registration — so unlike
+        rewrite_content it must not gate on a NameMapper. A name returned
+        here is a candidate, not a promise that rewrite_content would
+        rewrite it.
 
         Args:
             content: File content to analyze
 
         Returns:
-            Set of Claude Code extension names referenced
+            Set of candidate Claude Code extension names referenced
         """
         references = set()
 
