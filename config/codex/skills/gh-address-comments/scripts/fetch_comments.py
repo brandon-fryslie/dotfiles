@@ -229,8 +229,9 @@ def fetch_all(
 
         for field in COLLECTIONS:
             if done[field]:
-                # Exhausted: the query still returns this connection (the page
-                # at its frozen cursor), but every node is already collected.
+                # Exhausted: the query still returns a page for this connection
+                # (page 1 again when the final endCursor was null), but every
+                # node is already collected, so it must not be re-appended.
                 continue
             conn = pr[field]
             nodes[field].extend(conn.get("nodes") or [])
