@@ -127,20 +127,33 @@ class NameMapper:
             self.references[claude_name] = set()
         self.references[claude_name].add(file_path)
 
-    def get_copilot_name(self, claude_name: str) -> str:
-        """Get the Copilot name for a Claude Code extension.
+    def is_registered(self, claude_name: str) -> bool:
+        """Check whether an extension has been registered.
 
         Args:
             claude_name: Claude Code extension name
 
         Returns:
-            Copilot name (registered or auto-transformed)
+            True if the name was registered via register_extension
         """
-        if claude_name in self.canonical_map:
-            return self.canonical_map[claude_name]
+        return claude_name in self.canonical_map
 
-        # Auto-register if not found
-        return self.register_extension(claude_name)
+    def get_copilot_name(self, claude_name: str) -> str:
+        """Get the Copilot name for a registered Claude Code extension.
+
+        Args:
+            claude_name: Claude Code extension name
+
+        Returns:
+            Copilot name
+
+        Raises:
+            KeyError: If the name was never registered.
+                [LAW:effects-at-boundaries] a lookup must not mutate the
+                map — auto-registering here let regex false-positives mint
+                garbage canonical names and collision suffixes.
+        """
+        return self.canonical_map[claude_name]
 
     def get_claude_name(self, copilot_name: str) -> str:
         """Get the original Claude Code name from a Copilot name.
@@ -168,25 +181,40 @@ class NameMapper:
 class ReferenceRewriter:
     """Rewrites extension references in file content."""
 
-    # Patterns for finding and rewriting references
+    # Each entry: (pattern, extract claude name from match, build replacement
+    # from match + copilot name). Extraction and replacement are declared per
+    # pattern so validation can live at a single gate in rewrite_content.
+    # [LAW:no-silent-failure] the command pattern is anchored to start-of-line
+    # or whitespace — mid-token slash-colon text (paths like src/utils:helpers,
+    # owner/repo:branch, timestamps) must never read as a command invocation.
     REFERENCE_PATTERNS = [
         # Command invocations: /do:plan
-        (r'/([\w-]+):([\w-]+)', lambda m, mapper: f"skill {mapper.get_copilot_name(f'{m.group(1)}:{m.group(2)}')}"),
+        (r'(?<!\S)/([\w-]+):([\w-]+)',
+         lambda m: f'{m.group(1)}:{m.group(2)}',
+         lambda m, copilot_name: f'skill {copilot_name}'),
 
         # Skill() calls: Skill("do:plan")
-        (r'Skill\(["\']([^"\']+)["\']\)', lambda m, mapper: f'Skill("{mapper.get_copilot_name(m.group(1))}")'),
+        (r'Skill\(["\']([^"\']+)["\']\)',
+         lambda m: m.group(1),
+         lambda m, copilot_name: f'Skill("{copilot_name}")'),
 
         # skill references: "skill do:plan"
-        (r'\bskill\s+([\w-]+):([\w-]+)', lambda m, mapper: f"skill {mapper.get_copilot_name(f'{m.group(1)}:{m.group(2)}')}"),
+        (r'\bskill\s+([\w-]+):([\w-]+)',
+         lambda m: f'{m.group(1)}:{m.group(2)}',
+         lambda m, copilot_name: f'skill {copilot_name}'),
 
         # agent_type/subagent_type: subagent_type="do:iterative-implementer"
         (r'(subagent_type|agent_type)=["\']([^"\']+)["\']',
-         lambda m, mapper: f'{m.group(1)}="{mapper.get_copilot_name(m.group(2))}"'),
+         lambda m: m.group(2),
+         lambda m, copilot_name: f'{m.group(1)}="{copilot_name}"'),
     ]
 
     @classmethod
     def rewrite_content(cls, content: str, name_mapper: NameMapper) -> str:
-        """Rewrite all extension references in content.
+        """Rewrite registered extension references in content.
+
+        Text that merely looks like a reference but does not name a
+        registered extension is left verbatim.
 
         Args:
             content: Original content
@@ -197,13 +225,18 @@ class ReferenceRewriter:
         """
         rewritten = content
 
-        for pattern, rewriter in cls.REFERENCE_PATTERNS:
+        for pattern, extract_name, build_replacement in cls.REFERENCE_PATTERNS:
             # Find all matches
             matches = list(re.finditer(pattern, rewritten))
 
             # Rewrite in reverse order to preserve indices
             for match in reversed(matches):
-                replacement = rewriter(match, name_mapper)
+                claude_name = extract_name(match)
+                # [LAW:single-enforcer] the only rewrite-eligibility check:
+                # a match is a reference iff it names a registered extension.
+                if not name_mapper.is_registered(claude_name):
+                    continue
+                replacement = build_replacement(match, name_mapper.get_copilot_name(claude_name))
                 start, end = match.span()
                 rewritten = rewritten[:start] + replacement + rewritten[end:]
 
@@ -221,18 +254,9 @@ class ReferenceRewriter:
         """
         references = set()
 
-        # Look for all reference patterns
-        for pattern, _ in cls.REFERENCE_PATTERNS:
-            matches = re.finditer(pattern, content)
-            for match in matches:
-                # Extract the extension name (varies by pattern)
-                if match.lastindex >= 2:
-                    # Pattern like "plugin:name"
-                    ref = f"{match.group(1)}:{match.group(2)}"
-                else:
-                    # Pattern like "plugin-name"
-                    ref = match.group(1)
-                references.add(ref)
+        for pattern, extract_name, _ in cls.REFERENCE_PATTERNS:
+            for match in re.finditer(pattern, content):
+                references.add(extract_name(match))
 
         return references
 
