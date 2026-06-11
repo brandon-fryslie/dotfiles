@@ -10,7 +10,10 @@ Example:
     python utils/package_skill.py skills/public/my-skill ./dist
 """
 
+import os
+import shutil
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -64,23 +67,36 @@ def package_skill(skill_path, output_dir=None):
 
     skill_filename = output_path / f"{skill_name}.skill"
 
-    # Create the .skill file (zip format)
+    # [LAW:effects-at-boundaries] Stage the archive outside the scanned tree, then
+    # move it into place once complete — otherwise the lazy rglob walk finds the
+    # half-written archive and packages it into itself when the output lands
+    # inside the skill folder. Staging also means a failed run leaves any
+    # pre-existing archive untouched.
+    tmp_fd, tmp_name = tempfile.mkstemp(suffix=".skill")
+    os.close(tmp_fd)
+    tmp_archive = Path(tmp_name)
     try:
-        with zipfile.ZipFile(skill_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(tmp_archive, "w", zipfile.ZIP_DEFLATED) as zipf:
             # Walk through the skill directory
             for file_path in skill_path.rglob("*"):
-                if file_path.is_file():
+                # A previous run's archive at the destination is not skill
+                # content — skip exactly that path, nothing else.
+                if file_path.is_file() and file_path != skill_filename:
                     # Calculate the relative path within the zip
                     arcname = file_path.relative_to(skill_path.parent)
                     zipf.write(file_path, arcname)
                     print(f"  Added: {arcname}")
 
+        shutil.move(tmp_archive, skill_filename)
         print(f"\n[OK] Successfully packaged skill to: {skill_filename}")
         return skill_filename
 
     except Exception as e:
         print(f"[ERROR] Error creating .skill file: {e}")
         return None
+
+    finally:
+        tmp_archive.unlink(missing_ok=True)
 
 
 def main():
