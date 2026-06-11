@@ -22,6 +22,12 @@ import subprocess
 import time
 from typing import Optional
 
+# [LAW:one-source-of-truth] thread fetch, Finding shape, and verified resolve
+# are the shared GitHub primitives — imported, never copied. Import resolution
+# is owned by provider_loader (loaded path) or script-mode sys.path (direct).
+import github_threads
+from github_threads import fetch, resolve  # noqa: F401  (contract surface)
+
 CAPABILITIES = {
     "resolve":     True,   # GitHub review threads are resolvable
     "trigger":     False,  # fires automatically on push via GitHub Action
@@ -40,27 +46,8 @@ POLL_INTERVAL_S = 8
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _gh(*args: str) -> str:
-    """All shell-outs through one function. [LAW:single-enforcer]"""
-    return subprocess.check_output(
-        ["gh", *args], text=True, stderr=subprocess.PIPE
-    ).strip()
-
-
-def _parse_pr(url: str) -> tuple[str, str, int]:
-    import re
-    m = re.search(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)", url)
-    if not m:
-        raise ValueError(f"Not a PR URL: {url}")
-    return m.group(1), m.group(2), int(m.group(3))
-
-
-def _head_sha(owner: str, repo: str, pr_num: int) -> str:
-    return _gh("api", f"repos/{owner}/{repo}/pulls/{pr_num}", "--jq", ".head.sha")
-
-
 def _latest_run(owner: str, repo: str, sha: str) -> Optional[dict]:
-    out = _gh(
+    out = github_threads.gh(
         "api",
         f"repos/{owner}/{repo}/actions/workflows/{WORKFLOW_FILE}/runs"
         f"?head_sha={sha}&per_page=1",
@@ -77,7 +64,7 @@ def _latest_run(owner: str, repo: str, sha: str) -> Optional[dict]:
 def setup_check(owner: str, repo: str) -> dict:
     """Verify code-review.yml workflow is installed on the repo."""
     try:
-        state = _gh(
+        state = github_threads.gh(
             "api", f"repos/{owner}/{repo}/actions/workflows/{WORKFLOW_FILE}",
             "--jq", ".state",
         )
@@ -107,8 +94,8 @@ def setup_check(owner: str, repo: str) -> dict:
 
 def wait(pr_url: str) -> dict:
     """Block until the z.ai workflow run for the current head SHA completes."""
-    owner, repo, pr_num = _parse_pr(pr_url)
-    sha = _head_sha(owner, repo, pr_num)
+    owner, repo, pr_num = github_threads.parse_pr(pr_url)
+    sha = github_threads.head_sha(owner, repo, pr_num)
     start = time.time()
     run: Optional[dict] = None
     while True:
@@ -137,77 +124,9 @@ def wait(pr_url: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Contract: fetch
+# Contract: fetch / resolve — re-exported from github_threads at the top of
+# this module; z.ai findings are ordinary GitHub review threads.
 # ---------------------------------------------------------------------------
-
-def _fetch_threads(owner: str, repo: str, pr_num: int) -> list[dict]:
-    query = (
-        "query($owner:String!,$repo:String!,$num:Int!){"
-        "  repository(owner:$owner,name:$repo){"
-        "    pullRequest(number:$num){"
-        "      reviewThreads(first:100){"
-        "        nodes{ id isResolved path line"
-        "          comments(first:20){ nodes{ author{login} body } } } } } } }"
-    )
-    out = _gh(
-        "api", "graphql",
-        "-f", f"query={query}",
-        "-F", f"owner={owner}", "-F", f"repo={repo}", "-F", f"num={pr_num}",
-        "--jq", ".data.repository.pullRequest.reviewThreads.nodes",
-    )
-    return json.loads(out) if out else []
-
-
-def _build_findings(threads: list[dict]) -> list[dict]:
-    """[LAW:dataflow-not-control-flow] one shape for every finding — z.ai-authored
-    and human-authored threads are the same primitive, never separate code paths."""
-    findings = []
-    for t in threads:
-        nodes = t.get("comments", {}).get("nodes") or []
-        first = nodes[0] if nodes else {}
-        findings.append({
-            "file":            t.get("path"),
-            "line_start":      t.get("line"),
-            "line_end":        t.get("line"),
-            "body":            first.get("body", ""),
-            "author":          (first.get("author") or {}).get("login"),
-            "thread_id":       t["id"],
-            "is_resolved":     t.get("isResolved", False),
-            "thread_comments": [
-                {"author": (c.get("author") or {}).get("login"), "body": c.get("body", "")}
-                for c in nodes
-            ],
-        })
-    return findings
-
-
-def fetch(pr_url: str) -> dict:
-    """Return all review threads as canonical findings."""
-    owner, repo, pr_num = _parse_pr(pr_url)
-    threads = _fetch_threads(owner, repo, pr_num)
-    return {"findings": _build_findings(threads)}
-
-
-# ---------------------------------------------------------------------------
-# Contract: resolve
-# ---------------------------------------------------------------------------
-
-def resolve(thread_id: str) -> dict:
-    """Resolve one review thread and verify GitHub confirms it.
-    [LAW:no-silent-failure] raises RuntimeError if confirmation is absent."""
-    confirmed = _gh(
-        "api", "graphql",
-        "-f", "query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id})"
-              "{thread{isResolved}}}",
-        "-F", f"id={thread_id}",
-        "--jq", ".data.resolveReviewThread.thread.isResolved",
-    )
-    if confirmed != "true":
-        raise RuntimeError(
-            f"resolveReviewThread did not confirm resolution for {thread_id} "
-            f"(got {confirmed!r}). The thread is NOT resolved — do not move on."
-        )
-    return {"thread_id": thread_id, "is_resolved": True}
 
 
 # ---------------------------------------------------------------------------

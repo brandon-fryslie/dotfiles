@@ -24,15 +24,23 @@ CONFIG_FILE = SKILL_DIR / "provider.json"
 REQUIRED_CAPABILITIES = {"resolve", "trigger", "setup_check"}
 
 
-def get() -> object:
-    """Return the active provider module, validated against the contract."""
-    name = _resolve_name()
+def get(name: str | None = None) -> object:
+    """Return the active provider module, validated against the contract.
+
+    [LAW:dataflow-not-control-flow] provider selection is a value with one
+    precedence chain: explicit `name` arg > PR_REVIEW_PROVIDER env > provider.json.
+    The explicit arg lets a caller pin a provider for one session without
+    mutating the global default. [LAW:no-shared-mutable-globals]
+    """
+    name = _resolve_name(name)
     module = _load_module(name)
     _validate(module, name)
     return module
 
 
-def _resolve_name() -> str:
+def _resolve_name(explicit: str | None = None) -> str:
+    if explicit:
+        return explicit
     if env := os.environ.get("PR_REVIEW_PROVIDER"):
         return env
     if CONFIG_FILE.exists():
@@ -53,6 +61,10 @@ def _load_module(name: str) -> object:
             f"Provider module not found: {path}\n"
             f"Available providers: {_available()}"
         )
+    # [LAW:single-enforcer] sibling imports (shared modules like github_threads)
+    # resolve here, once, for every provider — not per-provider path hacks.
+    if str(SKILL_DIR) not in sys.path:
+        sys.path.insert(0, str(SKILL_DIR))
     spec = importlib.util.spec_from_file_location(f"{name}_provider", path)
     module = importlib.util.module_from_spec(spec)
     try:
