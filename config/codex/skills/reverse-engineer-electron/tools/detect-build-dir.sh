@@ -26,12 +26,22 @@ fi
 # Method 1: package.json "main" entrypoint
 # // [LAW:one-source-of-truth] package.json is the app's authoritative entrypoint contract.
 if [ -f "$APP_DIR/package.json" ]; then
-  MAIN_REL="$(node -e "
-    const p = JSON.parse(require('fs').readFileSync('$APP_DIR/package.json','utf8'));
+  # [LAW:no-silent-failure] A parse failure of the authoritative entrypoint
+  # contract must surface, not silently degrade to the heuristic below.
+  # The path travels as argv, never interpolated into JS source.
+  if ! MAIN_REL="$(node -e "
+    const p = JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
     if (typeof p.main === 'string' && p.main.trim()) console.log(p.main.trim());
-  " 2>/dev/null || true)"
-  if [ -n "$MAIN_REL" ] && [ -f "$APP_DIR/$MAIN_REL" ]; then
-    BUILD_DIR="$(dirname "$APP_DIR/$MAIN_REL")"
+  " "$APP_DIR/package.json")"; then
+    echo "Error: failed to parse $APP_DIR/package.json" >&2
+    exit 1
+  fi
+  if [ -n "$MAIN_REL" ]; then
+    if [ -f "$APP_DIR/$MAIN_REL" ]; then
+      BUILD_DIR="$(dirname "$APP_DIR/$MAIN_REL")"
+    else
+      echo "  Warning: package.json main '$MAIN_REL' does not exist; falling back to heuristic." >&2
+    fi
   fi
 fi
 
@@ -40,7 +50,7 @@ if [ -z "${BUILD_DIR:-}" ]; then
   BUILD_DIR=$(find "$APP_DIR" -name "*.js" -not -path "*/node_modules/*" -print0 2>/dev/null \
     | xargs -0 -I{} dirname {} \
     | sort | uniq -c | sort -rn \
-    | head -1 | awk '{print $2}' || true)
+    | head -1 | sed -E 's/^ *[0-9]+ //' || true)
 fi
 
 if [ -z "$BUILD_DIR" ]; then
