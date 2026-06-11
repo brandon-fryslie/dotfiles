@@ -2,8 +2,12 @@
 //
 // compare.mjs — Compare two JS/TS file collections by structural fingerprints
 //
-// Both collections are minified through esbuild before comparison to normalize
-// structural transforms (if→ternary, statements→commas, var/let/const, etc.).
+// Two token domains, kept apart (see shape.mjs):
+//   positions  — names, lines, and char offsets always come from the source
+//                file as it sits on disk, so every reference is navigable.
+//   similarity — per-function token streams normalized through esbuild's
+//                syntax minifier, so stylistic transforms (if→ternary,
+//                statements→commas, var/let/const) collapse to the same shape.
 //
 // Usage: node compare.mjs <dir-a> <dir-b> [options]
 //
@@ -17,9 +21,17 @@
 
 import { parse } from '@babel/parser';
 import { transformSync } from 'esbuild';
-import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import {
+  walk,
+  walkWithParent,
+  isFunctionNode,
+  resolveFunctionName,
+  functionShapeTokens,
+  tokensToHash,
+  normalizedFunctionTokens,
+} from './shape.mjs';
 
 // --- Configuration ---
 
@@ -35,11 +47,6 @@ const NOISE_NUMBERS = new Set([
 ]);
 
 const MIN_STRING_LENGTH = 3;
-
-const SKIP_KEYS = new Set([
-  'type', 'start', 'end', 'loc', 'leadingComments',
-  'trailingComments', 'innerComments', 'extra', 'range', 'comments',
-]);
 
 // --- CLI ---
 
@@ -92,105 +99,6 @@ function minifyCode(code, filepath) {
     console.warn(`  Minify error ${filepath}: ${e.message.split('\n')[0]}`);
     return null;
   }
-}
-
-// --- AST Walking ---
-
-function walk(node, visitor) {
-  if (!node || typeof node !== 'object') return;
-  if (node.type) visitor(node);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const val = node[key];
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (item && typeof item === 'object' && item.type) walk(item, visitor);
-      }
-    } else if (val && typeof val === 'object' && val.type) {
-      walk(val, visitor);
-    }
-  }
-}
-
-function walkWithParent(node, parent, visitor) {
-  if (!node || typeof node !== 'object') return;
-  if (node.type) visitor(node, parent);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const val = node[key];
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (item && typeof item === 'object' && item.type) walkWithParent(item, node, visitor);
-      }
-    } else if (val && typeof val === 'object' && val.type) {
-      walkWithParent(val, node, visitor);
-    }
-  }
-}
-
-// --- Function Name Resolution ---
-
-function resolveFunctionName(node, parent) {
-  if (node.id?.name) return node.id.name;
-  if (!parent) return null;
-  if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
-  if (parent.type === 'Property' || parent.type === 'MethodDefinition') {
-    const key = parent.key;
-    return key?.name || (typeof key?.value === 'string' ? key.value : null);
-  }
-  if (parent.type === 'AssignmentExpression' && parent.left) {
-    if (parent.left.type === 'MemberExpression') {
-      const obj = parent.left.object?.name || '';
-      const prop = parent.left.property?.name || '';
-      return obj ? `${obj}.${prop}` : prop || null;
-    }
-    if (parent.left.type === 'Identifier') return parent.left.name;
-  }
-  return null;
-}
-
-// --- Structural Fingerprinting ---
-// Returns an array of tokens (not joined) for similarity comparison
-
-function functionShapeTokens(node) {
-  const parts = [];
-
-  walk(node, (n) => {
-    switch (n.type) {
-      case 'Identifier':        break;
-      case 'StringLiteral':     parts.push('S'); break;
-      case 'NumericLiteral':    parts.push('N'); break;
-      case 'BooleanLiteral':    parts.push(n.value ? 'T' : 'F'); break;
-      case 'NullLiteral':       parts.push('null'); break;
-      case 'RegExpLiteral':     parts.push('R'); break;
-      case 'BigIntLiteral':     parts.push('BI'); break;
-      case 'TemplateLiteral':   parts.push('TL'); break;
-      case 'TemplateElement':   break;
-
-      case 'BinaryExpression':
-      case 'LogicalExpression':
-      case 'AssignmentExpression':
-        parts.push(n.operator);
-        break;
-
-      case 'UnaryExpression':
-        parts.push(`U:${n.operator}`);
-        break;
-
-      case 'UpdateExpression':
-        parts.push(`${n.prefix ? 'pre' : 'post'}${n.operator}`);
-        break;
-
-      default:
-        parts.push(n.type);
-    }
-  });
-
-  return parts;
-}
-
-function tokensToHash(tokens) {
-  return createHash('sha256').update(tokens.join(',')).digest('hex').slice(0, 16);
 }
 
 // --- Similarity: LCS-based ---
@@ -292,73 +200,53 @@ function parseCode(code, filepath, withTS = false) {
   }
 }
 
-// --- Extract functions with tokens from an AST ---
-// Returns array of { name, tokens, hash, nodeCount, charStart, charEnd }
+// --- Extract functions from a source file ---
+// Names, lines, and char offsets come from the source AST (the file the user
+// can open); similarity tokens are normalized per function. Deriving positions
+// from re-minified text was ticket .23: every reference pointed at line 1 of
+// a one-line minified string nobody can navigate to.
 
-function extractFunctions(ast) {
+function extractFunctions(file, shouldMinify) {
+  const loader = /\.tsx?$/.test(file.path) ? 'ts' : 'js';
+  const ast = parseCode(file.content, file.path, loader === 'ts');
+  if (!ast) return [];
+
   const functions = [];
-
   walkWithParent(ast, null, (node, parent) => {
-    const isFn = node.type === 'FunctionDeclaration' ||
-                 node.type === 'FunctionExpression' ||
-                 node.type === 'ArrowFunctionExpression';
-    if (!isFn) return;
+    if (!isFunctionNode(node)) return;
 
-    const tokens = functionShapeTokens(node);
+    // [LAW:one-source-of-truth] a token stream is only comparable within the
+    // domain that produced it. Each entry records its domain so a function
+    // that fell back to source tokens is never LCS-scored against normalized
+    // tokens — a cross-domain score reads as a semantic difference when it is
+    // really a normalization artifact.
+    let tokens;
+    let domain = 'source';
+    if (shouldMinify) {
+      try {
+        tokens = normalizedFunctionTokens(file.content.slice(node.start, node.end), loader);
+        domain = 'normalized';
+      } catch (e) {
+        console.warn(`  Normalize error ${file.path}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
+        tokens = functionShapeTokens(node);
+      }
+    } else {
+      tokens = functionShapeTokens(node);
+    }
+
     functions.push({
       name: resolveFunctionName(node, parent),
       tokens,
+      domain,
       hash: tokensToHash(tokens),
       nodeCount: tokens.length,
-      charStart: node.start ?? 0,
-      charEnd: node.end ?? 0,
+      file: file.path,
+      line: node.loc?.start?.line ?? 0,
+      charOffset: node.start ?? 0,
     });
   });
 
   return functions;
-}
-
-// --- Extract function name→line map from original TS source ---
-
-function extractNameLines(code, filepath) {
-  const map = new Map();
-  const ast = parseCode(code, filepath, true);
-  if (!ast) return map;
-
-  walkWithParent(ast, null, (node, parent) => {
-    if (node.type.startsWith('TS')) return;
-    const isFn = node.type === 'FunctionDeclaration' ||
-                 node.type === 'FunctionExpression' ||
-                 node.type === 'ArrowFunctionExpression';
-    if (!isFn) return;
-
-    const name = resolveFunctionName(node, parent);
-    if (name && !map.has(name)) {
-      map.set(name, node.loc?.start?.line ?? 0);
-    }
-  });
-
-  return map;
-}
-
-// --- Char offset → line number ---
-
-function buildLineIndex(code) {
-  const lines = [0]; // line 1 starts at char 0
-  for (let i = 0; i < code.length; i++) {
-    if (code[i] === '\n') lines.push(i + 1);
-  }
-  return lines;
-}
-
-function charToLine(lineIndex, charOffset) {
-  let lo = 0, hi = lineIndex.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (lineIndex[mid] <= charOffset) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo + 1; // 1-indexed
 }
 
 // --- Build function index from collection A ---
@@ -369,40 +257,10 @@ function buildFunctionIndex(files, shouldMinify) {
   const allFunctions = [];
 
   for (const file of files) {
-    let code = file.content;
-    const originalCode = code;
-    const lineIndex = buildLineIndex(originalCode);
-
-    if (shouldMinify) {
-      const m = minifyCode(code, file.path);
-      if (m == null) continue;
-      code = m;
-    }
-
-    const ast = parseCode(code, file.path);
-    if (!ast) continue;
-
-    // If we minified, charStart/charEnd are positions in minified code.
-    // For collection A (already minified JS), positions map directly to original.
-    // We need line numbers from the ORIGINAL file.
-    const minLineIndex = shouldMinify ? buildLineIndex(code) : lineIndex;
-    const useOriginalLines = !shouldMinify; // A is already JS, positions are valid
-
-    const fns = extractFunctions(ast);
-    for (const fn of fns) {
-      const entry = {
-        ...fn,
-        file: file.path,
-        // For already-minified files (collection A), the char positions are into
-        // the original file directly. For minified-from-TS (collection B), they're
-        // into the minified output (less useful).
-        line: charToLine(useOriginalLines ? lineIndex : minLineIndex, fn.charStart),
-        charOffset: fn.charStart,
-      };
-      allFunctions.push(entry);
-
+    for (const fn of extractFunctions(file, shouldMinify)) {
+      allFunctions.push(fn);
       if (!byHash.has(fn.hash)) byHash.set(fn.hash, []);
-      byHash.get(fn.hash).push(entry);
+      byHash.get(fn.hash).push(fn);
     }
   }
 
@@ -412,9 +270,10 @@ function buildFunctionIndex(files, shouldMinify) {
 // --- Find best match for a function in collection A ---
 
 function findBestMatch(fnB, indexA) {
-  // Exact hash match first
-  const exactMatches = indexA.byHash.get(fnB.hash);
-  if (exactMatches) {
+  // Exact hash match first (within the same token domain)
+  const exactMatches = (indexA.byHash.get(fnB.hash) || [])
+    .filter(fnA => fnA.domain === fnB.domain);
+  if (exactMatches.length > 0) {
     return { match: exactMatches[0], similarity: 1.0 };
   }
 
@@ -425,6 +284,7 @@ function findBestMatch(fnB, indexA) {
   const sizeB = fnB.tokens.length;
 
   for (const fnA of indexA.allFunctions) {
+    if (fnA.domain !== fnB.domain) continue;
     const sizeA = fnA.tokens.length;
 
     // Skip if sizes are too different (similarity can't exceed 2*min/(a+b))
@@ -619,31 +479,13 @@ function runDetails(filesA, filesB, shouldMinify) {
   const results = [];
 
   for (const file of filesB) {
-    // Get name→line from original TS source
-    const nameLines = extractNameLines(file.content, file.path);
-
-    // Minify and extract functions
-    let code = file.content;
-    if (shouldMinify) {
-      const m = minifyCode(code, file.path);
-      if (m == null) continue;
-      code = m;
-    }
-    const ast = parseCode(code, file.path);
-    if (!ast) continue;
-
-    const fns = extractFunctions(ast);
-    for (const fn of fns) {
-      const originalName = fn.name;
-      const line = originalName ? (nameLines.get(originalName) ?? '?') : '?';
-
-      // Find best match in A
+    for (const fn of extractFunctions(file, shouldMinify)) {
       const { match, similarity } = findBestMatch(fn, indexA);
 
       results.push({
         file: file.path,
-        name: originalName,
-        line,
+        name: fn.name,
+        line: fn.line,
         nodeCount: fn.tokens.length,
         hash: fn.hash,
         similarity,
