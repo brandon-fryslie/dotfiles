@@ -6,9 +6,9 @@ HELP_PANE="$(tmux show -gv @help_pane_id 2>/dev/null)"
 echo "Toggle script running..." >> /tmp/tmux-help-errors.log
 echo "Current help_pane_id: [$HELP_PANE]" >> /tmp/tmux-help-errors.log
 
-if [ -n "$HELP_PANE" ] && [ "$HELP_PANE" != "0" ] && tmux list-panes -F "#{pane_id}" 2>/dev/null | grep -q "^$HELP_PANE$"; then
+if [ -n "$HELP_PANE" ] && [ "$HELP_PANE" != "0" ] && tmux list-panes -aF "#{pane_id}" 2>/dev/null | grep -q "^$HELP_PANE$"; then
   echo "Killing pane $HELP_PANE" >> /tmp/tmux-help-errors.log
-  tmux kill-pane -t "$HELP_PANE" 2>&1 >> /tmp/tmux-help-errors.log
+  tmux kill-pane -t "$HELP_PANE" >> /tmp/tmux-help-errors.log 2>&1
   tmux set -g @help_pane_id ""
 else
   echo "Creating new help pane" >> /tmp/tmux-help-errors.log
