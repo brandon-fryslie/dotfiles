@@ -4,8 +4,11 @@
 # context (/clear or /compact) and pastes the message after a fixed delay.
 #
 # Modes:
-#   launcher:  message-in-a-bottle <clear|compact> <message...>
+#   launcher:  message-in-a-bottle [message...]
 #   worker:    message-in-a-bottle --worker <target> <reset> <msgfile>
+#
+# Reset is inferred from the message: if /compact appears within the first
+# 3 sentences, compact is used; otherwise clear.
 
 set -euo pipefail
 
@@ -28,6 +31,22 @@ BOTTLE_SUFFIX=$(cat <<'SUFFIX'
 SUFFIX
 )
 
+# [LAW:dataflow-not-control-flow] reset mode is a value inferred from the
+# message, not a separate argument. Scan the first 3 sentences for /compact;
+# stop early so long messages don't slow the common case.
+_first_three_sentences() {
+  local text="$1" result="" count=0 i char
+  for ((i=0; i<${#text}; i++)); do
+    char="${text:$i:1}"
+    result+="$char"
+    if [[ "$char" == "." || "$char" == "!" || "$char" == "?" ]]; then
+      ((count++)) || true
+      [[ $count -ge 3 ]] && break
+    fi
+  done
+  printf '%s' "$result"
+}
+
 # [LAW:types-are-the-program] one discriminator at the entry; everything
 # downstream operates on validated, typed inputs for exactly one mode.
 if [[ "${1:-}" == "--worker" ]]; then
@@ -40,35 +59,25 @@ fi
 case "$MODE" in
 
   launcher)
-    if [[ $# -lt 1 ]]; then
-      cat >&2 <<'USAGE'
-Usage: message-in-a-bottle <clear|compact> [message...]
-
-  clear|compact  which context reset to fire before the message lands (agent's call)
-  message        the rest of argv; slash command or plain text, multi-word ok.
-                 Defaults to /next when omitted.
-
-The message lands in the invoking tmux pane after a fixed delay. Must run inside tmux.
-USAGE
-      exit 2
-    fi
-
-    RESET="$1"; shift
     # [LAW:dataflow-not-control-flow] the message is a value carrying a canonical
     # default — /next, the standard "pull the next ticket" handoff. Omitting argv
     # selects that default; it never yields an empty bottle, so no guard follows.
     AGENT_MESSAGE="${*:-/next}"
 
+    # [LAW:dataflow-not-control-flow] reset mode is derived from the message — if
+    # /compact appears in the first 3 sentences, use compact; else clear. The mode
+    # is a value the message carries, not a separate argument the caller decides.
+    PROBE=$(_first_three_sentences "$AGENT_MESSAGE")
+    if [[ "$PROBE" =~ (^|[[:space:]])/compact([[:space:]]|$) ]]; then
+      RESET=compact
+    else
+      RESET=clear
+    fi
+
     # [LAW:one-source-of-truth] the wrapped value is assembled once, here, from the
     # static framing and the agent's message. Everything downstream — MSGFILE,
     # buffer, paste — carries this final value verbatim and never re-wraps it.
     MESSAGE=$(printf '%s\n%s\n%s' "$BOTTLE_PREFIX" "$AGENT_MESSAGE" "$BOTTLE_SUFFIX")
-
-    # [LAW:types-are-the-program] the reset is one of exactly two values;
-    # constrain it at the boundary so the worker can never see an illegal
-    # command. No downstream code re-checks — the input is typed from here on.
-    [[ "$RESET" == clear || "$RESET" == compact ]] \
-      || { echo "first arg must be 'clear' or 'compact' (got: $RESET)" >&2; exit 2; }
 
     # [LAW:no-defensive-null-guards] the tmux context is a real trust boundary —
     # fail loudly when it's absent. The message needs no such guard: it carries a
