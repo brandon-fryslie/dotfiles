@@ -16,7 +16,7 @@ z.ai claude code integration docs: https://docs.z.ai/devpack/tool/claude
 }
 ```
 
-The encrypted token is stored in `config/claude/.env.zai` (decryptable with the private key in `config/claude/.env.keys`, which is gitignored). To recover it on a new machine:
+The encrypted token is stored in `config/claude/.env.zai` — **this file is tracked in git** and is present after clone. The private key in `config/claude/.env.keys` is gitignored and must be transferred out-of-band to a new machine. To recover the token:
 ```bash
 dotenvx decrypt -f config/claude/.env.zai --stdout
 ```
