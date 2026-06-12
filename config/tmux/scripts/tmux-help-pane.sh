@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Display concise, glanceable tmux shortcuts in a persistent pane
 
-# Use color codes for better readability
-CYAN='\033[0;36m'
-WHITE='\033[1;37m'
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+# Use color codes for better readability.
+# [FRAMING:representation] ANSI-C $'...' quoting puts the real ESC byte in each
+# variable; the cat << EOF heredoc does no escape interpretation, so plain '...'
+# quoting would interpolate literal "\033[0;36m" text into the pane.
+CYAN=$'\033[0;36m'
+WHITE=$'\033[1;37m'
+YELLOW=$'\033[1;33m'
+GREEN=$'\033[0;32m'
+NC=$'\033[0m' # No Color
 
 clear
 cat << EOF
