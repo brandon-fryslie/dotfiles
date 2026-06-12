@@ -6,7 +6,7 @@ z.ai claude code integration docs: https://docs.z.ai/devpack/tool/claude
 
 ### auth token setup
 
-`settings.zai.json` (tracked) holds the non-secret z.ai settings. The auth token lives in `~/.claude/settings.local.json` (gitignored by Claude Code, never tracked):
+`settings.zai.json` (tracked) holds the non-secret z.ai settings. The auth token lives in `~/.claude/settings.local.json` (gitignored by Claude Code, never tracked). Add the following key to that file (create it if absent, or merge into the existing `env` block if present):
 
 ```json
 {
@@ -25,6 +25,7 @@ Then copy the `ANTHROPIC_AUTH_TOKEN` value into `settings.local.json`.
 After rotating the token, update the backup so the recovery path stays valid:
 ```bash
 dotenvx set ANTHROPIC_AUTH_TOKEN <new-token> -f config/claude/.env.zai
+git add config/claude/.env.zai && git commit -m 'chore(claude): update encrypted token backup'
 ```
 
 ### model mapping
