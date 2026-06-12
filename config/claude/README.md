@@ -16,11 +16,15 @@ z.ai claude code integration docs: https://docs.z.ai/devpack/tool/claude
 }
 ```
 
-The encrypted token is stored in `config/claude/.env.zai` (decryptable with the private key in `config/claude/.env.keys`, which is gitignored). To recover it on a new machine: `dotenvx decrypt config/claude/.env.zai` — then copy the value into `settings.local.json`.
+The encrypted token is stored in `config/claude/.env.zai` (decryptable with the private key in `config/claude/.env.keys`, which is gitignored). To recover it on a new machine:
+```bash
+dotenvx decrypt -f config/claude/.env.zai --stdout
+```
+Then copy the `ANTHROPIC_AUTH_TOKEN` value into `settings.local.json`.
 
 After rotating the token, update the backup so the recovery path stays valid:
 ```bash
-dotenvx set ANTHROPIC_AUTH_TOKEN <new-token> config/claude/.env.zai
+dotenvx set ANTHROPIC_AUTH_TOKEN <new-token> -f config/claude/.env.zai
 ```
 
 ### model mapping
