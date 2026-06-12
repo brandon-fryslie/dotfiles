@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # test-pr-review-providers.bats - Provider contract tests for the
-# address-pr-reviews skill and its providers (zai, adversarial).
+# address-pr-reviews skill and its providers (adversarial, local).
 #
 # GAMING RESISTANCE [LAW:behavior-not-structure]:
 # - Tests assert the provider CONTRACT (loader validation, capability/function
@@ -15,7 +15,7 @@ SKILL_DIR="${BATS_TEST_DIRNAME}/../../config/claude/skills/address-pr-reviews"
   run python3 -c "
 import sys; sys.path.insert(0, '$SKILL_DIR')
 import provider_loader
-for name in ('zai', 'adversarial'):
+for name in ('adversarial', 'local'):
     p = provider_loader.get(name)
     caps = p.CAPABILITIES
     assert set(caps) == {'resolve', 'trigger', 'setup_check'}, (name, caps)
@@ -30,7 +30,7 @@ print('ok')
 }
 
 @test "explicit provider name overrides env and provider.json" {
-  PR_REVIEW_PROVIDER=zai run python3 -c "
+  PR_REVIEW_PROVIDER=local run python3 -c "
 import sys; sys.path.insert(0, '$SKILL_DIR')
 import provider_loader
 p = provider_loader.get('adversarial')
