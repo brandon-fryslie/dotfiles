@@ -39,7 +39,7 @@ _first_three_sentences() {
   for ((i=0; i<${#text}; i++)); do
     char="${text:$i:1}"
     result+="$char"
-    if [[ "$char" == "." || "$char" == "!" || "$char" == "?" || "$char" == $'\n' ]]; then
+    if [[ "$char" == "." || "$char" == "!" || "$char" == "?" ]]; then
       ((count++)) || true
       [[ $count -ge 3 ]] && break
     fi
@@ -68,7 +68,7 @@ case "$MODE" in
     # /compact appears in the first 3 sentences, use compact; else clear. The mode
     # is a value the message carries, not a separate argument the caller decides.
     PROBE=$(_first_three_sentences "$AGENT_MESSAGE")
-    if [[ "$PROBE" == */compact* ]]; then
+    if [[ "$PROBE" =~ (^|[[:space:]])/compact([[:space:]]|$) ]]; then
       RESET=compact
     else
       RESET=clear
