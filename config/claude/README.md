@@ -4,6 +4,20 @@
 
 z.ai claude code integration docs: https://docs.z.ai/devpack/tool/claude
 
+### auth token setup
+
+`settings.zai.json` (tracked) holds the non-secret z.ai settings. The auth token lives in `~/.claude/settings.local.json` (gitignored by Claude Code, never tracked):
+
+```json
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "<your-z.ai-token>"
+  }
+}
+```
+
+The encrypted token is stored in `config/claude/.env.zai` (decryptable with the private key in `config/claude/.env.keys`, which is gitignored). To recover it on a new machine: `dotenvx decrypt config/claude/.env.zai` — then copy the value into `settings.local.json`.
+
 ### model mapping
 
 https://docs.z.ai/devpack/tool/claude#how-to-switch-the-model-in-use
