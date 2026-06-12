@@ -22,7 +22,7 @@ hierarchy, no base class, no dynamic dispatch beyond the import.
 `provider.json` in this directory names the active provider:
 
 ```json
-{ "provider": "zai" }
+{ "provider": "adversarial" }
 ```
 
 The env var `PR_REVIEW_PROVIDER` overrides the file. The loader maps the name
