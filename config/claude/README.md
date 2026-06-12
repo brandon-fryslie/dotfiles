@@ -26,6 +26,7 @@ After rotating the token, update the backup so the recovery path stays valid:
 ```bash
 dotenvx set ANTHROPIC_AUTH_TOKEN <new-token> -f config/claude/.env.zai
 git add config/claude/.env.zai && git commit -m 'chore(claude): update encrypted token backup'
+git push origin HEAD  # must reach remote (and merge) before the recovery path reflects the rotation
 ```
 
 ### model mapping
