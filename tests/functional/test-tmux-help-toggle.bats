@@ -153,7 +153,15 @@ assert_stores_real_pane_id() {
   # Create help pane in window 0; setup gives us 2 working panes + 1 help = 3.
   run_in_pane tmux-help-toggle.sh
   wait_for_pane_count 3 || { echo "first toggle did not create a pane"; return 1; }
-  first_pane=$(tmux -L "$SOCK" show -gqv @help_pane_id 2>/dev/null)
+  # Pane count can increment before toggle.sh's `tmux set -g @help_pane_id` runs.
+  # Poll until the option is set so first_pane is never vacuously empty.
+  local i
+  for i in $(seq 1 20); do
+    first_pane=$(tmux -L "$SOCK" show -gqv @help_pane_id 2>/dev/null)
+    [ -n "$first_pane" ] && break
+    sleep 0.1
+  done
+  [ -n "$first_pane" ] || { echo "could not capture first_pane — @help_pane_id never set"; return 1; }
 
   # Open window 1 (1 new pane) — total is now 4.
   tmux -L "$SOCK" new-window -t t "exec bash --norc"
