@@ -1,20 +1,35 @@
 ---
 name: message-in-a-bottle
-description: Send a message to your future self. You *MUST* use this when you reach 300k–350k tokens of context: drop a bottle that hands off the current work to a fresh window before context runs out. The message defaults to `/next`. Reset mode is inferred from the message — include `/compact` in the first three sentences to use compact mode, otherwise clear is used. Also use when the agent is about to finish a unit of work and wants a clean (or compacted) context window for whatever comes next without involving the user. Triggers on "leave myself a note for after /clear", "schedule the next ticket", "context handoff to a fresh session", "send myself X after I'm done", "drop a bottle with Y".
+description: The mandatory final step that ends a working session and hands the next instruction to a fresh context window. You RUN it — you never ask the user whether to, and you never defer it — when you finish a unit of work (closed a PR, completed the handed task) or cross 300k–350k tokens of context. It resets the context (/clear, or /compact when your message says so) and pastes the next instruction (default /next) into the same pane. Covers "finalize the session", "hand off to a fresh session", "continue after /clear", "schedule the next ticket", "send myself X after I'm done".
 ---
 
-# message-in-a-bottle
+# finalize-session
 
-A one-shot delayed self-message. The launcher returns immediately so the calling agent can finish its turn; a detached worker resets the context (`/clear` or `/compact`, the agent's choice) and pastes the message into the same tmux pane after the delay.
+The last operation of a finishing turn: it resets this session's context (`/clear`, or `/compact`) and hands a precise next instruction to a fresh window in the same tmux pane. The launcher returns immediately so your turn can end; a detached worker performs the reset and paste after a short delay.
 
-## When to use
+## This is mandatory — you run it, you do not decide it
 
-- **Mandatory at 300k–350k tokens of context.** When you cross this threshold, you MUST drop a bottle handing off the current work to a fresh window — do not keep working until context runs out.
-- At the end of a long-running task where the next task is already known but would benefit from a fresh context window.
-- After wrapping up a PR / closing a ticket, when the next move is "pull the next ticket and start" — schedule `/next` and clear.
-- When you've finished gathering context and want to hand off cleanly to a fresh session with a precise instruction.
+When you reach a finalization point — you closed a PR, finished the task you were handed, or crossed 300k–350k tokens of context — running `finalize-session` is the close-out. It is **not** a choice you weigh, a thing you ask the user about, or a step you defer "until later."
 
-**Whether the user is driving the session interactively is IRRELEVANT to whether a bottle fires.** Presence is not an input to this decision — not a gate, not a tiebreaker, not a "maybe skip it." The bottle fires on the *work's* state (is there well-defined, aligned next work?), never on whether a human is watching. "The user is here, so I'll skip the handoff" is always wrong reasoning.
+[LAW:dataflow-not-control-flow] running this is unconditional at a finalization point — the same path every time. The only variability is a *value*: the handoff message you pass. There is no control-flow fork on *whether* to run — "is the user watching," "is this worth a fresh window," "should I just keep going," "let me check first" are not inputs that exist. If you are finalizing, the script runs.
+
+[LAW:no-silent-failure] asking-instead-of-running or deferring is a silent failure of the handoff: the next session never receives the context, and the work stalls with nobody told. The launcher's scheduled line is the signal that the close-out happened; nothing replaces it.
+
+**The user being present is irrelevant.** Presence is not a gate, a tiebreaker, or a reason to skip — you finalize on the *work's* state, never on whether a human is watching. "The user is here, so I'll skip it" and "I'll ask if they want me to" are both wrong: this step requires no user action and asks for none.
+
+### The only gate, and the rationalizations that are never one
+
+There is exactly **one** legitimate input: **is the handed unit of work complete?** Unit complete (PR merged, ticket closed, task delivered) *or* context at 300k–350k tokens → you run it, now, with no further deliberation. Unit **not** complete → you are not "deciding not to finalize," you are *still doing the work*: finish the unit, then finalize. There is no third state, and "skip finalize because X" is never one of them.
+
+Every other consideration is a rationalization. These are **forbidden** as reasons to skip, defer, downgrade to a question, or narrate a non-run — including verbatim:
+
+- "The user is actively driving / mid-conversation, so I won't." Presence is not the gate.
+- "Firing now would be disruptive / would wipe the active session." If the unit is complete, the reset is the *point*, not a side effect to avoid.
+- "This isn't a clean finalization point." That is a *feeling*, not a fact about the work unit. If the unit is complete, it **is** the point — say so and run it. If it isn't complete, finish it.
+- "Nothing's merged yet, so I'll hold off / wait until later." Then *merge it* — that is finishing the unit — and then finalize. "Later" is not a state this skill has.
+- "Let me check with the user first / surface status and let them decide." Asking is the failure this skill exists to prevent.
+
+[LAW:no-silent-failure] writing a sentence that *explains why you are not running it* — on any basis other than "the unit is not yet complete, so I am finishing it" — is itself the failure mode. The skill is defeated not only by skipping but by **narrating a skip as prudence**. If you catch yourself composing "I'm not finalizing here because…", stop: either the unit is incomplete (finish it) or it is complete (run the script). [LAW:dataflow-not-control-flow] there is no branch whose output is "explain to the user why I held off."
 
 ## Reset mode is inferred from your message — never asked of the user
 
@@ -28,7 +43,7 @@ The message defaults to `/next` — the standard "pull the next ticket" handoff.
 
 ## Turn-ending discipline — the launcher invocation is the last act of the turn
 
-Once you call the launcher, your turn is over. Stop. No closing text, no parting summary, no "bottle scheduled!" confirmation, no further tool calls, no end-of-turn insights. The launcher's `bottle scheduled → <target> (/<reset>) in Ns` line is the only artifact this skill emits, and it is the last line your turn produces.
+Once you call the launcher, your turn is over. Stop. No closing text, no parting summary, no "scheduled!" confirmation, no further tool calls, no end-of-turn insights. The launcher's `handoff scheduled → <target> (/<reset>) in Ns` line is the only artifact this skill emits, and it is the last line your turn produces.
 
 [LAW:dataflow-not-control-flow] the launcher's return *is* the data signal that the agent's turn has ended; the agent observes that signal and exits. There is no branch on "should I add a closing paragraph" — the same code path runs every time, and the data (launcher returned) picks the effect (turn ends).
 
@@ -37,27 +52,27 @@ This matters because the worker resets the same tmux pane after the delay. It ca
 ## Invocation
 
 ```bash
-~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle [message...]
+~/.claude/skills/message-in-a-bottle/bin/finalize-session [message...]
 ```
 
 - `[message...]` — a slash command, plain text, multi-line, or containing quotes/backticks/dollar signs. Quote it at invocation as usual (your shell does word-splitting and `$VAR` expansion before the script sees argv). **Omit it to default to `/next`.**
 - Reset is inferred: `/compact` anywhere in the first three sentences → `compact`; otherwise `clear`.
 
-The launcher prints `bottle scheduled → <target> (/<reset>) in Ns (log: <tempfile>)` and exits. The log captures worker progress and any tmux errors.
+The launcher prints `handoff scheduled → <target> (/<reset>) in Ns (log: <tempfile>)` and exits. The log captures worker progress and any tmux errors.
 
 ## Examples
 
-Schedule the next ticket pull on a fresh window (default message, uses `clear`):
+Finalize and pull the next ticket on a fresh window (default message, uses `clear`):
 
 ```bash
-~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle
-~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle /next
+~/.claude/skills/message-in-a-bottle/bin/finalize-session
+~/.claude/skills/message-in-a-bottle/bin/finalize-session /next
 ```
 
 Hand off a specific instruction, keeping a compacted summary of this session (include `/compact` in the message):
 
 ```bash
-~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle \
+~/.claude/skills/message-in-a-bottle/bin/finalize-session \
   '/compact Continue the spec audit. Pick up at section 4 — the previous session left findings in spec/audit/section-3.md.'
 ```
 
@@ -72,8 +87,8 @@ The verification gate is the whole point: the paste lives *only* on the reset-co
 
 ## Operating notes
 
-- The bottle fires into the pane that invoked the launcher (`$TMUX_PANE`).
-- To cancel a scheduled bottle, kill its worker: `pgrep -f 'message-in-a-bottle --worker'`.
+- The handoff fires into the pane that invoked the launcher (`$TMUX_PANE`).
+- To cancel a scheduled handoff, kill its worker: `pgrep -f 'finalize-session --worker'`.
 
 ## Related
 
