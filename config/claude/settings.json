@@ -163,6 +163,7 @@
     "enabled": false
   },
   "effortLevel": "high",
+  "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
   "voice": {
     "enabled": true,
@@ -181,6 +182,5 @@
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
   "useAutoModeDuringPlan": true,
-  "voiceEnabled": true,
-  "model": "sonnet"
+  "voiceEnabled": true
 }
