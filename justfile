@@ -9,24 +9,58 @@ default:
 install *ARGS:
     ./install {{ARGS}}
 
-# Show current dotfiles status (which profile is active)
+# Show current dotfiles status (which profile is active, repo location, indicator health)
 status:
     #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Profile is encoded as a suffix on the symlink target's basename:
+    # ~/.zshrc -> .../config/zshrc.home  =>  profile = home
+    # Any symlink whose target matches `<name>.<home|work>` counts as an indicator.
+    INDICATORS=(~/.zshrc ~/.rad-plugins ~/.pypirc ~/.mackup.cfg)
+
     echo "Dotfiles Status"
     echo "==============="
     echo ""
-    if [ -L ~/.zshrc ]; then
-        zshrc_target=$(readlink ~/.zshrc)
-        echo "Active .zshrc: $zshrc_target"
-        if echo "$zshrc_target" | grep -q "dotfiles-home"; then
-            echo "Profile: HOME"
-        elif echo "$zshrc_target" | grep -q "dotfiles-work"; then
-            echo "Profile: WORK"
+
+    seen=""
+    repo=""
+    for link in "${INDICATORS[@]}"; do
+        if [[ -L "$link" ]]; then
+            target=$(readlink "$link")
+            base="${target##*/}"
+            suffix="${base##*.}"
+            case "$suffix" in
+                home|work)
+                    case " $seen " in *" $suffix "*) ;; *) seen="${seen:+$seen }$suffix" ;; esac
+                    printf "  %-20s -> %s\n" "${link/#$HOME/~}" "$target"
+                    # First profile-bearing target reveals the repo root.
+                    [[ -z "$repo" ]] && repo="${target%/config/*}"
+                    ;;
+                *)
+                    printf "  %-20s -> %s  (no profile suffix)\n" "${link/#$HOME/~}" "$target"
+                    ;;
+            esac
+        elif [[ -e "$link" ]]; then
+            printf "  %-20s    (regular file, not a symlink)\n" "${link/#$HOME/~}"
         else
-            echo "Profile: UNKNOWN"
+            printf "  %-20s    (missing)\n" "${link/#$HOME/~}"
         fi
-    else
-        echo "⚠ ~/.zshrc is not a symlink"
+    done
+
+    echo ""
+    profile_count=$(echo $seen | wc -w | tr -d ' ')
+    case "$profile_count" in
+        0) echo "Profile: NOT INSTALLED" ;;
+        1) echo "Profile: $seen" ;;
+        *) echo "Profile: MIXED ($seen) — re-run \`just install <profile>\`" ;;
+    esac
+
+    if [[ -n "$repo" ]]; then
+        echo "Repo:    $repo"
+        if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "         ⚠ not a git work tree"
+        fi
     fi
 
 # Validate dotfiles installation and migrations
