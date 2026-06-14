@@ -29,9 +29,10 @@ import github_threads
 from github_threads import fetch, resolve  # noqa: F401  (contract surface)
 
 CAPABILITIES = {
-    "resolve":     True,   # findings are GitHub review threads
-    "trigger":     True,   # the reviewer runs only when explicitly invoked
-    "setup_check": True,   # verifies claude + gh are usable
+    "resolve":        True,   # findings are GitHub review threads
+    "trigger":        True,   # the reviewer runs only when explicitly invoked
+    "setup_check":    True,   # verifies claude + gh are usable
+    "dismiss_review": False,  # posts COMMENT reviews (can't block own PR) — nothing to dismiss
 }
 
 MODEL_ENV = "ADVERSARIAL_REVIEW_MODEL"

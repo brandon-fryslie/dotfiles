@@ -21,7 +21,16 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).parent
 CONFIG_FILE = SKILL_DIR / "provider.json"
 
-REQUIRED_CAPABILITIES = {"resolve", "trigger", "setup_check"}
+# [LAW:one-source-of-truth] the capability→required-function mapping is declared
+# once here; both the required-key set and the validator derive from it. Adding a
+# capability means one entry, not edits scattered across the loader.
+CAPABILITY_FUNCS = {
+    "resolve":        ["resolve"],
+    "trigger":        ["trigger"],
+    "setup_check":    ["setup_check"],
+    "dismiss_review": ["change_requests", "dismiss_review"],
+}
+REQUIRED_CAPABILITIES = set(CAPABILITY_FUNCS)
 
 
 def get(name: str | None = None) -> object:
@@ -83,17 +92,20 @@ def _validate(module: object, name: str) -> None:
         raise RuntimeError(
             f"Provider '{name}' CAPABILITIES is missing keys: {missing_keys}"
         )
-    for cap, required in (("wait", True), ("fetch", True)):
-        if not hasattr(module, cap):
+    for fn in ("wait", "fetch"):
+        if not hasattr(module, fn):
             raise RuntimeError(
-                f"Provider '{name}' is missing required function '{cap}'."
+                f"Provider '{name}' is missing required function '{fn}'."
             )
-    for cap in ("resolve", "trigger", "setup_check"):
-        if caps.get(cap) and not hasattr(module, cap):
-            raise RuntimeError(
-                f"Provider '{name}' declares capability '{cap}' but does not "
-                f"implement the function."
-            )
+    for cap, funcs in CAPABILITY_FUNCS.items():
+        if not caps.get(cap):
+            continue
+        for fn in funcs:
+            if not hasattr(module, fn):
+                raise RuntimeError(
+                    f"Provider '{name}' declares capability '{cap}' but does not "
+                    f"implement the function '{fn}'."
+                )
 
 
 def _available() -> list[str]:

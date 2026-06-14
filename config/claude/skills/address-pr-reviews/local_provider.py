@@ -19,9 +19,10 @@ See PROVIDER_CONTRACT.md for the full interface spec.
 from __future__ import annotations
 
 CAPABILITIES = {
-    "resolve":     False,  # local agent findings have no GitHub thread to resolve
-    "trigger":     True,   # local agent must be explicitly invoked
-    "setup_check": True,   # can check whether the agent binary is available
+    "resolve":        False,  # local agent findings have no GitHub thread to resolve
+    "trigger":        True,   # local agent must be explicitly invoked
+    "setup_check":    True,   # can check whether the agent binary is available
+    "dismiss_review": False,  # no formal GitHub review to dismiss
 }
 
 

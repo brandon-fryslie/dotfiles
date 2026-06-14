@@ -32,15 +32,22 @@ to `{name}_provider.py`. Switching providers = edit one value.
 
 ```python
 CAPABILITIES = {
-    "resolve":      True,   # provider.resolve() is implemented and callable
-    "trigger":      False,  # provider.trigger() is implemented and callable
-    "setup_check":  True,   # provider.setup_check() is implemented and callable
+    "resolve":        True,   # provider.resolve() is implemented and callable
+    "trigger":        False,  # provider.trigger() is implemented and callable
+    "setup_check":    True,   # provider.setup_check() is implemented and callable
+    "dismiss_review": True,   # change_requests()/dismiss_review() are implemented
 }
 ```
 
-All three keys are required. `True` means the function is present and must be
-called where the skill would call it. `False` means the function is absent; the
-skill skips the corresponding step and notes the gap to the agent.
+All four keys are required. `True` means the capability's function(s) are present
+and must be called where the skill would call them. `False` means they are absent;
+the skill skips the corresponding step and notes the gap to the agent.
+
+The capability→function mapping is declared once in `provider_loader.py`
+(`CAPABILITY_FUNCS`) and the loader validates every declared capability has its
+functions. `dismiss_review` is the one capability backed by two functions
+(`change_requests` + `dismiss_review`) — the fetch-time read and the verified
+mutation that pair the way `fetch` + `resolve` do.
 
 ## Required functions
 
@@ -126,6 +133,44 @@ Explicitly requests a review from the backend.
 
 When `trigger` is `False`, the provider fires on push automatically — the
 skill does not call this function.
+
+### `change_requests(pr_url: str) -> dict`
+
+Required when `CAPABILITIES["dismiss_review"]` is `True`.
+
+Returns the automated reviewer's blocking reviews — the `CHANGES_REQUESTED`
+reviews the current round must dismiss once its findings are addressed.
+
+```python
+# return value
+{
+    "reviews": [
+        {"review_id": 4484265295, "author": "github-actions[bot]",
+         "commit_id": "abc123..."}
+    ]
+}
+```
+
+Scoped to the automated reviewer, never a human: a human's `CHANGES_REQUESTED`
+is cleared only by that human re-reviewing. The skill reads this at fetch-time
+and dismisses by id at round end, so a push's fresh re-review (a new id this read
+never saw) is never wrongly dismissed. `[LAW:one-source-of-truth]`
+
+### `dismiss_review(pr_url: str, review_id: int, message: str) -> dict`
+
+Required when `CAPABILITIES["dismiss_review"]` is `True`.
+
+Dismisses one stale `CHANGES_REQUESTED` review with an explanatory message and
+verifies the backend recorded the dismissal.
+
+```python
+# return value
+{"review_id": 4484265295, "is_dismissed": True}
+```
+
+Raises `RuntimeError` if the backend did not confirm the review reached the
+`DISMISSED` state. Must not return successfully otherwise — a silent no-op here
+leaves the PR blocked by a review the round was supposed to clear. `[LAW:no-silent-failure]`
 
 ### `setup_check(owner: str, repo: str) -> dict`
 
