@@ -12,7 +12,6 @@ export DOTFILES_DIR="$HOME/code/dotfiles"
 # Automatically deduplicate PATH entries
 typeset -U path
 
-setopt clobber
 setopt share_history
 
 # TODO: move this somewhere else, at minimum the helper fns
@@ -33,7 +32,7 @@ source "${DOTFILES_DIR}/config/zshrc.base"
 # Add customizations below
 
 # Local code configuration
-export PROJECTS_DIR="$HOME/icode"
+export PROJECTS_DIR="$HOME/code"
 export PROJECTS_DIRS=(~/projects ~/code)
 
 # Python
@@ -46,9 +45,6 @@ alias e.="${VISUAL:-vi} ."
 alias dog='pygmentize -g'
 # Use e-prawn GitHub SSH identity for gh-driven git operations
 alias gh='GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_elton-prawn -o IdentitiesOnly=yes" command gh'
-# Removed: git config --global core.excludesfile ~/.gitignore_global
-# This should only be run once, not on every shell startup (causes file lock errors)
-# Run manually if needed: git config --global core.excludesfile ~/.gitignore_global
 
 # Move to a rad-shell plugin
 # Try finding the first ethernet adapter that has a valid ipv4 address
@@ -60,40 +56,12 @@ local-ip() {
 }
 
 
-# TODO: move this to a plugin
-JAVA_VERSION="temurin-11"
-export JAVA_HOME="/Library/Java/JavaVirtualMachines/${JAVA_VERSION}.jdk/Contents/Home"
-PATH="/Library/Java/JavaVirtualMachines/${JAVA_VERSION}.jdk/Contents/Home/bin/:${PATH}"
-
 # what's this for?
 PATH="$PATH:/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/bin"
-
-#export PYENV_ROOT="$HOME/.pyenv"
-#command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
-#
-#command -v pyenv >/dev/null && {
-#  eval "$(command pyenv init -)"
-#  eval "$(command pyenv init --path)"
-#  eval "$(command pyenv virtualenv-init -)"
-#}
 
 # SDKMAN
 export SDKMAN_DIR="$HOME/.sdkman"
 [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-
-# Crazy codesigning thing
-#add-debug-entitlement() {
-#  local executable_path=$1
-#  rad-yellow "Adding debug entitlement to exec: ${executable_path}"
-#  debug_plist=$(mktemp)
-#  cat << EOF > $debug_plist
-#<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>com.apple.security.get-task-allow</key><true/></dict></plist>
-#EOF
-#  rad-yellow "Wrote debug entitlement plist to ${debug_plist}.  Executing codesign..."
-#  codesign -s - -v -f --entitlements ${debug_plist} ${executable_path}
-#  rad-green "Done!"
-#}
-#
 
 # pnpm
 export PNPM_HOME="/Users/bmf/Library/pnpm"
@@ -103,15 +71,12 @@ case ":$PATH:" in
 esac
 # pnpm end
 
-alias n4j="/opt/homebrew/opt/neo4j/bin/neo4j console"
 alias venv-direnv="echo 'source .venv/bin/activate' >> .envrc && direnv allow"
 
 # load fnm/node
 eval "$(command fnm env --use-on-cd --shell zsh)"
 
-# NVM removed - using fnm instead for faster Node.js version management
 export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
-export PATH="$PATH:/Applications/IDA Professional 9.2.app/Contents/MacOS/dbgsrv"
 
 # bun completions
 [ -s "/Users/bmf/.bun/_bun" ] && source "/Users/bmf/.bun/_bun"
@@ -119,36 +84,6 @@ export PATH="$PATH:/Applications/IDA Professional 9.2.app/Contents/MacOS/dbgsrv"
 # bun
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
-export PATH="/Users/bmf/.swiftpm/bin:$PATH"
-
-### Zinit plugin manager (optimized with turbo mode)
-#if [[ ! -f $HOME/.local/share/zinit/zinit.git/zinit.zsh ]]; then
-#    print -P "%F{33} %F{220}Installing %F{33}ZDHARMA-CONTINUUM%F{220} Initiative Plugin Manager (%F{33}zdharma-continuum/zinit%F{220})…%f"
-#    command mkdir -p "$HOME/.local/share/zinit" && command chmod g-rwX "$HOME/.local/share/zinit"
-#    command git clone https://github.com/zdharma-continuum/zinit "$HOME/.local/share/zinit/zinit.git" && \
-#        print -P "%F{33} %F{34}Installation successful.%f%b" || \
-#        print -P "%F{160} The clone has failed.%f%b"
-#fi
-#
-#source "$HOME/.local/share/zinit/zinit.git/zinit.zsh"
-#autoload -Uz _zinit
-#(( ${+_comps} )) && _comps[zinit]=_zinit
-
-## Load annexes with turbo mode (asynchronous loading after prompt appears)
-## This speeds up shell startup by deferring non-critical plugins
-#zinit wait lucid light-mode for \
-#    zdharma-continuum/zinit-annex-as-monitor \
-#    zdharma-continuum/zinit-annex-bin-gem-node \
-#    zdharma-continuum/zinit-annex-patch-dl \
-#    zdharma-continuum/zinit-annex-rust
-
-# Example: Load additional plugins with turbo
-# zinit wait lucid for \
-#     OMZP::git \
-#     OMZP::sudo
-
-### End of Zinit configuration
-
 
 export UV_PYTHON=3.12
 
@@ -159,14 +94,19 @@ typeset -U path
 # Set up fzf key bindings and fuzzy completion
 source <(fzf --zsh)
 eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
-# Set up fzf key bindings and fuzzy completion
-source <(fzf --zsh)
-eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
 
-# Java 21 default
-export JAVA_HOME="$HOME/.sdkman/candidates/java/current"
-export PATH="$JAVA_HOME/bin:$PATH"
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+# Java via sdkman; if absent, shim `java` to print how to install it
+if [[ -x "$HOME/.sdkman/candidates/java/current/bin/java" ]]; then
+  export JAVA_HOME="$HOME/.sdkman/candidates/java/current"
+  export PATH="$JAVA_HOME/bin:$PATH"
+else
+  java() {
+    print -r -- "java is not installed. Install via sdkman:
+  curl -s \"https://get.sdkman.io\" | bash   # skip if sdkman already installed
+  sdk install java"
+    return 127
+  }
+fi
 
 alias aclod="archgw cli-agent claude --path /Users/bmf/code/arch/demos/use_cases/claude_code_router"
 
@@ -184,10 +124,6 @@ z() {
 ## proj2 - project navigator
 export GOBIN=$HOME/.local/bin
 export PATH="$HOME/.cargo/bin:$PATH"
-
-# JTPCK Telemetry Aliases - START
-# Auto-generated by JTPCK installer
-# JTPCK Telemetry Aliases - END
 
 # Added by Antigravity
 export PATH="/Users/bmf/.antigravity/antigravity/bin:$PATH"
