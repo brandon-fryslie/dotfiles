@@ -1,5 +1,5 @@
 ---
-name: finalize-session
+name: message-in-a-bottle
 description: The mandatory final step that ends a working session and hands the next instruction to a fresh context window. You RUN it — you never ask the user whether to, and you never defer it — when you finish a unit of work (closed a PR, completed the handed task) or cross 300k–350k tokens of context. It resets the context (/clear, or /compact when your message says so) and pastes the next instruction (default /next) into the same pane. Covers "finalize the session", "hand off to a fresh session", "continue after /clear", "schedule the next ticket", "send myself X after I'm done".
 ---
 
@@ -16,6 +16,20 @@ When you reach a finalization point — you closed a PR, finished the task you w
 [LAW:no-silent-failure] asking-instead-of-running or deferring is a silent failure of the handoff: the next session never receives the context, and the work stalls with nobody told. The launcher's scheduled line is the signal that the close-out happened; nothing replaces it.
 
 **The user being present is irrelevant.** Presence is not a gate, a tiebreaker, or a reason to skip — you finalize on the *work's* state, never on whether a human is watching. "The user is here, so I'll skip it" and "I'll ask if they want me to" are both wrong: this step requires no user action and asks for none.
+
+### The only gate, and the rationalizations that are never one
+
+There is exactly **one** legitimate input: **is the handed unit of work complete?** Unit complete (PR merged, ticket closed, task delivered) *or* context at 300k–350k tokens → you run it, now, with no further deliberation. Unit **not** complete → you are not "deciding not to finalize," you are *still doing the work*: finish the unit, then finalize. There is no third state, and "skip finalize because X" is never one of them.
+
+Every other consideration is a rationalization. These are **forbidden** as reasons to skip, defer, downgrade to a question, or narrate a non-run — including verbatim:
+
+- "The user is actively driving / mid-conversation, so I won't." Presence is not the gate.
+- "Firing now would be disruptive / would wipe the active session." If the unit is complete, the reset is the *point*, not a side effect to avoid.
+- "This isn't a clean finalization point." That is a *feeling*, not a fact about the work unit. If the unit is complete, it **is** the point — say so and run it. If it isn't complete, finish it.
+- "Nothing's merged yet, so I'll hold off / wait until later." Then *merge it* — that is finishing the unit — and then finalize. "Later" is not a state this skill has.
+- "Let me check with the user first / surface status and let them decide." Asking is the failure this skill exists to prevent.
+
+[LAW:no-silent-failure] writing a sentence that *explains why you are not running it* — on any basis other than "the unit is not yet complete, so I am finishing it" — is itself the failure mode. The skill is defeated not only by skipping but by **narrating a skip as prudence**. If you catch yourself composing "I'm not finalizing here because…", stop: either the unit is incomplete (finish it) or it is complete (run the script). [LAW:dataflow-not-control-flow] there is no branch whose output is "explain to the user why I held off."
 
 ## Reset mode is inferred from your message — never asked of the user
 
@@ -38,7 +52,7 @@ This matters because the worker resets the same tmux pane after the delay. It ca
 ## Invocation
 
 ```bash
-~/.claude/skills/finalize-session/bin/finalize-session [message...]
+~/.claude/skills/message-in-a-bottle/bin/finalize-session [message...]
 ```
 
 - `[message...]` — a slash command, plain text, multi-line, or containing quotes/backticks/dollar signs. Quote it at invocation as usual (your shell does word-splitting and `$VAR` expansion before the script sees argv). **Omit it to default to `/next`.**
@@ -51,14 +65,14 @@ The launcher prints `handoff scheduled → <target> (/<reset>) in Ns (log: <temp
 Finalize and pull the next ticket on a fresh window (default message, uses `clear`):
 
 ```bash
-~/.claude/skills/finalize-session/bin/finalize-session
-~/.claude/skills/finalize-session/bin/finalize-session /next
+~/.claude/skills/message-in-a-bottle/bin/finalize-session
+~/.claude/skills/message-in-a-bottle/bin/finalize-session /next
 ```
 
 Hand off a specific instruction, keeping a compacted summary of this session (include `/compact` in the message):
 
 ```bash
-~/.claude/skills/finalize-session/bin/finalize-session \
+~/.claude/skills/message-in-a-bottle/bin/finalize-session \
   '/compact Continue the spec audit. Pick up at section 4 — the previous session left findings in spec/audit/section-3.md.'
 ```
 
