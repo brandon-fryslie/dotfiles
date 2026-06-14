@@ -74,7 +74,7 @@ esac
 alias venv-direnv="echo 'source .venv/bin/activate' >> .envrc && direnv allow"
 
 # load fnm/node
-eval "$(command fnm env --use-on-cd --shell zsh)"
+command -v fnm >/dev/null && eval "$(command fnm env --use-on-cd --shell zsh)"
 
 export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
 
@@ -92,8 +92,8 @@ export UV_PYTHON=3.12
 typeset -U path
 
 # Set up fzf key bindings and fuzzy completion
-source <(fzf --zsh)
-eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
+command -v fzf >/dev/null && source <(fzf --zsh)
+command -v mcpi >/dev/null && eval "$(_MCPI_COMPLETE=zsh_source mcpi)"
 
 # Java via sdkman; if absent, shim `java` to print how to install it
 if [[ -x "$HOME/.sdkman/candidates/java/current/bin/java" ]]; then
