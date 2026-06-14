@@ -33,7 +33,7 @@ run_dotbot() {
     config_args+=(-c "$config")
   done
 
-  uv run dotbot -d "${BASEDIR}" "${config_args[@]}"
+  uvx dotbot -d "${BASEDIR}" "${config_args[@]}"
 }
 
 case "$PROFILE" in
