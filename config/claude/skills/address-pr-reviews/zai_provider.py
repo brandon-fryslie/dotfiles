@@ -26,12 +26,18 @@ from typing import Optional
 # are the shared GitHub primitives — imported, never copied. Import resolution
 # is owned by provider_loader (loaded path) or script-mode sys.path (direct).
 import github_threads
-from github_threads import fetch, resolve  # noqa: F401  (contract surface)
+from github_threads import (  # noqa: F401  (contract surface)
+    fetch,
+    resolve,
+    change_requests,
+    dismiss_review,
+)
 
 CAPABILITIES = {
-    "resolve":     True,   # GitHub review threads are resolvable
-    "trigger":     False,  # fires automatically on push via GitHub Action
-    "setup_check": True,   # checks that code-review.yml workflow is installed
+    "resolve":        True,   # GitHub review threads are resolvable
+    "trigger":        False,  # fires automatically on push via GitHub Action
+    "setup_check":    True,   # checks that code-review.yml workflow is installed
+    "dismiss_review": True,   # github-actions posts a dismissible CHANGES_REQUESTED review
 }
 
 # The workflow file this provider watches. [LAW:one-source-of-truth]

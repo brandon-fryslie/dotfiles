@@ -1,32 +1,33 @@
 #!/usr/bin/env bash
-# message-in-a-bottle — schedule a delayed self-message into the current
-# tmux pane. The launcher returns immediately; a detached worker resets the
-# context (/clear or /compact) and pastes the message after a fixed delay.
+# finalize-session — the mandatory session close-out: schedule a delayed
+# self-handoff into the current tmux pane. The launcher returns immediately;
+# a detached worker resets the context (/clear or /compact) and pastes the
+# next instruction after a fixed delay.
 #
 # Modes:
-#   launcher:  message-in-a-bottle [message...]
-#   worker:    message-in-a-bottle --worker <target> <reset> <msgfile>
+#   launcher:  finalize-session [message...]
+#   worker:    finalize-session --worker <target> <reset> <msgfile>
 #
 # Reset is inferred from the message: if /compact appears within the first
 # 3 sentences, compact is used; otherwise clear.
 
 set -euo pipefail
 
-# [LAW:one-source-of-truth] timing lives here once. BOTTLE_DELAY_SECONDS is how
+# [LAW:one-source-of-truth] timing lives here once. HANDOFF_DELAY_SECONDS is how
 # long to wait before firing; SETTLE_SECONDS is how long to let the reset render
 # before reading the pane back to verify it ran.
-BOTTLE_DELAY_SECONDS=10
+HANDOFF_DELAY_SECONDS=10
 SETTLE_SECONDS=5
 
 # [LAW:one-source-of-truth] the static framing wrapped around the agent's message
 # lives here once. The launcher composes PREFIX + agent message + SUFFIX into the
 # single value that flows to the pane; the worker stays a dumb conduit. Edit the
 # placeholder text between the markers — leave the surrounding heredoc mechanics.
-BOTTLE_PREFIX=$(cat <<'PREFIX'
+HANDOFF_PREFIX=$(cat <<'PREFIX'
 === Below is a message from an agent on behalf of the user ===
 PREFIX
 )
-BOTTLE_SUFFIX=$(cat <<'SUFFIX'
+HANDOFF_SUFFIX=$(cat <<'SUFFIX'
 === The above message was sent on behalf of the user, but as it was sent from an agent, double checking the claims is wise.  When in doubt, note any divergence and run the '/next' skill to proceed.  Do NOT ask the user if you should run '/next'. ===
 SUFFIX
 )
@@ -61,7 +62,7 @@ case "$MODE" in
   launcher)
     # [LAW:dataflow-not-control-flow] the message is a value carrying a canonical
     # default — /next, the standard "pull the next ticket" handoff. Omitting argv
-    # selects that default; it never yields an empty bottle, so no guard follows.
+    # selects that default; it never yields an empty handoff, so no guard follows.
     AGENT_MESSAGE="${*:-/next}"
 
     # [LAW:dataflow-not-control-flow] reset mode is derived from the message — if
@@ -77,7 +78,7 @@ case "$MODE" in
     # [LAW:one-source-of-truth] the wrapped value is assembled once, here, from the
     # static framing and the agent's message. Everything downstream — MSGFILE,
     # buffer, paste — carries this final value verbatim and never re-wraps it.
-    MESSAGE=$(printf '%s\n%s\n%s' "$BOTTLE_PREFIX" "$AGENT_MESSAGE" "$BOTTLE_SUFFIX")
+    MESSAGE=$(printf '%s\n%s\n%s' "$HANDOFF_PREFIX" "$AGENT_MESSAGE" "$HANDOFF_SUFFIX")
 
     # [LAW:no-defensive-null-guards] the tmux context is a real trust boundary —
     # fail loudly when it's absent. The message needs no such guard: it carries a
@@ -93,7 +94,7 @@ case "$MODE" in
     # [LAW:dataflow-not-control-flow] the message flows through a tempfile
     # as a value, bypassing every shell-quoting hazard between argv → worker
     # → tmux load-buffer. No escaping branches anywhere.
-    MSGFILE=$(mktemp -t bottle-msg.XXXXXX)
+    MSGFILE=$(mktemp -t finalize-msg.XXXXXX)
     LOGFILE=""
     # [LAW:single-enforcer] one trap covers both tempfiles until the worker
     # is spawned; cleared right after `nohup` so the worker owns MSGFILE and
@@ -118,7 +119,7 @@ case "$MODE" in
     # LOGFILE created just before the spawn — short lifetime minimizes the
     # window where a signal or freak `>>` failure could leave it behind,
     # and the EXIT trap above covers it as a backstop until we clear it.
-    LOGFILE=$(mktemp -t bottle-log.XXXXXX)
+    LOGFILE=$(mktemp -t finalize-log.XXXXXX)
 
     # nohup ignores SIGHUP, redirected stdio keeps nohup.out from spawning,
     # and the backgrounded child gets reparented to init when this shell
@@ -129,7 +130,7 @@ case "$MODE" in
       </dev/null >>"$LOGFILE" 2>&1 &
     trap - EXIT
 
-    echo "bottle scheduled → $TARGET (/$RESET) in ${BOTTLE_DELAY_SECONDS}s (log: $LOGFILE)"
+    echo "handoff scheduled → $TARGET (/$RESET) in ${HANDOFF_DELAY_SECONDS}s (log: $LOGFILE)"
     ;;
 
   worker)
@@ -146,7 +147,7 @@ case "$MODE" in
     # `--worker` is a non-interface, not a public entry point, so the worker
     # does not re-check — duplicating those checks would be drift-prone
     # ceremony for states that cannot occur via the documented call path.
-    BUFFER="bottle-$$"
+    BUFFER="finalize-$$"
 
     # [LAW:single-enforcer] the trap owns only the message file; the paste
     # buffer deletes itself on paste (paste-buffer -d).
@@ -163,7 +164,7 @@ case "$MODE" in
     esac
 
     log "waking; target=$TARGET reset=/$RESET"
-    sleep "$BOTTLE_DELAY_SECONDS"
+    sleep "$HANDOFF_DELAY_SECONDS"
 
     # [LAW:dataflow-not-control-flow] Escape cancels whatever was running — we
     # never inspect what; cancelling is the point. Then submit the reset onto
@@ -189,7 +190,7 @@ case "$MODE" in
       # The session was never reset, so it has a live agent — send it a fixed
       # note it will surface to the user, rather than silently dropping the
       # handoff. A fixed string, so send-keys -l carries it directly.
-      tmux send-keys -t "$TARGET" -l "message-in-a-bottle misfired: the scheduled /$RESET never registered, so the queued handoff was NOT sent. Please tell the user the bottle misfired."
+      tmux send-keys -t "$TARGET" -l "finalize-session handoff misfired: the scheduled /$RESET never registered, so the queued handoff was NOT sent. Please tell the user the finalize-session handoff misfired."
       sleep 0.5
       tmux send-keys -t "$TARGET" Enter
     fi

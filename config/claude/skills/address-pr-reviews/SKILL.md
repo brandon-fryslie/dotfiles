@@ -5,7 +5,7 @@ description: Address open PR review findings with judgment — read every findin
 
 # Address PR Review Findings
 
-Read every pending review finding on the PR, address each one, push your fixes (which re-runs the reviewer), repeat until clean. Same model people use at a real company: handle reviewer findings AND human-reviewer threads in one pass, push back with reasoning when you disagree, resolve, re-review.
+Read every pending review finding on the PR, **post your plan on each thread first**, then implement, push (which re-runs the reviewer), confirm-and-resolve the threads you fixed, and dismiss the reviewer's now-stale change request. Repeat until clean. Same model people use at a real company: handle reviewer findings AND human-reviewer threads in one pass, push back with reasoning when you disagree, resolve, dismiss, re-review.
 
 [LAW:one-source-of-truth] `provider.fetch` is the single source of pending findings for this loop — every open finding on the PR, keyed by `thread_id` (when available). There is no second stream.
 
@@ -43,7 +43,9 @@ if not check["installed"]:
 
 ## The loop
 
-Repeat until **step 2 returns zero unresolved findings**:
+Each round runs in phases: **plan every finding, then implement, then confirm-and-resolve, then dismiss the stale change request.** Repeat the round until **step 2 returns zero unresolved findings**.
+
+[LAW:no-ambient-temporal-coupling] the round has one owner of *when* resolution happens, split by a single fact per finding — does addressing it require a code change? A no-change finding (invalid, already-fixed) resolves the moment you decide it, because its resolution depends on nothing future. A change-needed finding resolves only **after the push that makes the fix real** — resolving it earlier would mark an unfixed thread "done," a lie about the code (`[FRAMING:representation]`). So the plan phase captures the change-needed set and the confirm phase drains it; the loop's empty `fetch` (step 2) is the net that re-surfaces anything dropped.
 
 ### 1. Trigger (if required) and wait for the review to finish
 
@@ -63,13 +65,20 @@ Blocks until the review for the PR's **current head SHA** reaches `completed`, t
 
 [LAW:no-silent-failure] if `conclusion` is anything other than `success`, the reviewer itself errored — its findings are absent, not empty. Stop and surface the run `url`; do not treat a failed run as a clean review.
 
-### 2. Fetch all pending review findings
+### 2. Fetch findings, and capture the change requests to dismiss
 
 ```python
 data = provider.fetch(PR_URL)
+
+# Capture the blocking reviews to dismiss at round end (step 8).
+pending_reviews = []
+if provider.CAPABILITIES["dismiss_review"]:
+    pending_reviews = provider.change_requests(PR_URL)["reviews"]
 ```
 
-Returns canonical JSON: every open finding on the PR keyed by `thread_id` (nullable for providers without GitHub threads). One shape per finding.
+`fetch` returns canonical JSON: every open finding on the PR keyed by `thread_id` (nullable for providers without GitHub threads). One shape per finding.
+
+`change_requests` returns the automated reviewer's `CHANGES_REQUESTED` reviews — `[{"review_id", "author", "commit_id"}]` — captured **now, before any push**, so step 8 dismisses exactly the reviews this round addressed and never the fresh re-review your push triggers. [LAW:one-source-of-truth] the dismiss set is what you read here, not what is blocking after you mutate the PR. It is scoped to Bot authors: a human's `CHANGES_REQUESTED` is theirs to clear, never auto-dismissed. [LAW:no-silent-failure]
 
 Schema:
 
@@ -101,49 +110,88 @@ Schema:
 
 > **`line_start` may be `null`** for a file-level (non-line-anchored) comment. Open the file and read the `body`/`thread_comments` for context; the finding still resolves by `thread_id` like any other.
 
-### 3. For each unresolved finding
+### 3. Plan phase — triage every finding, resolve the no-change ones
 
-Open the file at `file:line_start`. Read `body` and the full `thread_comments` chain. Classification is the same regardless of `author`:
+For **each** unresolved finding, before writing any code: open the file at `file:line_start`, read `body` and the full `thread_comments` chain, and classify. Classification is the same regardless of `author`:
 
-- **valid** — reviewer is right; apply the fix
-- **different_fix** — reviewer identified a real issue but proposed the wrong fix; apply a better one
+- **valid** — reviewer is right; a fix is coming
+- **different_fix** — reviewer identified a real issue but proposed the wrong fix; a better fix is coming
 - **invalid** — reviewer is wrong, or the suggestion violates an architectural law (defensive null guards, silent fallbacks, mode explosion, duplicate enforcement, control-flow in place of data-flow variance, etc.). Push back and **cite the law** (`[LAW:no-defensive-null-guards]`)
-- **already_fixed** — resolved by a later commit; note and resolve
+- **already_fixed** — resolved by a later commit; nothing to change
 
-Handling a finding is **one atomic unit with a single postcondition: the finding is resolved or acknowledged**. Do the whole unit for the current finding and verify it before opening the next.
-
-**Reply** (when the provider supports GitHub threads):
+**Post a comment on the thread stating your plan for this finding** — what you'll do and why. This comment goes on every finding, valid or not; it is the durable record of the decision.
 
 ```bash
 gh api graphql -f query='
 mutation($id:ID!,$body:String!){
   addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){ comment{id} } }
-' -F id="$THREAD_ID" -F body="Proposal: ..."
+' -F id="$THREAD_ID" -F body="Plan: ..."
 ```
 
-**Resolve** — when `provider.CAPABILITIES["resolve"]` is `True`, resolve through the provider:
+The classification carries **one discriminator: does addressing this finding require a code change this round?**
+
+- **No change (invalid, already_fixed)** — the plan comment *is* the resolution. State why (cite the law for `invalid`), then **resolve the thread now**:
+
+  ```python
+  provider.resolve(THREAD_ID)
+  ```
+
+- **Change needed (valid, different_fix)** — post the plan comment and **leave the thread unresolved**. It resolves in step 7, after the fix is real. Add its `thread_id` to your change-needed set.
+
+[LAW:dataflow-not-control-flow] resolve-now vs. resolve-later is a value the classification carries, not a side branch — the same plan step runs for every finding; the discriminator picks when resolution happens. [LAW:single-enforcer] resolve only ever goes through `provider.resolve`, never a raw mutation — it's the one path that confirms GitHub accepted the resolution, so a resolve that didn't take can't pass as done.
+
+When `provider.CAPABILITIES["resolve"]` is `False`, findings have no resolvable thread — note each finding's disposition in a reply if the provider supports it. The loop still converges when `fetch` returns zero open findings.
+
+### 4. Implement the planned changes
+
+Make the code changes for every finding in the change-needed set. Nothing here for a round whose findings were all no-change — the set is empty and this step does nothing.
+
+### 5. Address failing checks
+
+Check the PR for any failing checks. Address them before continuing.
+
+### 6. Commit and push your fixes
+
+Commit messages describe the **why** (architectural concern), not "address review comment" — each commit must stand alone in `git log`. Batch related concerns; separate unrelated.
+
+Pushing triggers re-review for providers that auto-fire on push (`trigger: False`). If a round made no code change — only no-change resolutions — the head SHA is unchanged, its run is already complete, and step 1 returns immediately next round; the loop converges via step 2's empty list. For providers that require explicit triggering (`trigger: True`), the `trigger` call in step 1 handles re-running the reviewer. The rare case of forcing a re-run without a new commit for workflow-based providers is `gh run rerun <run-id>`.
+
+### 7. Confirm phase — resolve every change-needed finding
+
+The fix now exists in a pushed commit. For **each** finding in the change-needed set: post a comment on its thread describing the fix (reference the commit), then resolve it.
+
+```bash
+gh api graphql -f query='
+mutation($id:ID!,$body:String!){
+  addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){ comment{id} } }
+' -F id="$THREAD_ID" -F body="Fixed in <sha>: ..."
+```
 
 ```python
 provider.resolve(THREAD_ID)
 ```
 
-[LAW:single-enforcer] resolve through the provider, never a raw mutation — it's the one verified path that confirms resolution was accepted, so a resolve that didn't take can't pass as done. [LAW:no-ambient-temporal-coupling] it's gated, not deferred: the provider call must succeed for the current finding **before** you open the next. "Resolve them all after I push" is the exact path that drops them; there is no batch-resolve-later step.
+[LAW:no-ambient-temporal-coupling] this phase is gated on the push, not deferred past it: you confirm-and-resolve the captured set here, in this round, before step 8. The empty `fetch` in the next round's step 2 is the safety net — a change-needed thread left unresolved re-surfaces and is handled again, never silently dropped.
 
-When `provider.CAPABILITIES["resolve"]` is `False`, findings have no resolvable thread — note each finding's disposition in a reply if the provider supports it, then move on. The loop converges when `fetch` returns zero open findings.
+### 8. Dismiss the stale change request
 
-[LAW:dataflow-not-control-flow] resolve vs. acknowledge is a value the capability flag carries — the same loop body runs every time; the flag picks the action.
+When `provider.CAPABILITIES["dismiss_review"]` is `True`, dismiss each review captured in step 2 — the now-addressed `CHANGES_REQUESTED` reviews — with a message explaining the resolution:
 
-### 4. Address failing checks
+```python
+msg = (f"All findings from this review are addressed (fixes pushed and threads "
+       f"resolved) or responded to on their threads. Dismissing the stale "
+       f"change request; re-review runs on the new commit.")
+for r in pending_reviews:
+    provider.dismiss_review(PR_URL, r["review_id"], msg)
+```
 
-Check the PR for any failing checks. Address them before continuing.
+[LAW:dataflow-not-control-flow] the dismiss runs unconditionally when the capability is present; an empty `pending_reviews` dismisses nothing — there is no "if a review exists" branch. [LAW:single-enforcer] dismissal goes through `provider.dismiss_review`, which verifies GitHub recorded the `DISMISSED` state — an unconfirmed dismissal raises rather than passing as done. [LAW:no-silent-failure]
 
-### 5. Commit and push your fixes
+When `dismiss_review` is `False`, the provider posts no blocking review (it comments rather than requesting changes) — this step is a no-op the capability flag carries, exactly as `resolve` is.
 
-Commit messages describe the **why** (architectural concern), not "address review comment" — each commit must stand alone in `git log`. Batch related concerns; separate unrelated.
+**Round postcondition:** every thread from this round is resolved, and the change request the reviewer raised is dismissed. That is the end state for a single review round.
 
-Pushing triggers re-review for providers that auto-fire on push (`trigger: False`). If an iteration made no code change — only pushbacks and resolves — the head SHA is unchanged, its run is already complete, and step 1 returns immediately; the loop converges via step 2's empty list. For providers that require explicit triggering (`trigger: True`), pushing does not automatically re-run the reviewer — the `trigger` call in step 1 handles that. The rare case of forcing a re-run without a new commit for workflow-based providers is `gh run rerun <run-id>`.
-
-### 6. Go to step 1.
+### 9. Go to step 1.
 
 ## Finalize — when the loop exits clean
 
@@ -171,11 +219,11 @@ The ticket is the one this PR closed — pull it from the PR body, branch name, 
 
 Invoke `/recap` with a short note describing what was merged. The recap is the durable historical record — what shipped, what's left, what to watch out for. It lives in the project's recap log; future sessions browsing history read it there.
 
-### D. Hand off the next session via message-in-a-bottle
+### D. Finalize the session and hand off the next
 
-The handoff has two terminal forms: fire the bottle (with content shaped by the candidate's classified state) or halt and surface a per-candidate failure table to the user. [LAW:types-are-the-program] the section's output is `Handoff = Bottle(direct_work) | Bottle(define_task) | HaltAndExplain(failure_table)` — variants of one typed value, dispatched mechanically from the classification step. Well-definedness is *not* a fire/no-fire gate; it shapes bottle content. The only halt case is project-level misalignment across every examined candidate.
+The close-out runs `finalize-session` — the mandatory handoff that resets the context and hands the next instruction to a fresh window. It has two terminal forms: run finalize-session (with content shaped by the candidate's classified state) or halt and surface a per-candidate failure table to the user. [LAW:types-are-the-program] the section's output is `Handoff = Finalize(direct_work) | Finalize(define_task) | HaltAndExplain(failure_table)` — variants of one typed value, dispatched mechanically from the classification step. Well-definedness is *not* a run/skip gate; it shapes the handoff content. The only halt case is project-level misalignment across every examined candidate.
 
-**These three arms are exhaustive — no "skip," "hold," or "ask instead" arm exists.** The user being present, the step feeling minor, or the `/clear` being disruptive are NOT inputs to this decision. Deviating requires citing a clause *in this skill*; a tool's tone or purpose is never authorization (`message-in-a-bottle`'s "without involving the user" means *requires no user action*, not *only fire when the user is absent*). Absent such a clause the prescribed arm **executes as written** — never a silent skip, never a fallback to asking.
+**These three arms are exhaustive — no "skip," "hold," or "ask instead" arm exists.** The user being present, the step feeling minor, or the `/clear` being disruptive are NOT inputs to this decision. Deviating requires citing a clause *in this skill*; a tool's tone or purpose is never authorization (`finalize-session` "requires no user action" means exactly that — run it without asking, not "only run it when the user is absent"). Absent such a clause the prescribed arm **executes as written** — never a silent skip, never a fallback to asking.
 
 **Step 1 — Enumerate candidates.** Read multiple candidates in priority order:
 
@@ -191,19 +239,19 @@ A pool is needed because the highest-priority slot may hold work that no longer 
 - **AlignedButFuzzy** — aligned with the project's current trajectory BUT exploratory or probe-shaped ("explore X", "consider Y", "investigate Z"); the body of work is to *define* the actual work, not to start it.
 - **Misaligned** — the candidate's premise no longer matches the project's actual requirements. Common after an epic ships: the queued item assumed an older architecture, depends on a hypothesis the recent work invalidated, expands surface area the user has decided to contract, or opens a strategic thread the user has not validated at the project level.
 
-**What "aligned" means here — project-level, not session-level.** It asks: does this candidate continue the trajectory the project is actually on right now? After an epic ships, work queued before it may need rescoping, re-prioritization, or outright deletion to fit the project's new shape. That's a strategy call the agent cannot make for the user — when no candidate is aligned, the user must intervene before any handoff is meaningful. (Distinct from the prior framing, which read "aligned" as session-level user assent. That predicate was both too narrow — rejecting valid work the user just hadn't blessed by name — and too loose — admitting tickets that became architecturally stale when the prior epic shipped.)
+**What "aligned" means here — project-level, not session-level.** It asks: does this candidate continue the trajectory the project is actually on right now? After an epic ships, work queued before it may need rescoping, re-prioritization, or outright deletion to fit the project's new shape. That's a strategy call the agent cannot make for the user — when no candidate is aligned, the user must intervene before any handoff is meaningful.
 
-**Step 3 — Dispatch.** Take the highest-priority candidate classified as Aligned (Defined or Fuzzy). Its state shapes the bottle's content:
+**Step 3 — Dispatch.** Take the highest-priority candidate classified as Aligned (Defined or Fuzzy). Its state shapes the handoff content:
 
-- **AlignedAndDefined** → bottle the direct work. The next instruction is a precise pointer (ticket ID, acceptance criteria, or `/next` when the candidate is the top of `lit ready`).
-- **AlignedButFuzzy** → bottle a define-task. The next session (1) understands the problem the candidate raises, (2) investigates possible solutions, and (3) prepares a proposal for the user that surfaces the important information quickly without burying them in irrelevant detail. Implementation waits on user approval of direction.
+- **AlignedAndDefined** → hand off the direct work. The next instruction is a precise pointer (ticket ID, acceptance criteria, or `/next` when the candidate is the top of `lit ready`).
+- **AlignedButFuzzy** → hand off a define-task. The next session (1) understands the problem the candidate raises, (2) investigates possible solutions, and (3) prepares a proposal for the user that surfaces the important information quickly without burying them in irrelevant detail. Implementation waits on user approval of direction.
 
-Empty aligned-pool (every examined candidate classified Misaligned, or no candidates exist at all) → **HaltAndExplain**. Do not fire a bottle. Surface to the user, in this turn, a per-candidate failure table — the candidate's title/ID and the precise reason it failed (what shipped, what direction the project moved, what the candidate assumed that no longer holds). Vague summaries are unacceptable; the user needs the specifics to rescope, reorder, or close the tickets.
+Empty aligned-pool (every examined candidate classified Misaligned, or no candidates exist at all) → **HaltAndExplain**. Do not run finalize-session. Surface to the user, in this turn, a per-candidate failure table — the candidate's title/ID and the precise reason it failed (what shipped, what direction the project moved, what the candidate assumed that no longer holds). Vague summaries are unacceptable; the user needs the specifics to rescope, reorder, or close the tickets.
 
-**Step 4 — Fire the bottle** (AlignedAndDefined and AlignedButFuzzy arms):
+**Step 4 — Run finalize-session** (AlignedAndDefined and AlignedButFuzzy arms):
 
 ```bash
-~/.claude/skills/message-in-a-bottle/bin/message-in-a-bottle 15 "$(cat <<'EOF'
+~/.claude/skills/message-in-a-bottle/bin/finalize-session "$(cat <<'EOF'
 Last session shipped PR #<num> — <one-line description of what merged>.
 <forward-looking notes the next agent should know: in-flight context,
 follow-ups this PR surfaced, things to watch out for>
@@ -218,15 +266,17 @@ EOF
 )"
 ```
 
-[LAW:dataflow-not-control-flow] the variability lives in the candidates' classified state, not in whether the agent decided to look or fire. Bottle content (direct vs define-task) and the halt-vs-fire decision are both mechanical consequences of classification — the data picks the variant. Well-definedness in particular is no longer a fire/no-fire gate; it's a content discriminator.
+[LAW:dataflow-not-control-flow] the variability lives in the candidates' classified state, not in whether the agent decided to look or run. Handoff content (direct vs define-task) and the halt-vs-run decision are both mechanical consequences of classification — the data picks the variant. Well-definedness in particular is a content discriminator, not a run/skip gate.
 
-[LAW:one-source-of-truth] when a bottle fires, its content derives from the same authored recap as step C — past-tense canonical form vs forward-looking action, one substrate consumed for two purposes. The bottle script's tmux precondition fails loudly outside tmux — the handoff is meaningless there.
+[LAW:one-source-of-truth] when finalize-session runs, its content derives from the same authored recap as step C — past-tense canonical form vs forward-looking action, one substrate consumed for two purposes. The finalize-session script's tmux precondition fails loudly outside tmux — the handoff is meaningless there.
 
 Then stop. The loop is finished, the work is shipped, the recap is filed.
 
 ## Rules
 
-- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The bottle handoff (step D) fires whenever an aligned candidate exists in the pool; its content (direct work vs define-task) is shaped by whether the candidate is well-defined. The only halt case is project-level misalignment across every examined candidate — alignment is a strategy question the agent cannot answer on the user's behalf, and that case is surfaced as a per-candidate failure table for the user to act on.
+- **You own the close-out.** When the loop exits clean, run Finalize (merge, close lit ticket, recap). Don't punt these to the user — `<ticket-lifecycle>` is explicit that the agent closes its own tickets, and a PR that sits open waiting for a human to push the merge button is the same anti-pattern. The finalize-session handoff (step D) runs whenever an aligned candidate exists in the pool; its content (direct work vs define-task) is shaped by whether the candidate is well-defined. The only halt case is project-level misalignment across every examined candidate — alignment is a strategy question the agent cannot answer on the user's behalf, and that case is surfaced as a per-candidate failure table for the user to act on.
 - **Architectural laws override reviewer authority.** Refuse suggestions that violate `[LAW:...]`. Cite the law in the pushback reply on the thread — that text is the durable record of why the code is the way it is.
-- **Resolve every finding you addressed, including pushbacks — through `provider.resolve(thread_id)`, and only advance once it confirms.** The reviewer doesn't reply; your comment is the record. Open findings accumulate forever. Resolution is the step that gets silently dropped, which is why it runs through the provider's verified path, not a raw mutation.
+- **Plan on every thread before you touch code.** Each finding gets a plan comment in the plan phase — pushback-with-law for the ones you reject, the intended fix for the ones you accept. The comment is the durable record of the decision; the reviewer doesn't reply, so your comment is the only one.
+- **Resolve every finding you addressed, including pushbacks — through `provider.resolve(thread_id)`, and only on confirmation.** No-change findings resolve in the plan phase; change-needed findings resolve in the confirm phase, after the fix is pushed — never before, because resolving an unfixed thread lies about the code. Open findings accumulate forever; resolution is the step that gets silently dropped, which is why it runs through the provider's verified path, not a raw mutation.
+- **Dismiss the reviewer's stale change request once its findings are handled.** Through `provider.dismiss_review`, scoped to the captured Bot change-requests, with a message explaining the resolution. A human's `CHANGES_REQUESTED` is never auto-dismissed — that one is theirs to clear. The round's end state is zero unresolved threads and no stale change request blocking the PR.
 - **Conflicts between findings** — surface to the user before acting. Don't pick a side silently.
