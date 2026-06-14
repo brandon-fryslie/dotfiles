@@ -182,9 +182,9 @@ Session start, every step required, in order:
 
 **HARD GATE:** after step 4 you are 0 ahead / 0 behind, or you STOP, touch no code, and report the exact state. Working on a stale or diverged master is always wrong; there is no exception.
 
-5. `git checkout -b <descriptive-branch>` — all work on a branch, never directly on master
+5. Branch if the change wants isolation (`git checkout -b <descriptive-branch>`); working directly on master is fine
 6. Do the work; `git pull --rebase` once or twice a day on longer tasks
 7. Commit the finished work as its own commit — required, every time. Leave the tree clean.
-8. Open a PR — never push directly to master — and in the same response invoke `/address-pr-reviews` on it. Starting the review loop is part of opening the PR, not a separate step the user triggers. Every PR, every project, unconditionally.
+8. Push your work — directly to master or via a PR, as fits the repo. If you open a PR, in the same response invoke `/address-pr-reviews` on it; starting the review loop is part of opening the PR, not a separate step the user triggers.
 </git-workflow>
 </operations>
