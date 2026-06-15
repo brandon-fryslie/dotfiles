@@ -41,6 +41,13 @@ fi
 # claude-jsonl source, no new kind, no parser-positional assumption (the join is
 # by id, never order). A session with no subagents dir uploads byte-identical to
 # before. [LAW:one-source-of-truth] [LAW:one-way-deps]
+#
+# An ORPHAN subagent (slash-command / skill run like /recap) has a transcript but
+# no spawning Agent tool_result, so its type/description aren't in the main blob.
+# That identity lives in the sibling agent-<id>.meta.json; we fold it onto the
+# group's first REAL sidechain line (which already carries agentId+isSidechain+
+# sessionId, so it stays a valid sidechain line and survives /api/augment). The
+# server parser's orphan branch reads it from there. [LAW:no-silent-failure]
 subdir="$HOME/.claude/projects/$slug/$CLAUDE_CODE_SESSION_ID/subagents"
 
 # Build the JSON request body. Use Python (always present, stdlib only) to
@@ -55,13 +62,45 @@ main_path, subdir = sys.argv[1], sys.argv[2]
 with open(main_path, "rb") as f:
     content = f.read().decode("utf-8", errors="replace")
 
+def fold_meta(text, meta_path):
+    # Fold the sibling agent-<id>.meta.json {agentType, description} onto the
+    # groups first REAL sidechain line (agentId + isSidechain:true). setdefault
+    # never clobbers a field the source already has, so this is purely additive:
+    # no original information is lost, an orphan just gains its identity. No meta,
+    # or no sidechain line, leaves the text byte-for-byte verbatim.
+    if not os.path.exists(meta_path):
+        return text
+    try:
+        meta = json.load(open(meta_path, encoding="utf-8"))
+    except Exception:
+        return text
+    fields = {k: meta[k] for k in ("agentType", "description")
+              if isinstance(meta.get(k), str) and meta[k]}
+    if not fields:
+        return text
+    out = text.split("\n")
+    for i, raw in enumerate(out):
+        if not raw.strip():
+            continue
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            continue
+        if isinstance(obj, dict) and obj.get("agentId") and obj.get("isSidechain") is True:
+            for k, v in fields.items():
+                obj.setdefault(k, v)
+            out[i] = json.dumps(obj, ensure_ascii=False)
+            break
+    return "\n".join(out)
+
 sub_files = sorted(glob.glob(os.path.join(subdir, "agent-*.jsonl")))
 for path in sub_files:
     with open(path, "rb") as f:
         text = f.read().decode("utf-8", errors="replace")
-    # One newline separates files; each file is appended verbatim otherwise, so
-    # line content and within-file ordering are preserved exactly. When there
-    # are zero subagents this loop never runs and content == the main blob.
+    text = fold_meta(text, path[:-len(".jsonl")] + ".meta.json")
+    # One newline separates files; each file is appended verbatim otherwise (save
+    # the folded identity fields above), so line content and within-file ordering
+    # are preserved. When there are zero subagents this loop never runs.
     if content and not content.endswith("\n"):
         content += "\n"
     content += text
