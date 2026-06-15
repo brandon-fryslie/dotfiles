@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the Z.ai Coding Agent Review GitHub Action into the current repo.
+# Install the agent code-review GitHub Action into the current repo.
 #
 # Two deterministic, idempotent effects:
 #   1. Write .github/workflows/code-review.yml (overwrites — safe to re-run).
@@ -44,7 +44,7 @@ security find-generic-password -s "$KEYCHAIN_ITEM" >/dev/null 2>&1 \
 # Quoted heredoc: GitHub Actions \${{ ... }} expressions pass through literally.
 mkdir -p "$(dirname "$WORKFLOW_PATH")"
 cat > "$WORKFLOW_PATH" <<'YAML'
-name: AI Code Review with Z.ai
+name: AI Code Review
 
 on:
   pull_request:
@@ -89,6 +89,6 @@ cat <<EOF
 
 Installed. Next step (left to you, per your git workflow):
   git add $WORKFLOW_PATH
-  git commit -m "Install Z.ai coding agent review action"
+  git commit -m "Install agent code review action"
   git push    # the workflow runs on PRs once it lands on the default branch
 EOF

@@ -1,17 +1,17 @@
 ---
-name: zai-pr-review
-description: Install the Z.ai Coding Agent Review GitHub Action into the current repository — writes the .github/workflows/code-review.yml workflow and sets the ZAI_API_KEY repo secret from the macOS keychain. Use when the user says "install the z.ai review action", "add z.ai code review to this repo", "set up the AI code reviewer here", "install the coding agent review action", or wants automated PR review wired into the repo they're currently in.
+name: agent-code-review-setup
+description: Install the agent code-review GitHub Action into the current repository — writes the .github/workflows/code-review.yml workflow and sets the ZAI_API_KEY repo secret from the macOS keychain. Use when the user says "set up agent code review in this repo", "install the code review action", "add AI code review to this repo", "set up the AI code reviewer here", or wants automated PR review wired into the repo they're currently in.
 ---
 
-# zai-pr-review
+# agent-code-review-setup
 
-Installs the [Z.ai Coding Agent Review](https://github.com/brandon-fryslie/zai-coding-agent-review) GitHub Action into the repository the user is currently working in: writes the workflow file and provisions the `ZAI_API_KEY` repository secret. After that, the action runs on every pull request.
+Installs the [coding agent review](https://github.com/brandon-fryslie/zai-coding-agent-review) GitHub Action into the repository the user is currently working in: writes the workflow file and provisions the `ZAI_API_KEY` repository secret that the action reads. After that, the action runs on every pull request.
 
 ## When to use
 
-- "Install the z.ai review action in this repo"
-- "Add AI / z.ai code review to this project"
-- "Set up the coding agent reviewer here"
+- "Set up agent code review in this repo"
+- "Install the code review action / add AI code review to this project"
+- "Set up the AI code reviewer here"
 
 Operates on the **current directory's** git repo. To target a different repo, `cd` there first.
 
@@ -31,13 +31,13 @@ The script validates every precondition first (git repo, `gh` installed + authen
 Run the script from the root of the target repository:
 
 ```bash
-bash ~/.claude/skills/zai-pr-review/install.sh
+bash ~/.claude/skills/agent-code-review-setup/install.sh
 ```
 
 Override the keychain item if the key is stored under a different name:
 
 ```bash
-ZAI_KEYCHAIN_ITEM=my-zai-key bash ~/.claude/skills/zai-pr-review/install.sh
+ZAI_KEYCHAIN_ITEM=my-key bash ~/.claude/skills/agent-code-review-setup/install.sh
 ```
 
 The script does **not** commit. After it succeeds, commit and push the workflow per the user's git workflow (branch + PR — never directly to the default branch). The workflow takes effect once it lands on the default branch.
