@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# [LAW:decomposition] This part does ONE thing: inject literal input into another
+# harness's tmux pane — a command line (`send`) or raw key events (`keys`). It is a
+# dumb, faithful courier. It knows NOTHING about which harness is running or which
+# commands exist; that knowledge lives in references/<harness>.md, read by the
+# controlling agent. Choosing what to send is the agent's job, not the script's.
+#
+# [FRAMING:representation] Unlike tmux-talk, there is no From:/To-reply: envelope.
+# The receiver here is the harness's CLI parser, not a human reader — the bytes
+# delivered must be EXACTLY the command (`/clear`) or it won't be recognized.
+# Wrapping anything around it would corrupt the command. "No wrapper" is the point.
+
+USAGE="tmux-command — inject built-in slash commands / keystrokes into another agent harness's pane
+
+Subcommands:
+  list                           List all tmux panes with session:window.pane address and running command
+  send  <target> <command...>    Type a literal command line into the pane, then submit it (no envelope)
+  keys  <target> <key...>        Send raw tmux key names (Enter, Down, Up, Escape, BSpace, …) — drive pickers
+  read-screen <target> [lines]   Capture pane content (default: 200 lines) — verify a command's effect
+
+target format: session:window.pane  (e.g. work:0.0, research:editor.0)
+
+The command set differs per harness (claude code, codex, opencode). Run 'list' to find the
+target and its running command, then read the matching references/<harness>.md before sending."
+
+# [LAW:no-silent-failure] Translate tmux's terse "can't find pane" into a clear,
+# actionable error and STOP — never send into a pane that doesn't exist. The
+# 2>/dev/null here is legitimate: we discard tmux's message only to replace it
+# with a louder one and we honor the exit code, so the failure is surfaced, not
+# swallowed.
+ensure_target() {
+  if ! tmux list-panes -t "$1" >/dev/null 2>&1; then
+    echo "tmux-command: target '$1' not found. Run 'tmux-command list' to see addresses." >&2
+    return 1
+  fi
+}
+
+CMD="${1:-}"
+
+case "$CMD" in
+
+  list)
+    tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    ;;
+
+  send)
+    TARGET="${2:-}"
+    # Everything after the target is the command line, so an unquoted command with
+    # arguments (e.g. `send work:0.0 /model opus`) isn't truncated to its first word.
+    COMMAND="${*:3}"
+    if [[ -z "$TARGET" || -z "$COMMAND" ]]; then
+      echo "Usage: tmux-command send <target> <command...>" >&2
+      exit 1
+    fi
+    ensure_target "$TARGET" || exit 1
+
+    # [LAW:no-ambient-temporal-coupling] The two-step send — literal text, settle,
+    # then a SEPARATE Enter — is the proven timing contract. A combined
+    # `send-keys ... Enter` races the harness's input handler and the Enter is
+    # silently dropped. `-l` sends the text verbatim so the leading `/` and any
+    # special characters reach the parser unmangled.
+    tmux send-keys -t "$TARGET" -l "$COMMAND"
+    sleep 1
+    tmux send-keys -t "$TARGET" Enter
+    ;;
+
+  keys)
+    TARGET="${2:-}"
+    if [[ -z "$TARGET" || -z "${3:-}" ]]; then
+      echo "Usage: tmux-command keys <target> <key...>   (e.g. keys work:0.0 Down Down Enter)" >&2
+      exit 1
+    fi
+    ensure_target "$TARGET" || exit 1
+
+    # [LAW:dataflow-not-control-flow] Key names flow straight through to tmux as
+    # values; this verb adds no interpretation. It exists because many commands
+    # open interactive pickers (model/permissions/resume) that only raw keys drive.
+    tmux send-keys -t "$TARGET" "${@:3}"
+    ;;
+
+  read-screen)
+    TARGET="${2:-}"
+    LINES="${3:-200}"
+    if [[ -z "$TARGET" ]]; then
+      echo "Usage: tmux-command read-screen <target> [lines]" >&2
+      exit 1
+    fi
+    ensure_target "$TARGET" || exit 1
+    tmux capture-pane -t "$TARGET" -p -S -"$LINES"
+    ;;
+
+  *)
+    echo "$USAGE" >&2
+    exit 1
+    ;;
+
+esac
