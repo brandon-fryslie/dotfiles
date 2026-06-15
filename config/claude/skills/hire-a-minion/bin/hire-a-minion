@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# [LAW:decomposition] This part does ONE thing: spawn a worktree-backed claude
+# minion in a fresh tmux window and print its address. Driving the minion —
+# briefing, reviewing, clearing, killing — is the controlling agent's job via
+# /tmux-talk and raw tmux. That is a separate seam, deliberately not fused here.
+
+USAGE="hire-a-minion — spawn a worktree-backed claude minion in a new tmux window
+
+Usage:
+  hire-a-minion [--worktree [name]] [--model sonnet|opus] [--resume <session-id>]
+                [--system-prompt <prompt>] [--append-system-prompt <prompt>]
+
+Flags:
+  --worktree [name]            Worktree to run in. A worktree is ALWAYS used; omit
+                               the name to auto-create one. Pass a name to reuse an
+                               existing worktree (required when --resume is given).
+  --model sonnet|opus          Model for the minion (default: opus).
+  --resume <session-id>        Resume an existing session. Requires --worktree <name>
+                               (the session's worktree). --continue is not supported.
+  --system-prompt <prompt>     Replace the minion's system prompt.
+  --append-system-prompt <p>   Append to the minion's system prompt.
+
+Prints the minion's tmux address (session:window.pane) on stdout. Feed that
+address straight into /tmux-talk to brief the minion and read its screen.
+
+Must be run from inside tmux."
+
+MODEL="opus"
+WORKTREE_NAME=""        # empty => auto-create a worktree
+RESUME_ID=""
+SYSTEM_PROMPT=""
+APPEND_SYSTEM_PROMPT=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --worktree)
+      # Optional name: consume the next token only if it isn't another flag.
+      if [[ -n "${2:-}" && "${2:0:1}" != "-" ]]; then
+        WORKTREE_NAME="$2"; shift 2
+      else
+        shift
+      fi
+      ;;
+    --model)                 MODEL="${2:?--model requires a value (sonnet|opus)}"; shift 2 ;;
+    --resume)                RESUME_ID="${2:?--resume requires a session id}"; shift 2 ;;
+    --system-prompt)         SYSTEM_PROMPT="${2:?--system-prompt requires a value}"; shift 2 ;;
+    --append-system-prompt)  APPEND_SYSTEM_PROMPT="${2:?--append-system-prompt requires a value}"; shift 2 ;;
+    -h|--help)               echo "$USAGE"; exit 0 ;;
+    # [LAW:no-silent-failure] reject unknown flags (including --continue) loudly
+    # rather than passing them through to an unintended meaning.
+    *) echo "hire-a-minion: unknown argument '$1'" >&2; echo "$USAGE" >&2; exit 1 ;;
+  esac
+done
+
+# [LAW:no-silent-failure] the model is restricted to the documented domain; an
+# unrecognized value is an error, not a thing to forward and hope.
+case "$MODEL" in
+  sonnet|opus) ;;
+  *) echo "hire-a-minion: --model must be 'sonnet' or 'opus' (got '$MODEL')" >&2; exit 1 ;;
+esac
+
+# [LAW:types-are-the-program] a resumed session's files live in ITS worktree;
+# resuming into a fresh/auto worktree is incoherent. Make that illegal state
+# unrepresentable: --resume requires a named worktree.
+if [[ -n "$RESUME_ID" && -z "$WORKTREE_NAME" ]]; then
+  echo "hire-a-minion: --resume <id> requires --worktree <name> (the session's existing worktree)" >&2
+  exit 1
+fi
+
+if [[ -z "${TMUX:-}" || -z "${TMUX_PANE:-}" ]]; then
+  echo "hire-a-minion: not running inside tmux — cannot spawn a minion window" >&2
+  exit 1
+fi
+
+# [LAW:no-ambient-temporal-coupling] name the session and cwd explicitly instead
+# of relying on tmux's ambient "current" — in multi-client setups the active
+# pane may not be ours, and a wrong cwd makes `claude --worktree` build a
+# worktree of the wrong (or no) repo.
+SELF_SESSION=$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}')
+WORKDIR=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_current_path}')
+
+# [LAW:dataflow-not-control-flow] the worktree is not a mode toggled on/off — it
+# is unconditional; the only variability is the VALUE (auto vs named). Optional
+# overrides are appended as values when present, never as an empty default that
+# would lie about meaning. Note: --tmux is intentionally NOT passed — it would
+# spawn a SEPARATE tmux session, but we own window placement ourselves.
+CLAUDE_ARGS=(--worktree)
+[[ -n "$WORKTREE_NAME" ]]          && CLAUDE_ARGS+=("$WORKTREE_NAME")
+CLAUDE_ARGS+=(--model "$MODEL")
+[[ -n "$RESUME_ID" ]]             && CLAUDE_ARGS+=(--resume "$RESUME_ID")
+[[ -n "$SYSTEM_PROMPT" ]]         && CLAUDE_ARGS+=(--system-prompt "$SYSTEM_PROMPT")
+[[ -n "$APPEND_SYSTEM_PROMPT" ]]  && CLAUDE_ARGS+=(--append-system-prompt "$APPEND_SYSTEM_PROMPT")
+
+# [FRAMING:representation] the command typed into the minion's shell must carry
+# every arg faithfully — system prompts contain spaces and quotes. printf %q
+# shell-quotes each token so the receiving shell reparses them identically.
+# `claad` is the rad-shell function `claude --dangerously-skip-permissions "$@"`,
+# defined when the fresh window sources rad-shell.
+CMD="claad"
+for arg in "${CLAUDE_ARGS[@]}"; do
+  CMD+=" $(printf '%q' "$arg")"
+done
+
+# [LAW:one-source-of-truth] the address tmux returns here is the single
+# authoritative handle for this minion; stdout carries only it (the CLI
+# parseable/human split — diagnostics go to stderr).
+ADDRESS=$(tmux new-window -t "$SELF_SESSION:" -c "$WORKDIR" -n minion -P -F '#{session_name}:#{window_index}.#{pane_index}')
+if [[ -z "$ADDRESS" ]]; then
+  echo "hire-a-minion: tmux new-window returned no address" >&2
+  exit 1
+fi
+
+# [LAW:no-ambient-temporal-coupling] the two-step send (literal text, then a
+# separate Enter) is the proven timing contract — a combined send races the
+# shell's line reader and the Enter is dropped. The settle lets the fresh shell
+# finish sourcing rad-shell (which defines `claad`) before it reads the line.
+sleep 1
+tmux send-keys -t "$ADDRESS" -l "$CMD"
+sleep 1
+tmux send-keys -t "$ADDRESS" Enter
+
+echo "hire-a-minion: spawned minion in $ADDRESS (cwd $WORKDIR) running: $CMD" >&2
+echo "$ADDRESS"
