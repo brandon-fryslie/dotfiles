@@ -21,7 +21,7 @@ Don't use for sharing pre-existing files; this skill is specifically scoped to t
 1. `$CLAUDE_CODE_SESSION_ID` (exposed by CC) → session UUID.
 2. `$PWD` → project slug (each `/` and `.` replaced by `-`).
 3. Session file: `~/.claude/projects/<slug>/<session-id>.jsonl`.
-4. Subagent transcripts (`~/.claude/projects/<slug>/<session-id>/subagents/agent-*.jsonl`) are concatenated onto the main blob, losslessly and verbatim. Each subagent line self-identifies (top-level `agentId` + `isSidechain`), so the server parser splits and reattaches them to their spawning Agent call by id-join — concatenation order is irrelevant. A session with no subagents uploads byte-identical to before.
+4. Subagent transcripts (`~/.claude/projects/<slug>/<session-id>/subagents/agent-*.jsonl`) are concatenated onto the main blob, losslessly and verbatim. Each subagent line self-identifies (top-level `agentId` + `isSidechain`), so the server parser splits and reattaches them to their spawning Agent call by id-join — concatenation order is irrelevant. A session with no subagents uploads byte-identical to before. Each group's sibling `agent-<id>.meta.json` (`{agentType, description}`) is folded onto its first sidechain line so an *orphan* subagent (slash-command/skill run with no spawning Agent call, e.g. `/recap`) still renders with its real type; the fold is additive (never overwrites a source field) and keeps the line a valid sidechain line.
 5. POST the bundled content as `{ source: { kind: "claude-jsonl", content: <jsonl-text> } }` to `${SLOPSPOT_URL}/api/paste` (default `https://paste.slopspot.ai`).
 6. Server returns `{ slug }`. Print `${SLOPSPOT_URL}/<slug>` for the user.
 
