@@ -4,7 +4,8 @@ set -euo pipefail
 # [LAW:decomposition] This part does ONE thing: spawn a worktree-backed claude
 # minion in a fresh tmux window and print its address. Driving the minion —
 # briefing, reviewing, clearing, killing — is the controlling agent's job via
-# /tmux-talk and raw tmux. That is a separate seam, deliberately not fused here.
+# /tmux-talk (conversation), /tmux-command (slash commands like /clear), and raw
+# tmux. That is a separate seam, deliberately not fused here.
 
 USAGE="hire-a-minion — spawn a worktree-backed claude minion in a new tmux window
 

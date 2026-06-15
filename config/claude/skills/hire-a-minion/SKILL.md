@@ -49,10 +49,27 @@ $TALK send "$ADDR" "<your brief>"     # brief it
 $TALK read-screen "$ADDR" 300         # see what it's doing
 ```
 
+## Driving the minion's commands
+
+Talking and *commanding* are different seams. **/tmux-talk** carries conversational
+messages — wrapped in a reply envelope — so use it to brief and read. **/tmux-command**
+injects the minion's built-in slash commands (`/clear`, `/compact`, `/model`, …): the
+minion's own agent cannot trigger these itself, and they must arrive *unwrapped* to be
+recognized. Never send a slash command through /tmux-talk — its envelope puts the command
+on a non-first line, so the CLI reads it as chat, not a command.
+
+```bash
+CMD=~/.claude/skills/tmux-command/bin/tmux-command
+
+$CMD send "$ADDR" "/compact"          # free its context without losing the thread
+$CMD send "$ADDR" "/model opus"       # switch its model mid-task
+$CMD read-screen "$ADDR" 40           # confirm the command took
+```
+
 Stop a minion that's heading the wrong way without clearing its context:
 
 ```bash
-tmux send-keys -t "$ADDR" Escape
+$CMD keys "$ADDR" Escape
 ```
 
 ## You are the controller — your job
@@ -84,7 +101,7 @@ the backlog, and review the last result. Your responsibilities:
   one owner: you.
 - **Manage its context window.** Watch the minion's token usage. If it climbs
   past ~300k and it hasn't run its own handoff (`/message-in-a-bottle`) or
-  cleared, clear it for it: `$TALK send "$ADDR" "/clear"`. Re-brief after
+  cleared, clear it for it: `$CMD send "$ADDR" "/clear"`. Re-brief after
   clearing — it loses everything.
 - **Recover a stuck minion.** `Escape` to interrupt, `read-screen` to diagnose,
   then either send a correction, or `/clear` and re-brief, or kill and respawn
