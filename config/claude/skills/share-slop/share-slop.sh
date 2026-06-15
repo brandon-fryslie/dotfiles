@@ -72,7 +72,11 @@ def fold_meta(text, meta_path):
         return text
     try:
         meta = json.load(open(meta_path, encoding="utf-8"))
-    except Exception:
+    except Exception as e:
+        # [LAW:no-silent-failure] An absent sidecar is the norm (handled above);
+        # an EXISTING file that wont read/parse is an anomaly — surface it loudly
+        # before degrading to the honest null type, never swallow it silently.
+        sys.stderr.write("share-slop: WARNING: could not read %s (%s); orphan will render untyped\n" % (meta_path, e))
         return text
     fields = {k: meta[k] for k in ("agentType", "description")
               if isinstance(meta.get(k), str) and meta[k]}
