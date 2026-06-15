@@ -33,18 +33,45 @@ if [ ! -f "$jsonl" ]; then
   exit 1
 fi
 
-size="$(wc -c < "$jsonl" | tr -d ' ')"
-echo "share-slop: uploading $size bytes from $jsonl" >&2
+# Subagent transcripts live alongside the main session, one file per agent:
+#   <slug>/<session-id>/subagents/agent-<agentId>.jsonl
+# Every line in those files self-identifies (top-level agentId + isSidechain),
+# so the server parser reattaches them to their spawning Agent call by id-join.
+# We CONCATENATE them onto the main blob losslessly: the stored origin stays one
+# claude-jsonl source, no new kind, no parser-positional assumption (the join is
+# by id, never order). A session with no subagents dir uploads byte-identical to
+# before. [LAW:one-source-of-truth] [LAW:one-way-deps]
+subdir="$HOME/.claude/projects/$slug/$CLAUDE_CODE_SESSION_ID/subagents"
 
 # Build the JSON request body. Use Python (always present, stdlib only) to
-# JSON-encode the JSONL text so newlines and quotes are escaped correctly.
-# We could use jq -Rs '...' but Python avoids a dep we'd otherwise require.
+# concatenate the transcripts and JSON-encode the result so newlines and quotes
+# are escaped correctly. We could use jq -Rs '...' but Python avoids a dep.
+# [LAW:no-silent-failure] An unreadable subagent file aborts loudly — we never
+# ship a partial bundle that silently drops a subagent's transcript.
 body="$(python3 -c '
-import json, sys
-with open(sys.argv[1], "rb") as f:
-    raw = f.read().decode("utf-8", errors="replace")
-sys.stdout.write(json.dumps({"source": {"kind": "claude-jsonl", "content": raw}}))
-' "$jsonl")"
+import json, sys, glob, os
+
+main_path, subdir = sys.argv[1], sys.argv[2]
+with open(main_path, "rb") as f:
+    content = f.read().decode("utf-8", errors="replace")
+
+sub_files = sorted(glob.glob(os.path.join(subdir, "agent-*.jsonl")))
+for path in sub_files:
+    with open(path, "rb") as f:
+        text = f.read().decode("utf-8", errors="replace")
+    # One newline separates files; each file is appended verbatim otherwise, so
+    # line content and within-file ordering are preserved exactly. When there
+    # are zero subagents this loop never runs and content == the main blob.
+    if content and not content.endswith("\n"):
+        content += "\n"
+    content += text
+
+sys.stderr.write(
+    "share-slop: bundling %d byte main + %d subagent file(s) = %d bytes total\n"
+    % (os.path.getsize(main_path), len(sub_files), len(content.encode("utf-8")))
+)
+sys.stdout.write(json.dumps({"source": {"kind": "claude-jsonl", "content": content}}))
+' "$jsonl" "$subdir")"
 
 # curl: -sS = silent but show errors; --fail-with-body = non-2xx exits non-0
 # but still gives us the response body for the error message.
