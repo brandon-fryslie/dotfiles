@@ -23,22 +23,19 @@ Subcommands:
   keys  <target> <key...>        Send raw tmux key names (Enter, Down, Up, Escape, BSpace, …) — drive pickers
   read-screen <target> [lines]   Capture pane content (default: 200 lines) — re-check / verify a command's effect
 
-target format: session:window.pane  (e.g. work:0.0, research:editor.0)
+target: session:window.pane, or shorthand — :win.pane / :win / .pane (same session/window),
+  :self (own pane), and window-by-name (dotfiles:orca). See tmux-shared/bin/tmux-resolve.
 
 The command set differs per harness (claude code, codex, opencode). Run 'list' to find the
 target and its running command, then read the matching references/<harness>.md before sending."
 
-# [LAW:no-silent-failure] Translate tmux's terse "can't find pane" into a clear,
-# actionable error and STOP — never send into a pane that doesn't exist. The
-# 2>/dev/null here is legitimate: we discard tmux's message only to replace it
-# with a louder one and we honor the exit code, so the failure is surfaced, not
-# swallowed.
-ensure_target() {
-  if ! tmux list-panes -t "$1" >/dev/null 2>&1; then
-    echo "tmux-command: target '$1' not found. Run 'tmux-command list' to see addresses." >&2
-    return 1
-  fi
-}
+# [LAW:single-enforcer] Addressing is not defined here. Every target — full or
+# shorthand (`:3`, `.2`, `:self`, `dotfiles:orca`) — is resolved to a canonical,
+# verified session:window.pane by the one shared resolver, which rejects a bad or
+# ambiguous target loudly [LAW:no-silent-failure]. Resolving up front means no
+# verb below ever touches an unresolved or nonexistent pane.
+RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
+resolve_target() { "$RESOLVE" "$1"; }
 
 CMD="${1:-}"
 
@@ -55,7 +52,7 @@ case "$CMD" in
       echo "Usage: tmux-command context <target> [lines]" >&2
       exit 1
     fi
-    ensure_target "$TARGET" || exit 1
+    TARGET="$(resolve_target "$TARGET")" || exit 1
 
     # [LAW:composability] One call returns everything needed to choose a command,
     # asking nothing: the pane's identity (cmd=/title= name the harness) and its
@@ -77,7 +74,7 @@ case "$CMD" in
       echo "Usage: tmux-command send <target> <command...>" >&2
       exit 1
     fi
-    ensure_target "$TARGET" || exit 1
+    TARGET="$(resolve_target "$TARGET")" || exit 1
 
     # [LAW:no-ambient-temporal-coupling] The two-step send — literal text, settle,
     # then a SEPARATE Enter — is the proven timing contract. A combined
@@ -95,7 +92,7 @@ case "$CMD" in
       echo "Usage: tmux-command keys <target> <key...>   (e.g. keys work:0.0 Down Down Enter)" >&2
       exit 1
     fi
-    ensure_target "$TARGET" || exit 1
+    TARGET="$(resolve_target "$TARGET")" || exit 1
 
     # [LAW:dataflow-not-control-flow] Key names flow straight through to tmux as
     # values; this verb adds no interpretation. It exists because many commands
@@ -110,7 +107,7 @@ case "$CMD" in
       echo "Usage: tmux-command read-screen <target> [lines]" >&2
       exit 1
     fi
-    ensure_target "$TARGET" || exit 1
+    TARGET="$(resolve_target "$TARGET")" || exit 1
     tmux capture-pane -t "$TARGET" -p -S -"$LINES"
     ;;
 

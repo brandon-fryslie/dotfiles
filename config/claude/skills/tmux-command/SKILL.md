@@ -23,7 +23,18 @@ tmux-command keys  <target> <key...>       # send raw keys (Enter Down Up Escape
 tmux-command read-screen <target> [N]      # capture N lines (default 200) — re-check / verify the effect
 ```
 
-`target` is tmux's `session:window.pane`. When the user says "session X, window Y", map to `X:Y.0`.
+`target` is tmux's `session:window.pane`, or a shorthand the shared resolver expands (same grammar in `/tmux-talk`):
+
+| form | means |
+| --- | --- |
+| `dotfiles:2.1` | full address |
+| `dotfiles:2` | window 2, pane defaults to 1 |
+| `dotfiles:orca` | window **named** `orca` (looked up; ambiguous/unknown names error) |
+| `:2.1` / `:2` | same session |
+| `.2` | same session **and** window, pane 2 |
+| `:self` | the pane you (the driver) are running in |
+
+Every verb resolves its target through `tmux-shared/bin/tmux-resolve` first, so a bad, unknown, or ambiguous target fails loudly instead of tmux silently retargeting the active pane.
 
 ## Flow: context → decide → send → verify
 
