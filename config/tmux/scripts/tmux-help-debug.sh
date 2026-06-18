@@ -4,15 +4,15 @@
 echo "Testing help pane split..." > /tmp/tmux-help-debug.log
 date >> /tmp/tmux-help-debug.log
 
-HELP_PANE="$(tmux show -gv @help_pane_id 2>&1)"
+HELP_PANE="$(tmux show -gqv @help_pane_id 2>/dev/null)"
 echo "Current help_pane_id: [$HELP_PANE]" >> /tmp/tmux-help-debug.log
 
 if [ -n "$HELP_PANE" ] && [ "$HELP_PANE" != "0" ]; then
   echo "Checking if pane exists..." >> /tmp/tmux-help-debug.log
-  if tmux list-panes -F "#{pane_id}" 2>&1 | grep -q "^$HELP_PANE$"; then
+  if tmux list-panes -aF "#{pane_id}" 2>/dev/null | grep -q "^$HELP_PANE$"; then
     echo "Pane exists, killing it" >> /tmp/tmux-help-debug.log
-    tmux kill-pane -t "$HELP_PANE" 2>&1 >> /tmp/tmux-help-debug.log
-    tmux set -g @help_pane_id "" 2>&1 >> /tmp/tmux-help-debug.log
+    tmux kill-pane -t "$HELP_PANE" >> /tmp/tmux-help-debug.log 2>&1
+    tmux set -g @help_pane_id "" >> /tmp/tmux-help-debug.log 2>&1
   else
     echo "Pane does not exist" >> /tmp/tmux-help-debug.log
   fi
@@ -24,7 +24,7 @@ else
   RESULT=$?
   echo "Split result: $RESULT" >> /tmp/tmux-help-debug.log
   echo "New pane ID: $NEW_PANE" >> /tmp/tmux-help-debug.log
-  tmux set -g @help_pane_id "$NEW_PANE" 2>&1 >> /tmp/tmux-help-debug.log
+  tmux set -g @help_pane_id "$NEW_PANE" >> /tmp/tmux-help-debug.log 2>&1
 fi
 
 echo "Done. Check /tmp/tmux-help-debug.log for details"
