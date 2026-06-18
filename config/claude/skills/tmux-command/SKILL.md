@@ -24,29 +24,30 @@ tmux-command read-screen <target> [N]      # capture N lines (default 200) — v
 
 `target` is tmux's `session:window.pane`. When the user says "session X, window Y", map to `X:Y.0`.
 
-## Identify the harness first — it picks the command set
+## Always read the pane before you send
 
-The available commands differ per harness, so **before sending anything, know which harness the target runs** and read the matching reference:
+Reading the target is **phase one, every time** — your first action is never `send`. The pane's current state is a value you must *observe*, not assume: a blind send races whatever the pane is actually doing and silently corrupts. One opening `read-screen` (after `list`) establishes the three facts every send depends on:
 
-- `references/claude-code.md` — Claude Code
-- `references/codex.md` — Codex
-- `references/opencode.md` — opencode
+1. **Which harness is running** — it picks the command set. `list` shows `cmd=` and `title=`; Claude Code panes report `cmd=<version-number>` (e.g. `2.1.175`), **not** `cmd=claude` — so identify by `title=` (`✳ Claude Code`) or by recognizing the UI in the read. Then read the matching `references/<harness>.md` (`claude-code.md`, `codex.md`, `opencode.md`). Sending a Claude command into a codex session does nothing useful and may submit garbage as a prompt.
+2. **Idle or mid-generation** — whether it is safe to send at all. Keystrokes typed into a busy session queue and get misread (Claude's spinner ends in `ing…`). If it's working, wait and re-read until idle.
+3. **Which screen is up** — it decides what actually submits. An active conversation submits on a single Enter (what `send` does). Claude Code's "describe a task" home screen intercepts the first Enter. A picker or editor already open means the pane is driven by `keys`, not a fresh command.
 
-Run `tmux-command list`. Claude Code panes report `cmd=<version-number>` (e.g. `2.1.175`), **not** `cmd=claude` — so read the `title=` field (`✳ Claude Code`) and, when unsure, `read-screen` the pane and recognize the UI. Do not guess the harness: sending a Claude command into a codex session does nothing useful and may submit garbage as a prompt.
+Only once the read has answered all three do you choose the command and send it.
 
-## Flow
+## Flow: read → decide → send → verify
 
 ```bash
 TMUXCMD=~/.claude/skills/tmux-command/bin/tmux-command
 TARGET="work:0.0"
 
-# 1. Confirm what's running there, then read references/<harness>.md.
-$TMUXCMD list | grep "^$TARGET"
+# 1. READ FIRST — observe the pane; never assume its state.
+$TMUXCMD list | grep "^$TARGET"      # which harness? → read references/<harness>.md
+$TMUXCMD read-screen "$TARGET" 40    # idle or generating? which screen is up?
 
-# 2. Send the command.
+# 2. DECIDE from what you read, then SEND the command.
 $TMUXCMD send "$TARGET" "/compact focus on the auth refactor"
 
-# 3. Verify it took effect — a TUI returns no exit code, the pane is the only signal.
+# 3. VERIFY — read again; a TUI returns no exit code, the pane is the only signal.
 sleep 2
 $TMUXCMD read-screen "$TARGET" 40
 ```
@@ -65,8 +66,7 @@ $TMUXCMD read-screen "$TARGET" 20       # confirm the new model
 ## Gotchas
 
 - **Verify, never assume.** The target is another process with no exit code back to you. After every `send`, `read-screen` and confirm the command actually ran — especially for destructive ones (`/clear`, `/compact`, `/rewind`).
-- **Active session vs. home screen.** In an active conversation a single Enter submits, and `send` handles that. Claude Code's brand-new "describe a task" home screen intercepts the first Enter ("enter to collapse"/"enter to create") — if `read-screen` shows the command still sitting in the input, send one more `keys <target> Enter`.
-- **Don't send while it's generating.** Keystrokes sent into a busy session queue and get misread. `read-screen` first; if it's working (Claude's spinner ends in `ing…`), wait.
+- **Home screen swallows the first Enter.** When the opening read showed Claude Code's "describe a task" home screen, `send` may leave the command sitting in the input (the first Enter is rebound to "collapse"/"create"). If the post-send read confirms it never submitted, send one more `keys "$TARGET" Enter`.
 - **One command per `send`.** `send` appends exactly one Enter. To chain commands, call `send` again after verifying the first landed.
 
 ## References
