@@ -24,7 +24,18 @@ tmux-talk idle   <target>             # exit 0 if idle, 1 if not — use in cond
 
 ## Target Addressing
 
-tmux uses `session:window.pane`. When the user says "session X, window Y", map to `X:Y.0`.
+tmux uses `session:window.pane`, or a shorthand the shared resolver expands (same grammar in `/tmux-command`):
+
+| form | means |
+| --- | --- |
+| `dotfiles:2.1` | full address |
+| `dotfiles:2` | window 2, pane defaults to 1 |
+| `dotfiles:orca` | window **named** `orca` (looked up; ambiguous/unknown names error) |
+| `:2.1` / `:2` | same session |
+| `.2` | same session **and** window, pane 2 |
+| `:self` | your own pane — what `whoami` and the `From:` header report |
+
+Every target resolves through `tmux-shared/bin/tmux-resolve` first, so a bad, unknown, or ambiguous target fails loudly rather than tmux silently retargeting the active pane.
 
 Run `tmux-talk list` to see all available panes with their addresses and running commands. Verify the target shows `cmd=claude` or `cmd=node`, not `zsh`/`bash`.
 
@@ -38,7 +49,7 @@ From: <sender-address>
 To reply: Use /tmux-talk send <sender-address> <message...>
 ```
 
-The sender's address is auto-detected from the invoking pane — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). If `$TMUX` or `$TMUX_PANE` is unset, `send` and `whoami` hard-error rather than silently sending an empty `From:` line. (See `derive_self_address` in `bin/tmux-talk` for the exact derivation.)
+The sender's address is auto-detected from the invoking pane — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). Both resolve `:self` through the shared resolver, which hard-errors when `$TMUX_PANE` is unset rather than silently sending an empty `From:` line.
 
 The envelope is unconditional: every receiver sees the same shape, so reply routing is always present in the message itself.
 

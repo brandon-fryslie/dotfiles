@@ -11,22 +11,16 @@ Subcommands:
   wait   <target> [timeout]      Poll until the Claude idle prompt appears (default: 120s)
   idle   <target>                Exit 0 if pane shows idle prompt, 1 otherwise
 
-target format: session:window.pane  (e.g. work:0.0, research:editor.0)"
+target: session:window.pane, or shorthand — :win.pane / :win / .pane (same session/window),
+  :self (own pane), and window-by-name (dotfiles:orca). See tmux-shared/bin/tmux-resolve."
 
-# [LAW:one-source-of-truth] single derivation for "what's my tmux address",
-# consumed by both `whoami` and `send`. Total contract: prints address on
-# stdout, or prints error on stderr and returns 1 — no empty-success state.
-# [LAW:types-are-the-program] precondition is BOTH $TMUX (server attached)
-# and $TMUX_PANE (which pane we're in) — without -t "$TMUX_PANE", tmux falls
-# back to the current client's active pane, which may not be the invoking
-# pane in multi-client setups.
-derive_self_address() {
-  if [[ -z "${TMUX:-}" || -z "${TMUX_PANE:-}" ]]; then
-    echo "tmux-talk: not running inside tmux — \$TMUX/\$TMUX_PANE not set" >&2
-    return 1
-  fi
-  tmux display-message -p -t "$TMUX_PANE" '#{session_name}:#{window_index}.#{pane_index}'
-}
+# [LAW:single-enforcer] Addressing has one definition, shared with tmux-command:
+# the resolver turns any full or shorthand target into a canonical, verified
+# session:window.pane, or rejects it loudly [LAW:no-silent-failure]. `:self` is
+# the resolver's own form, so "what's my address" (whoami / the From: header) and
+# "where am I sending" go through the same gate — no second self-derivation to drift.
+RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
+resolve_target() { "$RESOLVE" "$1"; }
 
 CMD="${1:-}"
 
@@ -37,7 +31,7 @@ case "$CMD" in
     ;;
 
   whoami)
-    derive_self_address
+    resolve_target ':self'
     ;;
 
   send)
@@ -50,7 +44,8 @@ case "$CMD" in
       echo "Usage: tmux-talk send <target> <message...>" >&2
       exit 1
     fi
-    FROM=$(derive_self_address) || exit 1
+    TARGET="$(resolve_target "$TARGET")" || exit 1
+    FROM="$(resolve_target ':self')" || exit 1
 
     # [LAW:no-shared-mutable-globals] private buffer name so concurrent sends
     # can't clobber each other via tmux's global most-recent-buffer slot.
@@ -75,6 +70,7 @@ case "$CMD" in
       echo "Usage: tmux-talk read-screen <target> [lines]" >&2
       exit 1
     fi
+    TARGET="$(resolve_target "$TARGET")" || exit 1
     tmux capture-pane -t "$TARGET" -p -S -"$LINES"
     ;;
 
@@ -85,6 +81,7 @@ case "$CMD" in
       echo "Usage: tmux-talk wait <target> [timeout]" >&2
       exit 1
     fi
+    TARGET="$(resolve_target "$TARGET")" || exit 1
     INTERVAL=2
     ELAPSED=0
     PREV=""
@@ -107,6 +104,7 @@ case "$CMD" in
       echo "Usage: tmux-talk idle <target>" >&2
       exit 1
     fi
+    TARGET="$(resolve_target "$TARGET")" || exit 1
     CONTENT=$(tmux capture-pane -t "$TARGET" -p -S -10)
     if printf '%s' "$CONTENT" | grep -qF 'ing…'; then
       exit 1

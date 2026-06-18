@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# [LAW:single-enforcer] The ONE place a target string becomes a real pane.
+# Input: a full or shorthand address. Output (stdout): the canonical
+# session:window_index.pane_index, guaranteed to exist. On bad input or a
+# missing session/window/pane it prints a specific error to stderr and exits 1
+# [LAW:no-silent-failure] — it NEVER falls back to the current pane the way a
+# bare `tmux -t <badname>` does (verified on tmux 3.x: display-message -t a
+# nonexistent window NAME exits 0 pointing at the active window). tmux-talk and
+# tmux-command both resolve through here, so the addressing grammar has exactly
+# one definition and the two skills cannot drift [LAW:one-source-of-truth].
+#
+# Grammar (self = S0:W0.P0 — the invoking agent's own pane, via $TMUX_PANE):
+#   session:win.pane   full                 dotfiles:2.1
+#   session:win        pane => 1            dotfiles:2     (win may be a NAME: dotfiles:orca)
+#   :win.pane          session => S0        :2.1
+#   :win               + pane => 1          :2  /  :orca
+#   .pane              same window          .2   => S0:W0.2
+#   :self              own pane             => S0:W0.P0
+# Rejected, loudly: a bare token (no ':' and no leading '.'), an empty win/pane,
+# a window NAME carrying a pane suffix (names may contain '.', so pane suffixes
+# are recognized only on numeric window indices), an unknown or ambiguous window
+# name, and a nonexistent window or pane index.
+
+die() { echo "tmux-resolve: $*" >&2; exit 1; }
+
+TARGET="${1:-}"
+[ -n "$TARGET" ] || die "missing target (e.g. dotfiles:2.1, :3, .2, :self)"
+
+# Relative forms anchor on the invoking pane. -t "$TMUX_PANE" is required:
+# without it tmux reports the attached client's active pane, not ours.
+self_field() {
+  [ -n "${TMUX_PANE:-}" ] || die "not inside tmux (\$TMUX_PANE unset) — '$TARGET' is relative; use session:window.pane"
+  tmux display-message -p -t "$TMUX_PANE" "$1"
+}
+
+SESSION=""; WIN=""; PANE=""; WINPART=""
+
+case "$TARGET" in
+  :self|self)
+    echo "$(self_field '#{session_name}'):$(self_field '#{window_index}').$(self_field '#{pane_index}')"
+    exit 0
+    ;;
+  .*)
+    PANE="${TARGET#.}"
+    [ -n "$PANE" ] || die "empty pane in '$TARGET' (use .N)"
+    SESSION="$(self_field '#{session_name}')"
+    WIN="$(self_field '#{window_index}')"
+    ;;
+  *:*)
+    SESSION="${TARGET%%:*}"
+    WINPART="${TARGET#*:}"
+    [ -n "$WINPART" ] || die "empty window in '$TARGET' (need session:window)"
+    [ "$WINPART" = self ] && die "self is addressed as ':self', not '$TARGET'"
+    [ -n "$SESSION" ] || SESSION="$(self_field '#{session_name}')"
+    ;;
+  *)
+    die "unanchored target '$TARGET' — use ':$TARGET' for a window in this session, or '.N' for a pane"
+    ;;
+esac
+
+# Split WINPART (the session:WINPART branch) into window + pane. A pane suffix is
+# only honored on a numeric index; a non-numeric token is a window name verbatim.
+if [ -n "$WINPART" ]; then
+  if [[ "$WINPART" =~ ^[0-9]+$ ]]; then
+    WIN="$WINPART"; PANE="1"
+  elif [[ "$WINPART" =~ ^[0-9]+\.[0-9]+$ ]]; then
+    WIN="${WINPART%.*}"; PANE="${WINPART##*.}"
+  else
+    PANE="1"
+    # Explicit name->index lookup; never `tmux -t <name>`, which mis-resolves.
+    WINS="$(tmux list-windows -t "$SESSION" -F '#{window_index}'$'\t''#{window_name}' 2>&1)" \
+      || die "session '$SESSION' not found ($WINS)"
+    mapfile -t IDXS < <(printf '%s\n' "$WINS" | awk -F'\t' -v n="$WINPART" '$2==n {print $1}')
+    case "${#IDXS[@]}" in
+      0) die "no window named '$WINPART' in session '$SESSION'" ;;
+      1) WIN="${IDXS[0]}" ;;
+      *) die "window name '$WINPART' is ambiguous in '$SESSION' (indices: ${IDXS[*]}) — address by index" ;;
+    esac
+  fi
+fi
+
+# Final existence check — list-panes errors loudly on a bad session/window, and
+# we confirm the pane index is actually present in that window.
+[[ "$PANE" =~ ^[0-9]+$ ]] || die "pane must be a number, got '.$PANE' in '$TARGET'"
+PANES="$(tmux list-panes -t "$SESSION:$WIN" -F '#{pane_index}' 2>&1)" \
+  || die "window '$SESSION:$WIN' not found ($PANES)"
+grep -qx "$PANE" <<<"$PANES" \
+  || die "no pane .$PANE in '$SESSION:$WIN' (panes present: $(printf '%s ' $PANES))"
+
+echo "$SESSION:$WIN.$PANE"
