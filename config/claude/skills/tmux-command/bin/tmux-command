@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# [LAW:decomposition] This part does ONE thing: inject literal input into another
-# harness's tmux pane — a command line (`send`) or raw key events (`keys`). It is a
-# dumb, faithful courier. It knows NOTHING about which harness is running or which
-# commands exist; that knowledge lives in references/<harness>.md, read by the
-# controlling agent. Choosing what to send is the agent's job, not the script's.
+# [LAW:decomposition] This part does ONE thing: faithfully move bytes between the
+# controlling agent and another harness's tmux pane — injecting input (`send`,
+# `keys`) or capturing what's there (`list`, `context`, `read-screen`). A dumb,
+# faithful courier in both directions. It knows NOTHING about which harness is
+# running, which commands exist, or whether the pane is idle; that judgment lives
+# with the controlling agent reading references/<harness>.md. The script gathers
+# raw observations and delivers raw input — interpreting either is the agent's job.
 #
 # [FRAMING:representation] Unlike tmux-talk, there is no From:/To-reply: envelope.
 # The receiver here is the harness's CLI parser, not a human reader — the bytes
@@ -16,9 +18,10 @@ USAGE="tmux-command — inject built-in slash commands / keystrokes into another
 
 Subcommands:
   list                           List all tmux panes with session:window.pane address and running command
+  context <target> [lines]       Gather before acting: the target's id line (cmd/title) + its current screen
   send  <target> <command...>    Type a literal command line into the pane, then submit it (no envelope)
   keys  <target> <key...>        Send raw tmux key names (Enter, Down, Up, Escape, BSpace, …) — drive pickers
-  read-screen <target> [lines]   Capture pane content (default: 200 lines) — verify a command's effect
+  read-screen <target> [lines]   Capture pane content (default: 200 lines) — re-check / verify a command's effect
 
 target format: session:window.pane  (e.g. work:0.0, research:editor.0)
 
@@ -43,6 +46,26 @@ case "$CMD" in
 
   list)
     tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    ;;
+
+  context)
+    TARGET="${2:-}"
+    LINES="${3:-200}"
+    if [[ -z "$TARGET" ]]; then
+      echo "Usage: tmux-command context <target> [lines]" >&2
+      exit 1
+    fi
+    ensure_target "$TARGET" || exit 1
+
+    # [LAW:composability] One call returns everything needed to choose a command,
+    # asking nothing: the pane's identity (cmd=/title= name the harness) and its
+    # live screen (idle vs generating, and which screen is up). The agent reads
+    # this, decides, then sends — so SKILL.md need not script the gather by hand.
+    # display-message -t resolves the EXACT pane; list-panes -t widens to the
+    # whole window, so it is the wrong verb for a single-pane identity line.
+    tmux display-message -p -t "$TARGET" "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    echo "---"
+    tmux capture-pane -t "$TARGET" -p -S -"$LINES"
     ;;
 
   send)
