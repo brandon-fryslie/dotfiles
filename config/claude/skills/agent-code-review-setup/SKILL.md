@@ -5,7 +5,7 @@ description: Install the agent code-review GitHub Action into the current reposi
 
 # agent-code-review-setup
 
-Installs the [coding agent review](https://github.com/brandon-fryslie/zai-coding-agent-review) GitHub Action into the repository the user is currently working in: writes the workflow file and provisions the `DEEPSEEK_API_KEY` repository secret that the action reads. After that, the action runs on every pull request.
+Installs the [coding agent review](https://github.com/brandon-fryslie/coding-agent-review) GitHub Action into the repository the user is currently working in: writes the workflow file and provisions the `DEEPSEEK_API_KEY` repository secret that the action reads. After that, the action runs on every pull request.
 
 ## When to use
 
