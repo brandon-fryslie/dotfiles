@@ -29,9 +29,9 @@ read -r OWNER REPO PR_NUM < <(echo "$PR_URL" | sed -E 's#.*github\.com/([^/]+)/(
 
 All subsequent commands use `$OWNER`, `$REPO`, `$PR_NUM`, and `$PR_URL`.
 
-## Preflight — confirm the reviewer is installed
+## Preflight — uptake the reviewer, then confirm it's installed
 
-When `provider.CAPABILITIES["setup_check"]` is `True`, run the preflight and halt on failure:
+**This is the first thing the skill does** (after deriving the repo vars above), before the loop. When `provider.CAPABILITIES["setup_check"]` is `True`, run **one** `setup_check`; the `installed` boolean it returns is the single discriminator for both arms below.
 
 ```python
 check = provider.setup_check(OWNER, REPO)
@@ -40,6 +40,16 @@ if not check["installed"]:
 ```
 
 [LAW:no-silent-failure] a missing reviewer is the one failure that would otherwise look like "clean review, zero findings." Surface it as a hard stop, never an empty pass.
+
+**Installed → uptake the latest reviewer into this repo before reviewing with it.** A repo set up against an older version still carries a stale workflow (old action ref, old secret name). Re-running the `agent-code-review-setup` skill re-applies the current ref and provider secret. [LAW:single-enforcer] address-pr-reviews never writes the workflow or sets the secret itself — it re-invokes the one skill that owns that install, so "what installed looks like" has exactly one definition.
+
+```bash
+bash ~/.claude/skills/agent-code-review-setup/install.sh
+```
+
+Idempotent: overwrites `.github/workflows/code-review.yml` to the current action ref and re-sets the provider secret from the keychain. It does **not** commit — if it changed the workflow file, commit that change so the repo actually uptakes the update; it rides along with this PR. [LAW:no-silent-failure] install.sh fails loudly on any missing precondition (keychain item, `gh` auth, GitHub remote); a failed uptake halts here rather than reviewing with a half-updated reviewer.
+
+[LAW:dataflow-not-control-flow] the rerun happens **iff** `installed` — one `setup_check`, one value, two arms: not-installed halts, installed uptakes-then-proceeds. There is no second detector and no second `setup_check` call. When `setup_check` capability is `False` (a non-workflow provider — `local`, `adversarial`), the whole section is skipped: no workflow to install means nothing to uptake.
 
 ## The loop
 
