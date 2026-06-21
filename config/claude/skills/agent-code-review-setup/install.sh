@@ -15,7 +15,7 @@ set -euo pipefail
 # Moving major tag: resolves to the latest v1.x release. The action repo's `v1`
 # tag is the single source of truth for "what is current" — this skill never
 # needs bumping. [LAW:one-source-of-truth]
-ACTION_REF="brandon-fryslie/zai-coding-agent-review@v1"
+ACTION_REF="brandon-fryslie/coding-agent-review@v1"
 KEYCHAIN_ITEM="${DEEPSEEK_KEYCHAIN_ITEM:-DEEPSEEK_API_TOKEN}"
 SECRET_NAME="DEEPSEEK_API_KEY"
 WORKFLOW_PATH=".github/workflows/code-review.yml"
