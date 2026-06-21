@@ -2,7 +2,7 @@
 """Z.ai PR review provider — implements the provider contract for the z.ai
 GitHub Actions-based reviewer.
 
-The z.ai reviewer is a GitHub Action (brandon-fryslie/zai-coding-agent-review)
+The z.ai reviewer is a GitHub Action (brandon-fryslie/coding-agent-review)
 that runs on pull_request (opened, synchronize) and posts a formal PR review
 with inline comments — i.e. ordinary resolvable review threads, authored by
 github-actions.
