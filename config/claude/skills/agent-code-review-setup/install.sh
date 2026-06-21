@@ -3,7 +3,7 @@
 #
 # Two deterministic, idempotent effects:
 #   1. Write .github/workflows/code-review.yml (overwrites — safe to re-run).
-#   2. Set the ZAI_API_KEY GitHub repo secret from the macOS keychain.
+#   2. Set the DEEPSEEK_API_KEY GitHub repo secret from the macOS keychain.
 #
 # The secret flows keychain -> gh over a pipe. It is never bound to a variable,
 # never passed in argv, never printed. [LAW:effects-at-boundaries]
@@ -16,8 +16,8 @@ set -euo pipefail
 # tag is the single source of truth for "what is current" — this skill never
 # needs bumping. [LAW:one-source-of-truth]
 ACTION_REF="brandon-fryslie/zai-coding-agent-review@v1"
-KEYCHAIN_ITEM="${ZAI_KEYCHAIN_ITEM:-zai-api-key}"
-SECRET_NAME="ZAI_API_KEY"
+KEYCHAIN_ITEM="${DEEPSEEK_KEYCHAIN_ITEM:-DEEPSEEK_API_TOKEN}"
+SECRET_NAME="DEEPSEEK_API_KEY"
 WORKFLOW_PATH=".github/workflows/code-review.yml"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -38,7 +38,7 @@ REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" \
   || die "gh could not resolve a GitHub repo for $PWD (no GitHub remote, or no access)."
 
 security find-generic-password -s "$KEYCHAIN_ITEM" >/dev/null 2>&1 \
-  || die "keychain item '$KEYCHAIN_ITEM' not found in your login keychain. (override with ZAI_KEYCHAIN_ITEM=...)"
+  || die "keychain item '$KEYCHAIN_ITEM' not found in your login keychain. (override with DEEPSEEK_KEYCHAIN_ITEM=...)"
 
 # --- Effect 1: write the workflow. Always overwrites — convergent, no mode. ---
 # Quoted heredoc: GitHub Actions \${{ ... }} expressions pass through literally.
@@ -68,7 +68,7 @@ jobs:
       - name: Code Review
         uses: __ACTION_REF__
         with:
-          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 YAML
 # Insert the pinned ref without escaping every GH expression in the heredoc.
 # LC_ALL=C + literal match keeps this exact; fail loudly if the marker is gone.
