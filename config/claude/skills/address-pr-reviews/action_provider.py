@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Z.ai PR review provider — implements the provider contract for the z.ai
-GitHub Actions-based reviewer.
+"""GitHub Action PR review provider — implements the provider contract for the
+coding-agent-review GitHub Action reviewer.
 
-The z.ai reviewer is a GitHub Action (brandon-fryslie/coding-agent-review)
+The reviewer is a GitHub Action (brandon-fryslie/coding-agent-review)
 that runs on pull_request (opened, synchronize) and posts a formal PR review
 with inline comments — i.e. ordinary resolvable review threads, authored by
 github-actions.
@@ -87,9 +87,9 @@ def setup_check(owner: str, repo: str) -> dict:
         return {
             "installed": False,
             "message": (
-                f"z.ai review workflow ({WORKFLOW_FILE}) not found on "
-                f"{owner}/{repo} — run /zai-pr-review in this repo and "
-                "merge it to the default branch first."
+                f"review workflow ({WORKFLOW_FILE}) not found on "
+                f"{owner}/{repo} — run the agent-code-review-setup skill in this "
+                "repo and merge it to the default branch first."
             ),
         }
 
@@ -99,7 +99,7 @@ def setup_check(owner: str, repo: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def wait(pr_url: str) -> dict:
-    """Block until the z.ai workflow run for the current head SHA completes."""
+    """Block until the GitHub Action run for the current head SHA completes."""
     owner, repo, pr_num = github_threads.parse_pr(pr_url)
     sha = github_threads.head_sha(owner, repo, pr_num)
     start = time.time()
@@ -119,33 +119,32 @@ def wait(pr_url: str) -> dict:
         time.sleep(POLL_INTERVAL_S)
     if run is None:
         raise RuntimeError(
-            f"No z.ai review run ({WORKFLOW_FILE}) registered for {sha} within "
+            f"No review run ({WORKFLOW_FILE}) registered for {sha} within "
             f"{REGISTER_TIMEOUT_S}s. Is the workflow installed on this repo "
-            "(run /zai-pr-review) and are Actions enabled?"
+            "(run the agent-code-review-setup skill) and are Actions enabled?"
         )
     raise RuntimeError(
-        f"z.ai review run for {sha} did not complete within {COMPLETION_TIMEOUT_S}s "
+        f"review run for {sha} did not complete within {COMPLETION_TIMEOUT_S}s "
         f"(status: {run.get('status')}). The runner may be wedged: {run.get('html_url')}"
     )
 
 
 # ---------------------------------------------------------------------------
 # Contract: fetch / resolve — re-exported from github_threads at the top of
-# this module; z.ai findings are ordinary GitHub review threads.
+# this module; the reviewer's findings are ordinary GitHub review threads.
 # ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
-# CLI shim — preserves backward-compat with callers that used zai-review.py
-# directly. The skill's SKILL.md references provider_loader, not this module,
-# but the shim means any existing scripts that called zai-review.py still work.
+# CLI shim — lets the provider be invoked directly. The skill's SKILL.md
+# drives the provider through provider_loader, not this module.
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import argparse
     import sys
 
-    parser = argparse.ArgumentParser(description="Z.ai PR review provider (direct)")
+    parser = argparse.ArgumentParser(description="GitHub Action PR review provider (direct)")
     sub = parser.add_subparsers(dest="command", required=True)
     for name in ("wait", "fetch"):
         p = sub.add_parser(name)
