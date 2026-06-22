@@ -9,7 +9,7 @@
 #   worker:    finalize-session --worker <target> <reset> <msgfile>
 #
 # Reset is inferred from the message: if /compact appears within the first
-# sentence, compact is used; otherwise clear.
+# 3 sentences, compact is used; otherwise clear.
 
 set -euo pipefail
 
@@ -33,14 +33,17 @@ SUFFIX
 )
 
 # [LAW:dataflow-not-control-flow] reset mode is a value inferred from the
-# message, not a separate argument. Scan the first sentence for /compact;
-# stop at the first terminator so long messages don't slow the common case.
-_first_sentence() {
-  local text="$1" result="" i char
+# message, not a separate argument. Scan the first 3 sentences for /compact;
+# stop early so long messages don't slow the common case.
+_first_three_sentences() {
+  local text="$1" result="" count=0 i char
   for ((i=0; i<${#text}; i++)); do
     char="${text:$i:1}"
     result+="$char"
-    [[ "$char" == "." || "$char" == "!" || "$char" == "?" ]] && break
+    if [[ "$char" == "." || "$char" == "!" || "$char" == "?" ]]; then
+      ((count++)) || true
+      [[ $count -ge 3 ]] && break
+    fi
   done
   printf '%s' "$result"
 }
@@ -63,9 +66,9 @@ case "$MODE" in
     AGENT_MESSAGE="${*:-/next}"
 
     # [LAW:dataflow-not-control-flow] reset mode is derived from the message — if
-    # /compact appears in the first sentence, use compact; else clear. The mode
+    # /compact appears in the first 3 sentences, use compact; else clear. The mode
     # is a value the message carries, not a separate argument the caller decides.
-    PROBE=$(_first_sentence "$AGENT_MESSAGE")
+    PROBE=$(_first_three_sentences "$AGENT_MESSAGE")
     if [[ "$PROBE" =~ (^|[[:space:]])/compact([[:space:]]|$) ]]; then
       RESET=compact
     else
