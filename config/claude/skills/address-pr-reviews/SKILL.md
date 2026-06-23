@@ -229,11 +229,11 @@ The ticket is the one this PR closed — pull it from the PR body, branch name, 
 
 Invoke `/recap` with a short note describing what was merged. The recap is the durable historical record — what shipped, what's left, what to watch out for. It lives in the project's recap log; future sessions browsing history read it there.
 
-### D. Finalize the session and hand off the next
+### D. Record the next instruction and run the close-out
 
-The close-out runs `finalize-session` — the mandatory handoff that resets the context and hands the next instruction to a fresh window. It has two terminal forms: run finalize-session (with content shaped by the candidate's classified state) or halt and surface a per-candidate failure table to the user. [LAW:types-are-the-program] the section's output is `Handoff = Finalize(direct_work) | Finalize(define_task) | HaltAndExplain(failure_table)` — variants of one typed value, dispatched mechanically from the classification step. Well-definedness is *not* a run/skip gate; it shapes the handoff content. The only halt case is project-level misalignment across every examined candidate.
+The close-out runs `finalize-session` — the mandatory final step that records what shipped and the next instruction to pick up. It has two outcomes: run finalize-session (with content shaped by the candidate's classified state) or halt and surface a per-candidate failure table to the user. [LAW:types-are-the-program] the section's output is `Handoff = Finalize(direct_work) | Finalize(define_task) | HaltAndExplain(failure_table)` — variants of one typed value, dispatched mechanically from the classification step. Well-definedness is *not* a run/skip gate; it shapes the handoff content. The only halt case is project-level misalignment across every examined candidate.
 
-**These three arms are exhaustive — no "skip," "hold," or "ask instead" arm exists.** The user being present, the step feeling minor, or the `/clear` being disruptive are NOT inputs to this decision. Deviating requires citing a clause *in this skill*; a tool's tone or purpose is never authorization (`finalize-session` "requires no user action" means exactly that — run it without asking, not "only run it when the user is absent"). Absent such a clause the prescribed arm **executes as written** — never a silent skip, never a fallback to asking.
+**These three arms are exhaustive — no "skip," "hold," or "ask instead" arm exists.** The user being present or the step feeling minor are NOT inputs to this decision. Deviating requires citing a clause *in this skill*; a tool's tone or purpose is never authorization (`finalize-session` "requires no user action" means exactly that — run it without asking, not "only run it when the user is absent"). Absent such a clause the prescribed arm **executes as written** — never a silent skip, never a fallback to asking.
 
 **Step 1 — Enumerate candidates.** Read multiple candidates in priority order:
 
@@ -241,11 +241,11 @@ The close-out runs `finalize-session` — the mandatory handoff that resets the 
 2. A concrete follow-up this PR surfaced and you queued as a ticket.
 3. The top entries of `lit ready` — pull at least the top three with `lit show <id>` (or all of them if fewer exist).
 
-A pool is needed because the highest-priority slot may hold work that no longer fits where the project actually is after this PR's epic shipped. The next-best aligned candidate is what the next session should actually start on.
+A pool is needed because the highest-priority slot may hold work that no longer fits where the project actually is after this PR's epic shipped. The next-best aligned candidate is what to actually pick up next.
 
 **Step 2 — Classify each candidate.** Each candidate sits in exactly one state:
 
-- **AlignedAndDefined** — aligned with the project's current trajectory AND a fresh session could start without asking the user clarifying questions (acceptance criteria explicit, scope bounded, dependencies met).
+- **AlignedAndDefined** — aligned with the project's current trajectory AND the work could be started without asking the user clarifying questions (acceptance criteria explicit, scope bounded, dependencies met).
 - **AlignedButFuzzy** — aligned with the project's current trajectory BUT exploratory or probe-shaped ("explore X", "consider Y", "investigate Z"); the body of work is to *define* the actual work, not to start it.
 - **Misaligned** — the candidate's premise no longer matches the project's actual requirements. Common after an epic ships: the queued item assumed an older architecture, depends on a hypothesis the recent work invalidated, expands surface area the user has decided to contract, or opens a strategic thread the user has not validated at the project level.
 
@@ -254,7 +254,7 @@ A pool is needed because the highest-priority slot may hold work that no longer 
 **Step 3 — Dispatch.** Take the highest-priority candidate classified as Aligned (Defined or Fuzzy). Its state shapes the handoff content:
 
 - **AlignedAndDefined** → hand off the direct work. The next instruction is a precise pointer (ticket ID, acceptance criteria, or `/next` when the candidate is the top of `lit ready`).
-- **AlignedButFuzzy** → hand off a define-task. The next session (1) understands the problem the candidate raises, (2) investigates possible solutions, and (3) prepares a proposal for the user that surfaces the important information quickly without burying them in irrelevant detail. Implementation waits on user approval of direction.
+- **AlignedButFuzzy** → hand off a define-task: (1) understand the problem the candidate raises, (2) investigate possible solutions, and (3) prepare a proposal for the user that surfaces the important information quickly without burying them in irrelevant detail. Implementation waits on user approval of direction.
 
 Empty aligned-pool (every examined candidate classified Misaligned, or no candidates exist at all) → **HaltAndExplain**. Do not run finalize-session. Surface to the user, in this turn, a per-candidate failure table — the candidate's title/ID and the precise reason it failed (what shipped, what direction the project moved, what the candidate assumed that no longer holds). Vague summaries are unacceptable; the user needs the specifics to rescope, reorder, or close the tickets.
 

@@ -1,6 +1,6 @@
 ---
 name: message-in-a-bottle
-description: The mandatory final step that ends a working session and hands the next instruction to a fresh context window. You ALWAYS run it when specified as part of a workflow — you never ask the user whether to, and you never defer it — when you finish a unit of work (closed a PR, completed the handed task) or cross 300k–350k tokens of context.
+description: Writes a message to a future session's agent.  Send them your fondest memories of what you worked on, what went well, what didn't go well, and any useful tips they might need. You always run this when you finish a unit of work (closed a PR, completed the handed task, etc) or cross 300k–350k tokens of context.  ALWAYS.
 ---
 
 # finalize-session
@@ -21,7 +21,7 @@ There is exactly **one** legitimate input: **is the handed unit of work complete
 
 ## You can provide a 'hint' for the next stage, if valuable: /compact
 
-The message you provide to the future agent may carry a hint as to how to proceed with setting up the agent's context.  If you are in the middle of a task/epic and/or you believe it would be valuable for the future agent to *start with a forked, compacted version of your own context*, you may specify '/compact' somewhere within the first sentence of your message.  This will give the future agent direct access to a summarized version of your current knowledge.  If you do not specify this, the agent will start with ONLY the message you send it (and the standard system, user global, and project level guidance).
+The message you provide to the future agent may carry a hint about how its context should be set up.  If you are in the middle of a task/epic and it would help the future agent to begin with a compacted summary of the work so far rather than a blank slate, you may specify '/compact' somewhere within the first sentence of your message.  This gives the future agent a summarized version of that knowledge to start from.  If you do not specify this, the future agent starts with ONLY the message you send it (and the standard system, user global, and project level guidance).
 
 Include `/compact` in your message when the handoff needs the thread of what just happened — e.g., start the message with `/compact` or write "Use /compact and then continue the spec audit…".
 
