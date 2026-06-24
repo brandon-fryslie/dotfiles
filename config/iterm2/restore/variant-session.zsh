@@ -8,13 +8,21 @@
 # Diverges from variant A only when a session's name is decoupled from its dir,
 # or when two tabs sit in the same dir on different sessions (B preserves both).
 
+# Build this variant's handle from already-gathered facts. PURE (lib only): records
+# the exact session name plus cwd as fallback. Shared by the in-shell recorder and
+# the tmux-hook writer. [LAW:effects-at-boundaries]
+restore_record_from() {  # $1=session $2=cwd -> handle
+  emulate -L zsh
+  print -r -- "$(restore_make_handle session "$1" "$2")"
+}
+
 # What to capture while the tab is alive: the attached tmux session name (empty if
 # the tab is a plain shell, not in tmux), plus cwd as fallback.
 restore_record() {
   emulate -L zsh
   local session
   session=$(tmux display-message -p '#S' 2>/dev/null)
-  print -r -- "$(restore_make_handle session "$session" "$PWD")"
+  restore_record_from "$session" "$PWD"
 }
 
 # Map a restored handle to a target. Pure (lib only).
