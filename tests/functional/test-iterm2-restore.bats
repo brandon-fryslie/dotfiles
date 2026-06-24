@@ -206,3 +206,50 @@ EOF
     grep -q 'new-session -s promptctl' "$E2E/tmux.calls"     # created (has-session stubbed missing)
     ! grep -q 'WARNING' "$E2E/.iterm-restore.log"            # no timeout warning
 }
+
+# ---------- UUID-stability gate probe (dotfiles-iterm2-restore-5k5.1) ----------
+# The probe decides the carrier's load-bearing assumption: does a session UUID
+# survive an iTerm2 restart? `record` needs live iTerm2 (not unit-testable), but
+# `check` is pure over an accumulated log -> proven here. A UUID seen under two
+# distinct iTerm2 launch epochs == survived a restart == YES.
+
+PROBE="$DOTFILES_ROOT/config/iterm2/restore/uuid-probe.sh"
+prun() { run env ITERM_UUID_PROBE_LOG="$PLOG" bash "$PROBE" "$@"; }
+
+setup_probe() { PLOG="$(mktemp)"; }
+teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; return 0; }
+
+@test "probe check: one launch is INCONCLUSIVE (cannot conclude without a restart)" {
+    setup_probe
+    printf 'ts\t1000\tAAAA\nts\t1000\tBBBB\n' > "$PLOG"
+    prun check
+    [ "$status" -eq 2 ]
+    [[ "$output" == *INCONCLUSIVE* ]]
+}
+
+@test "probe check: a UUID under two launches is YES (survived restart)" {
+    setup_probe
+    printf 'ts\t1000\tAAAA\nts\t1000\tOLD1\nts\t2000\tAAAA\nts\t2000\tNEW9\n' > "$PLOG"
+    prun check
+    [ "$status" -eq 0 ]
+    [[ "$output" == *YES* ]]
+    [[ "$output" == *AAAA* ]]      # the survivor is named
+    [[ "$output" != *OLD1* ]]      # not-restored session is not a survivor
+    [[ "$output" != *NEW9* ]]      # fresh post-restart session is not a survivor
+}
+
+@test "probe check: two launches with no overlap is NO (carrier must not key on UUID)" {
+    setup_probe
+    printf 'ts\t1000\tAAAA\nts\t2000\tZZZZ\n' > "$PLOG"
+    prun check
+    [ "$status" -eq 1 ]
+    [[ "$output" == *NO* ]]
+}
+
+@test "probe check: missing log fails loudly, never silently passes" {
+    setup_probe
+    rm -f "$PLOG"
+    prun check
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"no probe log"* ]]
+}
