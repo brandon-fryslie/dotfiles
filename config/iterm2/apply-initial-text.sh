@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Idempotently set the iTerm2 Default profile's "Send text at start" to source the
-# restore-join script. This is the one part of the feature that can't be a symlink
+# Idempotently set the iTerm2 Default profile's "Send text at start" to launch the
+# restore feature. This is the one part of the feature that can't be a symlink
 # (iTerm2 keeps profiles in a binary plist), so dotbot applies it via this shell
 # step. Stock tools only (python3) — no dependency on any other repo.
 #
@@ -8,10 +8,11 @@
 # quit, which would clobber a live edit. The script is idempotent, so re-running
 # after quitting iTerm2 is safe.
 #
-# Part of the feature documented in config/iterm2/README.md.
+# Part of the feature documented in config/iterm2/restore/README.md.
 set -euo pipefail
 
-INITIAL='source ~/.config/iterm2/restore-join.zsh'
+# restore_main = register this tab's tty->uuid bridge, then run the restore.
+INITIAL='source ~/.config/iterm2/restore/restore.zsh; restore_main'
 PLIST="$HOME/Library/Preferences/com.googlecode.iterm2.plist"
 
 if [ ! -f "$PLIST" ]; then
