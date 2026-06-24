@@ -172,14 +172,11 @@ EOF
     export HOME_BAK="$HOME"
 }
 
-@test "e2e: fresh tab (carrier returns no handle) does NOTHING (criterion F)" {
+@test "e2e: fresh tab (no sidecar row for this UUID) does NOTHING (criterion F)" {
     e2e_setup
-    cat > "$E2E/bin/osascript" <<'EOF'
-#!/usr/bin/env bash
-echo ""        # no name / no handle -> fresh tab
-EOF
-    chmod +x "$E2E/bin/osascript"
-    run env PATH="$E2E/bin:$PATH" HOME="$E2E" ITERM_SESSION_ID="w0t0p0:ABC" \
+    # No sidecar file for this UUID -> carrier_read returns empty -> fresh tab.
+    run env PATH="$E2E/bin:$PATH" HOME="$E2E" ITERM_RESTORE_STATE_DIR="$E2E/state" \
+        ITERM_SESSION_ID="w0t0p0:ABC" \
         zsh -c "source '$E2E/restore.zsh'; restore_run"
     [ "$status" -eq 0 ]
     [ ! -f "$E2E/tmux.calls" ]                       # never touched tmux
@@ -192,12 +189,11 @@ EOF
     # the race-fix path, not the trivial no-save shortcut).
     mkdir -p "$E2E/.local/share/tmux/resurrect"
     echo "pane	x	1	1	:*	1	h	:/x	1	zsh	:" > "$E2E/.local/share/tmux/resurrect/last"
-    cat > "$E2E/bin/osascript" <<'EOF'
-#!/usr/bin/env bash
-printf 'v1\tdir\t\t/Users/bmf/code/promptctl'      # a real handle
-EOF
-    chmod +x "$E2E/bin/osascript"
-    run env PATH="$E2E/bin:$PATH" HOME="$E2E" ITERM_SESSION_ID="w0t0p0:ABC" \
+    # Seed THIS tab's sidecar row (key = UUID after the colon = ABC) with a real handle.
+    mkdir -p "$E2E/state"
+    printf 'v1\tdir\t\t/Users/bmf/code/promptctl' > "$E2E/state/ABC"
+    run env PATH="$E2E/bin:$PATH" HOME="$E2E" ITERM_RESTORE_STATE_DIR="$E2E/state" \
+        ITERM_SESSION_ID="w0t0p0:ABC" \
         zsh -c "source '$E2E/restore.zsh'; restore_run"
     [ "$status" -eq 0 ]
     grep -q 'target=promptctl' "$E2E/.iterm-restore.log"
@@ -217,7 +213,7 @@ PROBE="$DOTFILES_ROOT/config/iterm2/restore/uuid-probe.sh"
 prun() { run env ITERM_UUID_PROBE_LOG="$PLOG" bash "$PROBE" "$@"; }
 
 setup_probe() { PLOG="$(mktemp)"; }
-teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; return 0; }
+teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; [ -n "${CSTATE:-}" ] && rm -rf "$CSTATE"; return 0; }
 
 @test "probe check: one launch is INCONCLUSIVE (cannot conclude without a restart)" {
     setup_probe
@@ -252,4 +248,61 @@ teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; return 0; }
     prun check
     [ "$status" -ne 0 ]
     [[ "$output" == *"no probe log"* ]]
+}
+
+# ---------- UUID-keyed sidecar carrier (dotfiles-iterm2-restore-5k5.3) ----------
+# The carrier persists a tab's handle keyed by the iTerm2 session UUID. It is an
+# isolated seam: lib/coordination/restore/variants are unchanged. These prove the
+# (uuid -> handle) contract: round-trip, no cross-tab bleed, fresh reads empty,
+# fail-safe without a UUID. The old osascript/session-name read path must be gone.
+
+setup_carrier() { CSTATE="$(mktemp -d)"; CAR="source '$R/lib.zsh'; source '$R/carrier.zsh';"; }
+# The handle to write is passed via env ($H), never threaded through nested quotes,
+# so a tab-containing handle survives the bash->zsh hand-off intact.
+crun() { run env ITERM_RESTORE_STATE_DIR="$CSTATE" ITERM_SESSION_ID="$1" H="${3:-}" zsh -c "$CAR $2"; }
+
+@test "carrier: write then read round-trips the exact handle for a UUID" {
+    setup_carrier
+    local H; H=$(printf 'v1\tdir\t\t/Users/bmf/code/promptctl')
+    crun 'w0t0p0:UUID-AAA' 'carrier_write "$H"' "$H"
+    [ "$status" -eq 0 ]
+    crun 'w0t0p0:UUID-AAA' 'carrier_read'
+    [ "$status" -eq 0 ]
+    [ "$output" = "$H" ]
+}
+
+@test "carrier: a DIFFERENT UUID reads empty (no cross-tab bleed)" {
+    setup_carrier
+    local H; H=$(printf 'v1\tdir\t\t/x')
+    crun 'w0t0p0:UUID-AAA' 'carrier_write "$H"' "$H"
+    crun 'w9t9p9:UUID-BBB' 'carrier_read'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "carrier: a fresh UUID with nothing written reads empty" {
+    setup_carrier
+    crun 'w0t0p0:UUID-NEW' 'carrier_read'
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "carrier: no ITERM_SESSION_ID -> read empty and write is a safe no-op" {
+    setup_carrier
+    run env ITERM_RESTORE_STATE_DIR="$CSTATE" zsh -c "$CAR unset ITERM_SESSION_ID; carrier_write x; carrier_read"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+}
+
+@test "carrier: re-write replaces the prior handle (last write wins)" {
+    setup_carrier
+    crun 'w0t0p0:UUID-AAA' 'carrier_write old'
+    crun 'w0t0p0:UUID-AAA' 'carrier_write new'
+    crun 'w0t0p0:UUID-AAA' 'carrier_read'
+    [ "$output" = new ]
+}
+
+@test "carrier: the osascript / session-name read path is gone" {
+    run grep -c 'osascript\|name of session' "$R/carrier.zsh"
+    [ "$output" = 0 ]
 }
