@@ -432,3 +432,40 @@ PY
     run zsh -c "source '$R/lib.zsh'; source '$R/variant.zsh'; restore_record_from work /a/b"
     [ "$output" = "$(printf 'v1\tsession\twork\t/a/b')" ]
 }
+
+# ---------- post-restore verifier: verify-restore.sh (5k5.6) ----------
+# Turns the e2e acceptance criteria into a deterministic pass/fail run after a
+# real restore. The criteria need live state, but the verifier's LOGIC is proven
+# here against synthetic fixtures: a healthy restore PASSES, a broken one FAILS.
+
+VR="$DOTFILES_ROOT/config/iterm2/restore/verify-restore.sh"
+vfix() {  # $1=home  $2=done  $3=restoring  $4=nlive  : builds a tmux stub + save
+    mkdir -p "$1/bin" "$1/.local/share/tmux/resurrect"
+    { echo '#!/usr/bin/env bash'
+      echo 'case "$*" in'
+      echo "  \"show -gv @cwd_restore_done\") echo '$2' ;;"
+      echo "  \"show -gv @cwd_restoring\") echo '$3' ;;"
+      echo "  \"list-sessions\") for i in \$(seq 1 $4); do echo \"s\$i: 1 windows\"; done ;;"
+      echo 'esac'; } > "$1/bin/tmux"
+    chmod +x "$1/bin/tmux"
+    local i; for i in 1 2 3; do printf 'window\ts%s\t0\t:\n' "$i" >> "$1/.local/share/tmux/resurrect/tmux_resurrect_test.txt"; done
+}
+
+@test "verify-restore.sh: a healthy restore PASSES (exit 0)" {
+    HT="$(mktemp -d)"; vfix "$HT" 1 "" 5
+    printf '00:00:01 target=promptctl fallback=promptctl cwd=/p save=1 wait=proceed-done act=attach name=promptctl\n' > "$HT/.iterm-restore.log"
+    run env HOME="$HT" PATH="$HT/bin:$PATH" bash "$VR"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"RESULT: PASS"* ]]
+}
+
+@test "verify-restore.sh: a stuck flag / timeout / stale save FAILS (exit 1, loud)" {
+    HT="$(mktemp -d)"; vfix "$HT" 1 1 1
+    touch -t 202601010000 "$HT/.local/share/tmux/resurrect/tmux_resurrect_test.txt"   # stale
+    printf '00:00:01 target=promptctl fallback=promptctl cwd=/p save=1 wait=timeout act=create name=promptctl\n  WARNING: timeout\n' > "$HT/.iterm-restore.log"
+    run env HOME="$HT" PATH="$HT/bin:$PATH" bash "$VR"
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"RESULT: FAIL"* ]]
+    [[ "$output" == *"@cwd_restoring still present"* ]]   # catches the old bug class
+    [[ "$output" == *"hit the timeout"* ]]               # catches the 120s hang
+}
