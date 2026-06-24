@@ -213,7 +213,7 @@ PROBE="$DOTFILES_ROOT/config/iterm2/restore/uuid-probe.sh"
 prun() { run env ITERM_UUID_PROBE_LOG="$PLOG" bash "$PROBE" "$@"; }
 
 setup_probe() { PLOG="$(mktemp)"; }
-teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; [ -n "${CSTATE:-}" ] && rm -rf "$CSTATE"; [ -n "${WT:-}" ] && rm -rf "$WT"; return 0; }
+teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; [ -n "${CSTATE:-}" ] && rm -rf "$CSTATE"; [ -n "${WT:-}" ] && rm -rf "$WT"; [ -n "${HT:-}" ] && rm -rf "$HT"; return 0; }
 
 @test "probe check: one launch is INCONCLUSIVE (cannot conclude without a restart)" {
     setup_probe
@@ -379,4 +379,56 @@ wrun() { run env ITERM_RESTORE_CLIENTS_DIR="$WT/clients" ITERM_RESTORE_STATE_DIR
     printf 'UU-008' > "$WT/clients/_dev_ttys008"
     wrun /dev/ttys008 dots "/Users/bmf/Library/Application Support"
     [ "$(cat "$WT/handles/UU-008")" = "$(printf 'v1\tsession\tdots\t/Users/bmf/Library/Application Support')" ]
+}
+
+# ---------- iTerm2 wiring: apply-initial-text.sh idempotency (5k5.5) ----------
+# The Default profile's "Send text at start" is the one non-symlink seam (iTerm2
+# stores profiles in a binary plist). apply-initial-text.sh must set it once then
+# report already-correct on re-run. Driven against a temp plist via HOME override.
+# (Folds in the still-valid concern from superseded dotfiles-iterm2-restore-fvr.9.)
+
+AIT="$DOTFILES_ROOT/config/iterm2/apply-initial-text.sh"
+EXPECTED_INITIAL='source ~/.config/iterm2/restore/restore.zsh; restore_main'
+make_plist() {  # $1=path
+    python3 - "$1" <<'PY'
+import sys, plistlib
+plistlib.dump({'Default Bookmark Guid':'G1',
+               'New Bookmarks':[{'Guid':'G1','Name':'Default'}]}, open(sys.argv[1],'wb'))
+PY
+}
+read_initial() {  # $1=path -> prints the Default profile's Initial Text
+    python3 - "$1" <<'PY'
+import sys, plistlib
+d = plistlib.load(open(sys.argv[1],'rb'))
+print(d['New Bookmarks'][0].get('Initial Text',''))
+PY
+}
+
+@test "apply-initial-text.sh: first run sets the new entry; second run is already-correct" {
+    HT="$(mktemp -d)"; mkdir -p "$HT/Library/Preferences"
+    local P="$HT/Library/Preferences/com.googlecode.iterm2.plist"
+    make_plist "$P"
+    run env HOME="$HT" bash "$AIT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"set to:"* ]]
+    [ "$(read_initial "$P")" = "$EXPECTED_INITIAL" ]
+    # idempotent re-run
+    run env HOME="$HT" bash "$AIT"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"already correct"* ]]
+    [ "$(read_initial "$P")" = "$EXPECTED_INITIAL" ]
+}
+
+@test "apply-initial-text.sh: points at restore/restore.zsh, not the old restore-join.zsh" {
+    run grep -c 'restore-join' "$AIT"
+    [ "$output" = 0 ]
+    run grep -c "restore/restore.zsh; restore_main" "$AIT"
+    [ "$output" = 1 ]
+}
+
+@test "wiring: variant.zsh selects variant B (exact-session) by default" {
+    [ "$(readlink "$R/variant.zsh")" = variant-session.zsh ]
+    # and it provides the session-keeping recorder
+    run zsh -c "source '$R/lib.zsh'; source '$R/variant.zsh'; restore_record_from work /a/b"
+    [ "$output" = "$(printf 'v1\tsession\twork\t/a/b')" ]
 }
