@@ -213,7 +213,7 @@ PROBE="$DOTFILES_ROOT/config/iterm2/restore/uuid-probe.sh"
 prun() { run env ITERM_UUID_PROBE_LOG="$PLOG" bash "$PROBE" "$@"; }
 
 setup_probe() { PLOG="$(mktemp)"; }
-teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; [ -n "${CSTATE:-}" ] && rm -rf "$CSTATE"; return 0; }
+teardown() { [ -n "${PLOG:-}" ] && rm -f "$PLOG"; [ -n "${CSTATE:-}" ] && rm -rf "$CSTATE"; [ -n "${WT:-}" ] && rm -rf "$WT"; return 0; }
 
 @test "probe check: one launch is INCONCLUSIVE (cannot conclude without a restart)" {
     setup_probe
@@ -305,4 +305,78 @@ crun() { run env ITERM_RESTORE_STATE_DIR="$CSTATE" ITERM_SESSION_ID="$1" H="${3:
 @test "carrier: the osascript / session-name read path is gone" {
     run grep -c 'osascript\|name of session' "$R/carrier.zsh"
     [ "$output" = 0 ]
+}
+
+# ---------- live writer: registration + tmux-hook recorder (5k5.4) ----------
+# The writer keeps the sidecar fresh as the user switches tmux sessions. It can't
+# use a shell precmd (the outer shell is blocked inside `tmux attach`), so a tmux
+# client hook records it, mapping #{client_tty} -> iTerm2 UUID via a bridge the
+# outer shell registered. Proven offline: the pure handle builder per variant, the
+# registrar, and the hook recorder (bridged -> writes; unbridged -> no-op).
+
+# A throwaway copy of the feature dir with a chosen variant symlinked in.
+wsetup() { WT="$(mktemp -d)"; cp "$R"/*.zsh "$WT/"; ln -sf "${1:-variant-session.zsh}" "$WT/variant.zsh"; mkdir -p "$WT/clients" "$WT/handles"; }
+wrun() { run env ITERM_RESTORE_CLIENTS_DIR="$WT/clients" ITERM_RESTORE_STATE_DIR="$WT/handles" "$WT/record-handle.zsh" "$@"; }
+
+@test "record_from (variant dir): keeps cwd, drops session" {
+    run zsh -c "source '$R/lib.zsh'; source '$R/variant-dir.zsh'; restore_record_from somesession /a/b"
+    [ "$output" = "$(printf 'v1\tdir\t\t/a/b')" ]
+}
+
+@test "record_from (variant session): keeps session and cwd" {
+    run zsh -c "source '$R/lib.zsh'; source '$R/variant-session.zsh'; restore_record_from work /a/b"
+    [ "$output" = "$(printf 'v1\tsession\twork\t/a/b')" ]
+}
+
+@test "register_client: writes the tty->uuid bridge for this tab" {
+    wsetup
+    run env ITERM_RESTORE_CLIENTS_DIR="$WT/clients" ITERM_SESSION_ID="w0t0p0:UU-042" \
+        zsh -c "source '$WT/restore.zsh'; restore_register_client /dev/ttys042"
+    [ "$status" -eq 0 ]
+    [ "$(cat "$WT/clients/_dev_ttys042")" = UU-042 ]
+}
+
+@test "register_client: no ITERM_SESSION_ID -> no bridge written (safe)" {
+    wsetup
+    run env ITERM_RESTORE_CLIENTS_DIR="$WT/clients" \
+        zsh -c "source '$WT/restore.zsh'; unset ITERM_SESSION_ID; restore_register_client /dev/ttys042"
+    [ "$status" -eq 0 ]
+    [ ! -e "$WT/clients/_dev_ttys042" ]
+}
+
+@test "record-handle: bridged client writes the variant handle for its UUID" {
+    wsetup variant-session.zsh
+    printf 'UU-008' > "$WT/clients/_dev_ttys008"
+    wrun /dev/ttys008 dotfiles /Users/bmf/code/dotfiles
+    [ "$status" -eq 0 ]
+    [ "$(cat "$WT/handles/UU-008")" = "$(printf 'v1\tsession\tdotfiles\t/Users/bmf/code/dotfiles')" ]
+}
+
+@test "record-handle: variant dir records cwd only (session name dropped)" {
+    wsetup variant-dir.zsh
+    printf 'UU-008' > "$WT/clients/_dev_ttys008"
+    wrun /dev/ttys008 myproj /work/myproj
+    [ "$(cat "$WT/handles/UU-008")" = "$(printf 'v1\tdir\t\t/work/myproj')" ]
+}
+
+@test "record-handle: client with no bridge entry is a no-op (fail safe)" {
+    wsetup
+    wrun /dev/ttys999 other /tmp
+    [ "$status" -eq 0 ]
+    [ -z "$(ls -A "$WT/handles")" ]
+}
+
+@test "record-handle: a session switch overwrites the prior handle (stays fresh)" {
+    wsetup variant-session.zsh
+    printf 'UU-008' > "$WT/clients/_dev_ttys008"
+    wrun /dev/ttys008 sessionA /a
+    wrun /dev/ttys008 sessionB /b
+    [ "$(cat "$WT/handles/UU-008")" = "$(printf 'v1\tsession\tsessionB\t/b')" ]
+}
+
+@test "record-handle: a cwd with spaces round-trips intact" {
+    wsetup variant-session.zsh
+    printf 'UU-008' > "$WT/clients/_dev_ttys008"
+    wrun /dev/ttys008 dots "/Users/bmf/Library/Application Support"
+    [ "$(cat "$WT/handles/UU-008")" = "$(printf 'v1\tsession\tdots\t/Users/bmf/Library/Application Support')" ]
 }

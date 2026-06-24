@@ -8,10 +8,18 @@
 # Diverges from variant B only when a session's name is decoupled from its dir,
 # or when two tabs sit in the same dir on different sessions (A merges them).
 
+# Build this variant's handle from already-gathered facts. PURE (lib only): the
+# session is irrelevant to a directory-keyed tab, so only cwd is recorded. Shared
+# by the in-shell recorder and the tmux-hook writer. [LAW:effects-at-boundaries]
+restore_record_from() {  # $1=session (ignored) $2=cwd -> handle
+  emulate -L zsh
+  print -r -- "$(restore_make_handle dir '' "$2")"
+}
+
 # What to capture while the tab is alive: just the working directory.
 restore_record() {
   emulate -L zsh
-  print -r -- "$(restore_make_handle dir '' "$PWD")"
+  restore_record_from '' "$PWD"
 }
 
 # Map a restored handle to a target. Pure (lib only).

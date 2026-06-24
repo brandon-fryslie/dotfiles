@@ -67,13 +67,30 @@ restore_run() {
   if [[ $act == attach ]]; then tmux attach-session -t "=$name"; else tmux new-session -s "$name"; fi
 }
 
-# Install the live writer so the handle stays current for the NEXT restore. In the
-# common config tmux's title integration already names the iTerm2 session after the
-# tmux session, so this is reinforcement; it matters when the handle must differ
-# from that title. Harmless and cheap (a printf escape, no subprocess on the hot path).
-restore_install_writer() {
+# Register this iTerm2 tab so the tmux-hook writer (record-handle.zsh) can map a
+# tmux client back to its iTerm2 UUID. The bridge is keyed by the client's tty:
+# the outer iTerm2 shell's tty IS the tty tmux sees as #{client_tty} when this
+# shell runs `tmux attach`. Only the OUTER shell knows the true ITERM_SESSION_ID
+# UUID (inside tmux it is a stale inherited copy), which is exactly why the mapping
+# must be written here, before attaching. [LAW:no-ambient-temporal-coupling] this
+# runs before the attach it enables; the hook only reads what this wrote.
+restore_register_client() {  # $1 = this shell's tty (e.g. /dev/ttys008)
   emulate -L zsh
-  autoload -Uz add-zsh-hook
-  __restore_arm() { carrier_write "$(restore_record)" }
-  add-zsh-hook precmd __restore_arm
+  local tty=$1 uuid=${ITERM_SESSION_ID##*:}
+  [[ -n $uuid && $uuid != */* && $uuid != *..* ]] || return 0
+  [[ $tty == /dev/* ]] || return 0
+  local dir=${ITERM_RESTORE_CLIENTS_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/iterm-restore/clients}
+  mkdir -p -- "$dir" || return 1
+  print -r -- "$uuid" > "$dir/${tty//\//_}"
+}
+
+# The entry point the iTerm2 "Send text at start" calls after sourcing this file:
+# register the client (so future session switches are recorded), then run the
+# restore. The tty is read here at the boundary and handed to the (pure-of-effects)
+# registrar. Sourcing alone defines functions and does nothing, so tests can drive
+# the parts in isolation. [LAW:dataflow-not-control-flow] [LAW:effects-at-boundaries]
+restore_main() {
+  emulate -L zsh
+  restore_register_client "${TTY:-$(tty 2>/dev/null)}"
+  restore_run
 }
