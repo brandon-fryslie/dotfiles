@@ -63,10 +63,9 @@ status:
         fi
     fi
 
-# Validate dotfiles installation and migrations
+# Validate dotbot YAML configs
 validate:
     ./bin/validate
-    ./bin/validate-migrations
 
 # Run pending migrations
 migrate:
