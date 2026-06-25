@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Validate the dotbot YAML config files. A broken install-*.conf.yaml fails the
+# whole install with an opaque error, so check syntax up front and fail loudly on
+# the first bad file rather than discovering it mid-install. [LAW:no-silent-failure]
+#
+# Parses with PyYAML: prefers a system import, else runs under `uv run --with
+# pyyaml` (PEP 668-safe — never installs into the system interpreter).
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+shopt -s nullglob
+files=(install-*.conf.yaml)
+if [ "${#files[@]}" -eq 0 ]; then
+  echo "no install-*.conf.yaml files found" >&2
+  exit 1
+fi
+
+run_python() {
+  if python3 -c 'import yaml' 2>/dev/null; then
+    python3 "$@"
+  elif command -v uv >/dev/null 2>&1; then
+    uv run --quiet --with pyyaml python3 "$@"
+  else
+    echo "need PyYAML (install it, or install uv) to validate YAML" >&2
+    exit 1
+  fi
+}
+
+run_python - "${files[@]}" <<'PY'
+import sys, yaml
+bad = 0
+for path in sys.argv[1:]:
+    try:
+        with open(path) as fh:
+            yaml.safe_load(fh)
+        print(f"  ✓ {path} valid")
+    except Exception as e:
+        print(f"  ✗ {path} INVALID: {e}", file=sys.stderr)
+        bad += 1
+if bad:
+    print(f"FAIL: {bad} invalid YAML file(s)", file=sys.stderr)
+    sys.exit(1)
+print(f"✓ all {len(sys.argv) - 1} YAML configs valid")
+PY
