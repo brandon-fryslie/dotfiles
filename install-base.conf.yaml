@@ -21,3 +21,14 @@
     ~/.config/tmux-powerline: config/tmux-powerline
     ~/.config/zellij: config/zellij
     ~/.config/nvim: config/nvim
+
+- shell:
+    # tmux-continuum's status-right save trigger is unreliable (see
+    # config/tmux/scripts/tmux-resurrect-save.sh); own the periodic save with a
+    # launchd StartInterval agent instead.
+    - [chmod +x scripts/setup-tmux-resurrect-save.sh, Make resurrect-save setup executable]
+    -
+      command: ./scripts/setup-tmux-resurrect-save.sh
+      description: Install launchd periodic tmux-resurrect save
+      stdout: true
+      stderr: true
