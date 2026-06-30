@@ -5,7 +5,7 @@ description: Generate an image from a text prompt and save it as a local file. U
 
 # slop-image
 
-Generate an image from a prompt and save it to a local file. One script, three
+Generate an image from a prompt and save it to a local file. One script, four
 providers, selected by flag. Default provider is fast and cheap. The image is
 **never** posted anywhere — it is downloaded and written to disk, and the
 absolute path is printed.
@@ -18,7 +18,7 @@ SLOP_IMAGE=~/.claude/skills/slop-image/bin/slop-image
 
 ```bash
 slop-image "<prompt>" \
-  [--provider fal-flux|replicate-sdxl|replicate-ideogram] \
+  [--provider fal-flux|fal-nano-banana|replicate-sdxl|replicate-ideogram] \
   [--aspect 1:1|16:9|9:16|4:3|3:4] \
   [--count N] \
   [--out FILE_OR_DIR]
@@ -46,22 +46,33 @@ slop-image "brutalist concrete library at golden hour" \
 
 slop-image "vintage travel poster that says GREETINGS FROM MARS" \
   --provider replicate-ideogram --aspect 4:3 --count 2 --out ./out
+
+slop-image "meme: a glowing door in a brick wall, neon sign reads 'swe4vibe'" \
+  --provider fal-nano-banana --aspect 1:1 --out ./meme.png
 ```
 
 ## Providers
 
-The call patterns are reproduced faithfully from SlopSpot's provider
-implementations (`/Users/bmf/code/slopspot-web/app/providers/`). Callers never
-need to know any of this — it is encapsulated in the script.
+The Replicate/FLUX call patterns are reproduced faithfully from SlopSpot's
+provider implementations (`/Users/bmf/code/slopspot-web/app/providers/`);
+`fal-nano-banana` was wired directly against fal and its `aspect_ratio` support
+verified end-to-end. Callers never need to know any of this — it is encapsulated
+in the script.
 
 | `--provider`         | Model                     | Mechanism                                   | Aspect mapping                  | ~cost  |
 |----------------------|---------------------------|---------------------------------------------|----------------------------------|--------|
 | `fal-flux` (default) | fal.ai FLUX schnell       | `fal.run/<id>` synchronous REST             | canonical → fal `image_size` enum| ~$0.003|
+| `fal-nano-banana`    | fal.ai Nano Banana (Gemini 2.5 Flash Image) | `fal.run/<id>` synchronous REST           | canonical → native `aspect_ratio` enum | ~$0.039|
 | `replicate-sdxl`     | Replicate SDXL            | `/v1/predictions` + `Prefer:wait` + poll    | canonical → explicit `width`/`height` | ~$0.0035|
 | `replicate-ideogram` | Replicate Ideogram v2 Turbo | `/v1/predictions` + `Prefer:wait` + poll  | canonical → native `aspect_ratio` enum | ~$0.025|
 
 - **fal-flux** — fast, cheap, photographic. The good default. 4 inference steps
   (schnell's max). Synchronous endpoint returns the image URL directly.
+- **fal-nano-banana** — the one to reach for when the image must contain
+  **legible text** (signs, labels, memes, posters) or must follow a detailed
+  multi-element instruction. Strongest text rendering and prompt adherence of
+  the four; pricier and a touch slower. Synchronous endpoint; returns an
+  `images[].url` array like fal-flux.
 - **replicate-sdxl** — painterly. Sends explicit pixel dims per ratio; pinned
   model version; output is a one-element URL array.
 - **replicate-ideogram** — strong typography / designed-flat aesthetics. Pinned
