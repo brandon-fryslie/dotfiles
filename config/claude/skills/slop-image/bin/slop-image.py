@@ -35,6 +35,10 @@ REPLICATE_DIMS = {
 
 IDEOGRAM_ASPECT_RATIO = {r: r for r in ASPECT_RATIOS}
 
+# nano-banana (Gemini 2.5 Flash Image) takes a native aspect_ratio enum;
+# verified our 5 canonical ratios pass through unchanged (1:1->1024^2, 16:9->1344x768).
+NANO_ASPECT_RATIO = {r: r for r in ASPECT_RATIOS}
+
 SDXL_VERSION = "7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc"
 IDEOGRAM_VERSION = "7cef9d520d672bb802588ad0d13151bc51aee9a408c270aebf25d6530045dd29"
 
@@ -44,7 +48,7 @@ REPLICATE_PREDICTIONS_URL = "https://api.replicate.com/v1/predictions"
 POLL_INTERVAL_S = 2
 MAX_POLLS = 30
 
-PROVIDERS = ("fal-flux", "replicate-sdxl", "replicate-ideogram")
+PROVIDERS = ("fal-flux", "fal-nano-banana", "replicate-sdxl", "replicate-ideogram")
 DEFAULT_OUT_DIR = Path.home() / "Pictures" / "slop"
 
 
@@ -104,6 +108,30 @@ def gen_fal_flux(prompt, aspect, count):
         images = r.json().get("images") or []
         if not images or not images[0].get("url"):
             raise SystemExit(f"[slop-image] fal-flux returned no image: {r.text}")
+        urls.append(images[0]["url"])
+    return urls, src
+
+
+def gen_fal_nano(prompt, aspect, count):
+    key, src = get_key("slopspot-fal-api-key", "SLOPSPOT_FAL_API_KEY")
+    urls = []
+    for _ in range(count):
+        r = requests.post(
+            "https://fal.run/fal-ai/nano-banana",
+            headers={"Authorization": f"Key {key}", "Content-Type": "application/json"},
+            json={
+                "prompt": prompt,
+                "aspect_ratio": NANO_ASPECT_RATIO[aspect],
+                "num_images": 1,
+                "output_format": "png",
+            },
+            timeout=120,
+        )
+        if not r.ok:
+            raise SystemExit(f"[slop-image] fal-nano-banana failed: {r.status_code} {r.text}")
+        images = r.json().get("images") or []
+        if not images or not images[0].get("url"):
+            raise SystemExit(f"[slop-image] fal-nano-banana returned no image: {r.text}")
         urls.append(images[0]["url"])
     return urls, src
 
@@ -191,6 +219,7 @@ def gen_replicate_ideogram(prompt, aspect, count):
 
 DISPATCH = {
     "fal-flux": gen_fal_flux,
+    "fal-nano-banana": gen_fal_nano,
     "replicate-sdxl": gen_replicate_sdxl,
     "replicate-ideogram": gen_replicate_ideogram,
 }
