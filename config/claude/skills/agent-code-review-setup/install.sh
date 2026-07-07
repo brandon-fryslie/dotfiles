@@ -63,6 +63,12 @@ permissions:
   issues: write
   pull-requests: write
 
+# One review at a time per PR: a new push supersedes the in-flight review of
+# the old SHA rather than racing it to post comments.
+concurrency:
+  group: code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   review:
     name: Review
