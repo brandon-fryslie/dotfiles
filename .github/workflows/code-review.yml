@@ -1,0 +1,25 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  review:
+    name: Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Code Review
+        uses: brandon-fryslie/coding-agent-review@v1
+        with:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
