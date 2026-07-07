@@ -52,7 +52,7 @@ name: AI Code Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -103,7 +103,13 @@ keychain_has_item() {
     && security find-generic-password -s "$KEYCHAIN_ITEM" >/dev/null 2>&1
 }
 secret_on_repo() {
-  gh secret list --json name -q '.[].name' | grep -qx "$SECRET_NAME"
+  # A failed listing must not read as "secret absent" — that would route a gh
+  # outage into the fatal missing-secret verdict with a message naming the
+  # wrong cause. List first, fail distinctly. [LAW:no-silent-failure]
+  local names
+  names="$(gh secret list --json name -q '.[].name')" \
+    || die "could not list repo secrets on $REPO — cannot tell whether $SECRET_NAME is set; fix gh access and re-run."
+  grep -qxF "$SECRET_NAME" <<<"$names"
 }
 
 if keychain_has_item; then
