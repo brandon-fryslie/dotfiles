@@ -81,6 +81,7 @@ YAML
 # Insert the pinned ref without escaping every GH expression in the heredoc.
 grep -q '__ACTION_REF__' "$DESIRED" || die "workflow template lost its action-ref marker."
 TMP="$(mktemp)"
+trap 'rm -f "$DESIRED" "$TMP"' EXIT
 sed "s|__ACTION_REF__|${ACTION_REF}|" "$DESIRED" > "$TMP" && mv "$TMP" "$DESIRED"
 
 # --- Effect 1: converge the workflow file. An absent deployed file is a real
