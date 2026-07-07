@@ -113,9 +113,17 @@ secret_on_repo() {
 }
 
 if keychain_has_item; then
+  # A keychain item can hold an empty value and still read back exit 0 —
+  # pipefail only guards nonzero exits — and an empty value here would set an
+  # empty repo secret that breaks the reviewer silently at review time.
+  # Validate at the trust boundary via byte count so the value itself never
+  # touches a shell variable. [LAW:no-silent-failure]
+  [ "$(security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | wc -c)" -gt 0 ] \
+    || die "keychain item '$KEYCHAIN_ITEM' has an empty value — refusing to set an empty $SECRET_NAME."
   echo "→ syncing secret $SECRET_NAME on $REPO from keychain item '$KEYCHAIN_ITEM'…"
-  # pipefail makes a failed 'security' abort the whole pipeline rather than
-  # letting an empty value reach gh. tr strips security's trailing newline.
+  # pipefail aborts the pipeline on a failed 'security' read; the emptiness
+  # gate above covers the successful-but-empty read. tr strips security's
+  # trailing newline.
   security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | gh secret set "$SECRET_NAME"
   echo "✓ set secret $SECRET_NAME on $REPO"
 elif secret_on_repo; then
