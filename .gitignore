@@ -15,6 +15,9 @@ STATUS-*.md
 SPRINT-*.md
 .agent_planning/
 
+# Cross-session handoff plan: must survive to be picked up by a fresh session
+!config/claude/PLAN-guidance-restructure.md
+
 # Test metadata
 .test-suite-metadata.json
 
