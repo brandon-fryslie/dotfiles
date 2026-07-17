@@ -1,3 +1,4 @@
+<!-- PERMANENT STYLE EXEMPLAR — not active guidance. Do not load, delete, or edit; kept as the reference for how effective behavioral guidance is written (see skills/prompting/references/behavioral-guidance.md). -->
 <constraint-design>
 # DESIGN MINDSET: THE TYPES ARE THE PROGRAM
 
