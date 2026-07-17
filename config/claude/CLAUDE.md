@@ -4,7 +4,7 @@ Quality guidance in this environment is scoped by the medium of the deliverable 
 
 - **Code** — source, tests, schemas, configs, scripts, infrastructure, architecture → `Skill(laws:code)`
 - **Persistent agent guidance** — CLAUDE.md files, system prompts, skill bodies, hook text → `Skill(laws:guidance)`
-- **Other text another LLM will consume** — one-off prompts, subagent instructions → `Skill(prompting)`
+- **Other text another LLM will consume** — one-off prompts, subagent instructions → `Skill(anthropic-prompting)`
 - **Prose for humans** — docs, READMEs, reports, summaries, announcements, messages → `Skill(laws:prose)`
 
 The laws:* skills come from the laws@promptctl plugin (repo: promptctl/laws; local checkout: ~/code/promptctl_laws). Applying one medium's quality standards to another medium's artifact is a known failure mode — route first, then hold the loaded skill's bar. Never restyle guidance prose with the code laws.
