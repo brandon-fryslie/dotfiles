@@ -9,11 +9,10 @@ Comprehensive guide to prompt engineering techniques for Claude's latest models,
 
 > **Authoring persistent agent guidance?** When the text you are writing is standing
 > behavioral guidance — a CLAUDE.md file, a system prompt, a skill body, hook-injected
-> text, anything meant to steer an agent across many future sessions — read
-> `references/behavioral-guidance.md` in this skill first. That genre has its own craft
-> (redundancy, imagery, rehearsed temptations) and its own anti-goals (token economy,
-> deduplication), and applying ordinary prompt-tightening instincts to it is a known
-> failure mode.
+> text, anything meant to steer an agent across many future sessions — load
+> `Skill(laws:guidance)` first. That genre has its own craft (redundancy, imagery,
+> rehearsed temptations) and its own anti-goals (token economy, deduplication), and
+> applying ordinary prompt-tightening instincts to it is a known failure mode.
 
 ---
 
