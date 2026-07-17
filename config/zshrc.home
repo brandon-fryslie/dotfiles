@@ -63,18 +63,17 @@ PATH="$PATH:/opt/homebrew/opt/coreutils/libexec/gnubin:/usr/local/bin"
 export SDKMAN_DIR="$HOME/.sdkman"
 [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
 
-# pnpm
+# pnpm — global bin dir holds pnpm-managed node + global package binaries
 export PNPM_HOME="/Users/bmf/Library/pnpm"
 case ":$PATH:" in
-  *":$PNPM_HOME:"*) ;;
-  *) export PATH="$PATH:$PNPM_HOME" ;;
+  *":$PNPM_HOME/bin:"*) ;;
+  *) export PATH="$PNPM_HOME/bin:$PATH" ;;
 esac
 # pnpm end
 
 alias venv-direnv="echo 'source .venv/bin/activate' >> .envrc && direnv allow"
 
-# load fnm/node
-command -v fnm >/dev/null && eval "$(command fnm env --use-on-cd --shell zsh)"
+# node is managed by pnpm (see pnpm block above); its bin dir is on PATH
 
 export PATH="/usr/local/opt/gnu-sed/libexec/gnubin:$PATH"
 
@@ -123,6 +122,8 @@ z() {
 
 ## proj2 - project navigator
 export GOBIN=$HOME/.local/bin
+# GOBIN and other user-local installs (lit, mcp, …) land in ~/.local/bin — put it on PATH
+export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 # Added by Antigravity
