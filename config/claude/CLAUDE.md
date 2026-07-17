@@ -3,7 +3,7 @@
 Quality guidance in this environment is scoped by the medium of the deliverable and lives in skills, not here. Before substantive work, load the skill that matches what you are producing:
 
 - **Code** — source, tests, schemas, configs, scripts, infrastructure, architecture → `Skill(laws:code)`
-- **Text another LLM will consume** — task prompts, subagent instructions, guidance documents, skill bodies, hook text → `Skill(laws:guidance)`
+- **Text another LLM will consume** — task prompts, subagent instructions, guidance documents, skill bodies, hook text → `Skill(laws:prompt)`
 - **Prose for humans** — docs, READMEs, reports, summaries, announcements, messages → `Skill(laws:prose)`
 
 For Claude/Anthropic API mechanics (model-specific behavior, thinking/effort settings, tool-use triggering), `Skill(anthropic-prompting)` is the vendored reference — a lookup, not a medium.
