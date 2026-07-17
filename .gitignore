@@ -48,6 +48,9 @@ config/codex/skills/*.backup.*/
 # Local-only skill symlinks (point to external repos on this machine)
 config/claude/skills/pm-compass
 
+# Local-only convenience symlink into ~/Library/Application Support/iTerm2
+config/iterm2/AppSupport
+
 # Python build artifacts
 __pycache__/
 *.pyc
