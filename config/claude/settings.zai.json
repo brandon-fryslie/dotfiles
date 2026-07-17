@@ -11,11 +11,6 @@
     "SHELL": "bash",
     "OPENAI_BASE_URL": "http://127.0.0.1:62499"
   },
-  "statusLine": {
-    "type": "command",
-    "command": "node /Users/bmf/code/brandon-fryslie_claude-powerline/bin/cc-candybar --style=powerline --layout 'directory gitTaculous | model context block weekly sessionId toolbar' --toolbar '▸{toolbar-toggle(session.id)} ?📂{open-vscode(projectDir)} ?📄{open-vscode(transcriptPath)}' --display autoWrap=false --segment block.type=weighted,sessionId.length=8,sessionId.clickAction.kind=url,sessionId.clickAction.scheme=cc-candybar,sessionId.clickAction.actions.0.verb=copy,sessionId.clickAction.actions.0.source=sessionId",
-    "refreshInterval": 1
-  },
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "stable",
   "attribution": {
