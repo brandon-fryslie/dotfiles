@@ -5,6 +5,57 @@ Delete when every step in "Remaining work" is done and verified.
 
 ---
 
+## ⛔ HARD PROHIBITION — the one file you may not open (read before anything else)
+
+**While executing this plan, do not read, open, `cat`, `grep`, `Read`-tool, tail, or
+otherwise view the contents of `config/claude/skills/code/SKILL.md`. Do not run
+`Skill(code)` or load the code skill by any path.** Not to "check what's there," not to
+"confirm coverage," not "just the token list." Zero exposure. This is the single most
+important instruction in the file.
+
+Why — this is a mechanism, not a formality:
+
+- That file holds the **distilled** laws: the exact terse artifact this plan exists to
+  replace. Reading it anchors your context on its phrasings, and every draft you write
+  afterward regresses toward them. You cannot author the effective-style version while
+  the distilled version is the freshest thing in your context.
+- Loading it as guidance re-creates the **ambient law pressure** that caused the original
+  failure. A session with the laws active applies the laws' own aesthetic — dedupe,
+  say-it-once, less-code, subtract — to guidance *prose*, which is precisely how the
+  effective version was destroyed. Reading the file *about* the failure re-enacts the
+  failure; this already happened once, mid-conversation, on this exact document.
+
+**An author who has read that file is compromised for steps 1–3.** If you have already
+opened it, run `Skill(code)`, or read its body this session, stop: do not author the
+genre reference or the rewrite yourself. Hand off to a fresh session (message-in-a-bottle)
+or delegate the authoring to a subagent that has not seen it. Say so plainly — do not
+quietly proceed.
+
+What to do **instead** — you still need to know what content must survive, and you get
+that without opening the distilled file:
+
+1. The style exemplar `config/claude/CLAUDE.orig.universal-laws.md` is required reading
+   (step 2) and safe: its aesthetic is the *target*, so it steers toward the goal, not
+   away. Read it in full.
+2. For the coverage checklist — the four laws the distillation *added* (`decomposition`,
+   `composability`, `carrying-cost`, `effects-at-boundaries`), plus the framing tree,
+   token index, citation protocol, parentage links, and recency summary — spawn a
+   **throwaway subagent** that reads `skills/code/SKILL.md` in isolation and returns ONLY
+   a neutral list: each law token + one plain sentence of what it means. Forbid it from
+   returning the distilled prose, its sentences, or its phrasings. You author from the
+   `.orig` exemplar + that neutral checklist; you never see the distilled text, and the
+   subagent's polluted context is discarded with it.
+3. The category-level inventory of what must survive is already written out in step 2
+   below. Treat that list plus the neutral checklist as your coverage spec.
+
+**If this guardrail still fails** — a session drifts into distillation despite it, or the
+isolation hand-off proves unworkable — the *instructions* are wrong, not the executor.
+Record the failure in this file and adjust the plan: stronger placement, a pre-extracted
+neutral checklist committed as its own file, or a different division of labor. The user
+has explicitly authorized adjusting the plan when the instructions don't work.
+
+---
+
 ## The problem this solves (read this first, it is the whole point)
 
 The universal architectural laws — the code-quality guidance in this repo — used to live in
@@ -91,7 +142,9 @@ against it. Requirements:
   framings, the token index, citation protocol, parentage links ("instance of X"), grouped
   structure, recency summary, domain bindings. The distillation *added real things* the .orig
   lacked (`decomposition`, `composability`, `carrying-cost`, `effects-at-boundaries`, the
-  derivation tree); keep them all.
+  derivation tree); keep them all. (You know this inventory from the neutral checklist
+  and from this plan — **never** by reading `skills/code/SKILL.md`; see the HARD
+  PROHIBITION at the top.)
 - **Style**: the .orig file's devices, per the genre guidance below. READ
   `config/claude/CLAUDE.orig.universal-laws.md` IN FULL before writing a word — it is the
   style exemplar, not a content source.
@@ -112,7 +165,9 @@ against it. Requirements:
   laws-primed session ran `git status` and read the diff. Generalize as needed.
 
 **Acceptance:** a reader can point, for each law, at its metaphor, its temptation script, and
-its diagnostic; nothing from the distilled version's content inventory is missing; the file
+its diagnostic; nothing from the content inventory is missing (checked against the neutral
+coverage checklist from the isolation subagent — never against the distilled file itself;
+see the HARD PROHIBITION at the top); the file
 reads as rhetoric aimed at the moment of decision, not as a reference taxonomy.
 
 ### 3. Create the /prose skill
