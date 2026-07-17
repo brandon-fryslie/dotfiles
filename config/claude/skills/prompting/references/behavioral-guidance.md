@@ -43,10 +43,12 @@ the neolithic toolmaker, WRONG/RIGHT dialogues, BAD/GOOD assistant quotes.
 
 In a marathon session, that document was rewritten *specifically to be better LLM
 guidance*: deduplicated, taxonomized, token-efficient, with a clean derivation tree and
-a canonical token index. The result lives in `config/claude/skills/code/SKILL.md`. It is
-a genuinely better **specification** — it even added real content the original lacked.
-And it is a measurably worse **prompt**: in practice, the original drives noticeably
-better agent behavior. The rewrite stripped exactly the properties that made the
+a canonical token index. That distilled version was a genuinely better
+**specification** — it even added real content the original lacked. And it was a
+measurably worse **prompt**: in practice, the original drove noticeably better agent
+behavior. (It occupied `config/claude/skills/code/SKILL.md` until 2026-07-16, when it
+was replaced by an effective-style rewrite; the distilled text survives in git
+history.) The rewrite stripped exactly the properties that made the
 original work — the redundancy, the imagery, the rehearsed temptations — because those
 properties look like flab to a spec-reader.
 
