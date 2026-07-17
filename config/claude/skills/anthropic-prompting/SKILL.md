@@ -1,6 +1,6 @@
 ---
 name: anthropic-prompting
-description: Use whenever you (Claude) are authoring text that another LLM will consume, with no exceptions — drafting a subagent or sub-task prompt, writing a message to another agent, composing a prompt or system prompt for an API request, writing prompt text into a file, or producing a prompt for the user to hand to a model. The trigger is you generating instructions for a language model, not the user writing to you. If the reader of what you write is an LLM, this skill applies. Provides best practices for prompt construction so the guidance is clear, unambiguous, and reliably acted on.
+description: anthropic's guidance for prompting llms
 ---
 
 # Prompting best practices
