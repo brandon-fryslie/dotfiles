@@ -84,19 +84,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5[1m]",
-  "hooks": {
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "INPUT=$(cat); PROMPT=$(echo \"$INPUT\" | jq -r '.prompt // empty'); if echo \"$PROMPT\" | grep -qi 'do it right'; then cat <<'INSTRUCTIONS'\n{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"## DO IT RIGHT — Full Scope Work Process\\n\\nThe user has triggered the \\\"do it right\\\" protocol. You MUST follow this process for every change:\\n\\n1. **Think through the full blast radius.** What reads this? What writes it? What assumes it? What tests it? What documents it?\\n2. **Consider what might need to change.** Not just what obviously does — what *might*.\\n3. **Actually investigate.** Do not guess. Read the code. Inspect the outcomes. Do the work to find out.\\n4. **Make multiple proposals.** Not one approach — several. Consider tradeoffs.\\n5. **Test each proposal.** Not in theory — actually try them.\\n6. **Pick the best one.** Based on evidence from step 5, not intuition from step 4.\\n7. **Implement all the way through.** Not just the focal point. Keep going until there is *nothing left that can benefit from being updated*.\\n\\nThis is not optional. This is the minimum bar. Do not declare done until the entire system is consistent with your change and you have verified it end-to-end as a user would.\"}}\nINSTRUCTIONS\nfi"
-          }
-        ]
-      }
-    ]
-  },
+  "model": "opus[1m]",
   "worktree": {
     "baseRef": "fresh"
   },
