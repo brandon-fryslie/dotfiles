@@ -2,11 +2,12 @@
 # SKILL ROUTING
 Quality guidance in this environment is scoped by the medium of the deliverable and lives in skills, not here. Before substantive work, load the skill that matches what you are producing:
 
-- **Code** — source, tests, schemas, configs, scripts, infrastructure, architecture → `Skill(code)`
-- **Text another LLM will consume** — prompts, subagent instructions, agent guidance documents, skill bodies, hooks → `Skill(prompting)`
-- **Prose for humans** — docs, READMEs, reports, summaries, announcements, messages → `Skill(prose)`
+- **Code** — source, tests, schemas, configs, scripts, infrastructure, architecture → `Skill(laws:code)`
+- **Persistent agent guidance** — CLAUDE.md files, system prompts, skill bodies, hook text → `Skill(laws:guidance)`
+- **Other text another LLM will consume** — one-off prompts, subagent instructions → `Skill(prompting)`
+- **Prose for humans** — docs, READMEs, reports, summaries, announcements, messages → `Skill(laws:prose)`
 
-Applying one medium's quality standards to another medium's artifact is a known failure mode — route first, then hold the loaded skill's bar. Before authoring or editing any persistent agent guidance (CLAUDE.md files, skill bodies, hook text), read `skills/prompting/references/behavioral-guidance.md` — never restyle guidance prose with the code laws.
+The laws:* skills come from the laws@promptctl plugin (repo: promptctl/laws; local checkout: ~/code/promptctl_laws). Applying one medium's quality standards to another medium's artifact is a known failure mode — route first, then hold the loaded skill's bar. Never restyle guidance prose with the code laws.
 </skill-routing>
 
 <operations>

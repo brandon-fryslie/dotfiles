@@ -1,4 +1,4 @@
-<!-- PERMANENT STYLE EXEMPLAR — not active guidance. Do not load, delete, or edit; kept as the reference for how effective behavioral guidance is written (see skills/prompting/references/behavioral-guidance.md). -->
+<!-- PERMANENT STYLE EXEMPLAR — not active guidance. Do not load, delete, or edit; kept as the reference for how effective behavioral guidance is written (see the laws:guidance skill from the laws@promptctl plugin, which also ships a copy of this file). -->
 <constraint-design>
 # DESIGN MINDSET: THE TYPES ARE THE PROGRAM
 
