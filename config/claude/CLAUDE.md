@@ -4,10 +4,9 @@ Quality guidance in this environment is scoped by the medium of the deliverable 
 
 - **Code** — source, tests, schemas, configs, scripts, infrastructure, architecture → `Skill(code)`
 - **Text another LLM will consume** — prompts, subagent instructions, agent guidance documents, skill bodies, hooks → `Skill(prompting)`
+- **Prose for humans** — docs, READMEs, reports, summaries, announcements, messages → `Skill(prose)`
 
-Applying one medium's quality standards to another medium's artifact is a known failure mode — route first, then hold the loaded skill's bar.
-
-A restructure of this guidance system is in progress: see `PLAN-guidance-restructure.md` in this directory before modifying guidance, skills, or hooks.
+Applying one medium's quality standards to another medium's artifact is a known failure mode — route first, then hold the loaded skill's bar. Before authoring or editing any persistent agent guidance (CLAUDE.md files, skill bodies, hook text), read `skills/prompting/references/behavioral-guidance.md` — never restyle guidance prose with the code laws.
 </skill-routing>
 
 <operations>

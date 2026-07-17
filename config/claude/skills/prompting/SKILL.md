@@ -7,6 +7,14 @@ description: Use whenever you (Claude) are authoring text that another LLM will 
 
 Comprehensive guide to prompt engineering techniques for Claude's latest models, covering clarity, examples, XML structuring, thinking, and agentic systems.
 
+> **Authoring persistent agent guidance?** When the text you are writing is standing
+> behavioral guidance — a CLAUDE.md file, a system prompt, a skill body, hook-injected
+> text, anything meant to steer an agent across many future sessions — read
+> `references/behavioral-guidance.md` in this skill first. That genre has its own craft
+> (redundancy, imagery, rehearsed temptations) and its own anti-goals (token economy,
+> deduplication), and applying ordinary prompt-tightening instincts to it is a known
+> failure mode.
+
 ---
 
 This is the reference for prompt engineering with Claude's latest models, including Claude Fable 5, Claude Mythos 5, Claude Opus 4.8, Claude Opus 4.7, Claude Opus 4.6, Claude Sonnet 4.6, and Claude Haiku 4.5. The page is organized in three parts:

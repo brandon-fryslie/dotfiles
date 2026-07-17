@@ -1,16 +1,24 @@
 #!/bin/bash
-# Universal Laws Reminder Hook
-# Injects reminders to summarize architectural constraints at strategic moments
+# Skill-router reminder hook — steers each session to load the skill that matches
+# the medium of its deliverable. Successor to universal-laws-reminder.sh, whose
+# "engage the universal laws on any task" text misrouted non-code work (see
+# PLAN-guidance-restructure.md, step 4).
 
 HOOK_TYPE="$1"
-STATE_FILE="$HOME/.claude/.last_laws_reminder"
+STATE_FILE="$HOME/.claude/.last_skill_router_reminder"
 COOLDOWN_SECONDS=300  # 5 minutes
 
-# Long variant: forces active engagement by requiring application to current task
-REMINDER_LONG="For the following request, please consider the universal laws and how any design or implementation you create will achieve it's highest quality expression through them.  You can improve your results substantially by express this directly in the chat.  Engaging with the laws is a must.  Although it may seem tedious and repetitive to repeatedly derive the concrete details from the abstract, that engagement is critical for applying abstract thinking concepts correctly at all stages of the SLDC.  This is not a checklist to satisfy, this is a philosophy for approaching any task. "
+read -r -d '' ROUTER_LONG <<'EOT'
+Identify the medium of the deliverable for this request, then load the matching skill BEFORE doing substantive work:
+- Code — source, tests, schemas, configs, scripts, infrastructure, architecture — load Skill(code).
+- Text another LLM will consume — prompts, subagent instructions, agent guidance documents, skill bodies, hook text — load Skill(prompting).
+- Prose for humans — docs, READMEs, reports, summaries, messages — load Skill(prose).
+Load the skill first, then hold its bar for the whole task. If the task spans several media, load each skill at the point you switch. Applying one medium's quality standards to another medium's artifact is a known failure mode: the code laws applied to guidance prose destroy the guidance, and prose instincts applied to code hide bugs. Route by medium first.
+EOT
 
-# Short variant: still forces engagement with actual content, just less elaboration
-REMINDER_SHORT="Briefly summarize the <universal-laws> in their totality. "
+read -r -d '' ROUTER_SHORT <<'EOT'
+Reminder: your quality bar comes from the medium of the current deliverable — code → Skill(code), LLM-consumed text → Skill(prompting), human prose → Skill(prose). If the matching skill is not loaded yet, load it before continuing.
+EOT
 
 # Time-based throttling: only fire if cooldown has elapsed
 should_remind() {
@@ -23,26 +31,31 @@ should_remind() {
   return 1
 }
 
+# additionalContext JSON is required for the text to reach the model on tool hooks;
+# plain stdout only reaches context on UserPromptSubmit.
+emit() {
+  jq -n --arg event "$1" --arg ctx "$2" \
+    '{hookSpecificOutput: {hookEventName: $event, additionalContext: $ctx}}'
+}
+
 case "$HOOK_TYPE" in
   user-prompt)
-    # Full engagement at task start
-    # Resets the cooldown timer
+    # Full routing instruction at task start; resets the cooldown timer
     echo "$(date +%s)" > "$STATE_FILE"
-    echo "$REMINDER_LONG"
+    emit "UserPromptSubmit" "$ROUTER_LONG"
     ;;
 
   read-post)
     # Time-throttled: short nudge if 5+ minutes since last reminder
     if should_remind; then
-      echo "$REMINDER_SHORT"
+      emit "PostToolUse" "$ROUTER_SHORT"
     fi
     ;;
 
   task-pre)
-    # Full engagement before spawning subagents
-    # Resets the cooldown timer
+    # Full routing instruction before spawning subagents; resets the cooldown timer
     echo "$(date +%s)" > "$STATE_FILE"
-    echo "$REMINDER_LONG"
+    emit "PreToolUse" "$ROUTER_LONG"
     ;;
 
   *)
