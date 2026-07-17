@@ -180,6 +180,12 @@
         "source": "git",
         "url": "https://github.com/NodeNestor/nestor-plugins.git"
       }
+    },
+    "promptctl": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/bmf/code/promptctl_laws"
+      }
     }
   },
   "sandbox": {
