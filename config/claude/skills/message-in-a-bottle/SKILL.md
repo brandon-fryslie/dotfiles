@@ -39,7 +39,9 @@ Once you call the launcher, your turn is over. Stop. No closing text, no parting
 
 - `[message...]` — a slash command, plain text, multi-line, or containing quotes/backticks/dollar signs. Quote it at invocation as usual (your shell does word-splitting and `$VAR` expansion before the script sees argv). **Omit it to default to `/next`.**
 
-The launcher prints `handoff scheduled → <target> (/<reset>) in Ns (log: <tempfile>)` and exits. The log captures worker progress and any tmux errors.
+The launcher prints `handoff scheduled → <target> … in Ns (log: <tempfile>)` and exits. The log captures worker progress and any transport errors.
+
+The transport is chosen by capability, most reliable first: **tmux** (reset the pane in place, verified by reading it back, then paste) → **iTerm2** (kill the running claude and relaunch it fresh with the message as its initial prompt, delivered in the background with no focus steal) → **file-drop** (no live transport: the message is written to `~/.claude/finalize-pending-handoff.txt` with delivery instructions, never silently dropped). You do not choose the transport; the launcher detects it. To preview the decision without scheduling anything, prefix `FINALIZE_DRY_RUN=1`.
 
 ## Examples
 
