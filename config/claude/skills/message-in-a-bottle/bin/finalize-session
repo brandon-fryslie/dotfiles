@@ -1,28 +1,33 @@
 #!/usr/bin/env bash
 # finalize-session — the mandatory session close-out: schedule a delayed
-# self-handoff into the current tmux pane. The launcher returns immediately;
-# a detached worker resets the context (/clear or /compact) and pastes the
-# next instruction after a fixed delay.
+# self-handoff into the current session. The launcher returns immediately; a
+# detached worker delivers the handoff after a fixed delay.
+#
+# Layered by capability, most reliable first:
+#   tmux    — in-place reset (/clear or /compact) verified by reading the pane
+#             back, then paste the message. Deterministic; no focus concerns.
+#   iTerm2  — kill the running claude and relaunch it fresh with the message as
+#             its initial prompt, via `write text` to the exact session (no focus
+#             steal, no readback needed — a new process is guaranteed fresh).
+#   none    — no transport: drop the message to a known file and print how to
+#             deliver it. Never silent.
 #
 # Modes:
-#   launcher:  finalize-session [message...]
-#   worker:    finalize-session --worker <target> <reset> <msgfile>
-#
-# Reset is inferred from the message: if /compact appears within the first
-# 3 sentences, compact is used; otherwise clear.
+#   launcher:       finalize-session [message...]
+#   tmux worker:    finalize-session --worker <target> <reset> <msgfile>
+#   iTerm2 worker:  finalize-session --iterm-worker <uuid> <claude_pid> <msgfile> <flags>
 
 set -euo pipefail
 
 # [LAW:one-source-of-truth] timing lives here once. HANDOFF_DELAY_SECONDS is how
 # long to wait before firing; SETTLE_SECONDS is how long to let the reset render
-# before reading the pane back to verify it ran.
+# before reading the pane back to verify it ran (tmux).
 HANDOFF_DELAY_SECONDS=10
 SETTLE_SECONDS=5
 
 # [LAW:one-source-of-truth] the static framing wrapped around the agent's message
 # lives here once. The launcher composes PREFIX + agent message + SUFFIX into the
-# single value that flows to the pane; the worker stays a dumb conduit. Edit the
-# placeholder text between the markers — leave the surrounding heredoc mechanics.
+# single value that flows to the transport; workers stay dumb conduits.
 HANDOFF_PREFIX=$(cat <<'PREFIX'
 === Below is a message from an agent on behalf of the user ===
 PREFIX
@@ -34,7 +39,7 @@ SUFFIX
 
 # [LAW:dataflow-not-control-flow] reset mode is a value inferred from the
 # message, not a separate argument. Scan the first 3 sentences for /compact;
-# stop early so long messages don't slow the common case.
+# stop early so long messages don't slow the common case. (tmux only.)
 _first_three_sentences() {
   local text="$1" result="" count=0 i char
   for ((i=0; i<${#text}; i++)); do
@@ -48,14 +53,44 @@ _first_three_sentences() {
   printf '%s' "$result"
 }
 
+# Walk the process ancestry from the launcher's parent up to the interactive
+# `claude` process — the one to kill and relaunch. Matched by program name so it
+# survives whatever flags the user launched with.
+_find_claude_pid() {
+  local pid="${PPID}" cmd i
+  for i in 1 2 3 4 5 6 7 8; do
+    [ -n "$pid" ] && [ "$pid" -gt 1 ] || return 1
+    cmd=$(ps -o command= -p "$pid" 2>/dev/null) || return 1
+    case "$cmd" in
+      claude|claude\ *|*/claude|*/claude\ *) printf '%s' "$pid"; return 0 ;;
+    esac
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+  done
+  return 1
+}
+
+# The flags claude was launched with, minus argv0 and any resume/continue flags
+# (we want a genuinely fresh session, not a resumed one). Permission-mode and
+# model flags are preserved so the relaunched session matches the user's setup.
+_claude_flags() {
+  local cmd="$1" out="" tok first=1
+  for tok in $cmd; do
+    if [ "$first" = 1 ]; then first=0; continue; fi
+    case "$tok" in
+      -c|--continue|-r|--resume|--resume=*) continue ;;
+      *) out+="${out:+ }$tok" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 # [LAW:types-are-the-program] one discriminator at the entry; everything
 # downstream operates on validated, typed inputs for exactly one mode.
-if [[ "${1:-}" == "--worker" ]]; then
-  MODE=worker
-  shift
-else
-  MODE=launcher
-fi
+case "${1:-}" in
+  --worker)       MODE=tmux-worker; shift ;;
+  --iterm-worker) MODE=iterm-worker; shift ;;
+  *)              MODE=launcher ;;
+esac
 
 case "$MODE" in
 
@@ -65,9 +100,7 @@ case "$MODE" in
     # selects that default; it never yields an empty handoff, so no guard follows.
     AGENT_MESSAGE="${*:-/next}"
 
-    # [LAW:dataflow-not-control-flow] reset mode is derived from the message — if
-    # /compact appears in the first 3 sentences, use compact; else clear. The mode
-    # is a value the message carries, not a separate argument the caller decides.
+    # [LAW:dataflow-not-control-flow] reset mode derived from the message (tmux).
     PROBE=$(_first_three_sentences "$AGENT_MESSAGE")
     if [[ "$PROBE" =~ (^|[[:space:]])/compact([[:space:]]|$) ]]; then
       RESET=compact
@@ -75,39 +108,18 @@ case "$MODE" in
       RESET=clear
     fi
 
-    # [LAW:one-source-of-truth] the wrapped value is assembled once, here, from the
-    # static framing and the agent's message. Everything downstream — MSGFILE,
-    # buffer, paste — carries this final value verbatim and never re-wraps it.
+    # [LAW:one-source-of-truth] the wrapped value is assembled once, here.
     MESSAGE=$(printf '%s\n%s\n%s' "$HANDOFF_PREFIX" "$AGENT_MESSAGE" "$HANDOFF_SUFFIX")
 
-    # [LAW:no-defensive-null-guards] the tmux context is a real trust boundary —
-    # fail loudly when it's absent. The message needs no such guard: it carries a
-    # canonical default and is non-empty by construction.
-    [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]] \
-      || { echo "not inside tmux (\$TMUX/\$TMUX_PANE unset)" >&2; exit 2; }
-
-    # [LAW:one-source-of-truth] target derived from $TMUX_PANE via tmux
-    # itself — never accepted as a flag; tmux is the authority.
-    TARGET=$(tmux display-message -p -t "$TMUX_PANE" \
-      '#{session_name}:#{window_index}.#{pane_index}')
-
-    # [LAW:dataflow-not-control-flow] the message flows through a tempfile
-    # as a value, bypassing every shell-quoting hazard between argv → worker
-    # → tmux load-buffer. No escaping branches anywhere.
+    # [LAW:dataflow-not-control-flow] the message flows through a tempfile as a
+    # value, bypassing every shell-quoting hazard between argv → worker →
+    # transport. No escaping branches anywhere.
     MSGFILE=$(mktemp -t finalize-msg.XXXXXX)
     LOGFILE=""
-    # [LAW:single-enforcer] one trap covers both tempfiles until the worker
-    # is spawned; cleared right after `nohup` so the worker owns MSGFILE and
-    # the launcher's "log: ..." line is the only reference to LOGFILE.
-    # ${LOGFILE:+...} elides the arg entirely while LOGFILE is still empty —
-    # avoids passing "" to rm, which GNU coreutils warns about.
     trap 'rm -f -- "$MSGFILE" ${LOGFILE:+"$LOGFILE"}' EXIT
     printf '%s' "$MESSAGE" > "$MSGFILE"
 
     # Resolve own path for both ./script and PATH-lookup invocations.
-    # `$0` lacks a slash on PATH lookup, so dirname/pwd would yield $PWD
-    # — wrong. `command -v` does PATH resolution; for paths containing
-    # slashes it returns as-is.
     if [[ "$0" == */* ]]; then
       SELF_RAW="$0"
     else
@@ -116,24 +128,55 @@ case "$MODE" in
     fi
     SELF="$(cd "$(dirname "$SELF_RAW")" && pwd)/$(basename "$SELF_RAW")"
 
-    # LOGFILE created just before the spawn — short lifetime minimizes the
-    # window where a signal or freak `>>` failure could leave it behind,
-    # and the EXIT trap above covers it as a backstop until we clear it.
-    LOGFILE=$(mktemp -t finalize-log.XXXXXX)
+    # [LAW:dataflow-not-control-flow] transport is a value chosen by capability,
+    # most reliable first. Each branch spawns the matching detached worker (or,
+    # for the no-transport fallback, delivers synchronously). Detection lives
+    # here once [LAW:single-enforcer]; workers never re-detect.
+    if [[ -n "${TMUX:-}" && -n "${TMUX_PANE:-}" ]]; then
+      TARGET=$(tmux display-message -p -t "$TMUX_PANE" \
+        '#{session_name}:#{window_index}.#{pane_index}')
+      if [[ -n "${FINALIZE_DRY_RUN:-}" ]]; then
+        echo "[dry-run] transport=tmux target=$TARGET reset=/$RESET msgfile=$MSGFILE"
+        exit 0
+      fi
+      LOGFILE=$(mktemp -t finalize-log.XXXXXX)
+      nohup "$SELF" --worker "$TARGET" "$RESET" "$MSGFILE" \
+        </dev/null >>"$LOGFILE" 2>&1 &
+      trap - EXIT
+      echo "handoff scheduled → tmux $TARGET (/$RESET) in ${HANDOFF_DELAY_SECONDS}s (log: $LOGFILE)"
 
-    # nohup ignores SIGHUP, redirected stdio keeps nohup.out from spawning,
-    # and the backgrounded child gets reparented to init when this shell
-    # exits — `disown` would be belt-and-suspenders, but with `set -e` a
-    # disown failure would fire the trap and yank MSGFILE out from under
-    # the running worker. Leaving disown out closes that race entirely.
-    nohup "$SELF" --worker "$TARGET" "$RESET" "$MSGFILE" \
-      </dev/null >>"$LOGFILE" 2>&1 &
-    trap - EXIT
+    elif [[ "${TERM_PROGRAM:-}" == "iTerm.app" && -n "${ITERM_SESSION_ID:-}" ]] \
+         && osascript -e 'tell application "iTerm2" to get version' >/dev/null 2>&1; then
+      UUID="${ITERM_SESSION_ID#*:}"
+      CLAUDE_PID=$(_find_claude_pid) \
+        || { echo "iTerm2 transport: cannot locate the claude process to relaunch" >&2; exit 2; }
+      FLAGS=$(_claude_flags "$(ps -o command= -p "$CLAUDE_PID" 2>/dev/null)")
+      if [[ -n "${FINALIZE_DRY_RUN:-}" ]]; then
+        echo "[dry-run] transport=iTerm2 uuid=$UUID claude_pid=$CLAUDE_PID flags=[$FLAGS]"
+        echo "[dry-run] would relaunch: claude ${FLAGS:+$FLAGS }\"\$(cat '$MSGFILE')\""
+        exit 0
+      fi
+      LOGFILE=$(mktemp -t finalize-log.XXXXXX)
+      nohup "$SELF" --iterm-worker "$UUID" "$CLAUDE_PID" "$MSGFILE" "$FLAGS" \
+        </dev/null >>"$LOGFILE" 2>&1 &
+      trap - EXIT
+      echo "handoff scheduled → iTerm2 (kill+relaunch, fresh) in ${HANDOFF_DELAY_SECONDS}s (log: $LOGFILE)"
 
-    echo "handoff scheduled → $TARGET (/$RESET) in ${HANDOFF_DELAY_SECONDS}s (log: $LOGFILE)"
+    else
+      # [LAW:no-silent-failure] no live transport — never drop the handoff.
+      # Persist to a stable, well-known path and tell the operator exactly how
+      # to deliver it. Synchronous; no worker.
+      DROP="$HOME/.claude/finalize-pending-handoff.txt"
+      cp -- "$MSGFILE" "$DROP"
+      echo "finalize-session: no tmux or iTerm2 transport detected." >&2
+      echo "Handoff written to: $DROP" >&2
+      echo "Deliver it by resetting your session and pasting that file, or run:" >&2
+      echo "    claude \"\$(cat '$DROP')\"" >&2
+      # MSGFILE cleaned by the EXIT trap (LOGFILE stayed empty).
+    fi
     ;;
 
-  worker)
+  tmux-worker)
     if [[ $# -ne 3 ]]; then
       echo "internal error: worker expects exactly 3 args" >&2
       exit 2
@@ -142,22 +185,10 @@ case "$MODE" in
     RESET="$2"
     MSGFILE="$3"
 
-    # [LAW:single-enforcer] launcher owns input validation (RESET value,
-    # MSGFILE existence) AND log destination (via nohup stdout redirect).
-    # `--worker` is a non-interface, not a public entry point, so the worker
-    # does not re-check — duplicating those checks would be drift-prone
-    # ceremony for states that cannot occur via the documented call path.
     BUFFER="finalize-$$"
-
-    # [LAW:single-enforcer] the trap owns only the message file; the paste
-    # buffer deletes itself on paste (paste-buffer -d).
     trap 'rm -f "$MSGFILE"' EXIT
-
     log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
-    # A reset that actually RAN leaves an app-generated marker on the visible
-    # screen that the echoed/queued command text never reproduces — so finding
-    # it can't be fooled by a reset that was swallowed as literal text.
     case "$RESET" in
       clear)   REGISTERED_RE='Claude Code v[0-9]' ;;
       compact) REGISTERED_RE='Compacting conversation|Conversation compacted' ;;
@@ -166,9 +197,6 @@ case "$MODE" in
     log "waking; target=$TARGET reset=/$RESET"
     sleep "$HANDOFF_DELAY_SECONDS"
 
-    # [LAW:dataflow-not-control-flow] Escape cancels whatever was running — we
-    # never inspect what; cancelling is the point. Then submit the reset onto
-    # the now-ready prompt and let it render.
     tmux send-keys -t "$TARGET" Escape
     sleep 1
     tmux send-keys -t "$TARGET" "/$RESET"
@@ -176,9 +204,6 @@ case "$MODE" in
     tmux send-keys -t "$TARGET" Enter
     sleep "$SETTLE_SECONDS"
 
-    # [LAW:types-are-the-program] the message paste is reachable only after the
-    # reset is verified to have run — it cannot land in an un-reset session. No
-    # marker, no message: surface the misfire in the intact session instead.
     if tmux capture-pane -t "$TARGET" -p | grep -qE "$REGISTERED_RE"; then
       log "/$RESET registered; sending message"
       tmux load-buffer -b "$BUFFER" "$MSGFILE"
@@ -187,12 +212,74 @@ case "$MODE" in
       tmux send-keys -t "$TARGET" Enter
     else
       log "MISFIRE: /$RESET did not register; message NOT sent"
-      # The session was never reset, so it has a live agent — send it a fixed
-      # note it will surface to the user, rather than silently dropping the
-      # handoff. A fixed string, so send-keys -l carries it directly.
       tmux send-keys -t "$TARGET" -l "finalize-session handoff misfired: the scheduled /$RESET never registered, so the queued handoff was NOT sent. Please tell the user the finalize-session handoff misfired."
       sleep 0.5
       tmux send-keys -t "$TARGET" Enter
     fi
+    ;;
+
+  iterm-worker)
+    if [[ $# -lt 3 ]]; then
+      echo "internal error: iterm-worker expects at least 3 args" >&2
+      exit 2
+    fi
+    UUID="$1"
+    CLAUDE_PID="$2"
+    MSGFILE="$3"
+    FLAGS="${4:-}"
+
+    trap 'rm -f "$MSGFILE"' EXIT
+    log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
+
+    log "waking; iterm uuid=$UUID claude_pid=$CLAUDE_PID flags=[$FLAGS]"
+    sleep "$HANDOFF_DELAY_SECONDS"
+
+    # Kill the running claude so the launching shell regains the session, then
+    # relaunch fresh. TERM first, escalate to KILL if it lingers.
+    if kill -0 "$CLAUDE_PID" 2>/dev/null; then
+      kill -TERM "$CLAUDE_PID" 2>/dev/null || true
+      for _ in $(seq 1 20); do kill -0 "$CLAUDE_PID" 2>/dev/null || break; sleep 0.5; done
+      if kill -0 "$CLAUDE_PID" 2>/dev/null; then
+        log "claude $CLAUDE_PID survived TERM; sending KILL"
+        kill -KILL "$CLAUDE_PID" 2>/dev/null || true
+        sleep 1
+      fi
+      log "claude $CLAUDE_PID terminated"
+    else
+      log "claude $CLAUDE_PID already gone"
+    fi
+
+    # Let the shell draw its prompt before typing into it.
+    sleep 2
+
+    # The shell evaluates $(cat MSGFILE), so the whole message rides in the file
+    # — no message text is embedded in argv or AppleScript. Build the literal the
+    # shell should run, then AppleScript-escape only \ and " for the write.
+    RELAUNCH="claude ${FLAGS:+$FLAGS }\"\$(cat '${MSGFILE}')\""
+    AS=${RELAUNCH//\\/\\\\}
+    AS=${AS//\"/\\\"}
+
+    if osascript <<OSA 2>>/dev/stderr
+tell application "iTerm2"
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        if (unique id of s) is "${UUID}" then
+          write s text "${AS}"
+          return
+        end if
+      end repeat
+    end repeat
+  end repeat
+end tell
+OSA
+    then
+      log "relaunch command sent to iTerm2 session $UUID"
+    else
+      log "ERROR: could not write relaunch to iTerm2 session $UUID"
+    fi
+
+    # Give the shell time to read the message file before the trap removes it.
+    sleep 3
     ;;
 esac
