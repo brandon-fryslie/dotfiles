@@ -1,16 +1,3 @@
-<skill-routing>
-# SKILL ROUTING
-Quality guidance in this environment is scoped by the medium of the deliverable and lives in skills, not here. Before substantive work, load the skill that matches what you are producing:
-
-- **Code** — source, tests, schemas, configs, scripts, infrastructure, architecture → `Skill(laws:code)`
-- **Text another LLM will consume** — task prompts, subagent instructions, guidance documents, skill bodies, hook text → `Skill(laws:prompt)`
-- **Prose for humans** — docs, READMEs, reports, summaries, announcements, messages → `Skill(laws:prose)`
-
-For Claude/Anthropic API mechanics (model-specific behavior, thinking/effort settings, tool-use triggering), `Skill(anthropic-prompting)` is the vendored reference — a lookup, not a medium.
-
-The laws:* skills come from the laws@promptctl plugin (repo: promptctl/laws; local checkout: ~/code/promptctl_laws). Applying one medium's quality standards to another medium's artifact is a known failure mode — route first, then hold the loaded skill's bar. Never restyle guidance prose with the code laws.
-</skill-routing>
-
 <operations>
 # OPERATIONS
 Unconditional process mandates for how you work, whatever the deliverable.

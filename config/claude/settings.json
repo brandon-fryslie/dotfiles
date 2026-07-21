@@ -105,10 +105,8 @@
     "repomix-explorer@repomix": false,
     "repomix-mcp@repomix": false,
     "typescript-lsp@claude-plugins-official": false,
-    "figma@claude-plugins-official": false,
     "ralph-loop@claude-plugins-official": false,
     "code-simplifier@claude-plugins-official": false,
-    "superpowers@claude-plugins-official": false,
     "github@claude-plugins-official": false,
     "clangd-lsp@claude-plugins-official": false,
     "do@loom99": false,
@@ -121,14 +119,6 @@
     "playground@claude-plugins-official": true,
     "learning-output-style@claude-plugins-official": false,
     "gopls-lsp@claude-plugins-official": false,
-    "huggingface-skills@claude-plugins-official": false,
-    "pinecone@claude-plugins-official": false,
-    "claude-autoresearch@nestor-plugins": false,
-    "claude-guardian@nestor-plugins": false,
-    "claude-knowledge-graph@nestor-plugins": false,
-    "claude-spawn@nestor-plugins": false,
-    "claude-workflows@nestor-plugins": false,
-    "claude-worktrees@nestor-plugins": false,
     "laws@promptctl": true
   },
   "extraKnownMarketplaces": {
@@ -146,8 +136,8 @@
     },
     "promptctl": {
       "source": {
-        "source": "directory",
-        "path": "/Users/bmf/code/promptctl_laws"
+        "source": "github",
+        "repo": "promptctl/laws"
       }
     }
   },
