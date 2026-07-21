@@ -25,6 +25,16 @@ The message you provide to the future agent may carry a hint about how its conte
 
 Include `/compact` in your message when the handoff needs the thread of what just happened — e.g., start the message with `/compact` or write "Use /compact and then continue the spec audit…".
 
+## Carry the goal forward — if one is set, it dies unless you carry it
+
+If a `/goal <condition>` is active in this session, **the handoff silently kills it.** Every transport resets the session — tmux sends `/clear` or `/compact`, iTerm2 kills claude and relaunches a fresh process — and `/clear` and a new process each wipe the session-scoped goal. The next agent wakes with no goal, and the autonomous run you set up just *stops* — unattended, with nobody watching to notice it stopped. That silent halt is the exact failure this guards against.
+
+So when a goal is in force, pass it: `--goal '<the exact condition>'` before your message. The launcher re-issues `/goal <condition>` into the reset session as a queued input *after* the handoff, so the next agent picks up the same condition and keeps grinding toward it.
+
+- The condition is a **value you already hold** — it is whatever was last set with `/goal` this session (you set it, or the user did). Reproduce it verbatim, including any bound clause like `... or stop after 20 turns`.
+- **No goal active → omit `--goal`.** Nothing changes; this is not a field you invent, and an empty `--goal` is not a thing to pass.
+- Do not talk yourself out of it. The rationalization will be *"the next agent will infer the goal from my message"* — it will not. A goal is a harness condition re-checked after every turn, not a sentence in a prompt; if you do not re-issue it, it does not exist in the next session. Carrying it is the difference between an autonomous run that continues and one that quietly dies at the handoff.
+
 ## Turn-ending discipline — the launcher invocation is the last act of the turn
 
 Once you call the launcher, your turn is over. Stop. No closing text, no parting summary, no "scheduled!" confirmation, no further tool calls, no end-of-turn insights. The launcher's `handoff scheduled → <target> (/<reset>) in Ns` line is the only artifact this skill emits, and it is the last line your turn produces.
@@ -34,9 +44,10 @@ Once you call the launcher, your turn is over. Stop. No closing text, no parting
 ## Invocation
 
 ```bash
-~/.claude/skills/message-in-a-bottle/bin/finalize-session [message...]
+~/.claude/skills/message-in-a-bottle/bin/finalize-session [--goal '<condition>'] [message...]
 ```
 
+- `--goal '<condition>'` — optional, and only when a `/goal` is active this session. Re-establishes that goal in the reset session so the run continues. Leading argument; quote the condition. **Omit entirely when no goal is set.**
 - `[message...]` — a slash command, plain text, multi-line, or containing quotes/backticks/dollar signs. Quote it at invocation as usual (your shell does word-splitting and `$VAR` expansion before the script sees argv). **Omit it to default to `/next`.**
 
 The launcher prints `handoff scheduled → <target> … in Ns (log: <tempfile>)` and exits. The log captures worker progress and any transport errors.
@@ -56,4 +67,12 @@ Hand off a specific instruction, providing a compacted summary of this session (
 ```bash
 ~/.claude/skills/message-in-a-bottle/bin/finalize-session \
   '/compact Continue the spec audit. Pick up at section 4 — the previous session left findings in spec/audit/section-3.md.'
+```
+
+Finalize while a goal is active — carry the goal forward so the autonomous run continues, and hand off `/next`:
+
+```bash
+~/.claude/skills/message-in-a-bottle/bin/finalize-session \
+  --goal 'every open PR on this branch is merged or closed, or stop after 30 turns' \
+  /next
 ```
