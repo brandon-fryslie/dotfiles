@@ -24,6 +24,9 @@ set -euo pipefail
 # before reading the pane back to verify it ran (tmux).
 HANDOFF_DELAY_SECONDS=10
 SETTLE_SECONDS=5
+# How long to let a freshly relaunched claude boot and draw its input box before
+# queueing a carried /goal into it (iTerm2 transport only).
+CLAUDE_BOOT_SECONDS=6
 
 # [LAW:one-source-of-truth] the static framing wrapped around the agent's message
 # lives here once. The launcher composes PREFIX + agent message + SUFFIX into the
@@ -69,16 +72,44 @@ _find_claude_pid() {
   return 1
 }
 
-# The flags claude was launched with, minus argv0 and any resume/continue flags
-# (we want a genuinely fresh session, not a resumed one). Permission-mode and
-# model flags are preserved so the relaunched session matches the user's setup.
+# The flags claude was launched with, reduced to a safe whitelist: permission
+# mode, model, and the skip-permissions toggles — the ones that make the fresh
+# session match the user's setup. Everything else is dropped, and scanning STOPS
+# at the first positional argument.
+#
+# [LAW:types-are-the-program] this is load-bearing, not defensive. message-in-a-
+# bottle hands the message off as a positional PROMPT (iTerm2 relaunch does
+# `claude ... "$(cat msgfile)"`), so a session that was itself born from a prior
+# handoff carries a giant multi-word prompt in its own argv. The old "keep every
+# token that isn't argv0/resume" logic then splices that entire prompt into the
+# next relaunch's flag string, corrupting it. Whitelisting and halting at the
+# first positional makes that impossible by construction. [LAW:no-silent-failure]
+# we would rather drop an exotic flag than smuggle a prompt into the flags.
 _claude_flags() {
-  local cmd="$1" out="" tok first=1
-  for tok in $cmd; do
-    if [ "$first" = 1 ]; then first=0; continue; fi
+  local cmd="$1" out="" tok next i n
+  local -a toks
+  IFS=' ' read -r -a toks <<<"$cmd" || true
+  n=${#toks[@]}
+  i=1  # skip argv0
+  while [ "$i" -lt "$n" ]; do
+    tok="${toks[$i]}"
+    next="${toks[$((i+1))]:-}"
     case "$tok" in
-      -c|--continue|-r|--resume|--resume=*) continue ;;
-      *) out+="${out:+ }$tok" ;;
+      --dangerously-skip-permissions|--allow-dangerously-skip-permissions|--verbose)
+        out+="${out:+ }$tok"; i=$((i+1)) ;;
+      --model|--permission-mode)
+        if [ $((i+1)) -lt "$n" ]; then out+="${out:+ }$tok $next"; i=$((i+2))
+        else i=$((i+1)); fi ;;
+      --model=*|--permission-mode=*)
+        out+="${out:+ }$tok"; i=$((i+1)) ;;
+      -c|--continue|--resume=*)
+        i=$((i+1)) ;;
+      -r|--resume)
+        # resume's value is optional; drop it only when the next token isn't a flag
+        if [ $((i+1)) -lt "$n" ] && [ "${next#-}" = "$next" ]; then i=$((i+2))
+        else i=$((i+1)); fi ;;
+      *)
+        break ;;  # first positional = the prompt; never propagate it or anything after
     esac
   done
   printf '%s' "$out"
@@ -95,6 +126,17 @@ esac
 case "$MODE" in
 
   launcher)
+    # [LAW:dataflow-not-control-flow] an optional carried goal is a leading
+    # --goal <condition> value, stripped here so the remainder is the message.
+    # /clear, /compact, and a fresh relaunch all wipe the session-scoped /goal, so
+    # without this the next agent wakes with no goal and the autonomous run stops.
+    # Absent → empty string; the same code path runs, the value decides the effect.
+    GOAL=""
+    while [[ "${1:-}" == --goal ]]; do
+      GOAL="${2:-}"
+      shift 2 || { echo "--goal requires a condition argument" >&2; exit 2; }
+    done
+
     # [LAW:dataflow-not-control-flow] the message is a value carrying a canonical
     # default — /next, the standard "pull the next ticket" handoff. Omitting argv
     # selects that default; it never yields an empty handoff, so no guard follows.
@@ -115,9 +157,14 @@ case "$MODE" in
     # value, bypassing every shell-quoting hazard between argv → worker →
     # transport. No escaping branches anywhere.
     MSGFILE=$(mktemp -t finalize-msg.XXXXXX)
+    GOALFILE=$(mktemp -t finalize-goal.XXXXXX)
     LOGFILE=""
-    trap 'rm -f -- "$MSGFILE" ${LOGFILE:+"$LOGFILE"}' EXIT
+    trap 'rm -f -- "$MSGFILE" "$GOALFILE" ${LOGFILE:+"$LOGFILE"}' EXIT
     printf '%s' "$MESSAGE" > "$MSGFILE"
+    # [LAW:dataflow-not-control-flow] the goal rides its own tempfile as a value,
+    # empty when none was carried. Workers read it and re-issue /goal only when it
+    # is non-empty; nothing branches on a separate "has goal" flag.
+    printf '%s' "$GOAL" > "$GOALFILE"
 
     # Resolve own path for both ./script and PATH-lookup invocations.
     if [[ "$0" == */* ]]; then
@@ -137,10 +184,11 @@ case "$MODE" in
         '#{session_name}:#{window_index}.#{pane_index}')
       if [[ -n "${FINALIZE_DRY_RUN:-}" ]]; then
         echo "[dry-run] transport=tmux target=$TARGET reset=/$RESET msgfile=$MSGFILE"
+        echo "[dry-run] carried goal: ${GOAL:-(none)}"
         exit 0
       fi
       LOGFILE=$(mktemp -t finalize-log.XXXXXX)
-      nohup "$SELF" --worker "$TARGET" "$RESET" "$MSGFILE" \
+      nohup "$SELF" --worker "$TARGET" "$RESET" "$MSGFILE" "$GOALFILE" \
         </dev/null >>"$LOGFILE" 2>&1 &
       trap - EXIT
       echo "handoff scheduled → tmux $TARGET (/$RESET) in ${HANDOFF_DELAY_SECONDS}s (log: $LOGFILE)"
@@ -154,10 +202,11 @@ case "$MODE" in
       if [[ -n "${FINALIZE_DRY_RUN:-}" ]]; then
         echo "[dry-run] transport=iTerm2 uuid=$UUID claude_pid=$CLAUDE_PID flags=[$FLAGS]"
         echo "[dry-run] would relaunch: claude ${FLAGS:+$FLAGS }\"\$(cat '$MSGFILE')\""
+        echo "[dry-run] carried goal: ${GOAL:-(none)}"
         exit 0
       fi
       LOGFILE=$(mktemp -t finalize-log.XXXXXX)
-      nohup "$SELF" --iterm-worker "$UUID" "$CLAUDE_PID" "$MSGFILE" "$FLAGS" \
+      nohup "$SELF" --iterm-worker "$UUID" "$CLAUDE_PID" "$MSGFILE" "$GOALFILE" "$FLAGS" \
         </dev/null >>"$LOGFILE" 2>&1 &
       trap - EXIT
       echo "handoff scheduled → iTerm2 (kill+relaunch, fresh) in ${HANDOFF_DELAY_SECONDS}s (log: $LOGFILE)"
@@ -172,21 +221,29 @@ case "$MODE" in
       echo "Handoff written to: $DROP" >&2
       echo "Deliver it by resetting your session and pasting that file, or run:" >&2
       echo "    claude \"\$(cat '$DROP')\"" >&2
+      # [LAW:no-silent-failure] a carried goal must not vanish with the transport
+      # either — tell the operator exactly how to re-establish it after delivery.
+      if [[ -n "$GOAL" ]]; then
+        echo "A goal was carried; after delivering the handoff, re-establish it with:" >&2
+        echo "    /goal $GOAL" >&2
+      fi
       # MSGFILE cleaned by the EXIT trap (LOGFILE stayed empty).
     fi
     ;;
 
   tmux-worker)
-    if [[ $# -ne 3 ]]; then
-      echo "internal error: worker expects exactly 3 args" >&2
+    if [[ $# -ne 4 ]]; then
+      echo "internal error: worker expects exactly 4 args" >&2
       exit 2
     fi
     TARGET="$1"
     RESET="$2"
     MSGFILE="$3"
+    GOALFILE="$4"
 
     BUFFER="finalize-$$"
-    trap 'rm -f "$MSGFILE"' EXIT
+    GOALBUF="finalize-goal-$$"
+    trap 'rm -f "$MSGFILE" "$GOALFILE"' EXIT
     log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
     case "$RESET" in
@@ -210,6 +267,19 @@ case "$MODE" in
       tmux paste-buffer -d -b "$BUFFER" -t "$TARGET" -p
       sleep 0.5
       tmux send-keys -t "$TARGET" Enter
+
+      # [LAW:dataflow-not-control-flow] carry the goal only when the value is
+      # present. It goes in as a queued input *after* the handoff prompt, so it
+      # never races the handoff turn — Claude type-aheads it and the session-scoped
+      # /goal governs the turns that follow. The /clear or /compact above wiped it.
+      if [[ -s "$GOALFILE" ]]; then
+        log "re-establishing carried goal"
+        sleep 1
+        { printf '/goal '; cat "$GOALFILE"; } | tmux load-buffer -b "$GOALBUF" -
+        tmux paste-buffer -d -b "$GOALBUF" -t "$TARGET" -p
+        sleep 0.5
+        tmux send-keys -t "$TARGET" Enter
+      fi
     else
       log "MISFIRE: /$RESET did not register; message NOT sent"
       tmux send-keys -t "$TARGET" -l "finalize-session handoff misfired: the scheduled /$RESET never registered, so the queued handoff was NOT sent. Please tell the user the finalize-session handoff misfired."
@@ -219,16 +289,17 @@ case "$MODE" in
     ;;
 
   iterm-worker)
-    if [[ $# -lt 3 ]]; then
-      echo "internal error: iterm-worker expects at least 3 args" >&2
+    if [[ $# -lt 4 ]]; then
+      echo "internal error: iterm-worker expects at least 4 args" >&2
       exit 2
     fi
     UUID="$1"
     CLAUDE_PID="$2"
     MSGFILE="$3"
-    FLAGS="${4:-}"
+    GOALFILE="$4"
+    FLAGS="${5:-}"
 
-    trap 'rm -f "$MSGFILE"' EXIT
+    trap 'rm -f "$MSGFILE" "$GOALFILE"' EXIT
     log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 
     log "waking; iterm uuid=$UUID claude_pid=$CLAUDE_PID flags=[$FLAGS]"
@@ -275,6 +346,35 @@ end tell
 OSA
     then
       log "relaunch command sent to iTerm2 session $UUID"
+      # [LAW:dataflow-not-control-flow] re-establish the carried goal as a queued
+      # input into the freshly relaunched claude — same value-decides-effect shape
+      # as tmux. The relaunch started a new process, so the /goal was wiped.
+      if [[ -s "$GOALFILE" ]]; then
+        log "re-establishing carried goal"
+        sleep "$CLAUDE_BOOT_SECONDS"
+        GOALCMD="/goal $(cat "$GOALFILE")"
+        GAS=${GOALCMD//\\/\\\\}
+        GAS=${GAS//\"/\\\"}
+        if osascript <<OSA2 2>>/dev/stderr
+tell application "iTerm2"
+  repeat with w in windows
+    repeat with t in tabs of w
+      repeat with s in sessions of t
+        if (unique id of s) is "${UUID}" then
+          write s text "${GAS}"
+          return
+        end if
+      end repeat
+    end repeat
+  end repeat
+end tell
+OSA2
+        then
+          log "carried goal re-established in iTerm2 session $UUID"
+        else
+          log "ERROR: could not re-establish carried goal in session $UUID"
+        fi
+      fi
     else
       log "ERROR: could not write relaunch to iTerm2 session $UUID"
     fi
