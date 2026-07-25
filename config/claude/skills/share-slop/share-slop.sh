@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # share-slop: upload the current Claude Code session JSONL to paste.slopspot.ai
-# and print the resulting public URL.
+# as an UNSUBMITTED draft, open the editor for review, and print the review URL.
+# The user reviews the rendered conversation and clicks "Share it" to publish.
 #
 # This script is a thin uploader. ALL parsing/rendering knowledge lives on the
 # slopspot side (claude-jsonl source kind). If the JSONL schema changes,
@@ -116,10 +117,15 @@ sys.stderr.write(
 sys.stdout.write(json.dumps({"source": {"kind": "claude-jsonl", "content": content}}))
 ' "$jsonl" "$subdir")"
 
-# curl: -sS = silent but show errors; --fail-with-body = non-2xx exits non-0
-# but still gives us the response body for the error message.
+# POST to /api/draft: store the session as an UNSUBMITTED draft and get back an
+# editor URL that opens the conversation pre-filled for review. The user reviews
+# the rendered conversation and clicks "Share it" to publish — review-before-
+# publish, vs. the old publish-immediately. [LAW:single-enforcer] /share-slop and
+# the in-app copy-paste prompt are the same flow through this one endpoint.
+# curl: -sS = silent but show errors; --fail-with-body = non-2xx exits non-0 but
+# still gives us the response body for the error message.
 response="$(printf '%s' "$body" | curl -sS --fail-with-body \
-  -X POST "$base_url/api/paste" \
+  -X POST "$base_url/api/draft" \
   -H 'content-type: application/json' \
   --data-binary @-)" || {
   echo "share-slop: server returned an error:" >&2
@@ -127,13 +133,22 @@ response="$(printf '%s' "$body" | curl -sS --fail-with-body \
   exit 1
 }
 
-# Extract the slug from { "slug": "..." } and print the public URL.
-result_slug="$(printf '%s' "$response" | python3 -c '
+# Extract the editor URL from { "draftId": "...", "url": "/?draft=..." }.
+review_path="$(printf '%s' "$response" | python3 -c '
 import json, sys
 r = json.loads(sys.stdin.read())
-if "slug" not in r:
-    sys.exit("share-slop: server response missing slug: " + json.dumps(r))
-print(r["slug"])
+u = r.get("url")
+if not isinstance(u, str):
+    sys.exit("share-slop: server response missing url: " + json.dumps(r))
+print(u)
 ')"
 
-echo "$base_url/$result_slug"
+full_url="$base_url$review_path"
+# Best-effort: open the review page in the default browser. Failure here is NOT
+# fatal — the URL is printed regardless so the user (or agent) can open it. This
+# is a convenience, not the deliverable, so a headless host degrades to the print.
+{ command -v open >/dev/null 2>&1 && open "$full_url"; } \
+  || { command -v xdg-open >/dev/null 2>&1 && xdg-open "$full_url"; } \
+  || true
+echo "$full_url"
+echo 'share-slop: opened a DRAFT for review — check the conversation, then click "Share it" to publish.' >&2
