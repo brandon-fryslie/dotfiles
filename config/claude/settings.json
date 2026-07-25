@@ -82,15 +82,17 @@
       "mcp__cherry-chatgpt__chatgpt_open",
       "mcp__cherry-chatgpt__chatgpt_find_conversation"
     ],
-    "defaultMode": "auto"
+    "defaultMode": "acceptEdits"
   },
   "model": "opus[1m]",
   "worktree": {
     "baseRef": "fresh"
   },
+  "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "/Users/bmf/Library/pnpm/bin/cc-candybar",
+    "command": "/Users/bmf/code/cc-candybar/bin/cc-candybar",
     "refreshInterval": 1
   },
   "enabledPlugins": {
@@ -147,17 +149,20 @@
   "effortLevel": "high",
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
+  "tui": "fullscreen",
   "voice": {
     "enabled": true,
     "mode": "hold"
   },
-  "autoMemoryEnabled": false,
+  "autoMemoryEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "editorMode": "normal",
   "verbose": false,
   "preferredNotifChannel": "auto",
   "autoCompactEnabled": true,
+  "switchModelsOnFlag": false,
+  "autoScrollEnabled": true,
   "fileCheckpointingEnabled": true,
   "showTurnDuration": true,
   "terminalProgressBarEnabled": true,
@@ -165,7 +170,6 @@
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "useAutoModeDuringPlan": true,
-  "voiceEnabled": true,
-  "tui": "fullscreen"
+  "useAutoModeDuringPlan": false,
+  "voiceEnabled": true
 }
