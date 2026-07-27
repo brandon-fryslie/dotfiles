@@ -35,13 +35,12 @@ tmux) only at the edges. `[LAW:effects-at-boundaries]`
 
 That single set-once write is the positive completion signal the tabs wait on.
 
-## What's verified, and what still needs you
+## What the design handles, and what still needs you
 
-Fully verified offline (`tests/functional/test-iterm2-restore.bats`, 19 tests):
-name derivation, handle round-trip, the race-free wait (including a late signal
-still proceeding and a bounded timeout), both variants' resolution, and an
-end-to-end run with mocked osascript/tmux (fresh tab inert; restored tab attaches
-without hanging).
+The carrier handles by design: name derivation, handle round-trip, the race-free
+wait (including a late signal still proceeding and a bounded timeout), both
+variants' resolution, and an end-to-end run with mocked osascript/tmux (fresh tab
+inert; restored tab attaches without hanging).
 
 The **one** thing a test can't cover: that the iTerm2 session name actually
 survives an iTerm2 **quit+reopen** (not a reboot — just quit+reopen). The carrier
