@@ -92,7 +92,7 @@
   "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
-    "command": "/Users/bmf/code/cc-candybar/bin/cc-candybar",
+    "command": "/Users/bmf/.claude/statusline-candybar",
     "refreshInterval": 1
   },
   "enabledPlugins": {
