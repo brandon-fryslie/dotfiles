@@ -265,8 +265,6 @@ This script runs dotbot sequentially with the appropriate configs for each profi
 
 - **[PROJECT_SPEC.md](PROJECT_SPEC.md)** - Technical overview, architecture, and vision
 - **[CLAUDE.md](CLAUDE.md)** - Repository-specific guidance for Claude Code
-- **[TESTING.md](TESTING.md)** - Test suite documentation and philosophy
-- **[tests/README.md](tests/README.md)** - Detailed testing guide
 - **[docs/WATCHERS-ARCHITECTURE.md](docs/WATCHERS-ARCHITECTURE.md)** - Watchers v2.0 design (planned feature)
 
 ## License

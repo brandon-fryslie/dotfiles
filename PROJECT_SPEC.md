@@ -194,6 +194,5 @@ Pre-commit hooks and CI to validate:
 
 - [README.md](README.md) - User-facing documentation and quick start
 - [CLAUDE.md](CLAUDE.md) - Repository-specific guidance for Claude Code
-- [tests/README.md](tests/README.md) - Test suite documentation
 - [docs/WATCHERS-ARCHITECTURE.md](docs/WATCHERS-ARCHITECTURE.md) - Detailed watchers v2.0 design
 - [PROJECT_SPEC.md](PROJECT_SPEC.md) - This document
