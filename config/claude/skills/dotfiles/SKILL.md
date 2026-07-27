@@ -1,6 +1,6 @@
 ---
 name: dotfiles
-description: Street map of Brandon's dotfiles repo at ~/code/dotfiles — where every managed config in the home directory actually lives, the profile-suffix naming convention, the separate agent-skill trees, and the workflows for editing, adding, and applying managed files. Use whenever a task touches a config file under ~ or ~/.config — "where does my zshrc/tmux/nvim/git/kitty config live", "edit my shell config", "add a global Claude skill/command/agent", "change my Claude settings", "add a new dotfile", "why is ~/.foo a symlink" — or any mention of the dotfiles repo. Consult BEFORE editing anything under ~ or ~/.config, and before creating any file under ~/.claude, ~/.agents, ~/.gemini, ~/.copilot, or ~/.codex.
+description: Street map of Brandon's dotfiles repo at ~/code/dotfiles — where every managed config in the home directory actually lives, the profile-suffix naming convention, the separate agent-skill trees, and the workflows for editing managed files. Use whenever a task touches a config file under ~ or ~/.config — "where does my zshrc/tmux/nvim/git/kitty config live", "edit my shell config", "add a global Claude skill/command/agent", "change my Claude settings", "add a new dotfile", "why is ~/.foo a symlink" — or any mention of the dotfiles repo. Consult BEFORE editing anything under ~ or ~/.config, and before creating any file under ~/.claude, ~/.agents, ~/.gemini, ~/.copilot, or ~/.codex.
 ---
 
 # Dotfiles — street map
@@ -19,15 +19,13 @@ committed there** (`cd ~/code/dotfiles && git status` will show it).
 
 What is never fine:
 
-- **WRONG:** `ln -s <anything> ~/.claude/skills/foo` — or any hand-made symlink into
-  a managed location. **RIGHT:** author the file at its `config/` address; link
-  wiring is owned by the repo's `install-*.conf.yaml` manifests, and a new mapping
-  is applied with `just install <profile>`.
-- **WRONG:** creating a loose file or directory directly at a `~` path
-  (`~/.agents/skills/my-skill/`, `~/.claude/commands/foo.md` as a real file).
-  The temptation is always "it's a one-off, I'll just drop it here" — and it will
-  work today, then silently vanish or fall out of management on the next install.
-  **RIGHT:** create it under the matching `config/` path listed below.
+- **WRONG:** creating anything — file, directory, or link — directly at a managed
+  `~` path (`~/.agents/skills/my-skill/`, `~/.claude/commands/foo.md` as a real
+  file). The temptation is always "it's a one-off, I'll just drop it here" — and it
+  will work today, then silently fall out of management and vanish. **RIGHT:**
+  create it under the matching `config/` address listed below. If no address exists
+  for it yet, that is repo work — do it inside `~/code/dotfiles` under the repo's
+  own `CLAUDE.md`; do not improvise a home for it from outside.
 - **WRONG:** deleting a real (non-symlink) file to clear the way for anything.
   **RIGHT:** move it to a timestamped backup first; only symlinks are ever removed.
 
@@ -36,7 +34,6 @@ What is never fine:
 | Path | What it is |
 |---|---|
 | `config/<tool>/` or `config/<tool>.<suffix>` | One address per managed tool — all config content lives here |
-| `install-*.conf.yaml` | Link manifests: which home path points at which `config/` address |
 | `justfile` | The workflow entry points — run `just` for the authoritative recipe list |
 | `migrations/` | Numbered one-shot machine-state scripts (`NNNN-name.sh`) |
 | `tests/` | Bats suites (`tests/functional/`, `tests/unit/`, `tests/e2e/`) |
@@ -54,8 +51,8 @@ the filename at the `config/` root:
   `config/mackup.home.cfg`)
 
 `just status` reports which profile is active on this machine and where the repo is.
-`just install <profile>` applies the mappings. When adding a file, pick the suffix
-that matches its scope — a shared config gets `.global.`, not a copy per profile.
+When adding a file, pick the suffix that matches its scope — a shared config gets
+`.global.`, not a copy per profile.
 
 ## Address book — home path → repo address
 
@@ -89,7 +86,7 @@ Agent CLIs:
 |---|---|
 | `~/.claude/CLAUDE.md`, `settings.json` | `config/claude/CLAUDE.md`, `config/claude/settings.json` |
 | `~/.claude/skills`, `commands`, `agents`, `personal-synced` (and `*-disabled`) | `config/claude/<same name>/` |
-| `~/.agents/skills/<name>` | `config/agents/skills/<name>/` (linked per-skill) |
+| `~/.agents/skills/<name>` | `config/agents/skills/<name>/` |
 | `~/.gemini/GEMINI.md`, `~/.gemini/skills` | `config/gemini/` |
 | `~/.copilot/copilot-instructions.md`, skills | `config/copilot/` |
 | `~/.config/codex`, `~/.codex/skills` | `config/codex/` |
@@ -109,12 +106,10 @@ Author a new skill directly under the correct `config/` tree, never at the `~` p
 
 - **Edit an existing config:** edit the file (via either end of the symlink), then
   commit in `~/code/dotfiles`. Leave the tree clean.
-- **Add a newly managed file:** create it at a `config/` address, add its mapping to
-  the appropriate `install-*.conf.yaml` (base vs. profile vs. agent-cli), run
-  `just install <profile>`, commit both together.
+- **Bring a new path under management:** repo work — do it inside `~/code/dotfiles`
+  following the repo's own `CLAUDE.md`. Never wire anything up by hand from outside.
 - **Add a global Claude skill/command/agent:** new directory or file under
-  `config/claude/skills/`, `commands/`, or `agents/` — it is live immediately
-  through the existing directory links.
+  `config/claude/skills/`, `commands/`, or `agents/` — it is live immediately.
 - **Change machine state (not a file link):** write a migration — `just migrate-new
   <name>`, fill in the generated `migrations/NNNN-<name>.sh`, run `just migrate`;
   `just migrate-status` shows what has run on this machine.
