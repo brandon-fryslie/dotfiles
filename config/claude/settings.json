@@ -84,7 +84,7 @@
     ],
     "defaultMode": "acceptEdits"
   },
-  "model": "sonnet",
+  "model": "opus[1m]",
   "worktree": {
     "baseRef": "fresh"
   },
