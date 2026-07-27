@@ -1,0 +1,40 @@
+#!/bin/sh
+# Claude Code statusline entry point. settings.json points here and nowhere
+# else; every question of WHICH cc-candybar runtime this machine runs is
+# answered in this one file. [LAW:one-source-of-truth]
+#
+# Resolution order:
+#   1. A local source checkout — a dev machine renders its own build, and
+#      only its own build (never published binaries mixed with local dist).
+#   2. The published runtime staged by:
+#      pnpm dlx @promptctl/cc-candybar@latest install
+#
+# stdout IS the statusline, so failures print their own fix to stdout and
+# exit 0 — a blank bar is the one output this script must never produce.
+# [LAW:no-silent-failure]
+
+REPO="${CC_CANDYBAR_REPO:-$HOME/code/cc-candybar}"
+
+if [ -d "$REPO" ]; then
+  if [ ! -f "$REPO/dist/index.mjs" ]; then
+    echo "cc-candybar: $REPO not built — run: pnpm install && pnpm build"
+    exit 0
+  fi
+  # Native fast-path binary when staged (just install-rust), committed node
+  # shim otherwise; both resolve ../dist/index.mjs by adjacency. Two names
+  # cover the pre- and post-rename repo layouts.
+  for entry in "$REPO/bin/cc-candybar-native" "$REPO/bin/cc-candybar"; do
+    [ -x "$entry" ] && exec "$entry" "$@"
+  done
+  command -v node >/dev/null 2>&1 || { echo "cc-candybar: node not on PATH"; exit 0; }
+  exec node "$REPO/dist/index.mjs" "$@"
+fi
+
+for staged in \
+  "$HOME/Library/Application Support/CCCandybar/bin/cc-candybar" \
+  "${XDG_DATA_HOME:-$HOME/.local/share}/cc-candybar/bin/cc-candybar"; do
+  [ -x "$staged" ] && exec "$staged" "$@"
+done
+
+echo "cc-candybar: not installed — run: pnpm dlx @promptctl/cc-candybar@latest install"
+exit 0

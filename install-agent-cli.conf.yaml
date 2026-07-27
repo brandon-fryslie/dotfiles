@@ -16,6 +16,7 @@
     ~/.claude/skills: config/claude/skills
     ~/.claude/CLAUDE.md: config/claude/CLAUDE.md
     ~/.claude/settings.json: config/claude/settings.json
+    ~/.claude/statusline-candybar: config/claude/statusline-candybar
 
 - create:
     - ~/.gemini
