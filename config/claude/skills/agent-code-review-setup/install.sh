@@ -91,6 +91,9 @@ jobs:
   review:
     name: Review
     runs-on: ubuntu-latest
+    # Cap a hung review (network stall, API retry loop) instead of letting it hold
+    # a runner for GitHub's 6-hour default. Reviews finish in ~2-4 min.
+    timeout-minutes: 15
     steps:
       - name: Checkout pull request
         uses: actions/checkout@v6
