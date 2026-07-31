@@ -21,8 +21,10 @@ set -euo pipefail
 # tag is the single source of truth for "what is current" — this skill never
 # needs bumping. [LAW:one-source-of-truth]
 ACTION_REF="brandon-fryslie/coding-agent-review@v1"
-KEYCHAIN_ITEM="${DEEPSEEK_KEYCHAIN_ITEM:-DEEPSEEK_API_TOKEN}"
 SECRET_NAME="DEEPSEEK_API_KEY"
+# Keychain item shares the secret's name by default: one canonical name, no second
+# literal to drift out of sync. [LAW:one-source-of-truth] Override with DEEPSEEK_KEYCHAIN_ITEM.
+KEYCHAIN_ITEM="${DEEPSEEK_KEYCHAIN_ITEM:-$SECRET_NAME}"
 WORKFLOW_PATH=".github/workflows/code-review.yml"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -54,6 +56,22 @@ cat > "$DESIRED" <<'YAML'
 # To change the workflow, change the template and re-run the installer.
 name: AI Code Review
 
+# pull_request (unprivileged), NOT pull_request_target: this job checks out the
+# PR head. Under pull_request_target that checkout runs privileged, with secrets
+# in scope — the untrusted-checkout pattern CodeQL flags as high and that nothing
+# structurally disproves (a later step could execute the checked-out tree).
+# pull_request keeps the run unprivileged, so that risk cannot arise.
+#
+# Dependabot PRs and the secret store — LOAD-BEARING: GitHub withholds *Actions*
+# secrets from Dependabot-triggered runs and instead populates the `secrets.*`
+# context from a SEPARATE store (repo Settings → Secrets → Dependabot). So
+# `${{ secrets.DEEPSEEK_API_KEY }}` below resolves from the Actions store for a
+# human PR and from the Dependabot store for dependabot[bot]. The key MUST exist
+# in BOTH stores or Dependabot reviews silently get an empty key — install.sh
+# sets both. The GITHUB_TOKEN is read-only by default on Dependabot runs; the
+# permissions block below elevates it so the reviewer can post its comments.
+# External fork PRs get no secrets and are gated out by the action's own
+# prIsFromFork check.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -83,6 +101,7 @@ jobs:
         uses: __ACTION_REF__
         with:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEPENDENCY_DIFF: "true"
 YAML
 # Insert the pinned ref without escaping every GH expression in the heredoc.
 grep -q '__ACTION_REF__' "$DESIRED" || die "workflow template lost its action-ref marker."
@@ -131,12 +150,18 @@ if keychain_has_item; then
   # touches a shell variable. [LAW:no-silent-failure]
   [ "$(security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | wc -c)" -gt 0 ] \
     || die "keychain item '$KEYCHAIN_ITEM' has an empty value — refusing to set an empty $SECRET_NAME."
-  echo "→ syncing secret $SECRET_NAME on $REPO from keychain item '$KEYCHAIN_ITEM'…"
-  # pipefail aborts the pipeline on a failed 'security' read; the emptiness
-  # gate above covers the successful-but-empty read. tr strips security's
-  # trailing newline.
+  echo "→ syncing secret $SECRET_NAME on $REPO (Actions + Dependabot) from keychain item '$KEYCHAIN_ITEM'…"
+  # Both stores are required: Dependabot-triggered runs read secrets from a
+  # SEPARATE store from Actions, so an Actions-only secret leaves every Dependabot
+  # PR review unauthenticated (the reviewer's whole reason to exist on dep bumps).
+  # [LAW:one-source-of-truth] keychain is canonical; both stores are derived copies.
+  # pipefail aborts the pipeline on a failed 'security' read; the emptiness gate
+  # above covers the successful-but-empty read. tr strips security's trailing
+  # newline. The value is piped straight to gh and never touches a shell variable,
+  # so we read the keychain once per store rather than caching it.
   security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | gh secret set "$SECRET_NAME"
-  echo "✓ set secret $SECRET_NAME on $REPO"
+  security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | gh secret set "$SECRET_NAME" --app dependabot
+  echo "✓ set secret $SECRET_NAME on $REPO (Actions + Dependabot)"
 elif secret_on_repo; then
   {
     echo "! secret $SECRET_NAME exists on $REPO but keychain item '$KEYCHAIN_ITEM' is not on this machine,"
