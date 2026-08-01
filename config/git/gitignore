@@ -1,2 +1,4 @@
 .agent_planning/do-command-logs/.idea/
 .idea/
+
+**/.claude/settings.local.json
