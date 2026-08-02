@@ -150,3 +150,5 @@ export NODE_EXTRA_CA_CERTS=~/cc-nerf-buster-ca.crt
 prox() {
   set -a 2>/dev/null || true; source "/Users/bmf/Library/Application Support/com.proxyman.NSProxy/app-data/proxyman_env_automatic_setup.sh"; set +a 2>/dev/null || true
 }
+
+export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
