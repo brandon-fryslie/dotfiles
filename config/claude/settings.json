@@ -82,7 +82,23 @@
       "mcp__cherry-chatgpt__chatgpt_open",
       "mcp__cherry-chatgpt__chatgpt_find_conversation"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "acceptEdits",
+    "deny": [
+      "Bash(tmux kill-server:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -qwiE 'kill-server'; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"BLOCKED: kill-server is permanently forbidden. tmux kill-server destroys the entire tmux server and every session and process attached to it. Use a session-scoped kill-session, or an isolated TMUX_TMPDIR/-L socket, never kill-server.\"}}'; fi"
+          }
+        ]
+      }
+    ]
   },
   "model": "opus[1m]",
   "worktree": {
@@ -138,8 +154,8 @@
     },
     "promptctl": {
       "source": {
-        "source": "github",
-        "repo": "promptctl/laws"
+        "source": "directory",
+        "path": "/Users/bmf/code/promptctl_laws"
       }
     }
   },
