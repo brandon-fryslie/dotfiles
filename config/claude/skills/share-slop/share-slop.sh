@@ -21,9 +21,12 @@ set -euo pipefail
 
 base_url="${SLOPSPOT_URL:-https://paste.slopspot.ai}"
 
-# Project slug: pwd with every "/" and "." replaced by "-".
-# Mirrors how CC names project dirs under ~/.claude/projects.
-slug="$(pwd | sed 's|[/.]|-|g')"
+# Project slug: pwd with every non-alphanumeric char replaced by "-".
+# Mirrors how CC names project dirs under ~/.claude/projects — CC normalizes
+# EVERY non-alphanumeric (including "_", not just "/" and "."), so a path like
+# ".../promptctl_links-issue-tracker" maps to "...-promptctl-links-issue-tracker".
+# The class must match CC's producer exactly or the slug misses the session dir.
+slug="$(pwd | sed 's|[^A-Za-z0-9]|-|g')"
 jsonl="$HOME/.claude/projects/$slug/$CLAUDE_CODE_SESSION_ID.jsonl"
 
 if [ ! -f "$jsonl" ]; then
