@@ -233,8 +233,6 @@ Invoke `/recap` with a short note describing what was merged. The recap is the d
 
 The close-out runs `finalize-session` — the mandatory final step that records what shipped and the next instruction to pick up. It has two outcomes: run finalize-session (with content shaped by the candidate's classified state) or halt and surface a per-candidate failure table to the user. [LAW:types-are-the-program] the section's output is `Handoff = Finalize(direct_work) | Finalize(define_task) | HaltAndExplain(failure_table)` — variants of one typed value, dispatched mechanically from the classification step. Well-definedness is *not* a run/skip gate; it shapes the handoff content. The only halt case is project-level misalignment across every examined candidate.
 
-**These three arms are exhaustive — no "skip," "hold," or "ask instead" arm exists.** The user being present or the step feeling minor are NOT inputs to this decision. Deviating requires citing a clause *in this skill*; a tool's tone or purpose is never authorization (`finalize-session` "requires no user action" means exactly that — run it without asking, not "only run it when the user is absent"). Absent such a clause the prescribed arm **executes as written** — never a silent skip, never a fallback to asking.
-
 **Step 1 — Enumerate candidates.** Read multiple candidates in priority order:
 
 1. An explicit instruction the user gave during this session for what comes next.
