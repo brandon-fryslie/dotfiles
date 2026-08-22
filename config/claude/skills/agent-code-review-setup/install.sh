@@ -17,10 +17,14 @@
 # policy decision (branch vs. default, PR) left to the caller. [LAW:decomposition]
 set -euo pipefail
 
-# Moving major tag: resolves to the latest v1.x release. The action repo's `v1`
-# tag is the single source of truth for "what is current" — this skill never
-# needs bumping. [LAW:one-source-of-truth]
-ACTION_REF="brandon-fryslie/coding-agent-review@v1"
+# Pinned to a commit SHA, not the moving `v1` tag. The workflow hands this action
+# DEEPSEEK_API_KEY and relies on its fork gating, so a moved or force-pushed tag —
+# or a compromised account — would change what runs with every consuming repo's
+# secrets in scope, with no diff in any of them to show it. A SHA cannot be moved.
+# [LAW:one-source-of-truth] This line is where "what is current" is decided; to
+# bump, resolve the tag and update the SHA and the trailing comment together:
+#   gh api repos/promptctl/copirate-code-review-agent/git/ref/tags/v1 --jq .object.sha
+ACTION_REF="promptctl/copirate-code-review-agent@8db55e0080fc3432f768f09fa410a0f5d22b26c4"  # v1
 SECRET_NAME="DEEPSEEK_API_KEY"
 # Keychain item shares the secret's name by default: one canonical name, no second
 # literal to drift out of sync. [LAW:one-source-of-truth] Override with DEEPSEEK_KEYCHAIN_ITEM.
@@ -99,10 +103,13 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout pull request
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
+      # Pinned by SHA rather than by tag, and deliberately so: this step receives
+      # DEEPSEEK_API_KEY, and a tag can be moved under it without any diff landing
+      # in this repo. The SHA is chosen in install.sh, which owns this file.
       - name: Code Review
         uses: __ACTION_REF__
         with:
