@@ -171,6 +171,7 @@
     "mode": "hold"
   },
   "autoMemoryEnabled": true,
+  "cleanupPeriodDays": 99999,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "editorMode": "normal",
