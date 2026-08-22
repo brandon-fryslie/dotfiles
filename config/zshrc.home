@@ -152,3 +152,10 @@ prox() {
 }
 
 export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+
+# [LAW:one-source-of-truth] The single declaration of which Happy server this
+# machine uses. Exported rather than wrapped in a happy() function so that every
+# process inherits it -- daemons, IDE-spawned sessions, and scripts included, none
+# of which route through an interactive shell function. Without this, happy-cli
+# falls back to the upstream cloud default hardcoded in its configuration.ts.
+export HAPPY_SERVER_URL=https://happy-server.sanctuary.gdn
