@@ -18,13 +18,21 @@
 set -euo pipefail
 
 # Pinned to a commit SHA, not the moving `v1` tag. The workflow hands this action
-# DEEPSEEK_API_KEY and relies on its fork gating, so a moved or force-pushed tag —
-# or a compromised account — would change what runs with every consuming repo's
-# secrets in scope, with no diff in any of them to show it. A SHA cannot be moved.
+# CLAUDE_CODE_OAUTH_TOKEN and DEEPSEEK_API_KEY and relies on its fork gating, so a
+# moved or force-pushed tag — or a compromised account — would change what runs with
+# every consuming repo's secrets in scope, with no diff in any of them to show it.
+# A SHA cannot be moved. The subscription token STRENGTHENS this argument rather than
+# weakening it: it is a long-lived OAuth credential with a far larger blast radius
+# than a per-service API key, so what receives it must never change silently.
+#
+# The pin is also why the 1.42.0 `auto` retarget did not break repos installed by this
+# script while it broke every repo pinned to `@v1`: a SHA-pinned repo keeps running the
+# build it was installed with until this line moves. That is the pin working as designed.
+#
 # [LAW:one-source-of-truth] This line is where "what is current" is decided; to
 # bump, resolve the tag and update the SHA and the trailing comment together:
 #   gh api repos/promptctl/copirate-code-review-agent/git/ref/tags/v1 --jq .object.sha
-ACTION_REF="promptctl/copirate-code-review-agent@8db55e0080fc3432f768f09fa410a0f5d22b26c4"  # v1
+ACTION_REF="promptctl/copirate-code-review-agent@04083de7e05373424167fcae73030c9539b07668"  # v1 = 1.42.0
 # [LAW:one-type-per-behavior] The secrets differ only in their name and in which env
 # var overrides their keychain item. Everything else about provisioning them — the
 # emptiness gate, the Actions+Dependabot double-set, the three reachability cases — is
@@ -121,12 +129,21 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      # Pinned by SHA rather than by tag, and deliberately so: this step receives
-      # DEEPSEEK_API_KEY, and a tag can be moved under it without any diff landing
-      # in this repo. The SHA is chosen in install.sh, which owns this file.
+      # Pinned by SHA rather than by tag, and deliberately so: this step receives a
+      # long-lived subscription token, and a tag can be moved under it without any diff
+      # landing in this repo. The SHA is chosen in install.sh, which owns this file.
+      #
+      # BOTH credentials are passed on purpose. PROVIDER defaults to `auto`, which the
+      # action retargets centrally — it moved from deepseek to claude-subscription in
+      # 1.42.0 — and a workflow carrying only the then-current target's secret breaks the
+      # day it moves. Passing both means a retarget needs no edit here: PROVIDER alone
+      # selects the provider and credential presence never steers it, so the unused input
+      # is simply never read. The action fails loudly, before spending anything, if the
+      # credential for the CURRENT target is the one missing.
       - name: Code Review
         uses: __ACTION_REF__
         with:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           # DEPENDENCY_DIFF is on for EVERY repo this installs into — a deliberate
           # universal default baked into the template, NOT a per-repo divergence that
