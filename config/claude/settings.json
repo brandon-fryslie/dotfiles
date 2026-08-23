@@ -138,7 +138,8 @@
     "playground@claude-plugins-official": true,
     "learning-output-style@claude-plugins-official": false,
     "gopls-lsp@claude-plugins-official": false,
-    "laws@promptctl": true
+    "laws@promptctl": true,
+    "memento@promptctl": true
   },
   "extraKnownMarketplaces": {
     "pm-os": {
