@@ -126,7 +126,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout pull request
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
+        # Moving major tag, for the same reason as the action pin above: a SHA here puts
+        # every consuming repo back on the re-bump treadmill, for a first-party GitHub
+        # action where the major tag is the standard reference. The rule is "track the
+        # moving major", not "the literal string v1" — `v6` IS checkout's current major,
+        # and `@v1` would pin a 2019 Node-12 release that no longer runs.
+        #
+        # No label rides beside it: the ref already says v6, so a trailing `# v6` would be
+        # a copy of the line it sits on. [LAW:comments-carry-meaning]
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           # This is an UNTRUSTED checkout — the PR head, from any fork. The default
