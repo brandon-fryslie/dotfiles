@@ -17,39 +17,23 @@
 # policy decision (branch vs. default, PR) left to the caller. [LAW:decomposition]
 set -euo pipefail
 
-# Pinned to a commit SHA, not the moving `v1` tag. The workflow hands this action
-# CLAUDE_CODE_OAUTH_TOKEN and DEEPSEEK_API_KEY and relies on its fork gating, so a
-# moved or force-pushed tag — or a compromised account — would change what runs with
-# every consuming repo's secrets in scope, with no diff in any of them to show it.
-# A SHA cannot be moved. The subscription token STRENGTHENS this argument rather than
-# weakening it: it is a long-lived OAuth credential with a far larger blast radius
-# than a per-service API key, so what receives it must never change silently.
+# The moving `v1` tag, deliberately — NOT a commit SHA. This is a value, not a version
+# number: every repo this installs into tracks the action's latest release for free, and
+# an upstream fix reaches all of them the moment it is tagged.
 #
-# The pin is also why the 1.42.0 `auto` retarget did not break repos installed by this
-# script while it broke every repo pinned to `@v1`: a SHA-pinned repo keeps running the
-# build it was installed with until this line moves. That is the pin working as designed.
+# The SHA pin this replaces was wrong about who pays. A SHA cannot be moved, which sounds
+# like safety until you count the cost: every release would require re-bumping EVERY
+# consuming repo — a PR each, forever, growing with the fleet — and a fleet that expensive
+# to update is a fleet that does not get updated. Repos would sit on stale builds carrying
+# known bugs, which is not the safe state the pin was bought for. The upstream is a repo we
+# control and review; `@v1` is the single moving tag it maintains for exactly this purpose.
 #
-# [LAW:one-source-of-truth] These two lines are where "what is current" is decided; to
-# bump, move the SHA and the release together — one command each, both required, because
-# the label is only worth reading if it is true:
-#   gh api repos/promptctl/copirate-code-review-agent/git/ref/tags/v1 --jq .object.sha
-#   gh api repos/promptctl/copirate-code-review-agent/releases/latest --jq .tag_name
-#
-# ACTION_VERSION is not a second fact about the pin — it is the pin's LABEL, rendered
-# beside it in the deployed workflow so a maintainer can read which release is running
-# without resolving the SHA against the API. Same shape as the checkout pin below
-# (`actions/checkout@<sha>  # v6`), and adjacent here for the same reason: they are one
-# bump, so they are one edit.
-#
-# It carries NO `v` prefix, and that is the upstream's naming, not a typo to tidy: the
-# release tags are `1.43.0`, `1.42.1`, `1.42.0`, and the ONLY v-prefixed tag in that repo
-# is the floating `v1` this pin deliberately avoids. Writing `v1.43.0` here renders a
-# label that 404s when a maintainer resolves it — which costs the API call the label
-# exists to save, and buys a wrong answer with it. Take this value from the second
-# command above verbatim; never hand-prefix it to match the checkout pin's spelling.
-ACTION_SHA="669c4ea7b3b2a4d7c3bc88a96c73a42302ebe046"
-ACTION_VERSION="1.43.0"
-ACTION_REF="promptctl/copirate-code-review-agent@${ACTION_SHA}"
+# [LAW:one-source-of-truth] There is now ONE fact here and nothing to keep in sync. There is
+# deliberately no version LABEL rendered beside the ref: under a moving tag a label is a map
+# that begins lying at the next release, and a comment claiming `1.43.0` beside a step
+# running `1.51.0` is worse than no comment. What is running is `@v1` — read the releases
+# page for what that currently means. [FRAMING:representation]
+ACTION_REF="promptctl/copirate-code-review-agent@v1"
 # [LAW:one-type-per-behavior] The secrets differ only in their name and in which env
 # var overrides their keychain item. Everything else about provisioning them — the
 # emptiness gate, the Actions+Dependabot double-set, the three reachability cases — is
@@ -157,9 +141,10 @@ jobs:
           # `default: ${{ github.token }}` input; this only stops the copy on disk.
           persist-credentials: false
 
-      # Pinned by SHA rather than by tag, and deliberately so: this step receives a
-      # long-lived subscription token, and a tag can be moved under it without any diff
-      # landing in this repo. The SHA is chosen in install.sh, which owns this file.
+      # Pinned to the moving `v1` tag on purpose: this repo tracks the action's latest
+      # release with no edit here, ever. Pinning a SHA instead would mean a PR against
+      # every consuming repo for every release, which in practice means none of them get
+      # updated. The ref is chosen in install.sh, which owns this file.
       #
       # BOTH credentials are passed on purpose. PROVIDER defaults to `auto`, which the
       # action retargets centrally — it moved from deepseek to claude-subscription in
@@ -169,7 +154,7 @@ jobs:
       # is simply never read. The action fails loudly, before spending anything, if the
       # credential for the CURRENT target is the one missing.
       - name: Code Review
-        uses: __ACTION_REF__  # __ACTION_VERSION__
+        uses: __ACTION_REF__
         with:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -185,13 +170,13 @@ jobs:
           DEPENDENCY_DIFF: "true"
 YAML
 # Insert the rendered values without escaping every GH expression in the heredoc.
-# [LAW:one-type-per-behavior] Two markers, ONE substitution: each entry is marker|value,
-# so a third rendered value is one more line here and no new code. Each marker is still
-# checked before it is replaced — a template that lost one would otherwise ship a literal
-# __ACTION_VERSION__ into a consuming repo's workflow [LAW:no-silent-failure].
+# [LAW:one-type-per-behavior] One marker today, but still a marker|value LIST: a second
+# rendered value is one more entry here and no new code. Each marker is checked before it
+# is replaced — a template that lost one would otherwise ship a literal __ACTION_REF__
+# into a consuming repo's workflow [LAW:no-silent-failure].
 TMP="$(mktemp)"
 trap 'rm -f "$DESIRED" "$TMP"' EXIT
-for rendered in "__ACTION_REF__|${ACTION_REF}" "__ACTION_VERSION__|${ACTION_VERSION}"; do
+for rendered in "__ACTION_REF__|${ACTION_REF}"; do
   marker="${rendered%%|*}"
   value="${rendered#*|}"
   grep -q "$marker" "$DESIRED" || die "workflow template lost its ${marker} marker."
