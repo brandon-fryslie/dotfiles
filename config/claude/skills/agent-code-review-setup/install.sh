@@ -29,10 +29,27 @@ set -euo pipefail
 # script while it broke every repo pinned to `@v1`: a SHA-pinned repo keeps running the
 # build it was installed with until this line moves. That is the pin working as designed.
 #
-# [LAW:one-source-of-truth] This line is where "what is current" is decided; to
-# bump, resolve the tag and update the SHA and the trailing comment together:
+# [LAW:one-source-of-truth] These two lines are where "what is current" is decided; to
+# bump, move the SHA and the release together — one command each, both required, because
+# the label is only worth reading if it is true:
 #   gh api repos/promptctl/copirate-code-review-agent/git/ref/tags/v1 --jq .object.sha
-ACTION_REF="promptctl/copirate-code-review-agent@669c4ea7b3b2a4d7c3bc88a96c73a42302ebe046"  # v1 = 1.43.0
+#   gh api repos/promptctl/copirate-code-review-agent/releases/latest --jq .tag_name
+#
+# ACTION_VERSION is not a second fact about the pin — it is the pin's LABEL, rendered
+# beside it in the deployed workflow so a maintainer can read which release is running
+# without resolving the SHA against the API. Same shape as the checkout pin below
+# (`actions/checkout@<sha>  # v6`), and adjacent here for the same reason: they are one
+# bump, so they are one edit.
+#
+# It carries NO `v` prefix, and that is the upstream's naming, not a typo to tidy: the
+# release tags are `1.43.0`, `1.42.1`, `1.42.0`, and the ONLY v-prefixed tag in that repo
+# is the floating `v1` this pin deliberately avoids. Writing `v1.43.0` here renders a
+# label that 404s when a maintainer resolves it — which costs the API call the label
+# exists to save, and buys a wrong answer with it. Take this value from the second
+# command above verbatim; never hand-prefix it to match the checkout pin's spelling.
+ACTION_SHA="669c4ea7b3b2a4d7c3bc88a96c73a42302ebe046"
+ACTION_VERSION="1.43.0"
+ACTION_REF="promptctl/copirate-code-review-agent@${ACTION_SHA}"
 # [LAW:one-type-per-behavior] The secrets differ only in their name and in which env
 # var overrides their keychain item. Everything else about provisioning them — the
 # emptiness gate, the Actions+Dependabot double-set, the three reachability cases — is
@@ -128,6 +145,17 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          # This is an UNTRUSTED checkout — the PR head, from any fork. The default
+          # (persist-credentials: true) writes GITHUB_TOKEN into .git/config inside that
+          # tree, where anything later executing out of the checkout can read a credential
+          # it was never handed. The token's scope here is issues+PR write, not the
+          # contents:read the checkout itself needs, so what leaks is broader than what
+          # the step does. Nothing in this job pushes or fetches over authenticated git —
+          # the review reads the diff through the API with the GITHUB_TOKEN input, and
+          # DEPENDENCY_DIFF uses the compare API — so persisting it buys nothing and is
+          # off. The review action still gets a token explicitly, via its own
+          # `default: ${{ github.token }}` input; this only stops the copy on disk.
+          persist-credentials: false
 
       # Pinned by SHA rather than by tag, and deliberately so: this step receives a
       # long-lived subscription token, and a tag can be moved under it without any diff
@@ -141,7 +169,7 @@ jobs:
       # is simply never read. The action fails loudly, before spending anything, if the
       # credential for the CURRENT target is the one missing.
       - name: Code Review
-        uses: __ACTION_REF__
+        uses: __ACTION_REF__  # __ACTION_VERSION__
         with:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -156,11 +184,19 @@ jobs:
           # silently degrades every dependency-bump review.
           DEPENDENCY_DIFF: "true"
 YAML
-# Insert the pinned ref without escaping every GH expression in the heredoc.
-grep -q '__ACTION_REF__' "$DESIRED" || die "workflow template lost its action-ref marker."
+# Insert the rendered values without escaping every GH expression in the heredoc.
+# [LAW:one-type-per-behavior] Two markers, ONE substitution: each entry is marker|value,
+# so a third rendered value is one more line here and no new code. Each marker is still
+# checked before it is replaced — a template that lost one would otherwise ship a literal
+# __ACTION_VERSION__ into a consuming repo's workflow [LAW:no-silent-failure].
 TMP="$(mktemp)"
 trap 'rm -f "$DESIRED" "$TMP"' EXIT
-sed "s|__ACTION_REF__|${ACTION_REF}|" "$DESIRED" > "$TMP" && mv "$TMP" "$DESIRED"
+for rendered in "__ACTION_REF__|${ACTION_REF}" "__ACTION_VERSION__|${ACTION_VERSION}"; do
+  marker="${rendered%%|*}"
+  value="${rendered#*|}"
+  grep -q "$marker" "$DESIRED" || die "workflow template lost its ${marker} marker."
+  sed "s|${marker}|${value}|" "$DESIRED" > "$TMP" && mv "$TMP" "$DESIRED"
+done
 
 # --- Effect 1: converge the workflow file. An absent deployed file is a real
 # domain value (fresh install), handled explicitly, not an error to suppress.
