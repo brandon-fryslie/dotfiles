@@ -32,7 +32,7 @@ set -euo pipefail
 # [LAW:one-source-of-truth] This line is where "what is current" is decided; to
 # bump, resolve the tag and update the SHA and the trailing comment together:
 #   gh api repos/promptctl/copirate-code-review-agent/git/ref/tags/v1 --jq .object.sha
-ACTION_REF="promptctl/copirate-code-review-agent@04083de7e05373424167fcae73030c9539b07668"  # v1 = 1.42.0
+ACTION_REF="promptctl/copirate-code-review-agent@669c4ea7b3b2a4d7c3bc88a96c73a42302ebe046"  # v1 = 1.43.0
 # [LAW:one-type-per-behavior] The secrets differ only in their name and in which env
 # var overrides their keychain item. Everything else about provisioning them — the
 # emptiness gate, the Actions+Dependabot double-set, the three reachability cases — is
