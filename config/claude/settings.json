@@ -184,7 +184,7 @@
   "fileCheckpointingEnabled": true,
   "showTurnDuration": true,
   "terminalProgressBarEnabled": true,
-  "remoteControlAtStartup": false,
+  "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": false,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true,
