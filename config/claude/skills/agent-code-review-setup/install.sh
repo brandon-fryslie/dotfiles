@@ -33,12 +33,12 @@ ACTION_REF="promptctl/copirate-code-review-agent@8db55e0080fc3432f768f09fa410a0f
 # "<secret name>|<keychain-item override env var>"; the keychain item defaults to the
 # secret's own name, so there is no second literal to drift. [LAW:one-source-of-truth]
 #
-# CLAUDE_CODE_OAUTH_TOKEN is provisioned AHEAD OF ITS USE: `claude setup-token` mints a
-# one-year subscription token that the action will read once subscription auth ships
-# (lit zai-billing-xl0.1). Distributing it per-repo through this installer is the
-# deliberate alternative to an org-wide secret — org secrets reach only repos in that
-# org, while this reaches every repo the installer touches. Until the workflow template
-# references it, its absence is reported and harmless; see converge_secret.
+# CLAUDE_CODE_OAUTH_TOKEN is a Claude Pro/Max subscription token from `claude
+# setup-token`, which the action reads once subscription auth ships (lit
+# zai-billing-xl0.1). Distributing it per-repo through this installer is the deliberate
+# alternative to an org-wide secret — org secrets reach only repos in that org, while
+# this reaches every repo the installer touches. Listing it here makes it REQUIRED like
+# any other entry: an install that cannot provision it stops rather than half-succeeding.
 SECRETS=(
   "DEEPSEEK_API_KEY|DEEPSEEK_KEYCHAIN_ITEM"
   "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM"
@@ -176,9 +176,9 @@ fi
 # secret is its derived copy [LAW:one-source-of-truth]: reachable keychain →
 # re-sync (rotation propagates); unreachable keychain + existing copy → the
 # observable desired state holds, warn that re-sync is impossible from this
-# machine; unreachable keychain + no copy → fatal only if the workflow actually
-# consumes it, because that is the one state where the reviewer cannot
-# authenticate and a later "clean review" would be a lie. [LAW:no-silent-failure]
+# machine; unreachable keychain + no copy → fail loudly, because the reviewer
+# cannot authenticate and a later "clean review" would be a lie.
+# [LAW:no-silent-failure]
 keychain_has_item() {
   command -v security >/dev/null 2>&1 \
     && security find-generic-password -s "$1" >/dev/null 2>&1
@@ -192,16 +192,6 @@ secret_on_repo() {
     || die "could not list repo secrets on $REPO — cannot tell whether $1 is set; fix gh access and re-run."
   grep -qxF "$1" <<<"$names"
 }
-# [LAW:one-source-of-truth] Requiredness is READ FROM THE WORKFLOW THAT WILL RUN, never
-# declared alongside it. $WORKFLOW_PATH is the territory here — after Effect 1 it holds
-# either the freshly converged template or the dogfood workflow we deliberately left
-# alone, so this answers for whichever one actually executes. The day a template starts
-# referencing a secret is the day that secret becomes required, with no second
-# declaration anyone has to remember to flip.
-workflow_uses_secret() {
-  grep -qF "secrets.$1" "$WORKFLOW_PATH"
-}
-
 converge_secret() {
   local secret_name="$1" override_var="$2"
   # Keychain item shares the secret's name by default: one canonical name, no second
@@ -234,17 +224,13 @@ converge_secret() {
       echo "  so it cannot be re-synced from here; the existing repo secret is left as-is."
       echo "  To re-enable syncing: add the keychain item, or point $override_var at the right one."
     } >&2
-  elif workflow_uses_secret "$secret_name"; then
-    die "secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not available to set it — the reviewer cannot authenticate. Add the keychain item (or set $override_var) and re-run."
   else
-    # Provisioned ahead of its use: the workflow does not reference this secret, so its
-    # absence cannot break a review. Reported on stderr rather than swallowed, because
-    # "I meant to provision that and it silently did not happen" is exactly the state
-    # this line exists to make impossible to miss. [LAW:no-silent-failure]
-    {
-      echo "· secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not on"
-      echo "  this machine. $WORKFLOW_PATH does not reference it, so nothing is broken — skipped."
-    } >&2
+    # Every secret in SECRETS is required, unconditionally. There is deliberately no
+    # lenient arm for "the workflow does not reference it yet" — that would let a repo
+    # finish the install believing it was provisioned when it was not, and the gap would
+    # surface later as an unauthenticated review with nothing pointing back here. If a
+    # secret is listed, it gets provisioned or the install stops. [LAW:no-silent-failure]
+    die "secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not available to set it — the reviewer cannot authenticate. Add the keychain item (or set $override_var) and re-run."
   fi
 }
 
