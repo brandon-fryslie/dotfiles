@@ -7,10 +7,10 @@
 #
 # Two independent convergence targets:
 #   1. .github/workflows/code-review.yml matches the embedded template.
-#   2. The DEEPSEEK_API_KEY repo secret is set (re-synced from the macOS
+#   2. Every secret in SECRETS is set on the repo (re-synced from the macOS
 #      keychain whenever the keychain is reachable, so rotation propagates).
 #
-# The secret flows keychain -> gh over a pipe. It is never bound to a variable,
+# Each secret flows keychain -> gh over a pipe. It is never bound to a variable,
 # never passed in argv, never printed. [LAW:effects-at-boundaries]
 #
 # Committing/pushing the workflow is intentionally NOT done here — that is a git
@@ -25,10 +25,24 @@ set -euo pipefail
 # bump, resolve the tag and update the SHA and the trailing comment together:
 #   gh api repos/promptctl/copirate-code-review-agent/git/ref/tags/v1 --jq .object.sha
 ACTION_REF="promptctl/copirate-code-review-agent@8db55e0080fc3432f768f09fa410a0f5d22b26c4"  # v1
-SECRET_NAME="DEEPSEEK_API_KEY"
-# Keychain item shares the secret's name by default: one canonical name, no second
-# literal to drift out of sync. [LAW:one-source-of-truth] Override with DEEPSEEK_KEYCHAIN_ITEM.
-KEYCHAIN_ITEM="${DEEPSEEK_KEYCHAIN_ITEM:-$SECRET_NAME}"
+# [LAW:one-type-per-behavior] The secrets differ only in their name and in which env
+# var overrides their keychain item. Everything else about provisioning them — the
+# emptiness gate, the Actions+Dependabot double-set, the three reachability cases — is
+# identical, so these are two INSTANCES of one convergence, never two copies of it.
+# A third secret is one more line here and no new code. Each entry is
+# "<secret name>|<keychain-item override env var>"; the keychain item defaults to the
+# secret's own name, so there is no second literal to drift. [LAW:one-source-of-truth]
+#
+# CLAUDE_CODE_OAUTH_TOKEN is provisioned AHEAD OF ITS USE: `claude setup-token` mints a
+# one-year subscription token that the action will read once subscription auth ships
+# (lit zai-billing-xl0.1). Distributing it per-repo through this installer is the
+# deliberate alternative to an org-wide secret — org secrets reach only repos in that
+# org, while this reaches every repo the installer touches. Until the workflow template
+# references it, its absence is reported and harmless; see converge_secret.
+SECRETS=(
+  "DEEPSEEK_API_KEY|DEEPSEEK_KEYCHAIN_ITEM"
+  "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM"
+)
 WORKFLOW_PATH=".github/workflows/code-review.yml"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -158,16 +172,16 @@ else
   echo "✓ wrote $WORKFLOW_PATH (uses $ACTION_REF)"
 fi
 
-# --- Effect 2: converge the secret. The keychain is canonical and the repo
+# --- Effect 2: converge each secret. The keychain is canonical and the repo
 # secret is its derived copy [LAW:one-source-of-truth]: reachable keychain →
 # re-sync (rotation propagates); unreachable keychain + existing copy → the
 # observable desired state holds, warn that re-sync is impossible from this
-# machine; unreachable keychain + no copy → fail loudly, because the reviewer
-# cannot authenticate and a later "clean review" would be a lie.
-# [LAW:no-silent-failure]
+# machine; unreachable keychain + no copy → fatal only if the workflow actually
+# consumes it, because that is the one state where the reviewer cannot
+# authenticate and a later "clean review" would be a lie. [LAW:no-silent-failure]
 keychain_has_item() {
   command -v security >/dev/null 2>&1 \
-    && security find-generic-password -s "$KEYCHAIN_ITEM" >/dev/null 2>&1
+    && security find-generic-password -s "$1" >/dev/null 2>&1
 }
 secret_on_repo() {
   # A failed listing must not read as "secret absent" — that would route a gh
@@ -175,39 +189,70 @@ secret_on_repo() {
   # wrong cause. List first, fail distinctly. [LAW:no-silent-failure]
   local names
   names="$(gh secret list --json name -q '.[].name')" \
-    || die "could not list repo secrets on $REPO — cannot tell whether $SECRET_NAME is set; fix gh access and re-run."
-  grep -qxF "$SECRET_NAME" <<<"$names"
+    || die "could not list repo secrets on $REPO — cannot tell whether $1 is set; fix gh access and re-run."
+  grep -qxF "$1" <<<"$names"
+}
+# [LAW:one-source-of-truth] Requiredness is READ FROM THE WORKFLOW THAT WILL RUN, never
+# declared alongside it. $WORKFLOW_PATH is the territory here — after Effect 1 it holds
+# either the freshly converged template or the dogfood workflow we deliberately left
+# alone, so this answers for whichever one actually executes. The day a template starts
+# referencing a secret is the day that secret becomes required, with no second
+# declaration anyone has to remember to flip.
+workflow_uses_secret() {
+  grep -qF "secrets.$1" "$WORKFLOW_PATH"
 }
 
-if keychain_has_item; then
-  # A keychain item can hold an empty value and still read back exit 0 —
-  # pipefail only guards nonzero exits — and an empty value here would set an
-  # empty repo secret that breaks the reviewer silently at review time.
-  # Validate at the trust boundary via byte count so the value itself never
-  # touches a shell variable. [LAW:no-silent-failure]
-  [ "$(security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | wc -c)" -gt 0 ] \
-    || die "keychain item '$KEYCHAIN_ITEM' has an empty value — refusing to set an empty $SECRET_NAME."
-  echo "→ syncing secret $SECRET_NAME on $REPO (Actions + Dependabot) from keychain item '$KEYCHAIN_ITEM'…"
-  # Both stores are required: Dependabot-triggered runs read secrets from a
-  # SEPARATE store from Actions, so an Actions-only secret leaves every Dependabot
-  # PR review unauthenticated (the reviewer's whole reason to exist on dep bumps).
-  # [LAW:one-source-of-truth] keychain is canonical; both stores are derived copies.
-  # pipefail aborts the pipeline on a failed 'security' read; the emptiness gate
-  # above covers the successful-but-empty read. tr strips security's trailing
-  # newline. The value is piped straight to gh and never touches a shell variable,
-  # so we read the keychain once per store rather than caching it.
-  security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | gh secret set "$SECRET_NAME"
-  security find-generic-password -s "$KEYCHAIN_ITEM" -w | tr -d '\n' | gh secret set "$SECRET_NAME" --app dependabot
-  echo "✓ set secret $SECRET_NAME on $REPO (Actions + Dependabot)"
-elif secret_on_repo; then
-  {
-    echo "! secret $SECRET_NAME exists on $REPO but keychain item '$KEYCHAIN_ITEM' is not on this machine,"
-    echo "  so it cannot be re-synced from here; the existing repo secret is left as-is."
-    echo "  To re-enable syncing: add the keychain item, or point DEEPSEEK_KEYCHAIN_ITEM at the right one."
-  } >&2
-else
-  die "secret $SECRET_NAME is not set on $REPO and keychain item '$KEYCHAIN_ITEM' is not available to set it — the reviewer cannot authenticate. Add the keychain item (or set DEEPSEEK_KEYCHAIN_ITEM) and re-run."
-fi
+converge_secret() {
+  local secret_name="$1" override_var="$2"
+  # Keychain item shares the secret's name by default: one canonical name, no second
+  # literal to drift out of sync. [LAW:one-source-of-truth]
+  local keychain_item="${!override_var:-$secret_name}"
+
+  if keychain_has_item "$keychain_item"; then
+    # A keychain item can hold an empty value and still read back exit 0 —
+    # pipefail only guards nonzero exits — and an empty value here would set an
+    # empty repo secret that breaks the reviewer silently at review time.
+    # Validate at the trust boundary via byte count so the value itself never
+    # touches a shell variable. [LAW:no-silent-failure]
+    [ "$(security find-generic-password -s "$keychain_item" -w | tr -d '\n' | wc -c)" -gt 0 ] \
+      || die "keychain item '$keychain_item' has an empty value — refusing to set an empty $secret_name."
+    echo "→ syncing secret $secret_name on $REPO (Actions + Dependabot) from keychain item '$keychain_item'…"
+    # Both stores are required: Dependabot-triggered runs read secrets from a
+    # SEPARATE store from Actions, so an Actions-only secret leaves every Dependabot
+    # PR review unauthenticated (the reviewer's whole reason to exist on dep bumps).
+    # [LAW:one-source-of-truth] keychain is canonical; both stores are derived copies.
+    # pipefail aborts the pipeline on a failed 'security' read; the emptiness gate
+    # above covers the successful-but-empty read. tr strips security's trailing
+    # newline. The value is piped straight to gh and never touches a shell variable,
+    # so we read the keychain once per store rather than caching it.
+    security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name"
+    security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name" --app dependabot
+    echo "✓ set secret $secret_name on $REPO (Actions + Dependabot)"
+  elif secret_on_repo "$secret_name"; then
+    {
+      echo "! secret $secret_name exists on $REPO but keychain item '$keychain_item' is not on this machine,"
+      echo "  so it cannot be re-synced from here; the existing repo secret is left as-is."
+      echo "  To re-enable syncing: add the keychain item, or point $override_var at the right one."
+    } >&2
+  elif workflow_uses_secret "$secret_name"; then
+    die "secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not available to set it — the reviewer cannot authenticate. Add the keychain item (or set $override_var) and re-run."
+  else
+    # Provisioned ahead of its use: the workflow does not reference this secret, so its
+    # absence cannot break a review. Reported on stderr rather than swallowed, because
+    # "I meant to provision that and it silently did not happen" is exactly the state
+    # this line exists to make impossible to miss. [LAW:no-silent-failure]
+    {
+      echo "· secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not on"
+      echo "  this machine. $WORKFLOW_PATH does not reference it, so nothing is broken — skipped."
+    } >&2
+  fi
+}
+
+# [LAW:dataflow-not-control-flow] Same operation over every secret; which secrets exist
+# is data, not structure. "A|B" splits on the single delimiter the table declares.
+for secret_entry in "${SECRETS[@]}"; do
+  converge_secret "${secret_entry%%|*}" "${secret_entry##*|}"
+done
 
 if [ "$WORKFLOW_CHANGED" -eq 1 ]; then
   cat <<EOF
