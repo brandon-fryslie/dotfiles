@@ -126,15 +126,21 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout pull request
-        # Moving major tag, for the same reason as the action pin above: a SHA here puts
-        # every consuming repo back on the re-bump treadmill, for a first-party GitHub
-        # action where the major tag is the standard reference. The rule is "track the
-        # moving major", not "the literal string v1" — `v6` IS checkout's current major,
-        # and `@v1` would pin a 2019 Node-12 release that no longer runs.
+        # Moving major tag, for the same reason as the review action pin below: a SHA
+        # here puts every consuming repo back on the re-bump treadmill, for a first-party
+        # GitHub action where the major tag is the standard reference.
         #
-        # No label rides beside it: the ref already says v6, so a trailing `# v6` would be
-        # a copy of the line it sits on. [LAW:comments-carry-meaning]
-        uses: actions/checkout@v6
+        # The rule is "track the moving major" — whichever major is current *now*, not one
+        # frozen at authoring time. Re-point this ref when checkout ships a new major.
+        # Nothing breaks if you don't: checkout still publishes patches for older majors,
+        # so a stale pin keeps passing green. That silence is exactly how this drifts —
+        # the previous pin was already a major behind on the day it was written, and green
+        # runs hid it until a reviewer misread the ref as nonexistent.
+        #
+        # The version lives on the `uses:` line and nowhere else — not in this comment,
+        # not as a trailing `# vN`. Either is a second copy of what the line already
+        # states, and it rots the day the ref moves. [LAW:one-source-of-truth]
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           # This is an UNTRUSTED checkout — the PR head, from any fork. The default
