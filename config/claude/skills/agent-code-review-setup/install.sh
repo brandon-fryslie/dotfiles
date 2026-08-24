@@ -85,9 +85,6 @@ cat > "$DESIRED" <<'YAML'
 #   https://github.com/brandon-fryslie/dotfiles
 #   config/claude/skills/agent-code-review-setup/install.sh
 #
-# (installed locally to ~/.claude/skills/agent-code-review-setup/install.sh —
-# that copy is a symlink into the repo above, not a separate source.)
-#
 # To change the workflow: edit the template in that repo, then re-run the
 # installer from this repo's root. This file is a derived copy — the installer
 # reconverges it on every run and overwrites local edits silently, so editing
@@ -167,10 +164,11 @@ jobs:
           # `default: ${{ github.token }}` input; this only stops the copy on disk.
           persist-credentials: false
 
-      # Pinned to the moving `v1` tag on purpose: this repo tracks the action's latest
+      # Pinned to the action's moving major tag on purpose: this repo tracks its latest
       # release with no edit here, ever. Pinning a SHA instead would mean a PR against
       # every consuming repo for every release, which in practice means none of them get
-      # updated. The ref is chosen in install.sh, which owns this file.
+      # updated. The ref is chosen in the template, which owns this file — and, like the
+      # checkout pin above, the version appears on the `uses:` line and nowhere else.
       #
       # BOTH credentials are passed on purpose. PROVIDER defaults to `auto`, which the
       # action retargets centrally — it moved from deepseek to claude-subscription in
