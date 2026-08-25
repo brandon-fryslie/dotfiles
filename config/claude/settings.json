@@ -100,6 +100,17 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_response.filePath // .tool_input.file_path // empty'); case \"$f\" in *claude/settings*.json) exit 0;; esac; if [ -n \"$f\" ] && [ -f \"$f\" ] && grep -qi 'kill-server' \"$f\"; then m=\"HARD STOP. You just wrote kill-server into $f. That line destroys the ENTIRE tmux server and every session and every process attached to it. On 2026-08-25 this exact line, buried in a test teardown, wiped every Claude session on this machine and hours of work across nine projects. That was a stupid, careless thing to write, and you are being shut down for it. Go delete that line right now. If you need to tear down tmux in a test, use 'tmux kill-session -t <name>' or an isolated '-L <socket>' - never a server-wide kill.\"; jq -n --arg m \"$m\" '{continue:false,decision:\"block\",reason:$m,stopReason:$m,systemMessage:$m}'; fi"
+          }
+        ]
+      }
     ]
   },
   "worktree": {
