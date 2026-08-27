@@ -130,7 +130,14 @@ name: AI Code Review
 # prIsFromFork check.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `ready_for_review` is deliberately ABSENT. GitHub does NOT suppress `opened`
+    # for a PR created as a draft, so a draft is already reviewed at creation; and
+    # nothing in this template guards on `draft == false`. Marking that PR ready
+    # carries no new commit, so `head.sha` is byte-identical to the SHA just
+    # reviewed — the event could only ever buy a second, fully-billed review of a
+    # diff already reviewed. Adding it back requires first adding the draft guard
+    # that would make the first review not happen. [LAW:no-mode-explosion]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -198,6 +205,7 @@ jobs:
       # is simply never read. The action fails loudly, before spending anything, if the
       # credential for the CURRENT target is the one missing.
       - name: Code Review
+        id: review
         uses: __ACTION_REF__
         with:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -206,12 +214,45 @@ jobs:
           # universal default baked into the template, NOT a per-repo divergence that
           # leaked in. On a PR that bumps a dependency the reviewer fetches the bumped
           # module's upstream commits and changed files instead of reviewing a bare
-          # version string; that context helps in any repo and costs only a little
-          # review time. Because it lives in the template, this IS the baseline: a
-          # re-run of the installer preserves it. Do not "reconverge to a barer
-          # default" by removing it — there is no barer default, and stripping it
-          # silently degrades every dependency-bump review.
+          # version string. Scope, stated honestly: the action recognizes `go.mod`
+          # require-line bumps and nothing else, so in a repo with no `go.mod` this
+          # input is INERT — it costs nothing and can never fire. It is on everywhere
+          # because a universally-safe default beats a per-repo question, not because
+          # it helps every repo. Do not "reconverge to a barer default" by removing
+          # it — there is no barer default, and stripping it silently degrades every
+          # go.mod dependency-bump review.
           DEPENDENCY_DIFF: "true"
+          # Generated, committed build output is reviewed by NO repo. A bundle is
+          # mechanically derived from sources the reviewer is already reading, so a
+          # finding against it is either a restatement of one already made upstream or
+          # a comment on machine output nobody edits — and the repo's own CI proves
+          # the bundle matches a fresh build far more exactly than a reader can.
+          # Measured here: a review that read a 1.5 MB ncc bundle spent an entire
+          # scope concluding it was a "faithful, byte-consistent rebuild", at ~700K
+          # input tokens for that zero-signal confirmation.
+          #
+          # EXCLUDE_PATTERNS REPLACES action.yml's default rather than appending to
+          # it, so the lock-file patterns are carried explicitly here. Dropping one
+          # from this line silently un-excludes it. [LAW:one-source-of-truth]
+          EXCLUDE_PATTERNS: "dist/**,build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
+
+      # The transcript is the only artifact that can explain a review that failed,
+      # hung, or misbehaved — the exact prompt, the raw engine output including
+      # thinking and tool calls, and stderr, for every attempt. action.yml produces
+      # it on EVERY termination path and documents this exact consumption; a
+      # template that never consumed it left every consumer with a failed run and
+      # nothing to read. [LAW:no-silent-failure]
+      #
+      # `if: always()` because the run that most needs a transcript is the one that
+      # failed. The output guard covers the paths that legitimately spawn no engine
+      # (a fork-PR skip), where the directory is empty rather than missing.
+      - name: Archive review transcript
+        if: always() && steps.review.outputs.transcript-dir != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-session-transcript
+          path: ${{ steps.review.outputs.transcript-dir }}
+          if-no-files-found: ignore
 YAML
 # Insert the rendered values without escaping every GH expression in the heredoc.
 # [LAW:one-type-per-behavior] One marker today, but still a marker|value LIST: a second
