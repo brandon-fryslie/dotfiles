@@ -34,16 +34,23 @@ set -euo pipefail
 # running `1.51.0` is worse than no comment. What is running is `@v1` — read the releases
 # page for what that currently means. [FRAMING:representation]
 ACTION_REF="promptctl/copirate-code-review-agent@v1"
-# Each entry: "<secret name>|<override env var>|<keychain item>". Every listed secret
-# is required; a third secret is one more line and no new code.
+# Each entry: "<secret name>|<keychain item>". Every listed secret is required; a
+# third secret is one more line and no new code.
 #
 # The keychain item is declared, not derived from the secret name. The action can only
 # read CLAUDE_CODE_OAUTH_TOKEN, but which account's token that holds varies by which
-# has capacity. Swapping accounts is editing the third field below; the installer never
-# chooses and never prompts. [LAW:one-source-of-truth]
+# has capacity. Swapping accounts is editing the second field below.
+#
+# There is deliberately NO environment-variable override of these items. An override
+# would be a second, invisible answer to "which credential does this repo get" —
+# unset in every dotfile and every shell here, so the only way it can ever fire is a
+# process that exports it for itself, silently re-pointing the credential for every
+# repo that process touches while this table still reads _SIGNUP. Two maps of one
+# fact, and no way to ask which is lying. The table is the only map.
+# [LAW:one-source-of-truth] [LAW:no-shared-mutable-globals]
 SECRETS=(
-  "DEEPSEEK_API_KEY|DEEPSEEK_KEYCHAIN_ITEM|DEEPSEEK_API_KEY"
-  "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM|CLAUDE_CODE_OAUTH_TOKEN_SIGNUP"
+  "DEEPSEEK_API_KEY|DEEPSEEK_API_KEY"
+  "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_SIGNUP"
 )
 WORKFLOW_PATH=".github/workflows/code-review.yml"
 
@@ -248,11 +255,10 @@ secret_on_repo() {
   grep -qxF "$1" <<<"$names"
 }
 converge_secret() {
-  local secret_name="$1" override_var="$2" declared_item="$3"
-  # Override wins for one invocation, then the declaration. No fallback to the secret's
-  # own name: a wrong declaration must surface as a missing item, not silently resolve
-  # to whatever is filed under that name. [LAW:no-silent-failure]
-  local keychain_item="${!override_var:-$declared_item}"
+  local secret_name="$1" keychain_item="$2"
+  # The declared item, and nothing else — no ambient override, no fallback to the
+  # secret's own name. A wrong declaration must surface as a missing item, not
+  # silently resolve to whatever else is filed nearby. [LAW:no-silent-failure]
 
   if keychain_has_item "$keychain_item"; then
     # An empty item reads back exit 0 and would set an empty secret. Gate by byte count
@@ -269,21 +275,24 @@ converge_secret() {
     {
       echo "! secret $secret_name exists on $REPO but keychain item '$keychain_item' is not on this machine,"
       echo "  so it cannot be re-synced from here; the existing repo secret is left as-is."
-      echo "  To re-enable syncing: add the keychain item, or point $override_var at the right one."
+      echo "  To re-enable syncing: add keychain item '$keychain_item' on this machine."
     } >&2
   else
     # Listed means required: provisioned or the install stops. [LAW:no-silent-failure]
-    die "secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not available to set it — the reviewer cannot authenticate. Add the keychain item (or set $override_var) and re-run."
+    die "secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not available to set it — the reviewer cannot authenticate. Add that keychain item and re-run."
   fi
 }
 
 # Split by the delimiter, not by prefix/suffix trimming: %%|* and ##*| silently read
 # the wrong columns the moment a row grows. [LAW:no-silent-failure]
 for secret_entry in "${SECRETS[@]}"; do
-  IFS='|' read -r secret_name override_var declared_item <<<"$secret_entry"
-  [ -n "$secret_name" ] && [ -n "$override_var" ] && [ -n "$declared_item" ] \
-    || die "malformed SECRETS entry '$secret_entry' — expected '<secret>|<override env var>|<keychain item>'."
-  converge_secret "$secret_name" "$override_var" "$declared_item"
+  IFS='|' read -r secret_name declared_item extra <<<"$secret_entry"
+  # `extra` catches a row that still carries the removed override column: read -r would
+  # otherwise fold the third field into the second and provision from an item named
+  # "ITEM|junk". Reject the shape instead of resolving it. [LAW:no-silent-failure]
+  [ -n "$secret_name" ] && [ -n "$declared_item" ] && [ -z "$extra" ] \
+    || die "malformed SECRETS entry '$secret_entry' — expected '<secret>|<keychain item>'."
+  converge_secret "$secret_name" "$declared_item"
 done
 
 if [ "$WORKFLOW_CHANGED" -eq 1 ]; then
