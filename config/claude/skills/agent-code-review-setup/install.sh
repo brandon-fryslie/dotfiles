@@ -162,21 +162,21 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout pull request
-        # Moving major tag, for the same reason as the review action pin below: a SHA
-        # here puts every consuming repo back on the re-bump treadmill, for a first-party
-        # GitHub action where the major tag is the standard reference.
+        # SHA-pinned, unlike the review action below — a deliberately DIFFERENT posture for
+        # a DIFFERENT risk, not an inconsistency to tidy up. checkout is THIRD-PARTY code
+        # fetched over the network on every run, including on untrusted fork PRs, and it
+        # runs BEFORE the review action's own fork gating (which lives inside that action's
+        # process, not in this workflow). Under a moving tag, a future compromised release
+        # would execute automatically, unreviewed, on every incoming PR.
         #
-        # The rule is "track the moving major" — whichever major is current *now*, not one
-        # frozen at authoring time. Re-point this ref when checkout ships a new major.
-        # Nothing breaks if you don't: checkout still publishes patches for older majors,
-        # so a stale pin keeps passing green. That silence is exactly how this drifts —
-        # the previous pin was already a major behind on the day it was written, and green
-        # runs hid it until a reviewer misread the ref as nonexistent.
+        # The moving-tag argument that governs the review action does not transfer here: it
+        # rests on the ref pointing at a repo we author, review, and release — a
+        # relationship no third party has with us. So this pin accepts exactly the re-bump
+        # cost that argument avoids, because the code being fetched is not ours.
+        # [LAW:one-type-per-behavior] Two different trust relationships, two rules.
         #
-        # The version lives on the `uses:` line and nowhere else — not in this comment,
-        # not as a trailing `# vN`. Either is a second copy of what the line already
-        # states, and it rots the day the ref moves. [LAW:one-source-of-truth]
-        uses: actions/checkout@v7
+        # Bump by editing this template and re-running the installer everywhere.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           # This is an UNTRUSTED checkout — the PR head, from any fork. The default
@@ -248,7 +248,10 @@ jobs:
       # (a fork-PR skip), where the directory is empty rather than missing.
       - name: Archive review transcript
         if: always() && steps.review.outputs.transcript-dir != ''
-        uses: actions/upload-artifact@v4
+        # SHA-pinned for the same reason as the checkout above: third-party code fetched
+        # over the network on every run, so it does not inherit the moving-tag argument
+        # that governs our own action.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: review-session-transcript
           path: ${{ steps.review.outputs.transcript-dir }}
