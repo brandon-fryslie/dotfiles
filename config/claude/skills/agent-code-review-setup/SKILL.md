@@ -24,18 +24,18 @@ A single embedded script, `install.sh`, **converges** the repo onto the desired 
 
 The secrets provisioned today:
 
-| Secret | Keychain item (default) | Override env var |
+| Secret | Keychain item | Override env var |
 |---|---|---|
 | `DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` | `DEEPSEEK_KEYCHAIN_ITEM` |
-| `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN_SIGNUP` | `CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM` |
 
-`CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Distributing it per-repo through this installer is the deliberate alternative to an org-wide secret, which would reach only repos inside that one org.
+`CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it is varies by which one has capacity — to swap, edit the third field of that row in `install.sh` and re-run. The installer never chooses and never prompts.
 
 **Every listed secret is required.** There is no lenient arm for a secret the workflow does not consume yet — an install that cannot provision a listed secret stops, rather than finishing and leaving you believing it was provisioned. To stop provisioning a secret, remove it from the table.
 
 Re-running when everything is current is a fast no-op that needs no keychain.
 
-**No secret ever touches the agent.** Each flows `keychain → gh` over a pipe — never bound to a variable, never in `argv`, never printed, never in this conversation. The agent only invokes the script; it cannot observe any key. Each keychain item defaults to the same name as the GitHub secret it feeds.
+**No secret ever touches the agent.** Each flows `keychain → gh` over a pipe — never bound to a variable, never in `argv`, never printed, never in this conversation. The agent only invokes the script; it cannot observe any key.
 
 The script validates the shared preconditions first (git repo, `gh` installed + authenticated, a resolvable GitHub remote) and fails loudly with a specific message if any is missing. The keychain is demanded only at the moment the secret must actually be written.
 
