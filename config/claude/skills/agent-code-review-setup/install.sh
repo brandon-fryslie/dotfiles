@@ -161,21 +161,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout pull request
-        # Moving major tag, for the same reason as the review action pin below: a SHA
-        # here puts every consuming repo back on the re-bump treadmill, for a first-party
-        # GitHub action where the major tag is the standard reference.
+        # SHA-pinned, unlike the review action below — a deliberately DIFFERENT posture for a
+        # DIFFERENT risk. checkout is third-party code fetched over the network on every run,
+        # including untrusted fork PRs, before this job's own prIsFromFork gating (which lives
+        # inside the review action's process, not this workflow) ever runs. A moving tag here
+        # means a future compromised or malicious checkout release executes automatically, with
+        # no review, on every incoming PR. The review action's `uses: __ACTION_REF__` line below
+        # is a repo we control and review, checked out from a repo already fetched by THIS step —
+        # its moving-tag argument doesn't transfer to a third party with no such relationship.
         #
-        # The rule is "track the moving major" — whichever major is current *now*, not one
-        # frozen at authoring time. Re-point this ref when checkout ships a new major.
-        # Nothing breaks if you don't: checkout still publishes patches for older majors,
-        # so a stale pin keeps passing green. That silence is exactly how this drifts —
-        # the previous pin was already a major behind on the day it was written, and green
-        # runs hid it until a reviewer misread the ref as nonexistent.
-        #
-        # The version lives on the `uses:` line and nowhere else — not in this comment,
-        # not as a trailing `# vN`. Either is a second copy of what the line already
-        # states, and it rots the day the ref moves. [LAW:one-source-of-truth]
-        uses: actions/checkout@v7
+        # Bump by re-running the installer once the template's pin is updated (its version
+        # comment, not this line's prose, is what to keep in sync) — same re-bump cost the
+        # moving-tag argument was built to avoid for the org's own action, accepted here because
+        # the action fetched is not one we author.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           # This is an UNTRUSTED checkout — the PR head, from any fork. The default
@@ -216,13 +215,15 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           # DEPENDENCY_DIFF is on for EVERY repo this installs into — a deliberate
           # universal default baked into the template, NOT a per-repo divergence that
-          # leaked in. On a PR that bumps a dependency the reviewer fetches the bumped
+          # leaked in. The feature (src/dependency-diff.js) only scans go.mod diffs: on a
+          # PR that bumps a Go module requirement, the reviewer fetches the bumped
           # module's upstream commits and changed files instead of reviewing a bare
-          # version string; that context helps in any repo and costs only a little
-          # review time. Because it lives in the template, this IS the baseline: a
-          # re-run of the installer preserves it. Do not "reconverge to a barer
-          # default" by removing it — there is no barer default, and stripping it
-          # silently degrades every dependency-bump review.
+          # version string. For a non-Go repo (no go.mod — this template applies to any
+          # language) it is presently a harmless no-op, not a feature that "helps in any
+          # repo"; it costs nothing to leave on. Because it lives in the template, this IS
+          # the baseline: a re-run of the installer preserves it. Do not "reconverge to a
+          # barer default" by removing it — there is no barer default, and stripping it
+          # silently degrades every Go dependency-bump review.
           DEPENDENCY_DIFF: "true"
           # __SELF_REPO_EXTRA_INPUTS__
       # __SELF_REPO_EXTRA_STEPS__
