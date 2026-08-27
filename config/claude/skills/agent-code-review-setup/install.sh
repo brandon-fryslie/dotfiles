@@ -210,21 +210,15 @@ done
 # --- Effect 1: converge the workflow file. An absent deployed file is a real
 # domain value (fresh install), handled explicitly, not an error to suppress.
 #
-# But one repo must NOT be converged onto the consumer template: the action's
-# own source repo, whose workflow deliberately dogfoods the LOCAL action via
-# `uses: ./` (with PROVIDER: auto, the dist/** exclusion, transcript archival).
-# Rewriting it to `uses: __ACTION_REF__` would destroy that dogfooding config on
-# every review-loop preflight. We recognize that repo by the one marker only it
-# carries — a `uses:` step pointing at a local action path (`./…`), the very
-# thing that MAKES it a dogfood workflow — read straight from the deployed file
-# rather than matched against a repo name, which has already drifted from
-# ACTION_REF's owner/name and cannot be trusted. [LAW:one-source-of-truth]
-# The deployed `uses: ./` IS the territory; we read it, we don't re-derive it.
-if [ -f "$WORKFLOW_PATH" ] && grep -Eq '^[[:space:]]*uses:[[:space:]]*\./' "$WORKFLOW_PATH"; then
-  WORKFLOW_CHANGED=0
-  echo "✓ $WORKFLOW_PATH references a local action (uses: ./) — this is the action's own"
-  echo "  source repo dogfooding itself; leaving its workflow untouched (not a consumer to converge)."
-elif [ -f "$WORKFLOW_PATH" ] && cmp -s "$DESIRED" "$WORKFLOW_PATH"; then
+# EVERY repo converges, with no exemption for the action's own source repo. An
+# exempted repo stops receiving template changes the moment the exemption lands,
+# so its workflow and this template become two representations of one thing, free
+# to drift — and the exemption guarantees they do. [LAW:one-source-of-truth] The
+# source repo's need is to review a PR with THAT PR's code rather than a released
+# tag, and that is a difference of ONE VALUE, ACTION_REF, rendered through the
+# marker list above exactly as any other rendered value. It is not a reason to
+# skip convergence. [LAW:dataflow-not-control-flow]
+if [ -f "$WORKFLOW_PATH" ] && cmp -s "$DESIRED" "$WORKFLOW_PATH"; then
   WORKFLOW_CHANGED=0
   echo "✓ $WORKFLOW_PATH is up to date (uses $ACTION_REF)"
 else
