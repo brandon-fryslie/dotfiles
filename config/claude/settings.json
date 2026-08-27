@@ -86,9 +86,9 @@
     "deny": [
       "Bash(tmux kill-server:*)"
     ],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "auto"
   },
-  "model": "opus[1m]",
+  "model": "fable",
   "hooks": {
     "PreToolUse": [
       {
@@ -190,7 +190,7 @@
   "verbose": false,
   "preferredNotifChannel": "auto",
   "autoCompactEnabled": true,
-  "switchModelsOnFlag": false,
+  "switchModelsOnFlag": true,
   "autoScrollEnabled": true,
   "fileCheckpointingEnabled": true,
   "showTurnDuration": true,
