@@ -24,12 +24,14 @@ A single embedded script, `install.sh`, **converges** the repo onto the desired 
 
 The secrets provisioned today:
 
-| Secret | Keychain item | Override env var |
-|---|---|---|
-| `DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` | `DEEPSEEK_KEYCHAIN_ITEM` |
-| `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN_SIGNUP` | `CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM` |
+| Secret | Keychain item |
+|---|---|
+| `DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN_SIGNUP` |
 
-`CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it is varies by which one has capacity — to swap, edit the third field of that row in `install.sh` and re-run. The installer never chooses and never prompts.
+`CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it is varies by which one has capacity — to swap, edit the second field of that row in `install.sh` and re-run. The installer never chooses and never prompts.
+
+The keychain item is **only** ever what that table says. No environment variable overrides it: an override is a second answer to "which credential does this repo get" that fires invisibly, from whichever process happened to export it, across every repo that process installs into — while the table still reads `_SIGNUP`. One map, no override.
 
 **Every listed secret is required.** There is no lenient arm for a secret the workflow does not consume yet — an install that cannot provision a listed secret stops, rather than finishing and leaving you believing it was provisioned. To stop provisioning a secret, remove it from the table.
 
@@ -47,11 +49,7 @@ Run the script from the root of the target repository:
 bash ~/.claude/skills/agent-code-review-setup/install.sh
 ```
 
-Override a keychain item if that key is stored under a different name (see the table above for the variable per secret):
-
-```bash
-DEEPSEEK_KEYCHAIN_ITEM=my-key bash ~/.claude/skills/agent-code-review-setup/install.sh
-```
+That is the only invocation. If a key is stored under a different keychain item name, change the item in the `SECRETS` table in `install.sh` — do not reach for an environment variable, and do not add one back.
 
 The script does **not** commit. After it succeeds, commit and push the workflow per the user's git workflow (branch + PR — never directly to the default branch). The workflow takes effect once it lands on the default branch.
 
