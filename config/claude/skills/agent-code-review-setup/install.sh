@@ -72,6 +72,26 @@ gh auth status >/dev/null 2>&1 \
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)" \
   || die "gh could not resolve a GitHub repo for $PWD (no GitHub remote, or no access)."
 
+# The action's own source repo reviews each PR with THAT PR's code, which is the one
+# thing a consumer's released `@v1` cannot do for it: a change to the reviewer must be
+# exercised by the review of the PR that makes it, or the repo ships an engine no run
+# ever executed.
+#
+# This is the WHOLE accommodation, and its shape is the point. It selects the rendered
+# ACTION_REF and nothing else — the same template converges here as everywhere, on every
+# PR, so every future template change reaches this repo like any other consumer. The
+# predecessor put this difference in control flow instead, as a branch that declined to
+# converge the source repo at all, and that is precisely how the deployed workflow and
+# this template drifted into two representations of one thing: an operation that does not
+# run cannot receive a change. Variability belongs in the value.
+# [LAW:dataflow-not-control-flow]
+#
+# The discriminator derives from ACTION_REF, so "which repo is the action" is not a second
+# copy free to drift from it — retarget ACTION_REF and this follows in the same edit. That
+# drift is not hypothetical: the removed branch's own comment recorded the repo name having
+# already diverged from ACTION_REF's owner/name. [LAW:one-source-of-truth]
+[ "$REPO" = "${ACTION_REF%@*}" ] && ACTION_REF="./"
+
 # --- Desired state: render the workflow. Pure — no writes into the repo yet. ---
 # Quoted heredoc: GitHub Actions \${{ ... }} expressions pass through literally.
 DESIRED="$(mktemp)"
