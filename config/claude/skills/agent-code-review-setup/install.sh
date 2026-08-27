@@ -34,23 +34,16 @@ set -euo pipefail
 # running `1.51.0` is worse than no comment. What is running is `@v1` — read the releases
 # page for what that currently means. [FRAMING:representation]
 ACTION_REF="promptctl/copirate-code-review-agent@v1"
-# [LAW:one-type-per-behavior] The secrets differ only in their name and in which env
-# var overrides their keychain item. Everything else about provisioning them — the
-# emptiness gate, the Actions+Dependabot double-set, the three reachability cases — is
-# identical, so these are two INSTANCES of one convergence, never two copies of it.
-# A third secret is one more line here and no new code. Each entry is
-# "<secret name>|<keychain-item override env var>"; the keychain item defaults to the
-# secret's own name, so there is no second literal to drift. [LAW:one-source-of-truth]
+# Each entry: "<secret name>|<override env var>|<keychain item>". Every listed secret
+# is required; a third secret is one more line and no new code.
 #
-# CLAUDE_CODE_OAUTH_TOKEN is a Claude Pro/Max subscription token from `claude
-# setup-token`, which the action reads once subscription auth ships (lit
-# zai-billing-xl0.1). Distributing it per-repo through this installer is the deliberate
-# alternative to an org-wide secret — org secrets reach only repos in that org, while
-# this reaches every repo the installer touches. Listing it here makes it REQUIRED like
-# any other entry: an install that cannot provision it stops rather than half-succeeding.
+# The keychain item is declared, not derived from the secret name. The action can only
+# read CLAUDE_CODE_OAUTH_TOKEN, but which account's token that holds varies by which
+# has capacity. Swapping accounts is editing the third field below; the installer never
+# chooses and never prompts. [LAW:one-source-of-truth]
 SECRETS=(
-  "DEEPSEEK_API_KEY|DEEPSEEK_KEYCHAIN_ITEM"
-  "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM"
+  "DEEPSEEK_API_KEY|DEEPSEEK_KEYCHAIN_ITEM|DEEPSEEK_API_KEY"
+  "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_KEYCHAIN_ITEM|CLAUDE_CODE_OAUTH_TOKEN_SIGNUP"
 )
 WORKFLOW_PATH=".github/workflows/code-review.yml"
 
@@ -255,28 +248,20 @@ secret_on_repo() {
   grep -qxF "$1" <<<"$names"
 }
 converge_secret() {
-  local secret_name="$1" override_var="$2"
-  # Keychain item shares the secret's name by default: one canonical name, no second
-  # literal to drift out of sync. [LAW:one-source-of-truth]
-  local keychain_item="${!override_var:-$secret_name}"
+  local secret_name="$1" override_var="$2" declared_item="$3"
+  # Override wins for one invocation, then the declaration. No fallback to the secret's
+  # own name: a wrong declaration must surface as a missing item, not silently resolve
+  # to whatever is filed under that name. [LAW:no-silent-failure]
+  local keychain_item="${!override_var:-$declared_item}"
 
   if keychain_has_item "$keychain_item"; then
-    # A keychain item can hold an empty value and still read back exit 0 —
-    # pipefail only guards nonzero exits — and an empty value here would set an
-    # empty repo secret that breaks the reviewer silently at review time.
-    # Validate at the trust boundary via byte count so the value itself never
-    # touches a shell variable. [LAW:no-silent-failure]
+    # An empty item reads back exit 0 and would set an empty secret. Gate by byte count
+    # so the value never touches a variable. [LAW:no-silent-failure]
     [ "$(security find-generic-password -s "$keychain_item" -w | tr -d '\n' | wc -c)" -gt 0 ] \
       || die "keychain item '$keychain_item' has an empty value — refusing to set an empty $secret_name."
     echo "→ syncing secret $secret_name on $REPO (Actions + Dependabot) from keychain item '$keychain_item'…"
-    # Both stores are required: Dependabot-triggered runs read secrets from a
-    # SEPARATE store from Actions, so an Actions-only secret leaves every Dependabot
-    # PR review unauthenticated (the reviewer's whole reason to exist on dep bumps).
-    # [LAW:one-source-of-truth] keychain is canonical; both stores are derived copies.
-    # pipefail aborts the pipeline on a failed 'security' read; the emptiness gate
-    # above covers the successful-but-empty read. tr strips security's trailing
-    # newline. The value is piped straight to gh and never touches a shell variable,
-    # so we read the keychain once per store rather than caching it.
+    # Both stores required: Dependabot runs read from a SEPARATE store, so an
+    # Actions-only secret leaves every Dependabot review unauthenticated.
     security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name"
     security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name" --app dependabot
     echo "✓ set secret $secret_name on $REPO (Actions + Dependabot)"
@@ -287,19 +272,18 @@ converge_secret() {
       echo "  To re-enable syncing: add the keychain item, or point $override_var at the right one."
     } >&2
   else
-    # Every secret in SECRETS is required, unconditionally. There is deliberately no
-    # lenient arm for "the workflow does not reference it yet" — that would let a repo
-    # finish the install believing it was provisioned when it was not, and the gap would
-    # surface later as an unauthenticated review with nothing pointing back here. If a
-    # secret is listed, it gets provisioned or the install stops. [LAW:no-silent-failure]
+    # Listed means required: provisioned or the install stops. [LAW:no-silent-failure]
     die "secret $secret_name is not set on $REPO and keychain item '$keychain_item' is not available to set it — the reviewer cannot authenticate. Add the keychain item (or set $override_var) and re-run."
   fi
 }
 
-# [LAW:dataflow-not-control-flow] Same operation over every secret; which secrets exist
-# is data, not structure. "A|B" splits on the single delimiter the table declares.
+# Split by the delimiter, not by prefix/suffix trimming: %%|* and ##*| silently read
+# the wrong columns the moment a row grows. [LAW:no-silent-failure]
 for secret_entry in "${SECRETS[@]}"; do
-  converge_secret "${secret_entry%%|*}" "${secret_entry##*|}"
+  IFS='|' read -r secret_name override_var declared_item <<<"$secret_entry"
+  [ -n "$secret_name" ] && [ -n "$override_var" ] && [ -n "$declared_item" ] \
+    || die "malformed SECRETS entry '$secret_entry' — expected '<secret>|<override env var>|<keychain item>'."
+  converge_secret "$secret_name" "$override_var" "$declared_item"
 done
 
 if [ "$WORKFLOW_CHANGED" -eq 1 ]; then
