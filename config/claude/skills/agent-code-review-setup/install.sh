@@ -234,7 +234,21 @@ jobs:
           # EXCLUDE_PATTERNS REPLACES action.yml's default rather than appending to
           # it, so the lock-file patterns are carried explicitly here. Dropping one
           # from this line silently un-excludes it. [LAW:one-source-of-truth]
-          EXCLUDE_PATTERNS: "dist/**,build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
+          #
+          # The directory patterns are DOUBLED on purpose — `dist/**` and `**/dist/**`
+          # are two different patterns, not one written twice. src/diff.js compiles
+          # each pattern to an anchored regex and tests it against the full path AND
+          # the basename. That basename fallback rescues every FILE pattern for free
+          # (`*.lock` catches `packages/app/src-tauri/Cargo.lock` with no `**/`), and
+          # can never rescue a DIRECTORY pattern, because a directory pattern's match
+          # spans separators the basename has already discarded. So the two anchorings
+          # cover disjoint sets: `dist/**` -> `dist/.*` matches only at the root, and
+          # `**/dist/**` -> `.*/dist/.*` requires a leading segment and matches only
+          # below it. Carrying one alone silently un-excludes the other half — a
+          # monorepo leaks every `packages/*/dist/**` bundle into the review, which is
+          # exactly the ~700K-token no-signal read described above. Do not "simplify"
+          # this to `**/dist/**`; that is the regression, not the cleanup.
+          EXCLUDE_PATTERNS: "dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
 
       # The transcript is the only artifact that can explain a review that failed,
       # hung, or misbehaved — the exact prompt, the raw engine output including
