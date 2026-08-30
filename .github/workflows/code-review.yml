@@ -22,7 +22,7 @@ name: AI Code Review
 # Dependabot PRs and the secret store — LOAD-BEARING: GitHub withholds *Actions*
 # secrets from Dependabot-triggered runs and instead populates the `secrets.*`
 # context from a SEPARATE store (repo Settings → Secrets → Dependabot). So
-# `${{ secrets.DEEPSEEK_API_KEY }}` below resolves from the Actions store for a
+# `${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}` below resolves from the Actions store for a
 # human PR and from the Dependabot store for dependabot[bot]. The key MUST exist
 # in BOTH stores or Dependabot reviews silently get an empty key — install.sh
 # sets both. The GITHUB_TOKEN is read-only by default on Dependabot runs; the
@@ -91,18 +91,15 @@ jobs:
       # updated. The ref is chosen in the template, which owns this file — and, like the
       # checkout pin above, the version appears on the `uses:` line and nowhere else.
       #
-      # BOTH credentials are passed on purpose. PROVIDER defaults to `auto`, which the
-      # action retargets centrally — it moved from deepseek to claude-subscription in
-      # 1.42.0 — and a workflow carrying only the then-current target's secret breaks the
-      # day it moves. Passing both means a retarget needs no edit here: PROVIDER alone
-      # selects the provider and credential presence never steers it, so the unused input
-      # is simply never read. The action fails loudly, before spending anything, if the
-      # credential for the CURRENT target is the one missing.
+      # ONE credential is passed. PROVIDER defaults to `auto`, which the action retargets
+      # centrally, and a workflow carrying only the then-current target's secret breaks
+      # the day it moves — so a retarget away from claude-subscription needs an edit here
+      # plus a new keychain item. There is no second credential to absorb it. The action
+      # fails loudly, before spending anything, if that credential is missing.
       - name: Code Review
         uses: promptctl/copirate-code-review-agent@v1
         with:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           # DEPENDENCY_DIFF is on for EVERY repo this installs into — a deliberate
           # universal default baked into the template, NOT a per-repo divergence that
           # leaked in. On a PR that bumps a dependency the reviewer fetches the bumped

@@ -1,6 +1,6 @@
 ---
 name: agent-code-review-setup
-description: Install the agent code-review GitHub Action into the current repository — writes the .github/workflows/code-review.yml workflow and sets the reviewer's repo secrets (DEEPSEEK_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) from the macOS keychain. Use when the user says "set up agent code review in this repo", "install the code review action", "add AI code review to this repo", "set up the AI code reviewer here", or wants automated PR review wired into the repo they're currently in.
+description: Install the agent code-review GitHub Action into the current repository — writes the .github/workflows/code-review.yml workflow and sets the reviewer's repo secret (CLAUDE_CODE_OAUTH_TOKEN) from the macOS keychain. Use when the user says "set up agent code review in this repo", "install the code review action", "add AI code review to this repo", "set up the AI code reviewer here", or wants automated PR review wired into the repo they're currently in.
 ---
 
 # agent-code-review-setup
@@ -22,12 +22,11 @@ A single embedded script, `install.sh`, **converges** the repo onto the desired 
 1. `.github/workflows/code-review.yml` matches the embedded template, referencing the action at its moving major tag `@v1` (auto-tracks the latest non-breaking release). Identical content → no write.
 2. Every secret in the script's `SECRETS` table is set in **both** the Actions and Dependabot secret stores — re-synced from the macOS keychain whenever the keychain is reachable (so rotation propagates), left as-is with a loud warning when the keychain is unreachable but the secret already exists, and a hard failure when the secret is missing *and* cannot be set. Both stores are required because GitHub feeds Dependabot-triggered runs from the separate Dependabot store; an Actions-only secret leaves every Dependabot PR review unauthenticated.
 
-The secrets provisioned today:
+The secret provisioned today:
 
 | Secret | Keychain item |
 |---|---|
-| `DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` |
-| `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN_SIGNUP` |
+| `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN_BRANDROID` |
 
 `CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it is varies by which one has capacity — the swap procedure is **Rotating the reviewer account**, below. The installer never chooses and never prompts.
 
