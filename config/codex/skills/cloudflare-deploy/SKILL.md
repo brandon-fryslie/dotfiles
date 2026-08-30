@@ -61,10 +61,8 @@ Need storage?
 
 ```
 Need AI?
-├─ Run inference (LLMs, embeddings, images) → workers-ai/
 ├─ Vector database for RAG/search → vectorize/
 ├─ Build stateful AI agents → agents-sdk/
-├─ Gateway for any AI provider (caching, routing) → ai-gateway/
 └─ AI-powered search widget → ai-search/
 ```
 
@@ -143,10 +141,8 @@ Need IaC? → pulumi/ (Pulumi), terraform/ (Terraform), or api/ (REST API)
 ### AI & Machine Learning
 | Product | Reference |
 |---------|-----------|
-| Workers AI | `references/workers-ai/` |
 | Vectorize | `references/vectorize/` |
 | Agents SDK | `references/agents-sdk/` |
-| AI Gateway | `references/ai-gateway/` |
 | AI Search | `references/ai-search/` |
 
 ### Networking & Connectivity
