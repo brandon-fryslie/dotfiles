@@ -124,7 +124,7 @@ async function uploadCaption(
 ### Generate AI Captions
 
 ```typescript
-// TODO: Requires Workers AI integration - see workers-ai reference
+// TODO: Requires Workers AI integration
 async function generateAICaptions(accountId: string, videoId: string, apiToken: string) {
   return fetch(
     `https://api.cloudflare.com/client/v4/accounts/${accountId}/stream/${videoId}/captions/generate`,
