@@ -65,16 +65,7 @@ security dump-keychain | grep -oE 'CLAUDE_CODE_OAUTH_TOKEN_[A-Z0-9_]+' | sort -u
 
 **1. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — change the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row, e.g. to `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_SSSSSMOKEY"`. Commit in dotfiles.
 
-**2. Re-run the install in every repo that has the reviewer.** Nothing propagates the change for you: `/address-pr-reviews` only checks that the workflow exists — its `setup_check` never touches secrets — so a repo keeps reviewing on the exhausted account until the installer re-syncs it. Converge them all:
-
-```bash
-for d in ~/code/*/; do
-  [ -f "$d.github/workflows/code-review.yml" ] || continue
-  (cd "$d" && bash ~/.claude/skills/agent-code-review-setup/install.sh)
-done
-```
-
-A repo that fails preconditions (no GitHub remote, `gh` unauthenticated) prints its cause and the loop moves on. Rotating lazily also works — run the installer from a repo's root right before reviewing there — but the review itself never rotates the secret.
+**2. That's it — reviews propagate it.** Every code review re-runs the installer, and every install run rewrites every listed secret from the keychain, so each repo picks up the new account the next time it is reviewed.
 
 ### Adding an account to the pool
 
