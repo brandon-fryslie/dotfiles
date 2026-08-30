@@ -67,15 +67,15 @@ the code moves; forward-pointing text is what the work steers by. Four kinds:
 - **Constraints** are acceptance criteria on the solution's properties rather than its
   behavior — dependency budget, performance bounds, compatibility — with the same
   durability and the same unbounded precision.
-- **Specifications** are citations of the ground-truth document a criterion or constraint
-  derives from, and only count when pinned: a specific document at a specific commit, or
-  an otherwise immutable artifact. An unpinned "see the design doc" is no specification —
-  it is a reference, and it decays like one.
+- **Anchors** are citations of a document that anchors the behavior being targeted — a
+  spec, a design doc, an architecture doc — and only count when pinned: a specific
+  document at a specific commit, or an otherwise immutable artifact. An unpinned "see the
+  design doc" is no anchor — it is a reference, and it decays like one.
 
 The kinds are a lens, not a template — they judge detail a ticket already carries, never
 a schema of sections to fill in. The pull will come: *"every ticket should get a
-constraints line and a specification citation."* Refuse it: every addition is pollution,
-and subtraction is polishing.
+constraints line and an anchor."* Refuse it: every addition is pollution, and subtraction
+is polishing.
 
 ### The reference ceiling (hard rule, all tiers)
 
@@ -153,8 +153,8 @@ decisions, that's a `needs-design` block to surface — not a place to invent th
    ticket carries sub-file references — function names, line numbers, code — treat them as
    stale: recover the **intent** they served, verify it against the current code, and
    re-express it as acceptance criteria. Re-verify observations; discard any that no longer
-   hold or never carried evidence. Pin unpinned specification citations to a commit, or
-   drop them. Leave acceptance-criterion and constraint precision untouched — trimming a
+   hold or never carried evidence. Pin unpinned anchors to a commit, or drop them. Leave
+   acceptance-criterion and constraint precision untouched — trimming a
    criterion is damage, not grooming. Kind violations are independent of tier; a
    deep-backlog ticket can be over-referenced, and a next-up ticket is still capped at
    file names.
@@ -172,9 +172,9 @@ End with a terse audit so the user can review or undo:
 - **Closed:** each `#id (reason)` — recoverable via `lit open`.
 - **Rewritten:** which tickets were re-detailed — completeness direction (enriched / trimmed)
   and any kind fixes (sub-file references discarded and re-expressed as acceptance
-  criteria; observations re-verified or dropped; specification citations pinned). Note any
-  ticket whose intent could not be confirmed against the code — that's a "needs your
-  call", not a silent rewrite.
+  criteria; observations re-verified or dropped; anchors pinned). Note any ticket whose
+  intent could not be confirmed against the code — that's a "needs your call", not a
+  silent rewrite.
 - **Structure:** blocks/deps/parentage changed.
 - **Needs your call:** deletion candidates, genuinely ambiguous priorities, tickets that
   need design input before they can be made implementer-ready. These are *not* actioned.
