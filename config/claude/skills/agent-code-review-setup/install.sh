@@ -308,7 +308,7 @@ secret_on_repo() {
   # outage into the fatal missing-secret verdict with a message naming the
   # wrong cause. List first, fail distinctly. [LAW:no-silent-failure]
   local names
-  names="$(gh secret list --json name -q '.[].name')" \
+  names="$(gh secret list -R "$REPO" --json name -q '.[].name')" \
     || die "could not list repo secrets on $REPO — cannot tell whether $1 is set; fix gh access and re-run."
   grep -qxF "$1" <<<"$names"
 }
@@ -326,8 +326,11 @@ converge_secret() {
     echo "→ syncing secret $secret_name on $REPO (Actions + Dependabot) from keychain item '$keychain_item'…"
     # Both stores required: Dependabot runs read from a SEPARATE store, so an
     # Actions-only secret leaves every Dependabot review unauthenticated.
-    security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name"
-    security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name" --app dependabot
+    # -R pins the same repo the message names. Without it gh re-resolves from the
+    # remotes on its own, which in a fork (origin + upstream) is a different repo
+    # than $REPO — secrets would land on upstream, or abort as ambiguous.
+    security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name" -R "$REPO"
+    security find-generic-password -s "$keychain_item" -w | tr -d '\n' | gh secret set "$secret_name" -R "$REPO" --app dependabot
     echo "✓ set secret $secret_name on $REPO (Actions + Dependabot)"
   elif secret_on_repo "$secret_name"; then
     {
