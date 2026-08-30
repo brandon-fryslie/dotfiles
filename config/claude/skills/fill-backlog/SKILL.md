@@ -20,22 +20,23 @@ vague, research-shaped tickets doesn't fail tonight — it fails for weeks, one 
 session at a time, until the user is auditing a backlog they asked you to own. Nobody
 will trace that drift back to this run. Get it right now or nobody will know why later.
 
-## The four laws of the run
+## The four standing orders of the run
 
-Cite the law by name in chat when you reach the step it governs — `[LAW:THE-GATE]`
-before presenting the slate, `[LAW:SELF-CONTAINED]` before writing tickets. Naming it
-re-arms it; the law you don't restate at hour three is the law that quietly breaks.
+Restate the order by name in chat when you reach the step it governs — **THE-GATE**
+before presenting the slate, **SELF-CONTAINED** before writing tickets. Naming it
+re-arms it; the order you don't restate at hour three is the order that quietly
+breaks.
 
-1. **[LAW:SCOUTS-EXPLORE]** — Exploration belongs to fork subagents. Your context is
+1. **SCOUTS-EXPLORE** — Exploration belongs to fork subagents. Your context is
    the map table, kept clear for judging what comes back. The moment you catch
    yourself grepping the codebase to "just check one lens," you are a scout deserting
    the map table.
-2. **[LAW:TARGETS-NOT-TERRAIN]** — Scouts return targets: concrete proposals of what
+2. **TARGETS-NOT-TERRAIN** — Scouts return targets: concrete proposals of what
    to build. Terrain notes — findings, observations, "areas of opportunity" — are
    contraband at the debrief, whether a scout brings them or you cook them up yourself.
-3. **[LAW:THE-GATE]** — Nothing is written to lit until the user has approved and
+3. **THE-GATE** — Nothing is written to lit until the user has approved and
    adjusted the slate. Not one ticket. Not "just the obvious ones."
-4. **[LAW:SELF-CONTAINED]** — Every ticket is a letter to a stranger: a fresh session
+4. **SELF-CONTAINED** — Every ticket is a letter to a stranger: a fresh session
    with zero context must be able to execute it. "As discussed" is a dead reference
    the moment this session ends.
 
@@ -60,7 +61,7 @@ lenses below are the whole brief.
 
 ## Step 0 — Recon, before any fork
 
-Announce `[LAW:SCOUTS-EXPLORE]` and note the distinction: this step is provisioning,
+Announce **SCOUTS-EXPLORE** and note the distinction: this step is provisioning,
 not exploration. You are loading the shared map every scout will carry, not hunting
 targets yourself.
 
@@ -72,7 +73,7 @@ targets yourself.
 
 Why this happens *before* forking, and why forks at all: **forks inherit your entire
 conversation.** Every file you read now is knowledge every scout carries for free —
-the project's shape, the user's seed comment, these laws, and the open-tickets list
+the project's shape, the user's seed comment, these orders, and the open-tickets list
 that keeps scouts from proposing work already filed. A fresh general-purpose subagent
 starts blind to all of it; that is why fork is mandatory, not a preference.
 
@@ -84,7 +85,7 @@ minutes at the map table is inherited by every fork for free. Provision first.
 
 ## Step 1 — Fan out the scouts
 
-Announce `[LAW:SCOUTS-EXPLORE]`. Launch every scout **in a single message, in
+Announce **SCOUTS-EXPLORE**. Launch every scout **in a single message, in
 parallel, one per lens, each with `subagent_type: "fork"`** on the Agent tool.
 
 The temptation arrives per-lens: *"this one looks small — I'll just poke at it inline
@@ -149,7 +150,7 @@ scout prompt contains:
   - **Epic/issue sketch** — the epic plus 2–6 one-line child issues. Power-feature
     epics start with the research issue.
   - **Priority argument** — one line on where it belongs in the slate and why.
-- `[LAW:TARGETS-NOT-TERRAIN]`, written to the scout as its own rehearsal: *you will
+- **TARGETS-NOT-TERRAIN**, written to the scout as its own rehearsal: *you will
   finish exploring, your findings will feel valuable in themselves, and you will
   want to bring them home — "I'll report what I found and let the orchestrator
   decide what to build." Refuse that. Deciding what to build is the scout's job;
@@ -167,12 +168,12 @@ scout prompt contains:
     tables, (3) extend parse tests to the edge cases only the old path handled.
     Priority: top band — this is a half-finished migration."
 
-  The diff between those two is the whole law: the BAD return makes *you* do the
+  The diff between those two is the whole order: the BAD return makes *you* do the
   scout's thinking; the GOOD one you can judge in ten seconds.
 
 ## Step 2 — The debrief
 
-Announce `[LAW:TARGETS-NOT-TERRAIN]` — it binds you now, not just the scouts.
+Announce **TARGETS-NOT-TERRAIN** — it binds you now, not just the scouts.
 
 Run the acceptance test on every return: *could a competent fresh session start
 building tomorrow from this proposal alone?* If a scout came home with terrain notes
@@ -200,7 +201,7 @@ Then, with only targets on the table:
 
 ## Step 3 — The gate
 
-Announce `[LAW:THE-GATE]`, then present the slate in chat: numbered,
+Announce **THE-GATE**, then present the slate in chat: numbered,
 priority-ordered, each item a title plus two or three lines (what, why, epic shape),
 source lens noted, seed-comment items flagged. Then **stop and wait**.
 
@@ -212,8 +213,8 @@ reversible work on ceremony. This is not its place: seeding a backlog is writing
 project's agenda for the coming weeks, and the user asked to approve **and adjust**
 it first. Adjustment is not friction in the process — adjustment *is* the product
 spec. A backlog seeded past the gate is one the user must now audit ticket by
-ticket, which costs far more than the round trip you saved. The gate is also load
-line four of this skill: it exists because the user put it there.
+ticket, which costs far more than the round trip you saved. The gate is also the
+third standing order of this skill: it exists because the user put it there.
 
 When the adjustments come back, apply them exactly — cut what they cut, merge what
 they merge, reorder what they reorder. Do not re-litigate a cut item into the batch
@@ -221,7 +222,7 @@ because you still believe in it. Then, and only then, move to Step 4.
 
 ## Step 4 — Write the tickets
 
-Announce `[LAW:SELF-CONTAINED]` and `[LAW:THE-GATE]` — you are past the gate only
+Announce **SELF-CONTAINED** and **THE-GATE** — you are past the gate only
 because the user opened it, so what you write is the approved slate: approved items,
 approved order, nothing resurrected, nothing snuck in.
 
@@ -232,7 +233,7 @@ multi-document YAML batch is cheaper for a full slate. Author the batch in slate
 order; put unfinished-work epics at the front (`--top` or `lit rank`) so `lit next`
 serves them first.
 
-The content law, one more time, because this is the moment it protects: **every
+**SELF-CONTAINED**, one more time, because this is the moment it protects: **every
 ticket is a letter to a stranger.** The session that pulls it has never heard of this
 conversation. Each description carries the what, the why, the `file:line` evidence,
 and acceptance criteria on the issues — everything the stranger needs and nothing
@@ -253,11 +254,11 @@ Finish by reporting what was created — epic ids and titles, issue counts, rank
 order — next to the approved slate, so the user can spot-check that what landed is
 what they approved.
 
-## The four laws, once more
+## The four standing orders, once more
 
-`[LAW:SCOUTS-EXPLORE]` — forks explore; you keep the map table clear.
-`[LAW:TARGETS-NOT-TERRAIN]` — proposals come home; research doesn't.
-`[LAW:THE-GATE]` — the user approves and adjusts before lit hears anything.
-`[LAW:SELF-CONTAINED]` — every ticket is a letter to a stranger.
+**SCOUTS-EXPLORE** — forks explore; you keep the map table clear.
+**TARGETS-NOT-TERRAIN** — proposals come home; research doesn't.
+**THE-GATE** — the user approves and adjusts before lit hears anything.
+**SELF-CONTAINED** — every ticket is a letter to a stranger.
 
 Recon, scouts out, targets home, the gate, then tickets a stranger can execute.
