@@ -46,41 +46,66 @@ Detail is not one dial. Two orthogonal axes govern it, and they move independent
 
 - **Completeness** — *how filled-in* a ticket is. This varies by distance-from-pull (the
   tiers below). A far-off ticket is sparse; a next-up ticket is complete.
-- **Granularity** — *how deep into the "how"* a ticket is allowed to go. This is a **fixed
-  ceiling that never rises**, identical for every ticket regardless of tier.
+- **Kind** — *what sort of statement* each detail is. Kind, not volume, decides whether a
+  detail belongs at all, and each kind's treatment is fixed, identical at every tier.
 
-### The granularity ceiling (hard rule, all tiers)
+### The four kinds of detail
 
-**The maximum granularity in any ticket is a specific file name. Nothing more granular —
-ever.** No function names. No line numbers. No code or pseudocode. No method signatures.
+Every sentence in a ticket points one of two ways: **backward at the implementation as it
+stands**, or **forward at the outcome being targeted**. Backward-pointing text decays as
+the code moves; forward-pointing text is what the work steers by. Four kinds:
 
-A ticket describes **functionality, capability, behavior, outcome** — the *what*. The code
-is the one source of truth for the *how*. The moment a ticket names a function or pastes a
-snippet, it becomes a divergent copy of the implementation that rots the instant the code
-moves, and it steals the implementer's pull-time judgment. Naming a file is the floor of
-the implementer's map and is stable enough to survive; anything below it is the work itself,
-not a description of it.
+- **References** point backward: code locations (a file, a function, a line, a pasted
+  snippet) and, just as much, observations of current behavior ("currently renders X",
+  "the fault is in the retry path"). Both describe *now*, and now moves — the moment any
+  ticket lands, every reference elsewhere may silently be a lie.
+- **Specifications** point forward: what the thing must do — behavior, inputs, outputs,
+  exact values. A spec references nothing; it *is* the target. The code moves toward it,
+  so it cannot drift when neighboring tickets land, and its precision is unbounded:
+  "reject unknown keys, naming the offending key in the error" is not too granular — it
+  is the requirement.
+- **Constraints** are specifications of the solution's properties rather than its
+  behavior — dependency budget, performance bounds, compatibility — with the same
+  durability and the same unbounded precision.
+- **Anchors** cite the ground truth a spec or constraint derives from, and only count
+  when pinned: a specific document at a specific commit, or an otherwise immutable
+  artifact. An unpinned "see the design doc" is no anchor — it is a reference, and it
+  decays like one.
 
-This ceiling does **not** rise as a ticket nears the top. A next-up ticket becomes *more
-complete* — clearer outcome, acceptance criteria, possibly which files are in play — but
-never *more granular*. "Make the parser reject unknown keys, in `config/loader.ts`" is the
-deepest a ticket goes; "add an `if (!allowed.has(k)) throw` to `validateKeys()`" is over the
-line. (Capability / functionality / file name are *examples* of the general rule — describe
-the what, cap granularity at file — not a required schema to fill in.)
+The kinds are a lens, not a template — they judge detail a ticket already carries, never
+a schema of sections to fill in. The pull will come: *"every ticket should get a
+constraints line and an anchor."* Refuse it: every addition is pollution, and subtraction
+is polishing.
 
-When grooming, this ceiling means most "too-detailed" tickets are *also too granular* — and
-the granular detail is **contamination, not raw material**. A ticket that ever held code-level
-specifics is presumed stale: if the function/line references have drifted, you cannot trust
-that the capability they implied is still accurate, so refining that text upward just launders
-rot into something that *looks* trustworthy. The durable thing in the ticket is its **intent** —
-what capability it wanted to exist. Recover the intent, discard the granular specifics
-entirely, verify the intent still holds against the current source of truth (the code), and
-re-express it at capability level. Regenerate from intent; never translate from the stale text.
+### The reference ceiling (hard rule, all tiers)
+
+**The maximum granularity of a reference is a specific file name. Nothing finer — ever.**
+No function names. No line numbers. No code or pseudocode. No method signatures. Naming a
+file is the floor of the implementer's map and stable enough to survive; anything finer is
+a pointer into a moving artifact — a divergent copy of the implementation that rots the
+instant the code shifts, and a theft of the implementer's pull-time judgment besides.
+
+The ceiling does **not** rise as a ticket nears the top. A next-up ticket becomes *more
+complete* — sharper spec, acceptance criteria, which files are in play — never more deeply
+referenced. "Make the parser reject unknown keys, in `config/loader.ts`" is as deep as a
+reference goes; "add an `if (!allowed.has(k)) throw` to `validateKeys()`" is over the
+line — not because it is precise, but because it points into the implementation. Precision
+was never the offense; direction is.
+
+When grooming, sub-file references are **contamination, not raw material**. A ticket that
+held them is presumed stale: once its pointers have drifted you cannot trust the intent
+they implied, and refining the text upward just launders rot into something that *looks*
+trustworthy. Recover the **intent**, verify it against the current code, and re-express it
+as specification — regenerate from intent; never translate the stale text. Observations
+get the adjacent treatment: re-verify them against reality and keep only what holds — an
+observation nobody verified is speculation wearing evidence's clothes. Specifications and
+constraints are the one thing this pass never trims: shaving their precision is damage,
+not grooming.
 
 ### Completeness by tier
 
 Calibrate by tier, and **rewrite bodies to hit the tier** (enrich the thin, trim the bloated).
-The granularity ceiling above applies at every tier — these only set *completeness*:
+The kind rules above hold at every tier — these only set *completeness*:
 
 - **Top / next-up** (pullable, near the top of rank): implementer-ready. Must carry the
   problem, the *why*, concrete acceptance criteria, and the constraints/links needed to
@@ -88,8 +113,9 @@ The granularity ceiling above applies at every tier — these only set *complete
 - **Mid backlog**: rankable and scoped. Problem statement, rough size, why it matters.
   Acceptance criterion can be a single line. No deep detail.
 - **Deep backlog**: just enough to be rankable and not lost — a sharp title and a sentence
-  or two of problem. **Strip speculative implementation detail**; it will be wrong by the
-  time the ticket rises.
+  or two of problem. **Strip references and speculative design**; they will be wrong by the
+  time the ticket rises. A spec already written down keeps its precision — sparseness comes
+  from carrying fewer things, not vaguer ones.
 
 For epics: the epic holds the plan and shared context; children hold the work. Don't copy
 the epic's context into every child — that's a second source of truth that drifts.
@@ -123,12 +149,14 @@ decisions, that's a `needs-design` block to surface — not a place to invent th
 4. **Detail calibration.** For each surviving ticket, rewrite the description to fit
    (`lit update <id> --description "..."`) along both axes. *Completeness:* enrich the thin
    top, trim the bloated deep, add a verifiable acceptance criterion to every near-term
-   ticket that lacks one. *Granularity:* enforce the file-name ceiling on **every** ticket.
-   When a ticket carries function names, line numbers, or code, treat it as stale: recover its
-   **intent**, verify that intent against the current code, then rewrite the description from
-   that intent at capability level — discarding the granular text rather than translating it.
-   Granularity violations are independent of tier; a deep-backlog ticket can be too granular,
-   and a next-up ticket is still capped at file names.
+   ticket that lacks one. *Kind:* enforce the reference ceiling on **every** ticket. When a
+   ticket carries sub-file references — function names, line numbers, code — treat them as
+   stale: recover the **intent** they served, verify it against the current code, and
+   re-express it as specification. Re-verify observations; discard any that no longer hold
+   or never carried evidence. Pin unpinned anchors to a commit, or drop them. Leave
+   specification and constraint precision untouched — trimming a spec is damage, not
+   grooming. Kind violations are independent of tier; a deep-backlog ticket can be
+   over-referenced, and a next-up ticket is still capped at file names.
 
 5. **Urgent flag.** Ensure `--priority 1` is set only on genuine exceptions; clear it
    elsewhere.
@@ -142,9 +170,9 @@ End with a terse audit so the user can review or undo:
 - **Reranked:** each move as `#id: rank A → B` with a one-line why.
 - **Closed:** each `#id (reason)` — recoverable via `lit open`.
 - **Rewritten:** which tickets were re-detailed — completeness direction (enriched / trimmed)
-  and any granularity fixes (stale code/function/line detail discarded; capability re-derived
-  from intent and verified against current code). Note any ticket whose intent could not be
-  confirmed against the code — that's a "needs your call", not a silent rewrite.
+  and any kind fixes (sub-file references discarded and re-expressed as specification;
+  observations re-verified or dropped; anchors pinned). Note any ticket whose intent could
+  not be confirmed against the code — that's a "needs your call", not a silent rewrite.
 - **Structure:** blocks/deps/parentage changed.
 - **Needs your call:** deletion candidates, genuinely ambiguous priorities, tickets that
   need design input before they can be made implementer-ready. These are *not* actioned.
