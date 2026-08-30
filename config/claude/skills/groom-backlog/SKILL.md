@@ -59,23 +59,23 @@ the code moves; forward-pointing text is what the work steers by. Four kinds:
   snippet) and, just as much, observations of current behavior ("currently renders X",
   "the fault is in the retry path"). Both describe *now*, and now moves — the moment any
   ticket lands, every reference elsewhere may silently be a lie.
-- **Specifications** point forward: what the thing must do — behavior, inputs, outputs,
-  exact values. A spec references nothing; it *is* the target. The code moves toward it,
-  so it cannot drift when neighboring tickets land, and its precision is unbounded:
-  "reject unknown keys, naming the offending key in the error" is not too granular — it
-  is the requirement.
-- **Constraints** are specifications of the solution's properties rather than its
+- **Acceptance criteria** point forward: what the thing must do — behavior, inputs,
+  outputs, exact values. A criterion references nothing; it *is* the target. The code
+  moves toward it, so it cannot drift when neighboring tickets land, and its precision is
+  unbounded: "reject unknown keys, naming the offending key in the error" is not too
+  granular — it is the requirement.
+- **Constraints** are acceptance criteria on the solution's properties rather than its
   behavior — dependency budget, performance bounds, compatibility — with the same
   durability and the same unbounded precision.
-- **Anchors** cite the ground truth a spec or constraint derives from, and only count
-  when pinned: a specific document at a specific commit, or an otherwise immutable
-  artifact. An unpinned "see the design doc" is no anchor — it is a reference, and it
-  decays like one.
+- **Specifications** are citations of the ground-truth document a criterion or constraint
+  derives from, and only count when pinned: a specific document at a specific commit, or
+  an otherwise immutable artifact. An unpinned "see the design doc" is no specification —
+  it is a reference, and it decays like one.
 
 The kinds are a lens, not a template — they judge detail a ticket already carries, never
 a schema of sections to fill in. The pull will come: *"every ticket should get a
-constraints line and an anchor."* Refuse it: every addition is pollution, and subtraction
-is polishing.
+constraints line and a specification citation."* Refuse it: every addition is pollution,
+and subtraction is polishing.
 
 ### The reference ceiling (hard rule, all tiers)
 
@@ -86,7 +86,7 @@ a pointer into a moving artifact — a divergent copy of the implementation that
 instant the code shifts, and a theft of the implementer's pull-time judgment besides.
 
 The ceiling does **not** rise as a ticket nears the top. A next-up ticket becomes *more
-complete* — sharper spec, acceptance criteria, which files are in play — never more deeply
+complete* — sharper acceptance criteria, which files are in play — never more deeply
 referenced. "Make the parser reject unknown keys, in `config/loader.ts`" is as deep as a
 reference goes; "add an `if (!allowed.has(k)) throw` to `validateKeys()`" is over the
 line — not because it is precise, but because it points into the implementation. Precision
@@ -96,11 +96,11 @@ When grooming, sub-file references are **contamination, not raw material**. A ti
 held them is presumed stale: once its pointers have drifted you cannot trust the intent
 they implied, and refining the text upward just launders rot into something that *looks*
 trustworthy. Recover the **intent**, verify it against the current code, and re-express it
-as specification — regenerate from intent; never translate the stale text. Observations
-get the adjacent treatment: re-verify them against reality and keep only what holds — an
-observation nobody verified is speculation wearing evidence's clothes. Specifications and
-constraints are the one thing this pass never trims: shaving their precision is damage,
-not grooming.
+as acceptance criteria — regenerate from intent; never translate the stale text.
+Observations get the adjacent treatment: re-verify them against reality and keep only what
+holds — an observation nobody verified is speculation wearing evidence's clothes.
+Acceptance criteria and constraints are the one thing this pass never trims: shaving their
+precision is damage, not grooming.
 
 ### Completeness by tier
 
@@ -114,8 +114,8 @@ The kind rules above hold at every tier — these only set *completeness*:
   Acceptance criterion can be a single line. No deep detail.
 - **Deep backlog**: just enough to be rankable and not lost — a sharp title and a sentence
   or two of problem. **Strip references and speculative design**; they will be wrong by the
-  time the ticket rises. A spec already written down keeps its precision — sparseness comes
-  from carrying fewer things, not vaguer ones.
+  time the ticket rises. A criterion already written down keeps its precision — sparseness
+  comes from carrying fewer things, not vaguer ones.
 
 For epics: the epic holds the plan and shared context; children hold the work. Don't copy
 the epic's context into every child — that's a second source of truth that drifts.
@@ -152,11 +152,12 @@ decisions, that's a `needs-design` block to surface — not a place to invent th
    ticket that lacks one. *Kind:* enforce the reference ceiling on **every** ticket. When a
    ticket carries sub-file references — function names, line numbers, code — treat them as
    stale: recover the **intent** they served, verify it against the current code, and
-   re-express it as specification. Re-verify observations; discard any that no longer hold
-   or never carried evidence. Pin unpinned anchors to a commit, or drop them. Leave
-   specification and constraint precision untouched — trimming a spec is damage, not
-   grooming. Kind violations are independent of tier; a deep-backlog ticket can be
-   over-referenced, and a next-up ticket is still capped at file names.
+   re-express it as acceptance criteria. Re-verify observations; discard any that no longer
+   hold or never carried evidence. Pin unpinned specification citations to a commit, or
+   drop them. Leave acceptance-criterion and constraint precision untouched — trimming a
+   criterion is damage, not grooming. Kind violations are independent of tier; a
+   deep-backlog ticket can be over-referenced, and a next-up ticket is still capped at
+   file names.
 
 5. **Urgent flag.** Ensure `--priority 1` is set only on genuine exceptions; clear it
    elsewhere.
@@ -170,9 +171,10 @@ End with a terse audit so the user can review or undo:
 - **Reranked:** each move as `#id: rank A → B` with a one-line why.
 - **Closed:** each `#id (reason)` — recoverable via `lit open`.
 - **Rewritten:** which tickets were re-detailed — completeness direction (enriched / trimmed)
-  and any kind fixes (sub-file references discarded and re-expressed as specification;
-  observations re-verified or dropped; anchors pinned). Note any ticket whose intent could
-  not be confirmed against the code — that's a "needs your call", not a silent rewrite.
+  and any kind fixes (sub-file references discarded and re-expressed as acceptance
+  criteria; observations re-verified or dropped; specification citations pinned). Note any
+  ticket whose intent could not be confirmed against the code — that's a "needs your
+  call", not a silent rewrite.
 - **Structure:** blocks/deps/parentage changed.
 - **Needs your call:** deletion candidates, genuinely ambiguous priorities, tickets that
   need design input before they can be made implementer-ready. These are *not* actioned.
