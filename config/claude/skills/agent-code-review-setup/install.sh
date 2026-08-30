@@ -256,8 +256,19 @@ jobs:
       # `if: always()` because the run that most needs a transcript is the one that
       # failed. The output guard covers the paths that legitimately spawn no engine
       # (a fork-PR skip), where the directory is empty rather than missing.
+      #
+      # `continue-on-error` because this job's CONCLUSION is the signal a consumer reads
+      # to tell "the review found nothing" from "the review never ran" — those two are
+      # otherwise identical downstream, since both surface as zero findings. An artifact
+      # outage, a quota trip, or a transcript too large would otherwise flip a review that
+      # succeeded and posted its comments into a reported failure, which reads as the
+      # second case and sends a maintainer hunting a review that already worked. The
+      # archival failure stays loud in this step's own log; it just stops speaking for the
+      # review. [LAW:no-silent-failure] applies to the archival error, not to the status
+      # check it would otherwise corrupt.
       - name: Archive review transcript
         if: always() && steps.review.outputs.transcript-dir != ''
+        continue-on-error: true
         # SHA-pinned for the same reason as the checkout above: third-party code fetched
         # over the network on every run, so it does not inherit the moving-tag argument
         # that governs our own action.
