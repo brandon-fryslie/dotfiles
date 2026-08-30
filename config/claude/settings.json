@@ -88,7 +88,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "fable",
+  "model": "claude-fable-5[1m]",
   "hooks": {
     "PreToolUse": [
       {
@@ -175,7 +175,7 @@
   "sandbox": {
     "enabled": false
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "promptSuggestionEnabled": false,
   "autoUpdatesChannel": "latest",
   "tui": "fullscreen",
