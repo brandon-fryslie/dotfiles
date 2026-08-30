@@ -29,7 +29,7 @@ The secrets provisioned today:
 | `DEEPSEEK_API_KEY` | `DEEPSEEK_API_KEY` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN_SIGNUP` |
 
-`CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it is varies by which one has capacity — to swap, edit the second field of that row in `install.sh` and re-run. The installer never chooses and never prompts.
+`CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it is varies by which one has capacity — the swap procedure is **Rotating the reviewer account**, below. The installer never chooses and never prompts.
 
 The keychain item is **only** ever what that table says. No environment variable overrides it: an override is a second answer to "which credential does this repo get" that fires invisibly, from whichever process happened to export it, across every repo that process installs into — while the table still reads `_SIGNUP`. One map, no override.
 
@@ -52,6 +52,39 @@ bash ~/.claude/skills/agent-code-review-setup/install.sh
 That is the only invocation. If a key is stored under a different keychain item name, change the item in the `SECRETS` table in `install.sh` — do not reach for an environment variable, and do not add one back.
 
 The script does **not** commit. After it succeeds, commit and push the workflow per the user's git workflow (branch + PR — never directly to the default branch). The workflow takes effect once it lands on the default branch.
+
+## Rotating the reviewer account
+
+The reviewer runs as whichever Claude account the `SECRETS` table names. Tokens from `claude setup-token` never expire, but each account has its own usage quota — when review runs start failing with usage-limit errors, point the table at an account that still has capacity.
+
+The pool is one keychain item per account, named `CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT>`. List it:
+
+```bash
+security dump-keychain | grep -oE 'CLAUDE_CODE_OAUTH_TOKEN_[A-Z0-9_]+' | sort -u
+```
+
+**1. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — change the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row, e.g. to `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_SSSSSMOKEY"`. Commit in dotfiles.
+
+**2. Re-run the install in every repo that has the reviewer.** Nothing propagates the change for you: `/address-pr-reviews` only checks that the workflow exists — its `setup_check` never touches secrets — so a repo keeps reviewing on the exhausted account until the installer re-syncs it. Converge them all:
+
+```bash
+for d in ~/code/*/; do
+  [ -f "$d.github/workflows/code-review.yml" ] || continue
+  (cd "$d" && bash ~/.claude/skills/agent-code-review-setup/install.sh)
+done
+```
+
+A repo that fails preconditions (no GitHub remote, `gh` unauthenticated) prints its cause and the loop moves on. Rotating lazily also works — run the installer from a repo's root right before reviewing there — but the review itself never rotates the secret.
+
+### Adding an account to the pool
+
+Mint a token with `claude setup-token` while logged into the new account, then store it under the naming convention:
+
+```bash
+security add-generic-password -a "$USER" -s CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT> -w
+```
+
+Leave `-w` bare: `security` prompts for the value, keeping the token out of shell history. The item is inert until the `SECRETS` table names it.
 
 ## Failure modes
 
