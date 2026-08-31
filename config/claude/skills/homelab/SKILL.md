@@ -217,6 +217,7 @@ These are **non-negotiable**. Violating them turns a consumer project into a dri
 5. **Do not hit service APIs with abusive patterns** — no write loops against VictoriaMetrics without batching, no 1000-req/s bursts against Ollama, no crawling Gitea with `git clone --mirror` on every repo.
 6. **Do not create Grafana dashboards in the UI and consider them persistent.** They aren't. Export JSON, file a ticket.
 7. **Do not write to NAS shares** your project wasn't granted.
+8. **Do not build a container image from your working tree.** Build from a commit, in CI, on a machine that fetched that commit itself. Do not copy, tar, rsync, or scp your source onto a build host; do not write a script that builds an image over SSH from your checkout; do not leave build directories on the VMs. Images built this way are **deleted on sight**, along with any scratch directory and build cache they left behind — an image built from a working tree contains whatever was on someone's disk, records no commit, and cannot be reproduced or audited. Build in CI from a commit, tag `YYYY.MM.DD.N`, push to the registry, then file the tag into the homelab's `service-versions.auto.tfvars.json` so Atlantis deploys it.
 
 ## Requesting Changes — `lit` Tickets
 
