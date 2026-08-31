@@ -45,8 +45,9 @@ ACTION_REF="promptctl/copirate-code-review-agent@v1"
 # would be a second, invisible answer to "which credential does this repo get" —
 # unset in every dotfile and every shell here, so the only way it can ever fire is a
 # process that exports it for itself, silently re-pointing the credential for every
-# repo that process touches while this table still reads _SIGNUP. Two maps of one
-# fact, and no way to ask which is lying. The table is the only map.
+# repo that process touches while this table still names the account you would
+# read here. Two maps of one fact, and no way to ask which is lying. The table is
+# the only map.
 # [LAW:one-source-of-truth] [LAW:no-shared-mutable-globals]
 SECRETS=(
   "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_BRANDROID"
