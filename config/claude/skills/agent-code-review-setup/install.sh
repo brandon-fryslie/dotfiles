@@ -54,7 +54,120 @@ SECRETS=(
 )
 WORKFLOW_PATH=".github/workflows/code-review.yml"
 
+# The exclude patterns EVERY repo gets. EXCLUDE_PATTERNS REPLACES action.yml's default
+# rather than appending to it, so the lock-file patterns are carried explicitly here;
+# dropping one from this line silently un-excludes it. [LAW:one-source-of-truth]
+#
+# Generated, committed build output is reviewed by NO repo. A bundle is mechanically
+# derived from sources the reviewer is already reading, so a finding against it is
+# either a restatement of one already made upstream or a comment on machine output
+# nobody edits — and the repo's own CI proves the bundle matches a fresh build far more
+# exactly than a reader can. Measured here: a review that read a 1.5 MB ncc bundle spent
+# an entire scope concluding it was a "faithful, byte-consistent rebuild", at ~700K input
+# tokens for that zero-signal confirmation.
+#
+# The directory patterns are DOUBLED on purpose — `dist/**` and `**/dist/**` are two
+# different patterns, not one written twice. src/diff.js compiles each pattern to an
+# anchored regex and tests it against the full path AND the basename. That basename
+# fallback rescues every FILE pattern for free (`*.lock` catches
+# `packages/app/src-tauri/Cargo.lock` with no `**/`), and can never rescue a DIRECTORY
+# pattern, because a directory pattern's match spans separators the basename has already
+# discarded. So the two anchorings cover disjoint sets: `dist/**` -> `dist/.*` matches
+# only at the root, and `**/dist/**` -> `.*/dist/.*` requires a leading segment and
+# matches only below it. Carrying one alone silently un-excludes the other half — a
+# monorepo leaks every `packages/*/dist/**` bundle into the review, which is exactly the
+# ~700K-token no-signal read described above. Do not "simplify" this to `**/dist/**`;
+# that is the regression, not the cleanup.
+#
+# The workflow file excludes ITSELF: it is a derived copy of this template, so findings
+# against it would target the copy, not the source — any fix would be silently reverted
+# on the next install run. The exclusion lives here, not in a trigger-level paths-ignore:
+# skipping the whole run would leave a head SHA with no review, which downstream tooling
+# reads as a broken reviewer.
+BASELINE_EXCLUDES=".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
+
+# --- The per-repo half of the workflow's configuration ------------------------
+#
+# WHY a file in the target repo, and not a repo->patterns table here: "which files are
+# worth reviewing" is a fact about ONE repo, so it belongs where that repo lives —
+# reviewable in that repo's own PR, travelling with a clone, and answerable without
+# reading a fleet-wide table that rots as repos are renamed or retired.
+# [LAW:decomposition] cut at the joint between fleet policy and repo policy.
+#
+# WHY declared and not derived: there is no honest signal to infer it from. Measured
+# across this fleet, promptctl/laws is 48% markdown and dotfiles is 39% — no threshold
+# separates "markdown IS the product" from "markdown is docs beside code" — and GitHub's
+# linguist reports 400KB of real code in laws, so by bytes it reads as an ordinary code
+# repo. A heuristic here would be a guess, and a wrong guess silently disables code
+# review, which is indistinguishable from a clean pass. [LAW:no-silent-failure]
+#
+# An absent file is the empty list — a VALUE, not a branch — so every repo that declares
+# nothing renders byte-identically to before this existed. [LAW:dataflow-not-control-flow]
+REPO_CONFIG_PATH=".github/code-review.conf"
+
+# The keys this installer understands, as a CLOSED set. An unrecognized key is a typo,
+# and a typo that is silently ignored leaves a repo paying for reviews it meant to stop
+# paying for, with nothing in any run to say so. So an unknown key is fatal, not skipped.
+# A second setting is one more entry here plus its own reader. [LAW:no-silent-failure]
+CONFIG_KEYS="EXCLUDE_PATTERNS_EXTRA"
+
 die() { echo "ERROR: $*" >&2; exit 1; }
+
+# Read the repo's declaration and echo ONE key's value — empty when the file has no such
+# key, and empty when there is no file at all, which is the ordinary case.
+#
+# The WHOLE file is validated on every call, not merely the key being asked for: a typo in
+# a key nobody reads yet is still a typo, and discovering it only when a second setting
+# ships is discovering it a release too late. Every rejection names file:line, because the
+# operator's next act is to open that line. [LAW:no-silent-failure]
+#
+# [LAW:parse-dont-validate] The value leaves here already checked — non-empty, a known key,
+# declared once, and free of the metacharacters that would corrupt the render — so the
+# render site takes a string it can substitute without inspecting it again.
+read_repo_config() {
+  local want="$1"
+  [ -f "$REPO_CONFIG_PATH" ] || return 0
+
+  local lineno=0 line key value found="" seen=" "
+  while IFS= read -r line || [ -n "$line" ]; do
+    lineno=$((lineno + 1))
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -n "$line" ] || continue
+
+    case "$line" in
+      *=*) ;;
+      *) die "$REPO_CONFIG_PATH:$lineno: expected KEY=value, got '$line'." ;;
+    esac
+
+    key="${line%%=*}"
+    value="${line#*=}"
+    key="${key%"${key##*[![:space:]]}"}"
+    value="${value#"${value%%[![:space:]]*}"}"
+
+    case " $CONFIG_KEYS " in
+      *" $key "*) ;;
+      *) die "$REPO_CONFIG_PATH:$lineno: unknown key '$key'. Known keys: $CONFIG_KEYS." ;;
+    esac
+    case "$seen" in
+      *" $key "*) die "$REPO_CONFIG_PATH:$lineno: '$key' is declared twice; it has one value." ;;
+    esac
+    seen="$seen$key "
+
+    [ -n "$value" ] || die "$REPO_CONFIG_PATH:$lineno: '$key' has an empty value. Delete the line instead."
+    # The value is substituted into the template by sed, which reads | as the delimiter and
+    # & and \ as replacement metacharacters. A pattern carrying one would silently corrupt
+    # the rendered workflow rather than fail, so it is refused here at the boundary.
+    case "$value" in
+      *'|'*|*'&'*|*'\'*) die "$REPO_CONFIG_PATH:$lineno: '$key' may not contain | & or \\." ;;
+    esac
+
+    if [ "$key" = "$want" ]; then found="$value"; fi
+  done < "$REPO_CONFIG_PATH"
+
+  printf '%s' "$found"
+}
 
 # --- Preconditions both targets need. Each fails loudly with a specific
 # cause; the keychain is deliberately NOT here — it is an input to exactly one
@@ -219,40 +332,12 @@ jobs:
           # it — there is no barer default, and stripping it silently degrades every
           # go.mod dependency-bump review.
           DEPENDENCY_DIFF: "true"
-          # Generated, committed build output is reviewed by NO repo. A bundle is
-          # mechanically derived from sources the reviewer is already reading, so a
-          # finding against it is either a restatement of one already made upstream or
-          # a comment on machine output nobody edits — and the repo's own CI proves
-          # the bundle matches a fresh build far more exactly than a reader can.
-          # Measured here: a review that read a 1.5 MB ncc bundle spent an entire
-          # scope concluding it was a "faithful, byte-consistent rebuild", at ~700K
-          # input tokens for that zero-signal confirmation.
-          #
-          # EXCLUDE_PATTERNS REPLACES action.yml's default rather than appending to
-          # it, so the lock-file patterns are carried explicitly here. Dropping one
-          # from this line silently un-excludes it. [LAW:one-source-of-truth]
-          #
-          # The directory patterns are DOUBLED on purpose — `dist/**` and `**/dist/**`
-          # are two different patterns, not one written twice. src/diff.js compiles
-          # each pattern to an anchored regex and tests it against the full path AND
-          # the basename. That basename fallback rescues every FILE pattern for free
-          # (`*.lock` catches `packages/app/src-tauri/Cargo.lock` with no `**/`), and
-          # can never rescue a DIRECTORY pattern, because a directory pattern's match
-          # spans separators the basename has already discarded. So the two anchorings
-          # cover disjoint sets: `dist/**` -> `dist/.*` matches only at the root, and
-          # `**/dist/**` -> `.*/dist/.*` requires a leading segment and matches only
-          # below it. Carrying one alone silently un-excludes the other half — a
-          # monorepo leaks every `packages/*/dist/**` bundle into the review, which is
-          # exactly the ~700K-token no-signal read described above. Do not "simplify"
-          # this to `**/dist/**`; that is the regression, not the cleanup.
-          #
-          # This workflow file excludes ITSELF: it is a derived copy of the template
-          # in install.sh, so findings against it would target the copy, not the
-          # source — any fix would be silently reverted on the next install run.
-          # The exclusion lives here, not in a trigger-level paths-ignore: skipping
-          # the whole run would leave a head SHA with no review, which downstream
-          # tooling reads as a broken reviewer. [LAW:one-source-of-truth]
-          EXCLUDE_PATTERNS: ".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
+          # RENDERED, not literal. The value is the universal baseline joined with
+          # whatever this repo declared in .github/code-review.conf, composed in one
+          # place — see BASELINE_EXCLUDES at the top of install.sh, where the rationale
+          # for each baseline pattern lives beside the patterns themselves, and
+          # read_repo_config, which parses the per-repo half. [LAW:one-source-of-truth]
+          EXCLUDE_PATTERNS: "__EXCLUDE_PATTERNS__"
 
       # The transcript is the only artifact that can explain a review that failed,
       # hung, or misbehaved — the exact prompt, the raw engine output including
@@ -286,14 +371,24 @@ jobs:
           path: ${{ steps.review.outputs.transcript-dir }}
           if-no-files-found: ignore
 YAML
+# The workflow's pattern list is composed HERE and only here: the fleet baseline joined
+# with this repo's declaration, so the rendered value has one origin and the two halves
+# stay separately owned — the baseline by this file, the addition by the repo it governs.
+# An absent or silent config file yields the baseline unchanged. [LAW:one-source-of-truth]
+EXTRA_EXCLUDES="$(read_repo_config EXCLUDE_PATTERNS_EXTRA)"
+EXCLUDES="${BASELINE_EXCLUDES}${EXTRA_EXCLUDES:+,${EXTRA_EXCLUDES}}"
+if [ -n "$EXTRA_EXCLUDES" ]; then
+  echo "→ ${REPO_CONFIG_PATH} adds exclude pattern(s): ${EXTRA_EXCLUDES}"
+fi
+
 # Insert the rendered values without escaping every GH expression in the heredoc.
-# [LAW:one-type-per-behavior] One marker today, but still a marker|value LIST: a second
-# rendered value is one more entry here and no new code. Each marker is checked before it
-# is replaced — a template that lost one would otherwise ship a literal __ACTION_REF__
-# into a consuming repo's workflow [LAW:no-silent-failure].
+# [LAW:one-type-per-behavior] A marker|value LIST: a further rendered value is one more
+# entry here and no new code. Each marker is checked before it is replaced — a template
+# that lost one would otherwise ship a literal __ACTION_REF__ into a consuming repo's
+# workflow [LAW:no-silent-failure].
 TMP="$(mktemp)"
 trap 'rm -f "$DESIRED" "$TMP"' EXIT
-for rendered in "__ACTION_REF__|${ACTION_REF}"; do
+for rendered in "__ACTION_REF__|${ACTION_REF}" "__EXCLUDE_PATTERNS__|${EXCLUDES}"; do
   marker="${rendered%%|*}"
   value="${rendered#*|}"
   grep -q "$marker" "$DESIRED" || die "workflow template lost its ${marker} marker."
