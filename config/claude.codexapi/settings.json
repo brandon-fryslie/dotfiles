@@ -1,0 +1,10 @@
+{
+  "cleanupPeriodDays": 99999,
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "effortLevel": "medium",
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "skipAutoPermissionPrompt": true
+}

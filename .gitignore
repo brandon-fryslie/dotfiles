@@ -71,6 +71,12 @@ config/claude.minimax/*
 # !config/claude.minimax/skills/
 !config/claude.minimax/CLAUDE.md
 !config/claude.minimax/settings.json
+
+config/claude.codexapi/*
+!config/claude.codexapi/agents/
+!config/claude.codexapi/commands/
+!config/claude.codexapi/CLAUDE.md
+!config/claude.codexapi/settings.json
 .claude/worktrees/
 
 # Certificate material and generated trust bundles. proxyman-ca.pem is this
