@@ -23,7 +23,15 @@ MESSAGE_TYPES = {"user", "assistant"}
 
 
 def slug_for(cwd: Path) -> str:
-    return re.sub(r"[/.]", "-", str(cwd))
+    """Mirror of Claude Code's own project-directory encoder.
+
+    Every character outside [A-Za-z0-9] collapses to '-', so '_' and '/' and '.'
+    are all indistinguishable in a slug. Verified against the `cwd` field
+    recorded inside the transcripts themselves — the encoder's output and its
+    input sit side by side on disk, so this copy stays checkable against the
+    original it duplicates.
+    """
+    return re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
 
 
 def session_dirs(slug: str, all_projects: bool) -> list[Path]:

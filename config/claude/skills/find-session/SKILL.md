@@ -28,7 +28,7 @@ Claude Code stores each session as a JSONL transcript:
 - `~/.claude/projects/<slug>/<session-id>.jsonl`
 - `~/.claude.zai/projects/<slug>/<session-id>.jsonl` (if you also use the `zai` variant)
 
-`<slug>` is the working directory with `/` and `.` replaced by `-`. Example: `/Users/bmf/code/links-issue-tracker` → `-Users-bmf-code-links-issue-tracker`.
+`<slug>` is the working directory with every non-alphanumeric character replaced by `-` — `_` and `.` and `/` all collapse to the same thing. Example: `/Users/bmf/code/promptctl_laws` → `-Users-bmf-code-promptctl-laws`.
 
 Both scripts share `_session_lib.py` for JSONL parsing and event-text extraction. Only meaningful text fields are read (`ai-title`, user prompts, assistant text/thinking); attachments, hook outputs, and metadata are skipped.
 
