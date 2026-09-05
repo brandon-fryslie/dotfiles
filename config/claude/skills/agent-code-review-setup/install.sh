@@ -50,7 +50,7 @@ ACTION_REF="promptctl/copirate-code-review-agent@v1"
 # the only map.
 # [LAW:one-source-of-truth] [LAW:no-shared-mutable-globals]
 SECRETS=(
-  "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_BRANDROID"
+  "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_SSSSSMOKEY"
 )
 WORKFLOW_PATH=".github/workflows/code-review.yml"
 
