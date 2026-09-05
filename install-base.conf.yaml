@@ -23,6 +23,15 @@
     ~/.config/nvim: config/nvim
 
 - shell:
+    # The stock tmux-256color terminfo lacks the RGB flag, so apps inside tmux
+    # fall back to 256 colors regardless of what tmux can render.
+    - [chmod +x scripts/install-terminfo.sh, Make terminfo setup executable]
+    -
+      command: ./scripts/install-terminfo.sh
+      description: Install tmux-256color terminfo with RGB (24-bit color)
+      stdout: true
+      stderr: true
+
     # tmux-continuum's status-right save trigger is unreliable (see
     # config/tmux/scripts/tmux-resurrect-save.sh); own the periodic save with a
     # launchd StartInterval agent instead.
