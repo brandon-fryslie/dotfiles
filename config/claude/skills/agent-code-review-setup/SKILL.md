@@ -58,7 +58,15 @@ security dump-keychain | grep -oE 'CLAUDE_CODE_OAUTH_TOKEN_[A-Z0-9_]+' | sort -u
 
 **1. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — set the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row to the target account's item: `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT>"`. Commit in dotfiles.
 
-**2. That's it — reviews propagate it.** Every code review re-runs the installer, and every install run rewrites every listed secret from the keychain, so each repo picks up the new account the next time it is reviewed.
+**2. Propagate it to the fleet.** A rotation reaches nothing on its own. The review path's `setup_check` asks GitHub exactly one question — is `code-review.yml` active — and never runs the installer and never reads the keychain, so a repo keeps reviewing on the previous account, with green runs, until the installer is run in it again. Sync them:
+
+```bash
+bash ~/.claude/skills/agent-code-review-setup/sync-fleet.sh
+```
+
+It runs `install.sh` in every repo under `~/code` that has the workflow, one visit per remote, and prints three lists: repos moved onto the new account; repos whose workflow has drifted from the template, restored and *not* applied, since converging a workflow is a per-repo act you commit deliberately; and repos that failed, with the cause. It exits nonzero if any failed. Pass a different root as the first argument to scan somewhere else.
+
+Rotating one repo lazily also works — run `install.sh` from its root before reviewing there.
 
 ### Adding an account to the pool
 
