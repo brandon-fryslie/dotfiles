@@ -22,15 +22,9 @@ A single embedded script, `install.sh`, **converges** the repo onto the desired 
 1. `.github/workflows/code-review.yml` matches the embedded template, referencing the action at its moving major tag `@v1` (auto-tracks the latest non-breaking release). Identical content → no write.
 2. Every secret in the script's `SECRETS` table is set in **both** the Actions and Dependabot secret stores — re-synced from the macOS keychain whenever the keychain is reachable (so rotation propagates), left as-is with a loud warning when the keychain is unreachable but the secret already exists, and a hard failure when the secret is missing *and* cannot be set. Both stores are required because GitHub feeds Dependabot-triggered runs from the separate Dependabot store; an Actions-only secret leaves every Dependabot PR review unauthenticated.
 
-The secret provisioned today:
+One secret is provisioned: `CLAUDE_CODE_OAUTH_TOKEN`, a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it holds is named by the `SECRETS` table in `install.sh` and nowhere else — read that table, and do not restate the account name here: a second copy of it goes stale the first time a rotation updates one file, and a page naming an account the installer no longer uses is worse than a page that sends you to the installer. Which account has the job varies by which one has capacity; the swap procedure is **Rotating the reviewer account**, below. The installer never chooses and never prompts.
 
-| Secret | Keychain item |
-|---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | `CLAUDE_CODE_OAUTH_TOKEN_BRANDROID` |
-
-`CLAUDE_CODE_OAUTH_TOKEN` is a Claude Pro/Max subscription token from `claude setup-token`. Which account's token it is varies by which one has capacity — the swap procedure is **Rotating the reviewer account**, below. The installer never chooses and never prompts.
-
-The keychain item is **only** ever what that table says. No environment variable overrides it: an override is a second answer to "which credential does this repo get" that fires invisibly, from whichever process happened to export it, across every repo that process installs into — while the table still reads `_SIGNUP`. One map, no override.
+The keychain item is **only** ever what that table says. No environment variable overrides it: an override is a second answer to "which credential does this repo get" that fires invisibly, from whichever process happened to export it, across every repo that process installs into — while the table still names the account you would read there. One map, no override.
 
 **Every listed secret is required.** There is no lenient arm for a secret the workflow does not consume yet — an install that cannot provision a listed secret stops, rather than finishing and leaving you believing it was provisioned. To stop provisioning a secret, remove it from the table.
 
@@ -62,7 +56,7 @@ The pool is one keychain item per account, named `CLAUDE_CODE_OAUTH_TOKEN_<ACCOU
 security dump-keychain | grep -oE 'CLAUDE_CODE_OAUTH_TOKEN_[A-Z0-9_]+' | sort -u
 ```
 
-**1. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — change the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row, e.g. to `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_SSSSSMOKEY"`. Commit in dotfiles.
+**1. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — set the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row to the target account's item: `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT>"`. Commit in dotfiles.
 
 **2. That's it — reviews propagate it.** Every code review re-runs the installer, and every install run rewrites every listed secret from the keychain, so each repo picks up the new account the next time it is reviewed.
 
