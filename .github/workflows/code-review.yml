@@ -31,7 +31,14 @@ name: AI Code Review
 # prIsFromFork check.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `ready_for_review` is deliberately ABSENT. GitHub does NOT suppress `opened`
+    # for a PR created as a draft, so a draft is already reviewed at creation; and
+    # nothing in this template guards on `draft == false`. Marking that PR ready
+    # carries no new commit, so `head.sha` is byte-identical to the SHA just
+    # reviewed — the event could only ever buy a second, fully-billed review of a
+    # diff already reviewed. Adding it back requires first adding the draft guard
+    # that would make the first review not happen. [LAW:no-mode-explosion]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -56,21 +63,21 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout pull request
-        # Moving major tag, for the same reason as the review action pin below: a SHA
-        # here puts every consuming repo back on the re-bump treadmill, for a first-party
-        # GitHub action where the major tag is the standard reference.
+        # SHA-pinned, unlike the review action below — a deliberately DIFFERENT posture for
+        # a DIFFERENT risk, not an inconsistency to tidy up. checkout is THIRD-PARTY code
+        # fetched over the network on every run, including on untrusted fork PRs, and it
+        # runs BEFORE the review action's own fork gating (which lives inside that action's
+        # process, not in this workflow). Under a moving tag, a future compromised release
+        # would execute automatically, unreviewed, on every incoming PR.
         #
-        # The rule is "track the moving major" — whichever major is current *now*, not one
-        # frozen at authoring time. Re-point this ref when checkout ships a new major.
-        # Nothing breaks if you don't: checkout still publishes patches for older majors,
-        # so a stale pin keeps passing green. That silence is exactly how this drifts —
-        # the previous pin was already a major behind on the day it was written, and green
-        # runs hid it until a reviewer misread the ref as nonexistent.
+        # The moving-tag argument that governs the review action does not transfer here: it
+        # rests on the ref pointing at a repo we author, review, and release — a
+        # relationship no third party has with us. So this pin accepts exactly the re-bump
+        # cost that argument avoids, because the code being fetched is not ours.
+        # [LAW:one-type-per-behavior] Two different trust relationships, two rules.
         #
-        # The version lives on the `uses:` line and nowhere else — not in this comment,
-        # not as a trailing `# vN`. Either is a second copy of what the line already
-        # states, and it rots the day the ref moves. [LAW:one-source-of-truth]
-        uses: actions/checkout@v7
+        # Bump by editing this template and re-running the installer everywhere.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           # This is an UNTRUSTED checkout — the PR head, from any fork. The default
@@ -97,6 +104,7 @@ jobs:
       # plus a new keychain item. There is no second credential to absorb it. The action
       # fails loudly, before spending anything, if that credential is missing.
       - name: Code Review
+        id: review
         uses: promptctl/copirate-code-review-agent@v1
         with:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -104,9 +112,49 @@ jobs:
           # universal default baked into the template, NOT a per-repo divergence that
           # leaked in. On a PR that bumps a dependency the reviewer fetches the bumped
           # module's upstream commits and changed files instead of reviewing a bare
-          # version string; that context helps in any repo and costs only a little
-          # review time. Because it lives in the template, this IS the baseline: a
-          # re-run of the installer preserves it. Do not "reconverge to a barer
-          # default" by removing it — there is no barer default, and stripping it
-          # silently degrades every dependency-bump review.
+          # version string. Scope, stated honestly: the action recognizes `go.mod`
+          # require-line bumps and nothing else, so in a repo with no `go.mod` this
+          # input is INERT — it costs nothing and can never fire. It is on everywhere
+          # because a universally-safe default beats a per-repo question, not because
+          # it helps every repo. Do not "reconverge to a barer default" by removing
+          # it — there is no barer default, and stripping it silently degrades every
+          # go.mod dependency-bump review.
           DEPENDENCY_DIFF: "true"
+          # RENDERED, not literal. The value is the universal baseline joined with
+          # whatever this repo declared in .github/code-review.conf, composed in one
+          # place — see BASELINE_EXCLUDES at the top of install.sh, where the rationale
+          # for each baseline pattern lives beside the patterns themselves, and
+          # read_repo_config, which parses the per-repo half. [LAW:one-source-of-truth]
+          EXCLUDE_PATTERNS: ".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
+
+      # The transcript is the only artifact that can explain a review that failed,
+      # hung, or misbehaved — the exact prompt, the raw engine output including
+      # thinking and tool calls, and stderr, for every attempt. action.yml produces
+      # it on EVERY termination path and documents this exact consumption; a
+      # template that never consumed it left every consumer with a failed run and
+      # nothing to read. [LAW:no-silent-failure]
+      #
+      # `if: always()` because the run that most needs a transcript is the one that
+      # failed. The output guard covers the paths that legitimately spawn no engine
+      # (a fork-PR skip), where the directory is empty rather than missing.
+      #
+      # `continue-on-error` because this job's CONCLUSION is the signal a consumer reads
+      # to tell "the review found nothing" from "the review never ran" — those two are
+      # otherwise identical downstream, since both surface as zero findings. An artifact
+      # outage, a quota trip, or a transcript too large would otherwise flip a review that
+      # succeeded and posted its comments into a reported failure, which reads as the
+      # second case and sends a maintainer hunting a review that already worked. The
+      # archival failure stays loud in this step's own log; it just stops speaking for the
+      # review. [LAW:no-silent-failure] applies to the archival error, not to the status
+      # check it would otherwise corrupt.
+      - name: Archive review transcript
+        if: always() && steps.review.outputs.transcript-dir != ''
+        continue-on-error: true
+        # SHA-pinned for the same reason as the checkout above: third-party code fetched
+        # over the network on every run, so it does not inherit the moving-tag argument
+        # that governs our own action.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: review-session-transcript
+          path: ${{ steps.review.outputs.transcript-dir }}
+          if-no-files-found: ignore
