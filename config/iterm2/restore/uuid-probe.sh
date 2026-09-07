@@ -11,15 +11,34 @@
 # survived a restart -> the answer is YES, recorded, no forced reboot needed.
 # [LAW:verifiable-goals] deterministic, re-runnable, self-recording.
 #
+# The two verdicts do not rest on the same footing, and the tool must not pretend
+# they do. A UUID appearing under two launches can only have been restored, so YES
+# stands on its own. Absence proves nothing by itself: a tab closed by hand in June
+# is equally absent today. A NO therefore means something only when the snapshot it
+# is measured against WAS the state at the moment iTerm2 quit — so `check` reports
+# NO only when the previous snapshot was armed just before this launch began, and
+# says INCONCLUSIVE otherwise instead of guessing. (Before this rule existed the
+# check compared a June snapshot to a September launch across 8 reboots and printed
+# a confident NO, which by the carrier's own gate would have killed a sound design.)
+#
 # Usage:
 #   uuid-probe.sh record   # snapshot current launch's live UUIDs (idempotent per launch)
+#                          # ARM: run this immediately before quitting iTerm2
 #   uuid-probe.sh check    # report YES/NO/INCONCLUSIVE from the accumulated log
 #   uuid-probe.sh show     # dump the raw log grouped by launch
 set -euo pipefail
 
 LOG="${ITERM_UUID_PROBE_LOG:-$HOME/.local/state/iterm-restore/uuid-probe.tsv}"
+# How long before this launch started a snapshot may have been taken and still count
+# as "armed": the gap between running `record` and iTerm2 coming back up.
+ARM_WINDOW="${ITERM_UUID_PROBE_ARM_WINDOW:-1800}"
 
 die() { printf 'uuid-probe: %s\n' "$*" >&2; exit 1; }
+
+# Epoch seconds for a log row's ISO-8601 record time (column 1).
+iso_to_epoch() {
+  date -j -f "%Y-%m-%dT%H:%M:%S" "$1" +%s 2>/dev/null || die "unparseable log timestamp: $1"
+}
 
 # Effect boundary: the current iTerm2 launch epoch (seconds). Empty => not running.
 iterm_launch_epoch() {
@@ -66,24 +85,41 @@ cmd_record() {
 
 cmd_check() {
   [[ -f $LOG ]] || die "no probe log yet at $LOG (run: uuid-probe.sh record)"
-  local n_launches survivors
+  local cur n_launches survivors armed_iso armed_epoch gap
+  cur=$(iterm_launch_epoch)
   n_launches=$(cut -f2 "$LOG" | sort -u | grep -c . || true)
-  # A UUID seen under >=2 distinct launch epochs survived a restart.
+  printf 'distinct iTerm2 launches recorded: %s\n' "$n_launches"
+
+  # A UUID under two launch epochs can only have got there by being restored, so
+  # this arm needs no assumption about which launches those were.
   survivors=$(
     awk -F'\t' '
       { key=$3 SUBSEP $2; if(!(key in pair)){ pair[key]=1; cnt[$3]++ } }
       END{ for(u in cnt) if(cnt[u]>=2) print u" (seen in "cnt[u]" launches)" }' "$LOG"
   )
-  printf 'distinct iTerm2 launches recorded: %s\n' "$n_launches"
   if [[ -n $survivors ]]; then
     printf 'RESULT: YES — UUID survives iTerm2 restart. Recorded survivors:\n%s\n' "$survivors"
     return 0
   fi
-  if [[ ${n_launches:-0} -lt 2 ]]; then
-    printf 'RESULT: INCONCLUSIVE — only %s launch recorded. Re-run `record` after the next iTerm2 quit+reopen.\n' "$n_launches"
+
+  # Nothing reappeared. Whether that is evidence depends entirely on when the
+  # newest earlier snapshot was taken, so establish that before naming a verdict.
+  armed_iso=$(awk -F'\t' -v cur="$cur" '$2 != cur {print $1}' "$LOG" | sort | tail -1)
+  if [[ -z $armed_iso ]]; then
+    printf 'RESULT: INCONCLUSIVE — this launch (%s) is the only one recorded.\n' "$cur"
+    printf '  Arm it: `record` immediately before quitting iTerm2, then `record` && `check` in the next launch.\n'
     return 2
   fi
-  printf 'RESULT: NO — across %s launches, no UUID reappeared. The carrier must NOT key on ITERM_SESSION_ID.\n' "$n_launches"
+  armed_epoch=$(iso_to_epoch "$armed_iso")
+  gap=$(( cur - armed_epoch ))
+  if (( gap < 0 || gap > ARM_WINDOW )); then
+    printf 'RESULT: INCONCLUSIVE — newest earlier snapshot (%s) predates this launch by %ss, outside the %ss arming window.\n' \
+      "$armed_iso" "$gap" "$ARM_WINDOW"
+    printf '  Those tabs were closed normally somewhere in between, so their absence now says nothing about UUID stability.\n'
+    printf '  Arm it: `record` immediately before quitting iTerm2, then `record` && `check` in the next launch.\n'
+    return 2
+  fi
+  printf 'RESULT: NO — snapshot armed %ss before this launch and no UUID reappeared. The carrier must NOT key on ITERM_SESSION_ID.\n' "$gap"
   return 1
 }
 

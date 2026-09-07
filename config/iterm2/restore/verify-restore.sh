@@ -18,15 +18,31 @@ pass() { printf '  PASS  %s\n' "$1"; }
 fail() { printf '  FAIL  %s\n' "$1"; fails=$((fails+1)); }
 hdr()  { printf '\n== %s ==\n' "$1"; }
 
-hdr "1. continuum save is fresh (prerequisite — see 5k5.7)"
-newest=$(ls -t "$RESURRECT_DIR"/tmux_resurrect_*.txt 2>/dev/null | head -1)
-if [ -z "$newest" ]; then
-  fail "no resurrect save found in $RESURRECT_DIR"
+hdr "1. the save a restore would read is fresh and complete (prereq — see 5k5.7)"
+# Read the `last` symlink, never "newest *.txt on disk". Those are different files:
+# resurrect writes a new save under a timestamped name and repoints `last` only once
+# it has finished, so anything newer than `last` is an in-flight or abandoned save.
+# Observed 2026-09-06: `ls -t | head -1` was a half-written file holding pane lines
+# and nothing else — this check called it fresh, and check 5 then counted 0 saved
+# sessions in it and failed. One save is the restore input; every check reads that one.
+# [LAW:one-source-of-truth]
+link=$(readlink "$RESURRECT_DIR/last" 2>/dev/null)
+save=""
+[ -n "$link" ] && save="$RESURRECT_DIR/${link##*/}"
+if [ -z "$save" ] || [ ! -f "$save" ]; then
+  fail "no usable 'last' save in $RESURRECT_DIR (link='${link:-<none>}') — a restore would have nothing to read"
+  save=""
 else
-  now=$(date +%s); mtime=$(stat -f %m "$newest" 2>/dev/null || stat -c %Y "$newest")
-  age=$(( now - mtime ))
-  if [ "$age" -le "$FRESH_SECS" ]; then pass "newest save is ${age}s old ($newest)"
-  else fail "newest save is ${age}s old (> ${FRESH_SECS}s) — continuum likely not saving (5k5.7); restore would be stale"; fi
+  age=$(( $(date +%s) - $(stat -f %m "$save") ))
+  if [ "$age" -le "$FRESH_SECS" ]; then pass "last save is ${age}s old ($save)"
+  else fail "last save is ${age}s old (> ${FRESH_SECS}s) — the periodic save is not running (5k5.7); restore would be stale"; fi
+  # A save carrying panes but no window/state lines stopped partway: resurrect can
+  # rebuild nothing from it. Name that, rather than reporting it downstream as
+  # "0 sessions saved", which reads like an empty tmux server. [LAW:parse-dont-validate]
+  wins=$(awk -F'\t' '$1=="window"' "$save" | wc -l | tr -d ' ')
+  states=$(awk -F'\t' '$1=="state"' "$save" | wc -l | tr -d ' ')
+  if [ "$wins" -gt 0 ] && [ "$states" -gt 0 ]; then pass "save is complete ($wins window lines, $states state line)"
+  else fail "save is INCOMPLETE ($wins window / $states state lines) — panes only; a restore cannot rebuild sessions from it"; fi
 fi
 
 hdr "2. race fix: @cwd_restore_done was set (no stuck flag)"
@@ -62,8 +78,8 @@ else
 fi
 
 hdr "5. restored session count is plausible vs the save"
-if [ -n "${newest:-}" ]; then
-  saved=$(awk -F'\t' '$1=="window"{print $2}' "$newest" | sort -u | grep -c .)
+if [ -n "${save:-}" ]; then
+  saved=$(awk -F'\t' '$1=="window"{print $2}' "$save" | sort -u | grep -c .)
   live=$(tmux list-sessions 2>/dev/null | grep -c .)
   printf '  INFO  saved sessions=%s  live sessions=%s\n' "$saved" "$live"
   if [ "$live" -ge "$saved" ] && [ "$saved" -gt 0 ]; then pass "live ($live) >= saved ($saved)"
