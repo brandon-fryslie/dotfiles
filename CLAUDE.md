@@ -56,6 +56,15 @@ Each tool may have multiple variants:
 - **Never remove files** - only remove symlinks, and document with timestamp
 - **Backup before deleting** - move regular files/directories to timestamped backup location
 - **Keep configs valid** - run `just validate` before committing YAML changes
+- **`config/claude/settings.json` is marked `skip-worktree`** - it stays tracked so a
+  fresh install still gets the permissions allowlist, the `kill-server` hooks, and the
+  statusline wiring, but local edits (model, effort level, plugin and marketplace
+  toggles) are machine-specific and deliberately do not propagate. `git status` will
+  report the file clean no matter how much it has changed - that is the intended
+  behavior, not a bug to fix. Check with `git ls-files -v config/claude/settings.json`
+  (`S` = skipped). To commit a change to the shared baseline, unset it, commit, re-set:
+  `git update-index --no-skip-worktree <path>` ... `git update-index --skip-worktree <path>`.
+  The flag lives in the local index only, so each machine sets it once.
 
 ## Agent Skills
 
