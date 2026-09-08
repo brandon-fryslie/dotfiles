@@ -21,6 +21,7 @@
     ~/.config/tmux-powerline: config/tmux-powerline
     ~/.config/zellij: config/zellij
     ~/.config/nvim: config/nvim
+    ~/.config/certs: config/certs
 
 - shell:
     # The stock tmux-256color terminfo lacks the RGB flag, so apps inside tmux
@@ -39,5 +40,16 @@
     -
       command: ./scripts/setup-tmux-resurrect-save.sh
       description: Install launchd periodic tmux-resurrect save
+      stdout: true
+      stderr: true
+
+    # SSL_CERT_FILE and REQUESTS_CA_BUNDLE *replace* the trust store (unlike
+    # NODE_EXTRA_CA_CERTS, which adds to it), so they must point at a bundle that
+    # is complete on its own: this machine's keychain roots plus the Proxyman CA.
+    # The generator derives that bundle and renders both places the vars are set
+    # -- the launchd agent for GUI apps, env.sh for shells -- from one table.
+    -
+      command: ./config/certs/regen-ca-bundle.py
+      description: Build CA trust bundle and install local.ca-env launchd agent
       stdout: true
       stderr: true
