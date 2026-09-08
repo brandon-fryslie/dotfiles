@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Refuse any commit whose staged content carries a Claude session URL.
+# The message is the commit-msg hook's job; this covers links written into files.
+set -euo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+exclusions=()
+while IFS= read -r spec; do exclusions+=("$spec"); done < <(guard_own_pathspecs)
+
+tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
+set +e
+git diff --cached --diff-filter=ACM -U0 -- . ${exclusions[@]+"${exclusions[@]}"} \
+  | grep '^+' > "$tmp"
+rc=$?
+set -e
+# grep exits 1 on "no added lines", which is not a failure. Anything else is, and
+# a scan that failed must never read as a scan that passed. [LAW:no-silent-failure]
+[ $rc -le 1 ] || { printf 'pre-commit: staged-content scan failed (rc=%d)\n' "$rc" >&2; exit 2; }
+
+if scan_file_for_session_url "$tmp"; then
+  refuse "Staged content contains a link to a private Claude conversation." "$tmp"
+  exit 1
+fi
+
+chain_to_local_hook pre-commit "$@"
