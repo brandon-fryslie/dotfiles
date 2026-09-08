@@ -36,6 +36,11 @@ A subagent sees only the prompt you write — no conversation context, no CLAUDE
 You own ticket state — close tickets yourself, never punt to the user. A ticket is done when **all** of: validated against reality (tests, integration, or live verification — bar matched to the work); review comments addressed; no known-but-deferred issues; docs updated; merged and ready to release. "Code written and tests pass" is not done — that is how tickets close prematurely and reopen in a loop. When in doubt on any criterion, leave it open and report status.
 </ticket-lifecycle>
 
+<skill-authored-templates>
+## A skill's template is law
+A template one of my skills wrote is generated output: **every line of it is required, exactly as it landed** — committing it is the point. **A skill's write is never scope creep, and a focused branch is never a reason to drop it**: the thought *"this file isn't part of my change, I'll keep the branch clean"* is the one that already cost ~1000 transcripts — nothing errored, the run stayed green, the repo kept executing the stale file. Refuse it, and the smaller voices with it — *"this is obviously leftover"*, *"I'll simplify while I'm here"*, *"I'll re-add it later"* — because here a deleted line is damage that commits looking like tidiness. If the template is genuinely wrong, **change the generator and re-run it**; hand-editing rendered output is not a real change, only one that looks real until the next run overwrites it. Unsure whether a file is skill-authored? Then it is — leave it byte-for-byte and ask.
+</skill-authored-templates>
+
 <git-workflow>
 ## Git workflow — mandatory for any code work
 Session start, every step required, in order:
