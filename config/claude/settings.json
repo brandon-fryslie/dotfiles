@@ -99,6 +99,15 @@
             "command": "cmd=$(jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -qwiE 'kill-server'; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"BLOCKED: kill-server is permanently forbidden. tmux kill-server destroys the entire tmux server and every session and process attached to it. Use a session-scoped kill-session, or an isolated TMUX_TMPDIR/-L socket, never kill-server.\"}}'; fi"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/bmf/code/dotfiles/config/claude/hooks/guard-generated-workflow.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
