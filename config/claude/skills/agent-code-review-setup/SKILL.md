@@ -48,7 +48,14 @@ The script does **not** commit. After it succeeds, commit and push the workflow 
 
 ## Rotating the reviewer account
 
-The reviewer runs as whichever Claude account the `SECRETS` table names. Tokens from `claude setup-token` never expire, but each account has its own usage quota — when review runs start failing with usage-limit errors, point the table at an account that still has capacity.
+The reviewer runs as whichever Claude account the `SECRETS` table names. Tokens from `claude setup-token` never expire, but each account has its own usage quota — and an exhausted quota surfaces as a red `Review` check, a provider reporting `reviewed: false` with `not_reviewed_reason: no-review-for-head`, and this in the Actions log:
+
+```
+rate-limited: claude-code exited with status 1
+Transient error on 'auto→claude-subscription' (claude-code/claude-sonnet-5) — all 3 attempts exhausted: rate-limited: claude-code exited with status 1.
+```
+
+**`Transient` there is a lie about the cause.** The account's quota is what is exhausted, `all 3 attempts exhausted` is the run having already taken your retry for you, and quota does not refill because you waited. The thought will be *"infrastructure hiccup — re-run the check"*; it costs forty minutes, returns the same red check, and ends with you asking the user to merge unreviewed. Rotate the account. That is the fix, and waiting is not a fix.
 
 The pool is one keychain item per account, named `CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT>`. List it:
 
@@ -56,9 +63,30 @@ The pool is one keychain item per account, named `CLAUDE_CODE_OAUTH_TOKEN_<ACCOU
 security dump-keychain | grep -oE 'CLAUDE_CODE_OAUTH_TOKEN_[A-Z0-9_]+' | sort -u
 ```
 
-**1. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — set the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row to the target account's item: `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT>"`. Commit in dotfiles.
+**1. Pick an account that can actually serve.** The listing above says which accounts exist, not which have capacity left. Ask them:
 
-**2. Propagate it to the fleet.** A rotation reaches nothing on its own. The review path's `setup_check` asks GitHub exactly one question — is `code-review.yml` active — and never runs the installer and never reads the keychain, so a repo keeps reviewing on the previous account, with green runs, until the installer is run in it again. Sync them:
+```bash
+bash ~/.claude/skills/code-review-unblock/probe-accounts.sh
+```
+
+It reads the configured account out of `install.sh`'s `SECRETS` table rather than restating it, then asks every account in the pool whether it can answer right now — tokens go keychain → child process environment, never into `argv`, never printed; only a name and a verdict reach stdout. One run's output, as a sample of the format and not as a map of the current config:
+
+```
+configured in install.sh: SSSSSMOKEY
+
+  BRANDROID      LIMITED     You've hit your weekly limit · resets Sep 13 at 1pm (America/Denver)
+  QWR            AVAILABLE
+  SIGNUP         AVAILABLE
+* SSSSSMOKEY     AVAILABLE
+
+(* = the account install.sh currently names)
+```
+
+Take an `AVAILABLE` account that is not the one you use interactively, so CI stops eating the quota you spend from the terminal. **A red `Review` check outranks an `AVAILABLE` verdict on the account already configured.** The probe's prompt is one line; a review is not — so `AVAILABLE` proves an account can answer, never that it has a review's worth of capacity left. If the configured account is failing runs, rotate off it even though the probe calls it available.
+
+**2. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — set the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row to the target account's item: `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT>"`. Commit in dotfiles.
+
+**3. Propagate it to the fleet.** A rotation reaches nothing on its own. The review path's `setup_check` asks GitHub exactly one question — is `code-review.yml` active — and never runs the installer and never reads the keychain, so a repo keeps reviewing on the previous account, with green runs, until the installer is run in it again. Sync them:
 
 ```bash
 bash ~/.claude/skills/agent-code-review-setup/sync-fleet.sh
