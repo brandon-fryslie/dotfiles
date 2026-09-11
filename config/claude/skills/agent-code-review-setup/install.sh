@@ -86,6 +86,21 @@ WORKFLOW_PATH=".github/workflows/code-review.yml"
 # reads as a broken reviewer.
 BASELINE_EXCLUDES=".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
 
+# The review-round cap EVERY repo gets unless it declares its own. The action stops
+# reviewing a PR after this many rounds and posts a marked not-reviewed notice instead,
+# which the address-pr-reviews loop reads as a halt, never as a clean pass — so a spent
+# cap does not merge unread code, it stops the line. The rendered value is always
+# explicit, so this line is the fleet's default and the action's own never applies to a
+# repo this installer governs. [LAW:one-source-of-truth]
+#
+# WHY per-repo and not fleet-wide: the cost is per PR, and PRs are not the same size
+# everywhere. A stack of PRs re-reviews each member on every rebase of the one below
+# it, spending rounds on diffs already read; a repo that works in stacks declares more
+# headroom in .github/code-review.conf, and a repo that never stacks keeps the default.
+# 0 lifts the cap; nothing here defends against a loop that spends without bound, so a
+# repo declaring 0 has chosen that.
+DEFAULT_MAX_REVIEW_ROUNDS="5"
+
 # --- The per-repo half of the workflow's configuration ------------------------
 #
 # WHY a file in the target repo, and not a repo->patterns table here: "which files are
@@ -109,7 +124,7 @@ REPO_CONFIG_PATH=".github/code-review.conf"
 # and a typo that is silently ignored leaves a repo paying for reviews it meant to stop
 # paying for, with nothing in any run to say so. So an unknown key is fatal, not skipped.
 # A second setting is one more entry here plus its own reader. [LAW:no-silent-failure]
-CONFIG_KEYS="EXCLUDE_PATTERNS_EXTRA"
+CONFIG_KEYS="EXCLUDE_PATTERNS_EXTRA MAX_REVIEW_ROUNDS"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 
@@ -167,6 +182,20 @@ read_repo_config() {
   done < "$REPO_CONFIG_PATH"
 
   printf '%s' "$found"
+}
+
+# The cap this repo runs under: its own declaration, else the fleet default. Echoes a
+# non-negative integer or dies naming the file and the value — the workflow input is a
+# count, and a count that is not a number would be a YAML string the action rejects at
+# run time, one round of billing later than here. [LAW:parse-dont-validate]
+read_max_review_rounds() {
+  local declared
+  declared="$(read_repo_config MAX_REVIEW_ROUNDS)"
+  local rounds="${declared:-$DEFAULT_MAX_REVIEW_ROUNDS}"
+  case "$rounds" in
+    *[!0-9]*) die "$REPO_CONFIG_PATH: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), got '$rounds'." ;;
+  esac
+  printf '%s' "$rounds"
 }
 
 # --- Preconditions both targets need. Each fails loudly with a specific
@@ -338,6 +367,10 @@ jobs:
           # for each baseline pattern lives beside the patterns themselves, and
           # read_repo_config, which parses the per-repo half. [LAW:one-source-of-truth]
           EXCLUDE_PATTERNS: "__EXCLUDE_PATTERNS__"
+          # RENDERED, not literal. This repo's MAX_REVIEW_ROUNDS from .github/code-review.conf,
+          # else the fleet default — see DEFAULT_MAX_REVIEW_ROUNDS in install.sh for what a
+          # spent cap does and why the number is a per-repo declaration.
+          MAX_REVIEW_ROUNDS: "__MAX_REVIEW_ROUNDS__"
 
       # The transcript is the only artifact that can explain a review that failed,
       # hung, or misbehaved — the exact prompt, the raw engine output including
@@ -380,6 +413,10 @@ EXCLUDES="${BASELINE_EXCLUDES}${EXTRA_EXCLUDES:+,${EXTRA_EXCLUDES}}"
 if [ -n "$EXTRA_EXCLUDES" ]; then
   echo "→ ${REPO_CONFIG_PATH} adds exclude pattern(s): ${EXTRA_EXCLUDES}"
 fi
+MAX_REVIEW_ROUNDS="$(read_max_review_rounds)"
+if [ "$MAX_REVIEW_ROUNDS" != "$DEFAULT_MAX_REVIEW_ROUNDS" ]; then
+  echo "→ ${REPO_CONFIG_PATH} sets MAX_REVIEW_ROUNDS: ${MAX_REVIEW_ROUNDS}"
+fi
 
 # Insert the rendered values without escaping every GH expression in the heredoc.
 # [LAW:one-type-per-behavior] A marker|value LIST: a further rendered value is one more
@@ -388,7 +425,7 @@ fi
 # workflow [LAW:no-silent-failure].
 TMP="$(mktemp)"
 trap 'rm -f "$DESIRED" "$TMP"' EXIT
-for rendered in "__ACTION_REF__|${ACTION_REF}" "__EXCLUDE_PATTERNS__|${EXCLUDES}"; do
+for rendered in "__ACTION_REF__|${ACTION_REF}" "__EXCLUDE_PATTERNS__|${EXCLUDES}" "__MAX_REVIEW_ROUNDS__|${MAX_REVIEW_ROUNDS}"; do
   marker="${rendered%%|*}"
   value="${rendered#*|}"
   grep -q "$marker" "$DESIRED" || die "workflow template lost its ${marker} marker."
