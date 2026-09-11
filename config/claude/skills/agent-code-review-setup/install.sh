@@ -89,10 +89,9 @@ BASELINE_EXCLUDES=".github/workflows/code-review.yml,dist/**,**/dist/**,build/**
 # The review-round cap EVERY repo gets unless it declares its own. The action stops
 # reviewing a PR after this many rounds and posts a marked not-reviewed notice instead,
 # which the address-pr-reviews loop reads as a halt, never as a clean pass — so a spent
-# cap does not merge unread code, it stops the line. 5 is the action's own default,
-# carried here because the rendered value is what every consuming repo runs; a later
-# change to action.yml's default reaches the fleet only through this line.
-# [LAW:one-source-of-truth]
+# cap does not merge unread code, it stops the line. The rendered value is always
+# explicit, so this line is the fleet's default and the action's own never applies to a
+# repo this installer governs. [LAW:one-source-of-truth]
 #
 # WHY per-repo and not fleet-wide: the cost is per PR, and PRs are not the same size
 # everywhere. A stack of PRs re-reviews each member on every rebase of the one below
@@ -186,9 +185,9 @@ read_repo_config() {
 }
 
 # The cap this repo runs under: its own declaration, else the fleet default. Echoes a
-# non-negative integer or dies naming the line — the workflow input is a count, and a
-# count that is not a number would be a YAML string the action rejects at run time, one
-# round of billing later than here. [LAW:parse-dont-validate]
+# non-negative integer or dies naming the file and the value — the workflow input is a
+# count, and a count that is not a number would be a YAML string the action rejects at
+# run time, one round of billing later than here. [LAW:parse-dont-validate]
 read_max_review_rounds() {
   local declared
   declared="$(read_repo_config MAX_REVIEW_ROUNDS)"
