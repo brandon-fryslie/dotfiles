@@ -86,15 +86,13 @@ Take an `AVAILABLE` account that is not the one you use interactively, so CI sto
 
 **2. Repoint the table.** In `install.sh` — this directory; `~/.claude/skills` is a symlink into `~/code/dotfiles`, so it's a dotfiles edit — set the keychain-item field of the `CLAUDE_CODE_OAUTH_TOKEN` row to the target account's item: `"CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_<ACCOUNT>"`. Commit in dotfiles.
 
-**3. Propagate it to the fleet.** A rotation reaches nothing on its own. The review path's `setup_check` asks GitHub exactly one question — is `code-review.yml` active — and never runs the installer and never reads the keychain, so a repo keeps reviewing on the previous account, with green runs, until the installer is run in it again. Sync them:
+**3. Sync the repo you are about to review in.** A rotation reaches nothing on its own. The review path's `setup_check` asks GitHub exactly one question — is `code-review.yml` active — and never runs the installer and never reads the keychain, so a repo keeps reviewing on the previous account, with green runs, until the installer is run in it again. So run `install.sh` from its root before reviewing there:
 
 ```bash
-bash ~/.claude/skills/agent-code-review-setup/sync-fleet.sh
+bash ~/.claude/skills/agent-code-review-setup/install.sh
 ```
 
-It runs `install.sh` in every repo under `~/code` that has the workflow, one visit per remote, and prints three lists: repos moved onto the new account; repos whose workflow has drifted from the template, restored and *not* applied, since converging a workflow is a per-repo act you commit deliberately; and repos that failed, with the cause. It exits nonzero if any failed. Pass a different root as the first argument to scan somewhere else.
-
-Rotating one repo lazily also works — run `install.sh` from its root before reviewing there.
+One repo, at the moment it needs the credential. Do not fan a rotation out across repos ahead of time: that writes a copy of the credential into every repo to go stale on its own schedule, and then needs a second pass to hunt the stale ones down. Syncing at the point of use leaves the `SECRETS` table the only copy there is.
 
 ### Adding an account to the pool
 
