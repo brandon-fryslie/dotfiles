@@ -22,6 +22,9 @@
     ~/.config/zellij: config/zellij
     ~/.config/nvim: config/nvim
     ~/.config/certs: config/certs
+    ~/.local/bin/claude-cleanup:
+      path: bin/claude-cleanup
+      create: true
 
 - shell:
     # The stock tmux-256color terminfo lacks the RGB flag, so apps inside tmux

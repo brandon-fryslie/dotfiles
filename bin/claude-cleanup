@@ -1,0 +1,151 @@
+#!/usr/bin/env python3
+"""claude-cleanup: find every line holding a literal string in the places agents write, and delete them.
+
+    claude-cleanup 'query'        list each place: path:line: text
+    claude-cleanup 'query' --rm   delete those lines, after backing up every file it changes
+
+Agents write facts that were true once (an IP address, a port, a path) into memories,
+skills, handoffs, ssh configs and READMEs, and never take them out. This finds them.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import shutil
+import subprocess
+import sys
+import time
+from collections.abc import Iterator
+from dataclasses import dataclass
+from pathlib import Path
+
+HOME = Path.home()
+BACKUPS = HOME / ".cache" / "claude-cleanup"
+
+# Never searched anywhere: version control, installed dependencies, build output, lockfiles.
+# Deleting a line from any of these breaks the thing rather than cleaning it.
+EVERYWHERE = (
+    "!.git/", "!node_modules/", "!.venv/", "!venv/", "!__pycache__/", "!.pytest_cache/",
+    "!target/", "!dist/", "!build/", "!*.lock", "!package-lock.json", "!pnpm-lock.yaml",
+)
+
+
+@dataclass(frozen=True)
+class Root:
+    """A place agents write. `skip` holds globs, relative to the root, that are records, not facts."""
+
+    path: str  # relative to $HOME
+    skip: tuple[str, ...] = ()
+
+
+# [LAW:one-source-of-truth] what is searched and what is skipped; --help and the footer both read this.
+ROOTS = (
+    Root(".claude", skip=(
+        # Session directories are named by uuid; projects/*/memory/ sits beside them and is searched.
+        "projects/*/*.jsonl", "projects/*/*-*-*-*-*/", "file-history/", "paste-cache/", "history.jsonl",
+        "debug/", "sessions/", "session-env/", "shell-snapshots/", "todos/", "jobs/", "cache/",
+        "downloads/", "backups/", "knowledge-graph/", "statsig/", "telemetry/", "*.bak",
+    )),
+    Root(".agents"),
+    Root(".codex", skip=("sessions/", "archived_sessions/", "log/", "logs/", ".tmp/", "*.bak", "*.sqlite*")),
+    Root(".gemini", skip=("history/", "tmp/", "oauth_creds.json", "google_accounts.json")),
+    Root(".copilot", skip=("logs/", "session-state/", "command-history-state.json", "pkg/")),
+    Root(".cursor", skip=("extensions/",)),
+    Root(".config"),
+    Root(".ssh", skip=("id_*", "*.pem", "*.key")),
+    Root(".local/bin"),
+    Root("Library/LaunchAgents"),
+    Root("code"),
+    *(Root(name) for name in (".zshrc", ".zprofile", ".zshenv", ".bashrc", ".bash_profile", ".profile", ".gitconfig")),
+)
+
+
+@dataclass(frozen=True)
+class Hit:
+    path: Path  # as found; a symlink stays a symlink here
+    line: int  # 1-based
+    text: str
+
+
+def search(query: str, root: Root) -> Iterator[Hit]:
+    base = HOME / root.path
+    if not base.exists():
+        return  # a place this machine does not have
+    # A file root is searched as itself; a directory root from inside, so globs are relative to it.
+    cwd, target = (base, ".") if base.is_dir() else (base.parent, base.name)
+    globs = [arg for pattern in (*EVERYWHERE, *(f"!{s}" for s in root.skip)) for arg in ("--glob", pattern)]
+    command = ["rg", "--json", "--fixed-strings", "--hidden", "--no-ignore", "--max-filesize", "20M", *globs, "--", query, target]
+    found = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+    # [LAW:no-silent-failure] rg exits 1 for no match; 2 means some files could not be read, and says which.
+    if found.returncode not in (0, 1):
+        sys.stderr.write(found.stderr)
+    for record in map(json.loads, found.stdout.splitlines()):
+        if record["type"] == "match":
+            data = record["data"]
+            yield Hit(cwd / decode(data["path"]), data["line_number"], decode(data["lines"]).rstrip("\r\n"))
+
+
+def decode(field: dict) -> str:
+    # rg hands back {"text": ...}, or {"bytes": base64} for anything that is not UTF-8.
+    return field["text"] if "text" in field else base64.b64decode(field["bytes"]).decode(errors="replace")
+
+
+def remove(query: str, hits: list[Hit]) -> Path:
+    """Delete every hit's line, writing through symlinks. Returns the backup directory."""
+    backup = BACKUPS / time.strftime("%Y%m%dT%H%M%S")
+    by_file: dict[Path, set[int]] = {}
+    for hit in hits:
+        by_file.setdefault(hit.path.resolve(), set()).add(hit.line)  # two links to one file are one file
+    for real, lines in sorted(by_file.items()):
+        copy = backup / real.relative_to(real.anchor)
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(real, copy)
+        content = real.read_bytes().splitlines(keepends=True)
+        for number in lines:
+            if query.encode() not in content[number - 1]:
+                raise RuntimeError(f"{real}:{number} no longer holds the query; nothing more was removed (backups so far in {backup})")
+        # Written in place, not replaced, so a symlinked dotfile stays a link and keeps its mode.
+        real.write_bytes(b"".join(line for number, line in enumerate(content, start=1) if number not in lines))
+    return backup
+
+
+def epilog() -> str:
+    skipped = "\n".join(f"  ~/{root.path}: {', '.join(root.skip)}" for root in ROOTS if root.skip)
+    return (
+        "searched:\n  " + " ".join(f"~/{root.path}" for root in ROOTS)
+        + f"\n\nskipped everywhere: {' '.join(p.lstrip('!') for p in EVERYWHERE)}"
+        + f"\nskipped as records, not facts:\n{skipped}"
+    )
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="claude-cleanup",
+        description="List every line holding QUERY (a literal string) in the places agents write; --rm deletes those lines.",
+        epilog=epilog(),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("query", help="literal text, matched exactly and case-sensitively")
+    parser.add_argument("--rm", action="store_true", help="delete every listed line; each changed file is backed up first")
+    args = parser.parse_args(argv)
+    if not args.query.strip():
+        parser.error("query must not be blank; it would match every line")
+    if shutil.which("rg") is None:
+        parser.error("needs ripgrep (rg) on PATH")
+
+    hits = sorted((hit for root in ROOTS for hit in search(args.query, root)), key=lambda h: (str(h.path), h.line))
+    for hit in hits:
+        print(f"{hit.path}:{hit.line}: {hit.text}")
+    sys.stdout.flush()  # the listing lands before the summary on stderr
+    files = len({hit.path.resolve() for hit in hits})
+    print(f"\n{len(hits)} lines in {files} files. Not searched: session transcripts and other records (see --help).", file=sys.stderr)
+    if args.rm and hits:
+        backup = remove(args.query, hits)
+        print(f"removed {len(hits)} lines from {files} files; originals in {backup}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
