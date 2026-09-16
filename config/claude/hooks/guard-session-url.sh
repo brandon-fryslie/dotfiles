@@ -16,12 +16,11 @@ visible, non-blocking - so a broken guard announces itself rather than quietly p
 """
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
-from bash_command import commands, git_invocations, split_options
+from bash_command import commands, git_invocations, program, split_options
 
 # [LAW:one-source-of-truth] the git hooks' definition of a session URL, read where it lives;
 # grep reads it, because it is written as grep's pattern.
@@ -55,7 +54,7 @@ def skips_hooks(invocation):
 
 
 def publishes(words):
-    return os.path.basename(words[0]) == "gh" and tuple(words[1:3]) in GH_PUBLISHES
+    return program(words) == "gh" and tuple(words[1:3]) in GH_PUBLISHES
 
 
 def carries_session_url(command):
@@ -86,9 +85,9 @@ def main():
     if (any(i.verb in GIT_PUBLISHES for i in invocations) or any(map(publishes, commands(command)))) \
             and carries_session_url(command):
         deny("BLOCKED: this command would publish a Claude session URL (a claude.ai link to a "
-             "conversation). That link resolves "
-             "to the entire private conversation for anyone holding it, and publishing it is not "
-             "reversible -- a force-push unlinks the commit but the object stays served by its SHA. "
+             "conversation). That link resolves to the entire private conversation for anyone "
+             "holding it, and publishing it is not reversible -- a force-push unlinks the commit "
+             "but the object stays served by its SHA. "
              "Write the commit, PR or issue without the session line. Nothing replaces it: no "
              "shortened link, no id prefix, no 'session available on request'.")
 

@@ -105,6 +105,22 @@ class SessionUrlGuard(unittest.TestCase):
             "nice -n 10 git commit --no-verify -m x",
             "sudo -u me env FOO=1 git commit -n -m x",
             "xargs git commit -n < /dev/null",
+            'x="$(git commit -n -m y)"',
+            'echo "`git commit -n -m y`"',
+            'echo "$(git commit --no-verify -m y)"',
+            "cat <<'EOF' | bash\ngit commit --no-verify -m x\nEOF",
+            "echo 'git commit -n -m x' | sh",
+            "printf '%s\\n' 'git add .' 'git commit -n -m x' |\n  tee log | bash",
+            "bash <<< 'git commit -n -m x'",
+            "GIT commit -n -m x",
+            "Git push --no-verify",
+        ])
+
+    def test_a_pipe_into_a_non_shell_is_data_and_or_is_not_a_pipe(self):
+        self.assert_decisions("allow", [
+            "echo 'git commit -n -m x' | grep commit",
+            "echo 'git commit -n -m x' || bash -c 'true'",
+            'lit new --description "sed -n 1p f && git commit -m x"',
         ])
 
     def test_text_in_a_quoted_heredoc_body_does_not_run(self):
@@ -129,6 +145,8 @@ class SessionUrlGuard(unittest.TestCase):
             f"git commit -F - <<'EOF'\nfix\n\n{SESSION_URL}\nEOF",
             f'gh pr create --title t --body "{SESSION_URL}"',
             f'gh issue edit 3 --body "$(cat <<EOF\n{SESSION_URL}\nEOF\n)"',
+            f'x="$(git commit -m {SESSION_URL})"',
+            f'GH pr create --body "{SESSION_URL}"',
         ])
 
     def test_reading_and_auditing_session_urls_is_allowed(self):
@@ -208,6 +226,9 @@ class GeneratedWorkflowGuard(unittest.TestCase):
             'echo "$(git stash)"',
             "cat <<EOF\n$(git stash)\nEOF",
             "env git stash",
+            'x="$(git stash)"',
+            "echo 'git stash' | bash",
+            "GIT stash",
         ])
 
     def test_other_destructive_verbs_are_unchanged(self):

@@ -20,7 +20,7 @@ from typing import Iterator, NamedTuple
 # A shell handed a script runs it: `bash -c '<script>'`, or a heredoc fed to `bash`.
 SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh"))
 # Commands that run a command named among their own arguments.
-WRAPPERS = frozenset(("env", "command", "exec", "nohup", "nice", "timeout", "xargs", "sudo", "time"))
+WRAPPERS = frozenset(("env", "command", "exec", "nohup", "nice", "timeout", "xargs", "sudo", "time", "watch"))
 # Words that open a command position without being the command.
 RESERVED = frozenset(("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until"))
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
@@ -31,6 +31,20 @@ DOUBLE_QUOTE_ESCAPES = ('"', "\\", "$", "`")
 class Command(NamedTuple):
     words: list  # the command word first, then its arguments
     stdin: list  # heredoc bodies and here-strings the command reads
+    upstream: "Command | None"  # the command piped into this one
+
+
+def program(words):
+    """The program a command runs. macOS filesystems ignore case, so `GIT` runs git."""
+    return os.path.basename(words[0]).casefold()
+
+
+def piped_input(command):
+    """Every text that can reach a command's stdin: its heredocs and here-strings, and whatever
+    the commands piped into it carry - their arguments (`echo '<script>' | sh`) and their own
+    input (`cat <<EOF | bash`)."""
+    upstream = command.upstream
+    return command.stdin + ([] if upstream is None else upstream.words[1:] + piped_input(upstream))
 
 
 class GitInvocation(NamedTuple):
@@ -53,6 +67,7 @@ class _Reader:
         self.at = at
         self.commands = commands
         self.words, self.stdin = [], []
+        self.upstream = None  # the last command, while a pipe connects it to the next
         self.word = None  # characters of the word being read; None between words
         self.quoted = False  # whether any of the word being read was quoted
         self.redirection = None  # the operator whose operand the next word is
@@ -101,9 +116,12 @@ class _Reader:
                 self.read_substitution()
             elif char in "<>" or script.startswith("&>", self.at):
                 self.read_redirection()
+            elif script.startswith("||", self.at):
+                self.end_command()
+                self.at += 2
             elif char in "();&|":
                 self.depth += {"(": 1, ")": -1}.get(char, 0)
-                self.end_command()
+                self.end_command(piped=char == "|")
                 self.at += 1
             else:
                 self.take(char)
@@ -178,14 +196,18 @@ class _Reader:
             self.heredocs.append((text, operator.endswith("-"), not quoted, self.stdin))
         # Any other redirection's operand is a file name: data, not an argument.
 
-    def end_command(self):
+    def end_command(self, piped=False):
         self.end_word()
         self.redirection = None
         words = self.words
         while words and (words[0] in RESERVED or ASSIGNMENT.match(words[0])):
             words = words[1:]
+        # A pipe continues across a line break (`a |` newline `b`), so only a command that
+        # actually ended moves the pipeline on.
         if words:
-            self.commands.append(Command(words, self.stdin))
+            command = Command(words, self.stdin, self.upstream)
+            self.commands.append(command)
+            self.upstream = command if piped else None
         self.words, self.stdin = [], []
 
     def read_heredoc_bodies(self):
@@ -213,26 +235,26 @@ def commands(script) -> Iterator[list]:
         runs = [words]
         # Which argument starts a wrapper's command depends on that wrapper's own options, so
         # every word that could start one is read as a command.
-        if os.path.basename(words[0]) in WRAPPERS:
+        if program(words) in WRAPPERS:
             runs += [words[start:] for start in range(1, len(words))
                      if not words[start].startswith("-") and not ASSIGNMENT.match(words[start])]
         for run in runs:
             yield run
-            if os.path.basename(run[0]) not in SHELLS:
+            if program(run) not in SHELLS:
                 continue
             arguments = run[1:]
             runs_operands = any(a.startswith("-") and not a.startswith("--") and "c" in a for a in arguments)
             # With -c, every operand is read as a script: over-reading an option's value costs
             # nothing, and under-reading the script would let its commands through.
             scripts = [a for a in arguments if not a.startswith("-")] if runs_operands else []
-            for script_text in scripts + command.stdin:
+            for script_text in scripts + piped_input(command):
                 yield from commands(script_text)
 
 
 def git_invocations(script) -> Iterator[GitInvocation]:
     """Every git call the script runs, as its subcommand and that subcommand's own arguments."""
     for words in commands(script):
-        if os.path.basename(words[0]) != "git":
+        if program(words) != "git":
             continue
         index = 1
         while index < len(words) and words[index].startswith("-"):
