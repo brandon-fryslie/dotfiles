@@ -67,6 +67,10 @@ status:
 validate:
     ./bin/validate
 
+# Test the Claude Code PreToolUse guard hooks
+test-hooks:
+    python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
+
 # Run pending migrations
 migrate:
     #!/usr/bin/env bash
