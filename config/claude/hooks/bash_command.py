@@ -6,8 +6,11 @@ and a flag belonging to one command says nothing about its neighbour. Scanning t
 got both wrong: it refused a `sed -n` chained before a `git commit` as a hook bypass, and
 refused a ticket whose quoted body merely described one.
 
-The reader errs one way only. Where it cannot tell whether text runs, it reads it as a
-command: over-reading costs at most a spurious deny, under-reading lets a command through.
+Where the reader cannot tell whether text runs, it reads it as a command: over-reading costs
+at most a spurious deny, under-reading lets a command through. Its reach is the command as
+written. A command assembled while the shell runs - `c=git; $c commit -n`, text printed into
+a pipe by a subshell - exists only at run time, and no static reading can see it. The guards
+are a backstop for commands written plainly, not a sandbox.
 
 [LAW:single-enforcer] every guard reads commands through this one reader, so "what runs"
 cannot mean one thing to one guard and something else to the next.
@@ -20,11 +23,14 @@ from typing import Iterator, NamedTuple
 # A shell handed a script runs it: `bash -c '<script>'`, or a heredoc fed to `bash`.
 SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh"))
 # Commands that run a command named among their own arguments.
-WRAPPERS = frozenset(("env", "command", "exec", "nohup", "nice", "timeout", "xargs", "sudo", "time", "watch"))
+WRAPPERS = frozenset((
+    "env", "command", "exec", "nohup", "nice", "timeout", "xargs", "sudo", "time", "watch", "coproc",
+    "function"))  # `function f { git ...; }`: the body's command follows the name
 # Words that open a command position without being the command.
 RESERVED = frozenset(("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until"))
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
-GIT_GLOBAL_OPTIONS_WITH_VALUE = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace"))
+GIT_GLOBAL_OPTIONS_WITH_VALUE = frozenset((
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source"))
 DOUBLE_QUOTE_ESCAPES = ('"', "\\", "$", "`")
 
 
@@ -240,6 +246,8 @@ def commands(script) -> Iterator[list]:
                      if not words[start].startswith("-") and not ASSIGNMENT.match(words[start])]
         for run in runs:
             yield run
+            if program(run) == "eval":
+                yield from commands(" ".join(run[1:]))
             if program(run) not in SHELLS:
                 continue
             arguments = run[1:]

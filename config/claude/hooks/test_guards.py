@@ -114,6 +114,10 @@ class SessionUrlGuard(unittest.TestCase):
             "bash <<< 'git commit -n -m x'",
             "GIT commit -n -m x",
             "Git push --no-verify",
+            "git --config-env core.x=HOME commit -n -m x",
+            "eval 'git commit -n -m x'",
+            "function f { git commit -n -m x; }; f",
+            "coproc git commit -n -m x",
         ])
 
     def test_a_pipe_into_a_non_shell_is_data_and_or_is_not_a_pipe(self):
@@ -229,6 +233,11 @@ class GeneratedWorkflowGuard(unittest.TestCase):
             'x="$(git stash)"',
             "echo 'git stash' | bash",
             "GIT stash",
+            "git stash push --mess wip",
+            "git stash push --pathspec-from paths.txt",
+            "git stash push -- {src,.github}",
+            "git --config-env a.b=HOME stash",
+            "eval git stash",
         ])
 
     def test_other_destructive_verbs_are_unchanged(self):

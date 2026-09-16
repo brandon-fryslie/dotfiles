@@ -48,6 +48,11 @@ TARGET_FROM_ANY_DIRECTORY = frozenset(
 EDIT_TOOLS = ("Write", "Edit", "NotebookEdit")
 
 
+def abbreviates_value_option(flag):
+    return flag.startswith("--") and flag not in STASH_PUSH_TAKES_VALUE and any(
+        option.startswith(flag) for option in STASH_PUSH_TAKES_VALUE)
+
+
 def stash_pathspecs(arguments):
     """What a stash carries out of the worktree, as pathspecs: none for the read and restore
     subcommands, WHOLE_TREE for a stash no pathspec limits."""
@@ -61,8 +66,9 @@ def stash_pathspecs(arguments):
     if subcommand != "push":
         return [WHOLE_TREE]
     options = split_options(arguments[1:], STASH_PUSH_TAKES_VALUE)
-    # Paths read from a file are paths this hook cannot see.
-    if any(flag.startswith("--pathspec-fr") for flag in options.flags):
+    # Paths read from a file are paths this hook cannot see. And git takes `--mess wip` as
+    # --message, so an abbreviated value option leaves no telling its value from a pathspec.
+    if any(flag.startswith("--pathspec-fr") or abbreviates_value_option(flag) for flag in options.flags):
         return [WHOLE_TREE]
     return options.operands or [WHOLE_TREE]
 
@@ -71,8 +77,8 @@ def reaches_target(pathspec):
     """Whether a pathspec can cover TARGET. The directory it is read from is unknown - cd and -C
     move it - so it reaches when, read from any directory on the way down to TARGET, it names
     TARGET or a directory holding it. A magic (:), absolute, home-relative, parent-relative or
-    shell-expanded pathspec cannot be placed at all, so it reaches."""
-    if pathspec.startswith((":", "/", "~")) or "$" in pathspec or "`" in pathspec:
+    shell-expanded ($, `, {a,b}) pathspec cannot be placed at all, so it reaches."""
+    if pathspec.startswith((":", "/", "~")) or any(char in pathspec for char in "$`{"):
         return True
     parts = [part for part in pathspec.split("/") if part not in ("", ".")]
     if not parts or ".." in parts:
