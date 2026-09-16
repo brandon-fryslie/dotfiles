@@ -92,6 +92,26 @@ class SessionUrlGuard(unittest.TestCase):
             "bash <<'EOF'\ngit commit -n -m x\nEOF",
             "git commit -n -F - <<'EOF'\ndon't let the apostrophe hide the flag\nEOF",
             "git commit -F - <<'EOF' && git commit -n -m y\nmessage\nEOF",
+            'echo "$(git commit -n -m x)"',
+            'echo "`git commit --no-verify -m x`"',
+            "echo `git commit -n -m x`",
+            "cat <<EOF\n$(git commit -n -m x)\nEOF",
+            "echo $'it\\'s'; git commit -n -m x",
+            "echo ${x:-(}; git commit -n -m x",
+            "env git commit -n -m x",
+            "command git commit -n -m x",
+            "nohup git commit -n -m x",
+            "timeout 60 git commit -n -m x",
+            "nice -n 10 git commit --no-verify -m x",
+            "sudo -u me env FOO=1 git commit -n -m x",
+            "xargs git commit -n < /dev/null",
+        ])
+
+    def test_text_in_a_quoted_heredoc_body_does_not_run(self):
+        self.assert_decisions("allow", [
+            "cat <<'EOF'\n$(git commit -n -m x)\nEOF",
+            'cat <<"EOF"\n`git commit --no-verify`\nEOF',
+            "git commit -F - <<'EOF'\nrecord that $(git commit -n) is denied\nEOF",
         ])
 
     def test_push_dry_run_is_not_a_bypass_and_push_no_verify_is(self):
@@ -184,6 +204,10 @@ class GeneratedWorkflowGuard(unittest.TestCase):
             'git stash push -- "$FILE"',
             "cd .github && git stash push -- workflows",
             "git -C .github stash push -- workflows",
+            "git stash push -- $(cat paths.txt)",
+            'echo "$(git stash)"',
+            "cat <<EOF\n$(git stash)\nEOF",
+            "env git stash",
         ])
 
     def test_other_destructive_verbs_are_unchanged(self):

@@ -6,6 +6,9 @@ and a flag belonging to one command says nothing about its neighbour. Scanning t
 got both wrong: it refused a `sed -n` chained before a `git commit` as a hook bypass, and
 refused a ticket whose quoted body merely described one.
 
+The reader errs one way only. Where it cannot tell whether text runs, it reads it as a
+command: over-reading costs at most a spurious deny, under-reading lets a command through.
+
 [LAW:single-enforcer] every guard reads commands through this one reader, so "what runs"
 cannot mean one thing to one guard and something else to the next.
 """
@@ -14,13 +17,15 @@ import os
 import re
 from typing import Iterator, NamedTuple
 
-SEPARATORS = ";&|()`"
 # A shell handed a script runs it: `bash -c '<script>'`, or a heredoc fed to `bash`.
 SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh"))
+# Commands that run a command named among their own arguments.
+WRAPPERS = frozenset(("env", "command", "exec", "nohup", "nice", "timeout", "xargs", "sudo", "time"))
 # Words that open a command position without being the command.
-RESERVED = frozenset(("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until", "time"))
+RESERVED = frozenset(("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until"))
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 GIT_GLOBAL_OPTIONS_WITH_VALUE = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace"))
+DOUBLE_QUOTE_ESCAPES = ('"', "\\", "$", "`")
 
 
 class Command(NamedTuple):
@@ -39,22 +44,30 @@ class Options(NamedTuple):
 
 
 class _Reader:
-    """One pass over a script. Never raises: text bash itself rejects, such as an unclosed
-    quote, runs nothing at all, so no reading of it can let a command through."""
+    """One pass over a script, collecting every command it runs into `commands` - shared with
+    the readers of the substitutions nested inside it. Never raises: text bash itself rejects,
+    such as an unclosed quote, runs nothing at all, so no reading of it lets a command through."""
 
-    def __init__(self, script):
+    def __init__(self, script, at, commands):
         self.script = script
-        self.at = 0
-        self.commands = []
+        self.at = at
+        self.commands = commands
         self.words, self.stdin = [], []
         self.word = None  # characters of the word being read; None between words
+        self.quoted = False  # whether any of the word being read was quoted
         self.redirection = None  # the operator whose operand the next word is
-        self.heredocs = []  # (delimiter, strip_tabs, stdin) whose bodies follow the next newline
+        self.heredocs = []  # (delimiter, strip_tabs, expands, stdin) read after the next newline
+        self.depth = 0  # open parentheses, so a substitution ends only at its own `)`
 
-    def read(self):
+    def read(self, closer=None):
+        """Read commands up to the end of the script, or up to and past `closer` - the `)` or
+        backtick that ends the substitution this reader was opened for."""
         script = self.script
         while self.at < len(script):
             char = script[self.at]
+            if char == closer and (closer == "`" or self.depth == 0):
+                self.at += 1
+                break
             if char in " \t\r":
                 self.end_word()
                 self.at += 1
@@ -66,23 +79,32 @@ class _Reader:
                 newline = script.find("\n", self.at)
                 self.at = len(script) if newline < 0 else newline
             elif char == "\\":
-                if script.startswith("\n", self.at + 1):
-                    self.at += 2
-                else:
+                if not script.startswith("\n", self.at + 1):
                     self.take(script[self.at + 1:self.at + 2])
-                    self.at += 2
+                    self.quoted = True
+                self.at += 2
             elif char == "'":
                 close = script.find("'", self.at + 1)
                 close = len(script) if close < 0 else close
                 self.take(script[self.at + 1:close])
+                self.quoted = True
                 self.at = close + 1
+            elif script.startswith("$'", self.at):
+                self.read_ansi_c_quoted()
             elif char == '"':
-                self.read_double_quoted()
+                self.at += 1
+                self.take("")
+                self.quoted = True
+                self.read_expanding('"')
+                self.at += 1
+            elif script.startswith("$(", self.at) or char == "`":
+                self.read_substitution()
             elif char in "<>" or script.startswith("&>", self.at):
                 self.read_redirection()
-            elif char in SEPARATORS or script.startswith("$(", self.at):
+            elif char in "();&|":
+                self.depth += {"(": 1, ")": -1}.get(char, 0)
                 self.end_command()
-                self.at += 2 if char == "$" else 1
+                self.at += 1
             else:
                 self.take(char)
                 self.at += 1
@@ -94,23 +116,45 @@ class _Reader:
             self.word = []
         self.word.append(text)
 
-    def read_double_quoted(self):
-        script, at = self.script, self.at + 1
-        self.take("")
-        while at < len(script) and script[at] != '"':
-            if script[at] == "\\" and script[at + 1:at + 2] in ('"', "\\", "$", "`"):
-                self.take(script[at + 1])
-                at += 2
-            elif script.startswith("\\\n", at):
-                at += 2
+    def read_expanding(self, closer):
+        """Text in which only substitutions run: a double-quoted string up to its closing quote,
+        or (closer None) an unquoted heredoc body."""
+        script = self.script
+        while self.at < len(script) and script[self.at] != closer:
+            if script.startswith("$(", self.at) or script[self.at] == "`":
+                self.read_substitution()
+            elif script[self.at] == "\\" and script[self.at + 1:self.at + 2] in DOUBLE_QUOTE_ESCAPES:
+                self.take(script[self.at + 1])
+                self.at += 2
+            elif script.startswith("\\\n", self.at):
+                self.at += 2
             else:
-                self.take(script[at])
-                at += 1
+                self.take(script[self.at])
+                self.at += 1
+
+    def read_ansi_c_quoted(self):
+        # $'...' honours backslash escapes, so \' does not close it.
+        script, at = self.script, self.at + 2
+        self.take("")
+        self.quoted = True
+        while at < len(script) and script[at] != "'":
+            step = 2 if script[at] == "\\" else 1
+            self.take(script[at:at + step])
+            at += step
         self.at = at + 1
+
+    def read_substitution(self):
+        """$(...) or `...`: its commands run, so a nested reader collects them. The word keeps
+        the raw text, so a value built from command output still reads as shell-expanded."""
+        start, backtick = self.at, self.script[self.at] == "`"
+        inner = _Reader(self.script, start + (1 if backtick else 2), self.commands)
+        inner.read("`" if backtick else ")")
+        self.take(self.script[start:inner.at])
+        self.at = inner.at
 
     def read_redirection(self):
         # 2>&1: the digits before the operator name a descriptor, not an argument.
-        if self.word is not None and "".join(self.word).isdigit():
+        if self.word is not None and not self.quoted and "".join(self.word).isdigit():
             self.word = None
         self.end_word()
         end = self.at
@@ -122,14 +166,16 @@ class _Reader:
     def end_word(self):
         if self.word is None:
             return
-        text, self.word = "".join(self.word), None
+        text, quoted = "".join(self.word), self.quoted
+        self.word, self.quoted = None, False
         operator, self.redirection = self.redirection, None
         if operator is None:
             self.words.append(text)
         elif operator.startswith("<<<"):
             self.stdin.append(text)
         elif operator.startswith("<<"):
-            self.heredocs.append((text, operator.endswith("-"), self.stdin))
+            # A quoted delimiter makes the body literal; an unquoted one leaves its substitutions live.
+            self.heredocs.append((text, operator.endswith("-"), not quoted, self.stdin))
         # Any other redirection's operand is a file name: data, not an argument.
 
     def end_command(self):
@@ -144,7 +190,7 @@ class _Reader:
 
     def read_heredoc_bodies(self):
         script = self.script
-        for delimiter, strip_tabs, stdin in self.heredocs:
+        for delimiter, strip_tabs, expands, stdin in self.heredocs:
             body = []
             while self.at < len(script):
                 newline = script.find("\n", self.at)
@@ -154,23 +200,33 @@ class _Reader:
                     break
                 body.append(line)
             stdin.append("\n".join(body))
+            if expands:
+                _Reader(stdin[-1], 0, self.commands).read_expanding(None)
         self.heredocs = []
 
 
 def commands(script) -> Iterator[list]:
-    """Every simple command the script runs, as its words - including the commands of any
-    script it hands to a shell."""
-    for command in _Reader(script).read():
-        yield command.words
-        if os.path.basename(command.words[0]) not in SHELLS:
-            continue
-        arguments = command.words[1:]
-        runs_operands = any(a.startswith("-") and not a.startswith("--") and "c" in a for a in arguments)
-        # With -c, every operand is read as a script: over-reading an option's value costs
-        # nothing, and under-reading the script would let its commands through.
-        scripts = [a for a in arguments if not a.startswith("-")] if runs_operands else []
-        for script_text in scripts + command.stdin:
-            yield from commands(script_text)
+    """Every simple command the script runs, as its words - including the command a wrapper
+    runs and the commands of any script handed to a shell."""
+    for command in _Reader(script, 0, []).read():
+        words = command.words
+        runs = [words]
+        # Which argument starts a wrapper's command depends on that wrapper's own options, so
+        # every word that could start one is read as a command.
+        if os.path.basename(words[0]) in WRAPPERS:
+            runs += [words[start:] for start in range(1, len(words))
+                     if not words[start].startswith("-") and not ASSIGNMENT.match(words[start])]
+        for run in runs:
+            yield run
+            if os.path.basename(run[0]) not in SHELLS:
+                continue
+            arguments = run[1:]
+            runs_operands = any(a.startswith("-") and not a.startswith("--") and "c" in a for a in arguments)
+            # With -c, every operand is read as a script: over-reading an option's value costs
+            # nothing, and under-reading the script would let its commands through.
+            scripts = [a for a in arguments if not a.startswith("-")] if runs_operands else []
+            for script_text in scripts + command.stdin:
+                yield from commands(script_text)
 
 
 def git_invocations(script) -> Iterator[GitInvocation]:
