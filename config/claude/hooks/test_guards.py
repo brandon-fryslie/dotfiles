@@ -118,6 +118,11 @@ class SessionUrlGuard(unittest.TestCase):
             "eval 'git commit -n -m x'",
             "function f { git commit -n -m x; }; f",
             "coproc git commit -n -m x",
+            "(( x <<= 1 ))\ngit commit -n -m x",
+            "let 'x<<=1'; (( y << 2 ))\ngit commit -n -m x",
+            "echo 'git commit -n -m x' | source /dev/stdin",
+            ". /dev/stdin <<< 'git commit -n -m x'",
+            "find . -maxdepth 0 -exec git commit -n -m x \\;",
         ])
 
     def test_a_pipe_into_a_non_shell_is_data_and_or_is_not_a_pipe(self):
@@ -151,6 +156,7 @@ class SessionUrlGuard(unittest.TestCase):
             f'gh issue edit 3 --body "$(cat <<EOF\n{SESSION_URL}\nEOF\n)"',
             f'x="$(git commit -m {SESSION_URL})"',
             f'GH pr create --body "{SESSION_URL}"',
+            f"gh -R o/r pr create --body '{SESSION_URL}'",
         ])
 
     def test_reading_and_auditing_session_urls_is_allowed(self):
@@ -238,6 +244,8 @@ class GeneratedWorkflowGuard(unittest.TestCase):
             "git stash push -- {src,.github}",
             "git --config-env a.b=HOME stash",
             "eval git stash",
+            "git stash push -- '\\.github'",
+            "git stash push -- '.github\\/workflows'",
         ])
 
     def test_other_destructive_verbs_are_unchanged(self):

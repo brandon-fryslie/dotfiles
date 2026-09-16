@@ -21,11 +21,11 @@ import re
 from typing import Iterator, NamedTuple
 
 # A shell handed a script runs it: `bash -c '<script>'`, or a heredoc fed to `bash`.
-SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh"))
+SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "source", "."))
 # Commands that run a command named among their own arguments.
 WRAPPERS = frozenset((
     "env", "command", "exec", "nohup", "nice", "timeout", "xargs", "sudo", "time", "watch", "coproc",
-    "function"))  # `function f { git ...; }`: the body's command follows the name
+    "function", "find"))  # `function f { git ...; }` and `find -exec git ...`: the command follows
 # Words that open a command position without being the command.
 RESERVED = frozenset(("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until"))
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
@@ -217,20 +217,19 @@ class _Reader:
         self.words, self.stdin = [], []
 
     def read_heredoc_bodies(self):
-        script = self.script
-        for delimiter, strip_tabs, expands, stdin in self.heredocs:
-            body = []
-            while self.at < len(script):
-                newline = script.find("\n", self.at)
-                newline = len(script) if newline < 0 else newline
-                line, self.at = script[self.at:newline], newline + 1
-                if (line.lstrip("\t") if strip_tabs else line) == delimiter:
-                    break
-                body.append(line)
-            stdin.append("\n".join(body))
+        script, heredocs, self.heredocs = self.script, self.heredocs, []
+        for delimiter, strip_tabs, expands, stdin in heredocs:
+            lines = script[self.at:].split("\n")
+            ends = [(line.lstrip("\t") if strip_tabs else line) == delimiter for line in lines]
+            # No delimiter line means this was not the heredoc it looked like - `(( x <<= 1 ))`
+            # shifts bits - so the lines stay commands rather than vanishing into a body.
+            if True not in ends:
+                return
+            end = ends.index(True)
+            self.at += sum(len(line) + 1 for line in lines[:end + 1])
+            stdin.append("\n".join(lines[:end]))
             if expands:
                 _Reader(stdin[-1], 0, self.commands).read_expanding(None)
-        self.heredocs = []
 
 
 def commands(script) -> Iterator[list]:

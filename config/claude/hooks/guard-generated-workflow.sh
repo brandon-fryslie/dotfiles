@@ -80,7 +80,8 @@ def reaches_target(pathspec):
     shell-expanded ($, `, {a,b}) pathspec cannot be placed at all, so it reaches."""
     if pathspec.startswith((":", "/", "~")) or any(char in pathspec for char in "$`{"):
         return True
-    parts = [part for part in pathspec.split("/") if part not in ("", ".")]
+    # git reads `\.github` as `.github`; unescaping a `\*` into a wildcard only matches more.
+    parts = [part for part in pathspec.replace("\\", "").split("/") if part not in ("", ".")]
     if not parts or ".." in parts:
         return True
     pattern = "/".join(parts).casefold()

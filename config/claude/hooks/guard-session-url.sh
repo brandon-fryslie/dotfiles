@@ -54,7 +54,9 @@ def skips_hooks(invocation):
 
 
 def publishes(words):
-    return program(words) == "gh" and tuple(words[1:3]) in GH_PUBLISHES
+    # gh takes -R/--repo before its subcommand: `gh -R o/r pr create`.
+    subcommand = split_options(words[1:], frozenset(("-R", "--repo"))).operands
+    return program(words) == "gh" and tuple(subcommand[:2]) in GH_PUBLISHES
 
 
 def carries_session_url(command):
