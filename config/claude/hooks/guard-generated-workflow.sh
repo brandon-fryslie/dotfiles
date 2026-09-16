@@ -18,44 +18,67 @@ entire point, so add/commit/diff/status/show on this path stay permitted.
 broken guard announces itself rather than quietly permitting everything.
 """
 
+import fnmatch
 import json
-import os
-import re
-import shlex
 import sys
+
+from bash_command import git_invocations, split_options
 
 TARGET = ".github/workflows/code-review.yml"
 BASENAME = "code-review.yml"
 REGENERATE = "bash ~/.claude/skills/agent-code-review-setup/install.sh"
 
-# [LAW:parse-dont-validate] the command is parsed into git invocations and their arguments,
-# never scanned as text. Scanning text was the first version, and it refused a `commit`
-# whose MESSAGE merely contained these words: a word in an argument is not a verb, and only
-# a parse tells the difference. That version blocked its own commit within a minute.
+# [LAW:parse-dont-validate] the command is read as the git invocations it runs (bash_command),
+# never scanned as text. Scanning text was the first version, and it refused a `commit` whose
+# MESSAGE merely contained these words: a word in an argument is not a verb, and only a parse
+# tells the difference. That version blocked its own commit within a minute.
 DESTROYS_WORKTREE = frozenset(("checkout", "restore", "clean"))
 STASH_TAKES_NOTHING_AWAY = frozenset(("list", "show", "pop", "apply", "drop", "branch", "clear"))
-GLOBAL_OPERANDS_WITH_VALUE = frozenset(("-C", "-c", "--git-dir", "--work-tree", "--namespace"))
+STASH_PUSH_TAKES_VALUE = frozenset(("-m", "--message", "--pathspec-from-file"))
 SWEEPING_PATHSPECS = frozenset((".", "*", "./"))
+WHOLE_TREE = ":/"
+
+TARGET_PARTS = TARGET.split("/")
+# What a pathspec must name to cover TARGET from some directory on the way down to it: TARGET
+# or a directory holding it, spelled from the repo root, from .github, or from workflows.
+TARGET_FROM_ANY_DIRECTORY = frozenset(
+    "/".join(TARGET_PARTS[start:end]).casefold()
+    for start in range(len(TARGET_PARTS)) for end in range(start + 1, len(TARGET_PARTS) + 1))
 
 EDIT_TOOLS = ("Write", "Edit", "NotebookEdit")
 
 
-def git_invocations(command):
-    """Every git call in the command, as (subcommand, arguments). A part that will not parse
-    yields nothing rather than a guess - deciding from a half-read command is exactly how the
-    text-scanning version got it wrong."""
-    for part in re.split(r"[;&|\n]+", command):
-        try:
-            words = shlex.split(part)
-        except ValueError:
-            continue
-        if not words or os.path.basename(words[0]) != "git":
-            continue
-        index = 1
-        while index < len(words) and words[index].startswith("-"):
-            index += 2 if words[index] in GLOBAL_OPERANDS_WITH_VALUE else 1
-        if index < len(words):
-            yield words[index], words[index + 1:]
+def stash_pathspecs(arguments):
+    """What a stash carries out of the worktree, as pathspecs: none for the read and restore
+    subcommands, WHOLE_TREE for a stash no pathspec limits."""
+    subcommand = arguments[0] if arguments else "push"
+    if subcommand in STASH_TAKES_NOTHING_AWAY:
+        return []
+    # `git stash -k -- path` is push with the subcommand omitted. save, create and store take
+    # the whole tree; save reads its words as a message, never as pathspecs.
+    if subcommand.startswith("-"):
+        subcommand, arguments = "push", ["push", *arguments]
+    if subcommand != "push":
+        return [WHOLE_TREE]
+    options = split_options(arguments[1:], STASH_PUSH_TAKES_VALUE)
+    # Paths read from a file are paths this hook cannot see.
+    if any(flag.startswith("--pathspec-fr") for flag in options.flags):
+        return [WHOLE_TREE]
+    return options.operands or [WHOLE_TREE]
+
+
+def reaches_target(pathspec):
+    """Whether a pathspec can cover TARGET. The directory it is read from is unknown - cd and -C
+    move it - so it reaches when, read from any directory on the way down to TARGET, it names
+    TARGET or a directory holding it. A magic (:), absolute, home-relative, parent-relative or
+    shell-expanded pathspec cannot be placed at all, so it reaches."""
+    if pathspec.startswith((":", "/", "~")) or "$" in pathspec or "`" in pathspec:
+        return True
+    parts = [part for part in pathspec.split("/") if part not in ("", ".")]
+    if not parts or ".." in parts:
+        return True
+    pattern = "/".join(parts).casefold()
+    return any(fnmatch.fnmatchcase(path, pattern) for path in TARGET_FROM_ANY_DIRECTORY)
 
 
 def deny(message):
@@ -112,11 +135,12 @@ def main():
                 f"BLOCKED: a hard reset discards {TARGET} along with everything else, and its "
                 f"loss is silent. Commit it first:"))
 
-        if verb == "stash" and not (arguments and arguments[0] in STASH_TAKES_NOTHING_AWAY):
+        if verb == "stash" and any(map(reaches_target, stash_pathspecs(arguments))):
             deny(commit_it_instead(
-                f"BLOCKED: a save-type stash takes the whole tree, so the worktree silently "
-                f"reverts to a stale {TARGET}. The read and restore subcommands are permitted. "
-                f"Commit it instead:"))
+                f"BLOCKED: this stash can take {TARGET} with it - it saves the whole tree, or a "
+                f"pathspec that reaches the workflow - so the worktree silently reverts to a stale "
+                f"copy. The read and restore subcommands are permitted, and so is a stash limited "
+                f"to paths that cannot reach it (git stash push -- <path>...). Commit it instead:"))
 
     sys.exit(0)
 
