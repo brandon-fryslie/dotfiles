@@ -24,8 +24,10 @@ delivers must stay byte-exact. Both expose it directly as `sender`.
 
 Model and context size are read from the calling session's own transcript
 (`$CLAUDE_CODE_SESSION_ID` under `${CLAUDE_CONFIG_DIR:-~/.claude}`), taking the
-last main-thread assistant turn's `input + cache_read + cache_creation` tokens —
-the harness's own count, so nothing is estimated.
+last main-thread assistant turn's `input + cache_read + cache_creation + output`
+tokens — the harness's own count, so nothing is estimated. The input figures are
+the entire prompt that turn was sent, so every earlier response is already in
+them; the turn's own output is added because it has not been fed back yet.
 
 Unlike the resolver, this part is advisory and **never fails**: no session id, no
 transcript, no `jq`, a half-written line — every way of not knowing degrades to
