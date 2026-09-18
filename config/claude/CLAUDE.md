@@ -63,11 +63,13 @@ Session start, every step required, in order:
 8. Push your work to a branch and open a PR unless the repo you're working has other conventions.
 9. Run a local code review on your work using /code-review high.  Address any findings by carefully considering the feedback.  Do not accept any feedback or proposed fixes blindly.  Push your fixes to the branch, adding comments / resolving conversations as required by the review process.
 10. Run another local code-review medium.  Address the comments the same.
-11. Judge what the medium pass found.  Minor or doc-level findings: go to step 12.  Major findings: run ONE more /code-review high, address it, then go to step 12 anyway.  That escalation happens at most once — if major findings survive it, stop and report rather than looping.
-12. Run one /code-review low.  This is the merge gate, and it is never skipped: if there are no P0 / critical bugs, update the PR with that and merge.
+11. Triage what the medium pass found.  Major findings: run ONE more /code-review high and address it — then step 12 if you fixed them; stop and report instead if any major finding is one you are NOT fixing, because merging past a known major finding is the thing this branch exists to prevent.  Anything else, zero findings included: straight to step 12.  The escalation runs at most once.
+12. Run /code-review low.  It is the merge gate and is never skipped.  No P0 / critical bugs: update the PR with that and merge.  A P0: fix it, push, run low again, and repeat until it comes back clean — or stop and report if you cannot fix it.  Those re-runs are still step 12, not a new cycle.
 
-**How many passes.** That cycle — high, medium, low, plus at most one escalation high at step 11 — runs ONCE per PR, and the size of the diff does not shorten it: a one-line fix in a brand-new PR still gets all of it.  After a PR has been through the cycle, any later change to it gets ONE /code-review, never the cycle again — medium by default, low for a trivial edit, high only if the change is structural.
+**How many passes.** That cycle — high, medium, low, at most one escalation high at step 11, and any low re-runs step 12 needs — runs ONCE per PR, and the size of the diff does not shorten it: a one-line fix in a brand-new PR gets all of it.
 
-Pushing fixes between steps 9 and 12 is NOT "a later change" — that is the cycle running, so carry on to the next step.  The misreading to refuse is the one where step 9 ends with fixes pushed, the PR is therefore "already reviewed", and steps 10 and 12 look forbidden; that reading merges new code on a single pass.  The cycle is finished when step 12 merges it, and not before.
+Everything you push in answer to a review finding is the cycle running, not a new change, so carry on to the next step.  The misreading to refuse: step 9 ends with fixes pushed, the PR is therefore "already reviewed", and the remaining passes look forbidden — that reading merges new code on a single pass.
+
+Once the cycle has completed, NEW work added to the PR gets ONE /code-review — medium by default, low for a trivial edit, high only if the change is structural — never the cycle again.
 </git-workflow>
 </operations>
