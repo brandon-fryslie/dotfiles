@@ -24,7 +24,10 @@ RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
 resolve_target() { "$RESOLVE" "$1"; }
 
 # [LAW:one-source-of-truth] The sender line — model, context size, working
-# directory — has one definition, shared with tmux-command, next to the resolver.
+# directory — has one definition, in tmux-shared beside the resolver. This skill
+# is its only caller: tmux-command drives a CLI parser, which reads nothing. It
+# lives there anyway because a second driver should reuse the line verbatim
+# rather than reimplement it.
 SENDER_INFO="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-sender-info"
 sender_info() { "$SENDER_INFO"; }
 

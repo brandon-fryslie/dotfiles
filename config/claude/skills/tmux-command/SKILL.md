@@ -7,7 +7,7 @@ description: This skill should be used when the user asks to "run a slash comman
 
 Inject a harness's built-in slash command (or the keystrokes that drive its pickers) into another agent session running in a tmux pane. Built-in commands like `/clear`, `/compact`, `/model`, `/context`, `/rewind`, `/resume` are interpreted by the CLI front-end, not the model — so the agent running in that session **cannot trigger them itself**. An outside driver must type them into the pane. That is this skill.
 
-This is **not** tmux-talk. tmux-talk wraps a message in a `From:/Sender:/To-reply:` envelope for a human/agent reader. Here the receiver is the CLI parser, so the bytes sent must be *exactly* the command — there is no wrapper.
+This is **not** tmux-talk. tmux-talk wraps a message in a `From:/Sender:/To-reply:` envelope for a human/agent reader — including a `Sender:` line naming the sending model and how much context it has left. Here the receiver is the CLI parser, so the bytes sent must be *exactly* the command: no wrapper, and no sender identity, because nothing on the other end reads it.
 
 ```bash
 TMUXCMD=~/.claude/skills/tmux-command/bin/tmux-command
@@ -18,9 +18,8 @@ TMUXCMD=~/.claude/skills/tmux-command/bin/tmux-command
 ```bash
 tmux-command list                          # discover panes: address, running cmd, title
 tmux-command whoami                        # your own tmux address
-tmux-command sender                        # your sender line (model, context size, cwd)
 tmux-command context <target> [N]          # gather before acting: the pane's id line + N screen lines (default 200)
-tmux-command send  <target> <command...>   # type a literal command line, then submit it; prints your sender line
+tmux-command send  <target> <command...>   # type a literal command line, then submit it
 tmux-command keys  <target> <key...>       # send raw keys (Enter Down Up Escape BSpace) to drive a picker
 tmux-command read-screen <target> [N]      # capture N lines (default 200) — re-check / verify the effect
 ```
@@ -59,19 +58,6 @@ $TMUXCMD read-screen "$TARGET" 40
 
 `context` prints the pane's `cmd=`/`title=` line and its live screen. That one read tells you the harness (→ which `references/<harness>.md` to open), whether it's idle or mid-generation, and which screen is up — everything that decides *what* to send and *whether it's safe to send now*. Claude Code panes report `cmd=<version-number>` (e.g. `2.1.175`), not `cmd=claude`, so identify them by `title=` (`✳ Claude Code`) or the UI.
 
-## The sender line
-
-`send` prints who sent the command **to you**, never into the pane:
-
-```
-sent /compact -> work:0.0
-Sender: claude-opus-5 · 112k tokens of context · ~/code/dotfiles
-```
-
-Same line, same source as the `Sender:` header in a tmux-talk envelope: the model and context size come from the sending session's own transcript, and a sender that is not a Claude session shows the working directory alone. It stays out of the delivered bytes because a command is parsed, not read — `/clear` with anything appended is no longer `/clear`. Quote it when you report what you drove, so the record says which agent reached into that pane and how much room it had left.
-
-The receiver never sees it. When the point is for the other agent to *know* who acted — before a `/clear` it did not ask for, say — send a message with `/tmux-talk` first; that envelope is read by the model, this one is not. `sender` prints the same line on its own, and `whoami` means here exactly what it means in tmux-talk: the bare address, so `TARGET="$(tmux-command whoami)"` composes.
-
 ## Commands that open a picker need `keys`
 
 Some commands open an interactive list instead of acting immediately (`/model`, `/permissions`, `/resume`, `/agents`). `send` opens the dialog; drive the selection with raw keys:
@@ -88,6 +74,7 @@ $TMUXCMD read-screen "$TARGET" 20       # confirm the new model
 - **Verify, never assume.** The target is another process with no exit code back to you. After every `send`, `read-screen` and confirm the command actually ran — especially for destructive ones (`/clear`, `/compact`, `/rewind`).
 - **Home screen swallows the first Enter.** When `context` showed Claude Code's "describe a task" home screen, `send` may leave the command sitting in the input (the first Enter is rebound to "collapse"/"create"). If the post-send `read-screen` confirms it never submitted, send one more `keys "$TARGET" Enter`.
 - **One command per `send`.** `send` appends exactly one Enter. To chain commands, call `send` again after verifying the first landed.
+- **Announce a destructive command before you send it.** Nothing you send here names you — the target sees a bare `/clear` it did not ask for, wakes with no context, and cannot tell who did it. When you are about to `/clear`, `/compact`, or `/rewind` a peer, send a message with `/tmux-talk` first; that envelope is read by the model and carries your address and context size.
 
 ## References
 
