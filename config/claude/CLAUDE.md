@@ -63,7 +63,9 @@ Session start, every step required, in order:
 8. Push your work to a branch and open a PR unless the repo you're working has other conventions.
 9. Run a local code review on your work using /code-review high.  Address any findings by carefully considering the feedback.  Do not accept any feedback or proposed fixes blindly.  Push your fixes to the branch, adding comments / resolving conversations as required by the review process.
 10. Run another local code-review medium.  Address the comments the same.
-11. At this point decide: should we merge or not?  If the only changes in the last review were minor or doc changes, you should merge after updating the PR.  If there were major findins, repeat the code review process from step 9: run one high, address, run one medium, address, and reevaluate this step.
+11. At this point decide: should we merge or not?  If the only changes in the last review were minor or doc changes, you should merge after updating the PR.  If there were major findings, run ONE more /code-review high, address it, and reevaluate this step.
 12. When you have judged the comments to be minor, run one /code-review low.  If there are no P0 / critical bugs, update the PR with that information and merge.
+
+**How many passes:** a fresh PR gets the full cycle — high, medium, low.  An update to a PR that has already been reviewed gets ONE pass, never another full cycle.  The trigger is the PR's review history, not the size of the diff: a one-line fix in a brand-new PR still gets all three, and a big round of fixes pushed to an already-reviewed PR still gets one.  The first pass over new code is where the real findings are; re-running a cycle over a diff whose findings you already addressed re-reads settled code for nothing.
 </git-workflow>
 </operations>
