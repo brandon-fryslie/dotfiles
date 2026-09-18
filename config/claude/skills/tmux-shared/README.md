@@ -19,11 +19,10 @@ Run `bin/tmux-resolve` with no argument for the grammar.
 
 The single definition of the sender line — `<model> · <N>k tokens of context ·
 <working directory>`. tmux-talk puts it in the `Sender:` header of the envelope
-its receiver reads, and exposes it directly as `sender`. It lives here rather
-than inside tmux-talk because the resolver next to it has the same two callers,
-and a sender line is the kind of thing a third driver would want verbatim rather
-than reimplemented. tmux-command deliberately does not use it: its receiver is a
-CLI parser, which reads nothing.
+its receiver reads, and exposes it directly as `sender`. It is the only caller —
+tmux-command deliberately does not use it, because its receiver is a CLI parser,
+which reads nothing. It lives here anyway: tmux-shared is where a part a second
+driver would reuse belongs, whether or not two skills call it today.
 
 Model and context size are read from the calling session's own transcript
 (`$CLAUDE_CODE_SESSION_ID` under `${CLAUDE_CONFIG_DIR:-~/.claude}`), taking the
