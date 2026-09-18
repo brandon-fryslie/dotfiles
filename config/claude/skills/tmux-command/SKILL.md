@@ -74,7 +74,7 @@ $TMUXCMD read-screen "$TARGET" 20       # confirm the new model
 - **Verify, never assume.** The target is another process with no exit code back to you. After every `send`, `read-screen` and confirm the command actually ran — especially for destructive ones (`/clear`, `/compact`, `/rewind`).
 - **Home screen swallows the first Enter.** When `context` showed Claude Code's "describe a task" home screen, `send` may leave the command sitting in the input (the first Enter is rebound to "collapse"/"create"). If the post-send `read-screen` confirms it never submitted, send one more `keys "$TARGET" Enter`.
 - **One command per `send`.** `send` appends exactly one Enter. To chain commands, call `send` again after verifying the first landed.
-- **Announce a destructive command before you send it.** Nothing in this envelope names you — the target sees a bare `/clear` it did not ask for, wakes with no context, and cannot tell who did it. When you are about to `/clear`, `/compact`, or `/rewind` a peer, send a message with `/tmux-talk` first; that envelope is read by the model and carries your address and context size.
+- **Announce a destructive command before you send it.** Nothing you send here names you — the target sees a bare `/clear` it did not ask for, wakes with no context, and cannot tell who did it. When you are about to `/clear`, `/compact`, or `/rewind` a peer, send a message with `/tmux-talk` first; that envelope is read by the model and carries your address and context size.
 
 ## References
 
