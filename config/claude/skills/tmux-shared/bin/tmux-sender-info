@@ -13,9 +13,9 @@ set -uo pipefail
 # prompt it was sent, which already contains every earlier response — output
 # becomes input on the following turn. Only the newest response has not been fed
 # back yet, so it is added explicitly; leaving it out would under-report by a
-# whole turn of thinking exactly when the sender is least able to afford it. A sender that is not a Claude
-# session (a human shell) has no such facts, and the line carries the working
-# directory alone.
+# whole turn of thinking exactly when the sender is least able to afford it.
+# A sender that is not a Claude session (a human shell) has no such facts, and
+# the line carries the working directory alone.
 #
 # [LAW:no-silent-failure] applies to the CALLER's targets, not here: this part is
 # advisory, so every way of not knowing (no session id, no transcript, an
