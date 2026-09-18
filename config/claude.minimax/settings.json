@@ -4,5 +4,7 @@
     "do@loom99": true,
     "do-extra@loom99": true,
     "typescript-lsp@claude-plugins-official": true
-  }
+  },
+  "theme": "dark",
+  "skipDangerousModePermissionPrompt": true
 }
