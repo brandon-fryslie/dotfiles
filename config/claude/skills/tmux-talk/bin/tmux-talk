@@ -6,7 +6,7 @@ USAGE="tmux-talk — thin wrappers over tmux for agent-to-agent communication
 Subcommands:
   list                           List all tmux panes with session:window.pane address and running command
   whoami                         Print this pane's tmux address (session:window.pane)
-  send   <target> <message...>   Send a message to a pane, wrapped with From:/To-reply: envelope
+  send   <target> <message...>   Send a message to a pane, wrapped with From:/Sender:/To-reply: envelope
   read-screen <target> [lines]   Capture pane content (default: 200 lines of scrollback)
   wait   <target> [timeout]      Poll until the Claude idle prompt appears (default: 120s)
   idle   <target>                Exit 0 if pane shows idle prompt, 1 otherwise
@@ -27,19 +27,25 @@ resolve_target() { "$RESOLVE" "$1"; }
 # the harness itself counts as the context. A sender with no Claude session (a
 # human shell) has no such facts, so the line carries the working directory alone.
 sender_info() {
-  local transcript="" usage=""
+  local transcript="" usage="" dir="$PWD"
   if [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
-    transcript="$(ls "$HOME"/.claude*/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null | head -n 1)"
+    transcript="$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null | head -n 1)"
   fi
+  # Streamed line by line, so a half-written last line (the harness appends while
+  # we read) costs that line only. <synthetic> turns are the harness's error and
+  # interrupt placeholders: zero usage, no model.
   if [[ -n "$transcript" ]]; then
-    usage="$(jq -rs '
-      map(select(.type == "assistant" and .isSidechain != true and .message.usage != null))
-      | last // empty
+    usage="$(jq -r '
+      select(.type == "assistant" and .isSidechain != true
+             and .message.usage != null and .message.model != "<synthetic>")
       | .message as $m
       | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens)) as $t
-      | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript")"
+      | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" 2>/dev/null | tail -n 1)"
   fi
-  printf '%s%s' "$usage" "${PWD/#$HOME/\~}"
+  case "$dir" in
+    "$HOME"|"$HOME"/*) dir="~${dir#"$HOME"}" ;;
+  esac
+  printf '%s%s' "$usage" "$dir"
 }
 
 CMD="${1:-}"
