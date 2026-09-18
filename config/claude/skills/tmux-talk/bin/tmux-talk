@@ -31,16 +31,17 @@ sender_info() {
   if [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
     transcript="$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null | head -n 1)"
   fi
-  # Streamed line by line, so a half-written last line (the harness appends while
-  # we read) costs that line only. <synthetic> turns are the harness's error and
+  # Each line is parsed on its own (-R + fromjson?), so a malformed line — half-
+  # written while we read, or truncated by an old crash — costs that line only. <synthetic> turns are the harness's error and
   # interrupt placeholders: zero usage, no model.
   if [[ -n "$transcript" ]]; then
-    usage="$(jq -r '
-      select(.type == "assistant" and .isSidechain != true
+    usage="$(jq -rR '
+      fromjson?
+      | select(.type == "assistant" and .isSidechain != true
              and .message.usage != null and .message.model != "<synthetic>")
       | .message as $m
       | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens)) as $t
-      | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" 2>/dev/null | tail -n 1)"
+      | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" | tail -n 1)"
   fi
   case "$dir" in
     "$HOME"|"$HOME"/*) dir="~${dir#"$HOME"}" ;;
