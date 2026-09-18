@@ -40,7 +40,7 @@ sender_info() {
       | select(.type == "assistant" and .isSidechain != true
              and .message.usage != null and .message.model != "<synthetic>")
       | .message as $m
-      | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens)) as $t
+      | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) // 0) as $t
       | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" | tail -n 1)"
   fi
   case "$dir" in
