@@ -39,7 +39,11 @@ SESSION=""; WIN=""; PANE=""; WINPART=""
 
 case "$TARGET" in
   :self|self)
-    echo "$(self_field '#{session_name}'):$(self_field '#{window_index}').$(self_field '#{pane_index}')"
+    # One call, run directly rather than inside a command substitution: `die`
+    # inside `$(...)` exits only that subshell, so the old three-substitution
+    # `echo` printed ":." and exited 0 when $TMUX_PANE was unset — the exact
+    # silent fallback this part exists to prevent [LAW:no-silent-failure].
+    self_field '#{session_name}:#{window_index}.#{pane_index}'
     exit 0
     ;;
   .*)
