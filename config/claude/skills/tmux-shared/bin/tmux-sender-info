@@ -21,7 +21,7 @@ set -uo pipefail
 usage_line() {
   local transcript=""
   [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]] || return 0
-  transcript="$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null | head -n 1)"
+  transcript="$({ ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl | head -n 1; } 2>/dev/null)"
   [[ -n "$transcript" ]] || return 0
 
   # Each line is parsed on its own (-R plus fromjson?), so a malformed line — half

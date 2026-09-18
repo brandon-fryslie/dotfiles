@@ -30,5 +30,7 @@ the harness's own count, so nothing is estimated.
 Unlike the resolver, this part is advisory and **never fails**: no session id, no
 transcript, no `jq`, a half-written line — every way of not knowing degrades to
 the working directory alone and exits 0, so it cannot break the send it decorates.
-A caller that prints the directory by itself is telling you the sender is not a
-Claude session.
+A directory-only line therefore means "these facts were unavailable" — usually a
+sender that is not a Claude session, but equally a missing `jq` or a session id
+that never reached the environment. Read it as absence of evidence, not as
+evidence that no Claude session is on the other end.
