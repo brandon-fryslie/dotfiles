@@ -2,10 +2,12 @@
 set -uo pipefail
 
 # [LAW:one-source-of-truth] One definition of "who is sending this, and how much
-# room do they have left" — shared by tmux-talk (which puts it in the message
-# envelope the receiver reads) and tmux-command (which reports it to the caller,
-# because the bytes it delivers must stay byte-exact). A second copy would drift
-# the moment the transcript format moves.
+# room do they have left". tmux-talk is the only caller: it puts this in the
+# `Sender:` header of the envelope its receiver reads. tmux-command deliberately
+# does not use it — its receiver is a CLI parser, which reads nothing. This lives
+# in tmux-shared beside the resolver because a second driver would want the line
+# verbatim rather than reimplemented, and a copy would drift the moment the
+# transcript format moves.
 #
 # The model and context size are read from the sender's OWN session transcript:
 # the last main-thread assistant turn's usage is the harness's own count, so

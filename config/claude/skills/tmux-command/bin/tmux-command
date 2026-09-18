@@ -95,6 +95,11 @@ case "$CMD" in
     sleep 1
     tmux send-keys -t "$TARGET" Enter
 
+    # The resolved target, echoed after the send so a failed delivery never
+    # reports a command that did not land. Shorthand (`.2`, `dotfiles:orca`) is
+    # expanded inside resolve_target, so this is the caller's only record of
+    # which pane actually took the command.
+    printf 'sent %s -> %s\n' "$COMMAND" "$TARGET"
     ;;
 
   keys)
