@@ -76,3 +76,4 @@ config/claude.minimax/*
 # tracked -- the trust store is machine state, not configuration.
 config/certs/*.pem
 config/certs/env.sh
+config/iterm2/cc-status
