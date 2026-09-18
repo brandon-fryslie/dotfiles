@@ -8,8 +8,12 @@ set -uo pipefail
 # the moment the transcript format moves.
 #
 # The model and context size are read from the sender's OWN session transcript:
-# the last main-thread assistant turn's usage is what the harness itself counts
-# as the context, so there is nothing to estimate. A sender that is not a Claude
+# the last main-thread assistant turn's usage is the harness's own count, so
+# there is nothing to estimate. That turn's three input figures are the whole
+# prompt it was sent, which already contains every earlier response — output
+# becomes input on the following turn. Only the newest response has not been fed
+# back yet, so it is added explicitly; leaving it out would under-report by a
+# whole turn of thinking exactly when the sender is least able to afford it. A sender that is not a Claude
 # session (a human shell) has no such facts, and the line carries the working
 # directory alone.
 #
@@ -33,7 +37,7 @@ usage_line() {
     | select(.type == "assistant" and .isSidechain != true
              and .message.usage != null and .message.model != "<synthetic>")
     | .message as $m
-    | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) // 0) as $t
+    | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens + .output_tokens) // 0) as $t
     | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" 2>/dev/null | tail -n 1
 }
 
