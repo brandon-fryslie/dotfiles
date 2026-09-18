@@ -41,15 +41,18 @@ Run `tmux-talk list` to see all available panes with their addresses and running
 
 ## Message Envelope
 
-Every `send` wraps the message body with a `From:` header and a `To reply:` footer:
+Every `send` wraps the message body with a `From:` header, a `Sender:` line, and a `To reply:` footer:
 
 ```
 From: <sender-address>
+Sender: <model> · <N>k tokens of context · <working directory>
 <your message>
 To reply: Use /tmux-talk send <sender-address> <message...>
 ```
 
 The sender's address is auto-detected from the invoking pane — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). Both resolve `:self` through the shared resolver, which hard-errors when `$TMUX_PANE` is unset rather than silently sending an empty `From:` line.
+
+The `Sender:` line tells the receiver who it is talking to: the sender's model, how much context the sender has used, and the directory it is working in. The model and context size come from the sender's own session transcript, so they are current as of its last turn; a sender that is not a Claude session (a human shell) has neither, and its line carries the working directory alone. When you receive a message, read the context size as a budget: a sender deep into its context wants short replies and will lose detail soon, so put anything it must keep in a file and send the path.
 
 The envelope is unconditional: every receiver sees the same shape, so reply routing is always present in the message itself.
 

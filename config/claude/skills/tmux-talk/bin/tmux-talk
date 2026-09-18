@@ -22,6 +22,26 @@ target: session:window.pane, or shorthand — :win.pane / :win / .pane (same ses
 RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
 resolve_target() { "$RESOLVE" "$1"; }
 
+# [LAW:one-source-of-truth] The sender's model and context size are read from the
+# session's own transcript — the last main-thread assistant turn's usage is what
+# the harness itself counts as the context. A sender with no Claude session (a
+# human shell) has no such facts, so the line carries the working directory alone.
+sender_info() {
+  local transcript="" usage=""
+  if [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
+    transcript="$(ls "$HOME"/.claude*/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null | head -n 1)"
+  fi
+  if [[ -n "$transcript" ]]; then
+    usage="$(jq -rs '
+      map(select(.type == "assistant" and .isSidechain != true and .message.usage != null))
+      | last // empty
+      | .message as $m
+      | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens)) as $t
+      | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript")"
+  fi
+  printf '%s%s' "$usage" "${PWD/#$HOME/\~}"
+}
+
 CMD="${1:-}"
 
 case "$CMD" in
@@ -55,8 +75,8 @@ case "$CMD" in
     # correct, not defensive.
     BUFFER="tmux-talk-$$"
     trap 'tmux delete-buffer -b "$BUFFER" 2>/dev/null || :' EXIT
-    printf 'From: %s\n%s\nTo reply: Use /tmux-talk send %s <message...>' \
-           "$FROM" "$MESSAGE" "$FROM" \
+    printf 'From: %s\nSender: %s\n%s\nTo reply: Use /tmux-talk send %s <message...>' \
+           "$FROM" "$(sender_info)" "$MESSAGE" "$FROM" \
       | tmux load-buffer -b "$BUFFER" -
     tmux paste-buffer -b "$BUFFER" -t "$TARGET" -p
     sleep 1
