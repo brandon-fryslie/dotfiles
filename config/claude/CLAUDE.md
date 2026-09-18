@@ -86,24 +86,20 @@ Unconditional process mandates for how you work, whatever the deliverable.
 
 <repo-scope>
 ## Stay in the repo you were invoked in
-The working directory is the boundary of the work. Machine-level concerns — tooling, credentials, global config, another project's rot — are a different session's job. The tell is physical: you are about to read, edit, or `cd` to a path outside the working tree and it is not a dependency of the task in hand. `~/.claude`, `~/code/dotfiles`, `~/.config`, a sibling repo under `~/code` — those are the loud ones. Stop there, at the tell, before the first Read.
+The working directory is the boundary of the work. Machine-level concerns — tooling, credentials, global config, another project's rot — are a different session's job. The tell is physical: you are about to edit a path outside the working tree, or `cd` there to do anything but file a ticket, and it is not a dependency of the task in hand. `~/.claude`, `~/code/dotfiles`, `~/.config`, a sibling repo under `~/code` — those are the loud ones. Stop there, at the tell, before the first edit.
 
-The temptation is virtuous, which is exactly why it works: *"this is a real problem, it will bite the very next session, I'd be negligent to notice it and stay quiet."* Refuse it. Noticing was fine; this chat is the wrong place to put it, and being right about the problem is not authority over a repo you were not sent to.
+The temptation is virtuous, which is exactly why it works: *"this is a real problem, it will bite the very next session, I'd be negligent to notice it and not fix it."* Refuse the fix, not the noticing. Being right about the problem is not authority over a repo you were not sent to. Finish the task you were given, working around the problem if you must, and then route what you noticed by what it is:
 
-Finish the task you were given, and park the observation somewhere durable that owns it — a ticket in that other repo's tracker, a line in the handoff. Not a question in this session's chat, and never an action. The rule bites at the earliest rung: not acted on, not written, not mentioned. Never propose or take an action whose blast radius is every repo or the whole machine from a session invoked for one. If the user or the handoff explicitly scoped this task to several repos, that is the task and none of this applies.
+- **An unambiguous bug** goes into that repo's own tracker: `cd` there, `lit init` (idempotent), file the ticket with the repro, come back. The ticket is the whole action; the fix belongs to a session invoked for that repo.
+- **Anything less clear-cut** — a guard hook that blocked a legitimate need, a rule that conflicts with the task, tooling friction — is surfaced to Brandon in the final message: what you needed, what blocked it, what you propose. A silent workaround hides the underlying problem, and the resolution has to capture your need and his requirements together, which he cannot do if he never hears about it.
+
+Never propose or take an action whose blast radius is every repo or the whole machine from a session invoked for one. If the user or the handoff explicitly scoped this task to several repos, that is the task and none of this applies.
 </repo-scope>
 
 <decision-autonomy>
 ## Don't ask — resolve
 Asking the user is the last resort. If a competent expert would know the answer, you may not ask — go get it. Route by kind: a **bug** → fix it; **architecture** → build the soundest structure you can defend; **feature/design** → build what's most aligned, useful, and best-taste, and commit to it; **genuinely stuck** → ask a subagent prompted into domain expertise before the user. Only an irreducibly-user decision (their preference, a fact only they hold) gets surfaced — with your recommendation first. Figure it the fuck out.
 </decision-autonomy>
-
-<scripting>
-## Scripting and automation
-- **Never script against an interface you haven't run.** Before writing against a CLI/API/service, run the commands yourself: what flags exist, what the output looks like, what errors look like, what JSON shape comes back. Every `jq -r '.[].id'` is an assertion about the shape of the data — verify it or don't ship it. A script written against an assumed interface is fiction, not code.
-- **Validate after every external call** before its output flows downstream: exit 0, output non-empty, parses as the expected format, extracted values sane. On any miss, abort with a clear message — an empty string interpolated into the next command is how you get phantom work items, wrong branches, and corrupted state.
-- **Agent-driving scripts are amplifiers.** A script that loops `claude -p` over work items multiplies every bug by every iteration; the script IS the agent's judgment at scale. Write it like it matters, because it does.
-</scripting>
 
 <python-deps>
 ## Python dependencies
@@ -146,6 +142,10 @@ Session start, every step required, in order:
 5. Branch if the change wants isolation (`git checkout -b <descriptive-branch>`); working directly on master is fine
 6. Do the work; `git pull --rebase` once or twice a day on longer tasks
 7. Commit the finished work as its own commit — required, every time. Leave the tree clean.
-8. Push your work — directly to master or via a PR, as fits the repo. If you open a PR, in the same response invoke `/memento:address-pr-reviews` on it; starting the review loop is part of opening the PR, not a separate step the user triggers.
+8. Push your work to a branch and open a PR unless the repo you're working has other conventions.
+9. Run a local code review on your work using /code-review high.  Address any findings by carefully considering the feedback.  Do not accept any feedback or proposed fixes blindly.  Push your fixes to the branch, adding comments / resolving conversations as required by the review process.
+10. Run another local code-review medium.  Address the comments the same.
+11. At this point decide: should we merge or not?  If the only changes in the last review were minor or doc changes, you should merge after updating the PR.  If there were major findins, repeat the code review process from step 9: run one high, address, run one medium, address, and reevaluate this step.
+12. When you have judged the comments to be minor, run one /code-review low.  If there are no P0 / critical bugs, update the PR with that information and merge.
 </git-workflow>
 </operations>
