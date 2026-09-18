@@ -22,32 +22,10 @@ target: session:window.pane, or shorthand — :win.pane / :win / .pane (same ses
 RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
 resolve_target() { "$RESOLVE" "$1"; }
 
-# [LAW:one-source-of-truth] The sender's model and context size are read from the
-# session's own transcript — the last main-thread assistant turn's usage is what
-# the harness itself counts as the context. A sender with no Claude session (a
-# human shell) has no such facts, so the line carries the working directory alone.
-sender_info() {
-  local transcript="" usage="" dir="$PWD"
-  if [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]]; then
-    transcript="$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null | head -n 1)"
-  fi
-  # Each line is parsed on its own (-R + fromjson?), so a malformed line — half-
-  # written while we read, or truncated by an old crash — costs that line only. <synthetic> turns are the harness's error and
-  # interrupt placeholders: zero usage, no model.
-  if [[ -n "$transcript" ]]; then
-    usage="$(jq -rR '
-      fromjson?
-      | select(.type == "assistant" and .isSidechain != true
-             and .message.usage != null and .message.model != "<synthetic>")
-      | .message as $m
-      | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) // 0) as $t
-      | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" | tail -n 1)"
-  fi
-  case "$dir" in
-    "$HOME"|"$HOME"/*) dir="~${dir#"$HOME"}" ;;
-  esac
-  printf '%s%s' "$usage" "$dir"
-}
+# [LAW:one-source-of-truth] The sender line — model, context size, working
+# directory — has one definition, shared with tmux-command, next to the resolver.
+SENDER_INFO="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-sender-info"
+sender_info() { "$SENDER_INFO"; }
 
 CMD="${1:-}"
 

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# [LAW:one-source-of-truth] One definition of "who is sending this, and how much
+# room do they have left" — shared by tmux-talk (which puts it in the message
+# envelope the receiver reads) and tmux-command (which reports it to the caller,
+# because the bytes it delivers must stay byte-exact). A second copy would drift
+# the moment the transcript format moves.
+#
+# The model and context size are read from the sender's OWN session transcript:
+# the last main-thread assistant turn's usage is what the harness itself counts
+# as the context, so there is nothing to estimate. A sender that is not a Claude
+# session (a human shell) has no such facts, and the line carries the working
+# directory alone.
+#
+# [LAW:no-silent-failure] applies to the CALLER's targets, not here: this part is
+# advisory, so every way of not knowing (no session id, no transcript, an
+# unreadable or half-written one) degrades to the directory rather than failing
+# the send it decorates. Printing something always is the contract.
+
+usage_line() {
+  local transcript=""
+  [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]] || return 0
+  transcript="$(ls "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl 2>/dev/null | head -n 1)"
+  [[ -n "$transcript" ]] || return 0
+
+  # Each line is parsed on its own (-R plus fromjson?), so a malformed line — half
+  # written while we read it, or truncated by an old crash — costs that one line
+  # instead of stopping the scan and freezing the reported figure. <synthetic>
+  # turns are the harness's error and interrupt placeholders: zero usage, no model.
+  jq -rR '
+    fromjson?
+    | select(.type == "assistant" and .isSidechain != true
+             and .message.usage != null and .message.model != "<synthetic>")
+    | .message as $m
+    | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens) // 0) as $t
+    | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" 2>/dev/null | tail -n 1
+}
+
+# Anchored at a path separator so /Users/bmfoo does not render as ~oo, and as a
+# case pattern so bash 3.2 (macOS /bin/bash) prints ~ rather than a literal \~.
+dir="$PWD"
+case "$dir" in
+  "$HOME"|"$HOME"/*) dir="~${dir#"$HOME"}" ;;
+esac
+
+printf '%s%s\n' "$(usage_line)" "$dir"
