@@ -17,7 +17,8 @@ TMUXCMD=~/.claude/skills/tmux-command/bin/tmux-command
 
 ```bash
 tmux-command list                          # discover panes: address, running cmd, title
-tmux-command whoami                        # your address + sender line (model, context size, cwd)
+tmux-command whoami                        # your own tmux address
+tmux-command sender                        # your sender line (model, context size, cwd)
 tmux-command context <target> [N]          # gather before acting: the pane's id line + N screen lines (default 200)
 tmux-command send  <target> <command...>   # type a literal command line, then submit it; prints your sender line
 tmux-command keys  <target> <key...>       # send raw keys (Enter Down Up Escape BSpace) to drive a picker
@@ -69,7 +70,7 @@ Sender: claude-opus-5 · 112k tokens of context · ~/code/dotfiles
 
 Same line, same source as the `Sender:` header in a tmux-talk envelope: the model and context size come from the sending session's own transcript, and a sender that is not a Claude session shows the working directory alone. It stays out of the delivered bytes because a command is parsed, not read — `/clear` with anything appended is no longer `/clear`. Quote it when you report what you drove, so the record says which agent reached into that pane and how much room it had left.
 
-The receiver never sees it. When the point is for the other agent to *know* who acted — before a `/clear` it did not ask for, say — send a message with `/tmux-talk` first; that envelope is read by the model, this one is not. `whoami` prints the same line on its own.
+The receiver never sees it. When the point is for the other agent to *know* who acted — before a `/clear` it did not ask for, say — send a message with `/tmux-talk` first; that envelope is read by the model, this one is not. `sender` prints the same line on its own, and `whoami` means here exactly what it means in tmux-talk: the bare address, so `TARGET="$(tmux-command whoami)"` composes.
 
 ## Commands that open a picker need `keys`
 

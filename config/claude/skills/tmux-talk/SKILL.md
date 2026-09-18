@@ -16,6 +16,7 @@ TALK=~/.claude/skills/tmux-talk/bin/tmux-talk
 ```bash
 tmux-talk list                        # discover all panes
 tmux-talk whoami                      # print this pane's tmux address
+tmux-talk sender                      # print this pane's sender line (model, context size, cwd)
 tmux-talk send   <target> <message...>  # send a message wrapped with From:/Sender:/To-reply: envelope
 tmux-talk read-screen <target> [N]    # capture N lines of scrollback (default 200)
 tmux-talk wait   <target> [timeout]   # poll until idle prompt appears (default 120s)
@@ -52,7 +53,7 @@ To reply: Use /tmux-talk send <sender-address> <message...>
 
 The sender's address is auto-detected from the invoking pane — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). Both resolve `:self` through the shared resolver, which hard-errors when `$TMUX_PANE` is unset rather than silently sending an empty `From:` line.
 
-The `Sender:` line tells the receiver who it is talking to: the sender's model, how much context the sender has used, and the directory it is working in. The model and context size come from the sender's own session transcript, so they are current as of its last turn; a sender that is not a Claude session (a human shell) has neither, and its line carries the working directory alone. A subagent shares its parent's session, so a message sent from inside a subagent reports the parent's model and context. When you receive a message, read the context size as a budget: a sender deep into its context wants short replies and will lose detail soon, so put anything it must keep in a file and send the path.
+The `Sender:` line tells the receiver who it is talking to: the sender's model, how much context the sender has used, and the directory it is working in. The model and context size come from the sender's own session transcript (shared with `/tmux-command` — see `tmux-shared/README.md`), so they are current as of its last turn; a sender that is not a Claude session (a human shell) has neither, and its line carries the working directory alone. A subagent shares its parent's session, so a message sent from inside a subagent reports the parent's model and context. When you receive a message, read the context size as a budget: a sender deep into its context wants short replies and will lose detail soon, so put anything it must keep in a file and send the path.
 
 The envelope is unconditional: every receiver sees the same shape, so reply routing is always present in the message itself.
 

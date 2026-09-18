@@ -19,12 +19,15 @@ set -euo pipefail
 # reached into that pane and with how much room left, and `/clear` still arrives as
 # four characters. Same line, same source as tmux-talk's envelope — `whoami` prints
 # it alone. To make the RECEIVER read it, send a message with tmux-talk instead.
+# `whoami` means the same thing in both skills — the bare address, nothing else —
+# so `TARGET="$(tmux-command whoami)"` composes exactly as it does in tmux-talk.
 
 USAGE="tmux-command — inject built-in slash commands / keystrokes into another agent harness's pane
 
 Subcommands:
   list                           List all tmux panes with session:window.pane address and running command
-  whoami                         Print this pane's address and sender line (model, context size, cwd)
+  whoami                         Print this pane's tmux address (session:window.pane)
+  sender                         Print this pane's sender line (model, context size, cwd)
   context <target> [lines]       Gather before acting: the target's id line (cmd/title) + its current screen
   send  <target> <command...>    Type a literal command line into the pane, then submit it (no envelope);
                                  the sender line is printed here, not delivered into the pane
@@ -58,7 +61,11 @@ case "$CMD" in
     ;;
 
   whoami)
-    printf 'From: %s\nSender: %s' "$(resolve_target ':self')" "$("$SENDER_INFO")"
+    resolve_target ':self'
+    ;;
+
+  sender)
+    "$SENDER_INFO"
     ;;
 
   context)
@@ -103,7 +110,7 @@ case "$CMD" in
 
     # Attribution for the caller's own record — printed after the send so a
     # failure to deliver never reports a command that did not land.
-    printf 'sent %s -> %s\nSender: %s' "$COMMAND" "$TARGET" "$("$SENDER_INFO")"
+    printf 'sent %s -> %s\nSender: %s\n' "$COMMAND" "$TARGET" "$("$SENDER_INFO")"
     ;;
 
   keys)
