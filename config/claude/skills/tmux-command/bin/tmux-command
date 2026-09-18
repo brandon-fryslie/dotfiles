@@ -14,23 +14,18 @@ set -euo pipefail
 # delivered must be EXACTLY the command (`/clear`) or it won't be recognized.
 # Wrapping anything around it would corrupt the command. "No wrapper" is the point.
 #
-# So the sender line (model, context size, working directory) goes to the CALLER's
-# stdout on every `send`, never into the pane: the acting agent can report who
-# reached into that pane and with how much room left, and `/clear` still arrives as
-# four characters. Same line, same source as tmux-talk's envelope — `whoami` prints
-# it alone. To make the RECEIVER read it, send a message with tmux-talk instead.
-# `whoami` means the same thing in both skills — the bare address, nothing else —
-# so `TARGET="$(tmux-command whoami)"` composes exactly as it does in tmux-talk.
+# That extends to sender identity: tmux-talk's envelope carries a `Sender:` line
+# because a model reads it, and nothing here does — a slash command is parsed, and
+# the caller already knows which pane it just drove. `whoami` reports this pane's
+# own address for composing targets, and means exactly what it means in tmux-talk.
 
 USAGE="tmux-command — inject built-in slash commands / keystrokes into another agent harness's pane
 
 Subcommands:
   list                           List all tmux panes with session:window.pane address and running command
   whoami                         Print this pane's tmux address (session:window.pane)
-  sender                         Print this pane's sender line (model, context size, cwd)
   context <target> [lines]       Gather before acting: the target's id line (cmd/title) + its current screen
-  send  <target> <command...>    Type a literal command line into the pane, then submit it (no envelope);
-                                 the sender line is printed here, not delivered into the pane
+  send  <target> <command...>    Type a literal command line into the pane, then submit it (no envelope)
   keys  <target> <key...>        Send raw tmux key names (Enter, Down, Up, Escape, BSpace, …) — drive pickers
   read-screen <target> [lines]   Capture pane content (default: 200 lines) — re-check / verify a command's effect
 
@@ -48,10 +43,6 @@ target and its running command, then read the matching references/<harness>.md b
 RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
 resolve_target() { "$RESOLVE" "$1"; }
 
-# [LAW:single-enforcer] The sender line is not defined here either — same part
-# tmux-talk's envelope uses, so the two skills can never report a sender differently.
-SENDER_INFO="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-sender-info"
-
 CMD="${1:-}"
 
 case "$CMD" in
@@ -62,10 +53,6 @@ case "$CMD" in
 
   whoami)
     resolve_target ':self'
-    ;;
-
-  sender)
-    "$SENDER_INFO"
     ;;
 
   context)
@@ -108,9 +95,6 @@ case "$CMD" in
     sleep 1
     tmux send-keys -t "$TARGET" Enter
 
-    # Attribution for the caller's own record — printed after the send so a
-    # failure to deliver never reports a command that did not land.
-    printf 'sent %s -> %s\nSender: %s\n' "$COMMAND" "$TARGET" "$("$SENDER_INFO")"
     ;;
 
   keys)
