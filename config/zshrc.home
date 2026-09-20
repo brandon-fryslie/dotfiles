@@ -46,6 +46,19 @@ else
   [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 fi
 
+# A keychain unlock does not carry into an SSH session, so Claude Code cannot
+# read its stored credentials and reports "Not logged in" until this runs. The
+# keychain is named explicitly because an SSH session can have no default set -
+# that is what makes a bare `security unlock-keychain` fail with an empty name
+# and "The specified keychain could not be found". The password goes on stdin
+# rather than -p so it never lands in argv where ps can read it.
+# -s not -r: an empty file would feed security an empty password, and it falls
+# back to prompting on the TTY, which hangs the session before you see a prompt.
+if [[ -n $SSH_CONNECTION && -s ~/.dashvox/keychain-pass ]]; then
+  printf '%s' "$(<~/.dashvox/keychain-pass)" \
+    | security unlock-keychain ~/Library/Keychains/login.keychain-db >/dev/null 2>&1
+fi
+
 # Add customizations below
 
 # Local code configuration
