@@ -1,6 +1,6 @@
 ---
 name: something-just-came-up
-description: Park the ticket you are on and file the real fix instead. Use when work in progress hits the fork between adding one more mode to a local minimum — small, nothing strictly worse, one more stake in the carrying-cost pile — and the real fix, which does not fit in this session. Parks the current ticket with a single pointer comment, writes the escape up as a top-ranked epic (proof the minimum is actually escaped, law compliance across the blast radius, the parked work smoothed into a reusable block), grooms both ends so the top is pullable cold and the parked work resumes after it, then hands off to a fresh session. Triggers — "something just came up", "park this and file the real fix", "this needs a bigger fix than the ticket", "we are in a local minimum", "stop and write this up instead".
+description: Park the ticket you are on and file the real fix instead. Use when work in progress hits the fork between adding one more mode to a local minimum — small, nothing strictly worse, one more stake in the carrying-cost pile — and the real fix, which does not fit in this session. Parks the current ticket with a single pointer comment, writes the escape up as a top-ranked epic or ticket (proof the minimum is actually escaped, law compliance across the blast radius, the parked work smoothed into a reusable block), grooms both ends so the top is pullable cold and the parked work resumes after it, then hands off to a fresh session. Triggers — "something just came up", "park this and file the real fix", "this needs a bigger fix than the ticket", "we are in a local minimum", "stop and write this up instead".
 ---
 
 # Something Just Came Up
@@ -70,7 +70,10 @@ copy that drifts. [LAW:one-source-of-truth]
 One comment on the ticket you were working: `lit comment add <id> --body "..."`. One.
 If the parked work has no ticket, file one first — a pin needs somewhere to land.
 
-**Commit and push before you write the comment.** The bottle at step 4 resets this
+Draft the pin here; **post it in step 3**, once the writeup has an id to point at. One
+comment, not a placeholder plus a correction.
+
+**Commit and push now, before anything else here.** The bottle at step 4 resets this
 session, and a pin naming a branch that exists only in your uncommitted diff points at
 nothing. This is the step that fails silently: the comment reads fine, the handoff
 fires, and the next agent arrives to a dirty tree it cannot explain.
@@ -81,7 +84,7 @@ The pin carries at most:
 - the files in play, at file granularity and no finer (function names and line numbers
   are pointers into a moving artifact — the reference ceiling in `groom-backlog`
   applies here too)
-- the id of the epic that parked it, so the resumer knows what changed underneath
+- the id of the work that parked it, so the resumer knows what changed underneath
 - the one question you were in the middle of answering, if there was one
 
 Nothing else. No status report, no what-works list, no session summary.
@@ -136,24 +139,30 @@ Rank it to the top: `--top` at creation, or `lit rank <id> --top`.
 
 Two ends. The second is the one that gets dropped.
 
-**The top.** Run `groom-backlog` scoped to the new epic — it owns what groomed means,
-so do not re-derive its rules here. Done when the first child is pullable cold by an
-agent holding nothing but the ticket.
+**The top.** Run `groom-backlog` scoped to the new work — it owns what groomed means,
+so do not re-derive its rules here. Done when the ticket a fresh agent will pull first
+is pullable cold, by an agent holding nothing but that ticket.
 
-**The parked ticket.** It has to come back *after* the epic, and come back better than
-it left.
+**The parked ticket.** It has to come back *after* the new work, and come back better
+than it left. Four commands, and the first two are a pair — either one alone leaves the
+park broken:
 
-- `lit dep add --from <epic-id> --to <parked-id> --type blocks`. Without that edge the
-  parked lane is still `in_progress` and claimed by this checkout, so `lit next` serves
-  it straight back to the very next session — ahead of the epic you just ranked to the
-  top, and the park quietly undoes itself. This one command is what makes "resume
-  afterwards" true rather than hopeful.
-- Rewrite its acceptance criteria against the world the epic creates, not the one you
-  are leaving. The parked ticket's job is to *consume* the new foundation; criteria
-  written against the old shape walk it right back into the minimum.
-
-Full precision here — criteria are forward-pointing, so this is not where the no-claims
-rule bites.
+- `lit open <parked-id> --reason "parked behind <new-id>"`. This releases the claim.
+  Leave the ticket `in_progress` and `lit next` hands it straight back to the very next
+  session — *"already in progress in a lane you hold — continue where you left off"* —
+  because lit routes claims-first, and a claim this checkout holds outranks rank,
+  blocks edges, and focus alike. The park undoes itself in one command, before the
+  fresh agent has read anything.
+- `lit dep add --from <new-id> --to <parked-id> --type blocks`. This holds it back
+  while the escape is in flight, and lifts on its own when the new work closes — which
+  is what makes "resume afterwards" true rather than hopeful.
+- `lit comment add <parked-id> --body "..."` — post the pin you drafted in step 1, now
+  that `<new-id>` exists.
+- `lit update <parked-id> --description "..."` — rewrite its acceptance criteria against
+  the world the new work creates, not the one you are leaving. The parked ticket's job
+  is to *consume* the new foundation; criteria written against the old shape walk it
+  right back into the minimum. Full precision here — criteria are forward-pointing, so
+  this is not where the no-claims rule bites.
 
 ## 4. Fire the bottle
 
@@ -176,8 +185,14 @@ BAD:
 
 GOOD:
 
-> /next — top of the backlog is #proj-resolver-9x2, filed just now. Read the epic and
-> its children. The ticket it parked is blocked behind it.
+> `lit start proj-resolver-9x2.a1` — first child of epic #proj-resolver-9x2, filed just
+> now. Read the epic, then work the child. The ticket it parked is blocked behind it.
+
+**Name the ticket; do not send them to a bare `lit next`.** While the parked lane sits
+blocked behind the new work, `lit next` does not route around it — it exits nonzero
+with *"no ready work in your claimed lane(s)"* and tells the reader to re-focus
+deliberately. Handing a fresh session `/next` opens it on an error. The id is a pin
+like any other, and it is the one pointer this message cannot do without.
 
 Say your one line to the user *before* you fire, not after: `--reset clear` ends your
 turn at the launcher's line.
@@ -207,6 +222,10 @@ deliverable.
 - **Commit and push before you pin.** The reset is coming.
 - **Three strands, or the writeup is not scoped.** The escape and its proof, law
   compliance across the blast radius, the parked work smoothed into a block.
-- **The blocks edge** — `lit dep add --from <epic> --to <parked> --type blocks` — or
-  the park undoes itself on the next session's `lit next`.
+- **Release the claim, then block it.** `lit open <parked-id>`, then `lit dep add
+  --from <new-id> --to <parked-id> --type blocks`. Claims outrank everything, so a
+  parked ticket left `in_progress` is handed straight back to the next session and the
+  blocks edge never gets a word in.
+- **Name the first ticket in the bottle.** A bare `lit next` exits nonzero while the
+  parked lane sits blocked; `/next` opens the fresh session on an error.
 - **Stop at the launcher's line.** You filed the work. You do not start it.
