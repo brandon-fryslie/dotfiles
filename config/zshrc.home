@@ -18,12 +18,12 @@ setopt share_history
 is_claude() { [[ -n "${CLAUDECODE}" ]] && return 0 || return 1 }
 not_claude() { ! is_claude && return 0 || return 1 }
 
-# DashVox opens a PTY shell over SSH from its backend on this same Mac and reads
-# the first bytes off the pane to classify the remote OS. A p10k prompt is
-# unreadable escape codes to that probe, so it falls through to guessing Windows
-# and the session dies asking for Git Bash. Loopback SSH is DashVox; SSH clients
-# on the phone arrive over the tailnet, so they keep the full shell.
-is_dashvox() { [[ ${SSH_CONNECTION%% *} == 127.0.0.1 ]] }
+# DashVox reads the first bytes off the pane to classify the remote OS. A p10k
+# prompt is unreadable escape codes to that probe, so it falls through to
+# guessing Windows and the session dies asking for Git Bash. The marker is set
+# by ~/.dashvox/bin/dashvox-session, the forced command on the dashvox SSH key,
+# which is the only thing that sets it - every shell you type in is unaffected.
+is_dashvox() { [[ -n ${DASHVOX:-} ]] }
 
 # Use full plugin set for human sessions
 export RAD_PLUGINS_FILE=~/.rad-plugins
