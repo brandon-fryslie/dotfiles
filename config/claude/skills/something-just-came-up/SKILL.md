@@ -152,12 +152,13 @@ is pullable cold, by an agent holding nothing but that ticket.
 than it left. Four commands, and the first two are a pair — either one alone leaves the
 park broken:
 
-- `lit open <parked-id> --reason "parked behind <new-id>"`. This releases the claim.
-  Leave the ticket `in_progress` and `lit next` hands it straight back to the very next
-  session — *"already in progress in a lane you hold — continue where you left off"* —
-  because lit routes claims-first, and a claim this checkout holds outranks rank,
-  blocks edges, and focus alike. The park undoes itself in one command, before the
-  fresh agent has read anything.
+- `lit open <parked-id> --reason "parked behind <new-id>"`. This clears `in_progress`.
+  It does **not** release the lane claim — the assignee survives the reopen — and that
+  is fine; what matters is that `in_progress` is gone. Leave it set and `lit next` hands
+  the ticket straight back to the very next session, *"already in progress in a lane you
+  hold — continue where you left off"*, because lit routes claims-first and an
+  in-progress lane this checkout holds outranks rank, blocks edges, and focus alike. The
+  park undoes itself in one command, before the fresh agent has read anything.
 - `lit dep add --from <new-id> --to <parked-id> --type blocks`. This holds it back
   while the escape is in flight, and lifts on its own when the new work closes — which
   is what makes "resume afterwards" true rather than hopeful. If the escape ended up
@@ -172,13 +173,25 @@ park broken:
   right back into the minimum. Full precision here — criteria are forward-pointing, so
   this is not where the no-claims rule bites.
 
-**Then read the park back before you go on.** `lit next` should name the ticket your
-bottle is about to name; `lit show <parked-id>` should show the parked ticket open and
-held. You released the claim in the first command of this step, so a refusal or typo in
-the second leaves the ticket loose with nothing holding it — and step 4 ends the session
-a moment later, with no one left to notice. This is the one check in the skill that
-cannot be deferred to the next agent: after the reset there is no next agent who knows
-a park was attempted.
+**Then read the park back before you go on**, and read it knowing what a *good* park
+looks like: `lit next` exits nonzero — `code=6`, *"no ready work in your claimed
+lane(s) — blocked on <new-id>"*. That error is the success signal. The lane is still
+claimed by this checkout (reopening clears `in_progress`, not the assignee), and the
+blocks edge is now holding it, so routing has nowhere to go and says so, naming the
+work that must land first.
+
+A `lit next` that cheerfully **names a ticket** is the failure. It means either the
+reopen did not take (it names the parked ticket, *"already in progress in a lane you
+hold"*) or the edge did not land (it names the parked ticket as ready). Both broken
+states name a ticket; only the good one errors. Do not "fix" the error by pulling the
+edge — that is tearing out the park because the park worked.
+
+Check this before you go on, every time. You cleared `in_progress` in the first command
+of this step, so a refusal or typo in the second leaves the ticket loose with nothing
+holding it, and the bottle ends the session a moment later. It is the one check here
+that cannot be deferred: after the reset, nobody knows a park was attempted.
+
+## 4. Fire the bottle
 
 Load `memento:message-in-a-bottle` and fire it with `--reset clear`. Clear, not
 compact: the next agent should start from the epic and the code, never from your
@@ -240,9 +253,9 @@ deliverable.
   --from <new-id> --to <parked-id> --type blocks`. Claims outrank everything, so a
   parked ticket left `in_progress` is handed straight back to the next session and the
   blocks edge never gets a word in.
-- **Read the park back before the bottle.** `lit next` names the ticket the bottle
-  names. The claim is already released by then, so an edge that did not land leaves the
-  ticket loose and the session ends before anyone sees it.
+- **Read the park back before the bottle.** A good park makes `lit next` exit `code=6`
+  naming the new work as the blocker. A `lit next` that names a ticket is the failure —
+  both broken states name one, only the good one errors.
 - **Name the first ticket in the bottle.** A bare `lit next` exits nonzero while the
   parked lane sits blocked; `/next` opens the fresh session on an error.
 - **Stop at the launcher's line.** You filed the work. You do not start it.
