@@ -135,6 +135,11 @@ victory, and the mode after next goes in by hand anyway.
 
 Rank it to the top: `--top` at creation, or `lit rank <id> --top`.
 
+**File it outside the parked ticket's epic** — its own epic, or free-floating. Inside
+one epic, rank is lit's ordering signal and a blocks edge between siblings is refused
+outright, so filing the escape as a sibling of the work it supersedes costs you the
+mechanism step 3 parks with.
+
 ## 3. Groom both ends
 
 Two ends. The second is the one that gets dropped.
@@ -155,7 +160,10 @@ park broken:
   fresh agent has read anything.
 - `lit dep add --from <new-id> --to <parked-id> --type blocks`. This holds it back
   while the escape is in flight, and lifts on its own when the new work closes — which
-  is what makes "resume afterwards" true rather than hopeful.
+  is what makes "resume afterwards" true rather than hopeful. If the escape ended up
+  inside the parked ticket's epic anyway, lit refuses this edge (`code=3`, siblings);
+  rank the escape above it instead — `lit rank <new-id> --above <parked-id>` — and know
+  what you traded: rank orders the lane, it does not gate it.
 - `lit comment add <parked-id> --body "..."` — post the pin you drafted in step 1, now
   that `<new-id>` exists.
 - `lit update <parked-id> --description "..."` — rewrite its acceptance criteria against
@@ -164,7 +172,13 @@ park broken:
   right back into the minimum. Full precision here — criteria are forward-pointing, so
   this is not where the no-claims rule bites.
 
-## 4. Fire the bottle
+**Then read the park back before you go on.** `lit next` should name the ticket your
+bottle is about to name; `lit show <parked-id>` should show the parked ticket open and
+held. You released the claim in the first command of this step, so a refusal or typo in
+the second leaves the ticket loose with nothing holding it — and step 4 ends the session
+a moment later, with no one left to notice. This is the one check in the skill that
+cannot be deferred to the next agent: after the reset there is no next agent who knows
+a park was attempted.
 
 Load `memento:message-in-a-bottle` and fire it with `--reset clear`. Clear, not
 compact: the next agent should start from the epic and the code, never from your
@@ -226,6 +240,9 @@ deliverable.
   --from <new-id> --to <parked-id> --type blocks`. Claims outrank everything, so a
   parked ticket left `in_progress` is handed straight back to the next session and the
   blocks edge never gets a word in.
+- **Read the park back before the bottle.** `lit next` names the ticket the bottle
+  names. The claim is already released by then, so an edge that did not land leaves the
+  ticket loose and the session ends before anyone sees it.
 - **Name the first ticket in the bottle.** A bare `lit next` exits nonzero while the
   parked lane sits blocked; `/next` opens the fresh session on an error.
 - **Stop at the launcher's line.** You filed the work. You do not start it.
