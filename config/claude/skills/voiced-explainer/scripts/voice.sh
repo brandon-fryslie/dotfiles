@@ -32,10 +32,14 @@ uv run --with "$POCKET_TTS" python "$HERE/render.py" "$CLIPS" "$WORK" "$VOICE"
 
 mkdir -p "$OUT"
 total=0
+count=0
 quiet=""
+made=" "
 printf '\n%-24s %8s %9s\n' "clip" "seconds" "bytes"
 for wav in "$WORK"/*.wav; do
   id="$(basename "$wav" .wav)"
+  made="$made$id "
+  count=$((count + 1))
   mp3="$OUT/$id.mp3"
   ffmpeg -v error -y -i "$wav" -map_metadata -1 -c:a libmp3lame -b:a 56k -ac 1 "$mp3"
   secs="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$mp3")"
@@ -47,7 +51,18 @@ for wav in "$WORK"/*.wav; do
   awk -v p="$peak" 'BEGIN{exit !(p < -30)}' && quiet="$quiet $id"
 done
 
-printf '\ntotal %.2fs across %s clips in %s\n' "$total" "$(ls -1 "$OUT"/*.mp3 | wc -l | tr -d ' ')" "$OUT"
+printf '\ntotal %.2fs across %s clips in %s\n' "$total" "$count" "$OUT"
+
+# An earlier run against a different clips.json leaves audio behind that nothing references.
+# The page's completeness check would catch it much later; say it here, while the cause is known.
+stale=""
+for existing in "$OUT"/*.mp3; do
+  [ -e "$existing" ] || continue
+  id="$(basename "$existing" .mp3)"
+  case "$made" in *" $id "*) ;; *) stale="$stale $id" ;; esac
+done
+[ -n "$stale" ] && echo "voice.sh: note — audio in $OUT left by an earlier run, not in this clips.json:$stale" >&2
+
 if [ -n "$quiet" ]; then
   echo "voice.sh: WARNING — these clips are near-silent and did not render properly:$quiet" >&2
   exit 1

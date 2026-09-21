@@ -8,6 +8,7 @@
 # The voice state is encoded once and reused for every clip, and the run is seeded, so the same
 # clips.json and voice produce the same audio. A changed clip means changed text, not a changed die.
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,11 +23,17 @@ clips = json.loads(Path(clips_path).read_text())
 if not clips:
     raise SystemExit(f"render: {clips_path} holds no clips")
 
+# The id becomes a filename and an HTML attribute the page is grepped for, so it is held to
+# the character class that check uses. A stray "/" would also write outside the output dir.
+ID = re.compile(r"[a-z0-9-]+")
+
 seen = set()
 for entry in clips:
     if len(entry) != 2:
         raise SystemExit(f"render: every clip must be [id, text]; got {entry!r}")
     clip_id, text = entry
+    if not isinstance(clip_id, str) or not ID.fullmatch(clip_id):
+        raise SystemExit(f"render: clip id {clip_id!r} must match [a-z0-9-]+")
     if clip_id in seen:
         raise SystemExit(f"render: duplicate clip id {clip_id!r}")
     if not text.strip():
