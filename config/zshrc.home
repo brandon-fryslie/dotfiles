@@ -23,7 +23,13 @@ not_claude() { ! is_claude && return 0 || return 1 }
 # guessing Windows and the session dies asking for Git Bash. The marker is set
 # by ~/.dashvox/bin/dashvox-session, the forced command on the dashvox SSH key,
 # which is the only thing that sets it - every shell you type in is unaffected.
-is_dashvox() { [[ -n ${DASHVOX:-} ]] }
+is_dashvox() {
+  [[ -n ${DASHVOX:-} ]] && return 0
+  # DashVox also creates its own tmux sessions, named dashvox_<session-id>, and
+  # those panes never see the marker above - it is set by the forced command on
+  # the dashvox SSH key, which DashVox's own path does not go through.
+  [[ -n ${TMUX:-} ]] && [[ $(tmux display-message -p '#S' 2>/dev/null) == dashvox_* ]]
+}
 
 # Use full plugin set for human sessions
 export RAD_PLUGINS_FILE=~/.rad-plugins
