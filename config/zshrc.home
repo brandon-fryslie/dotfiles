@@ -29,6 +29,21 @@ source "${DOTFILES_DIR}/config/zshrc.base"
 # Load p10k theme (skip for Claude since we don't need fancy prompts)
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
+# DashVox extracts an agent reply from the full pane scrollback by finding the
+# last line starting with "$" or "#" and taking everything after it
+# (SessionMonitorService.extractInvocationOutput: lastIndexOf("\n$"),
+# lastIndexOf("\n#"), Math.max, substring). A p10k prompt starts with "\u2570\u2500\u276f",
+# so both searches return -1 and the app is handed the entire scrollback. This
+# is DashVox's contract, not cosmetics - its panes need a prompt that starts
+# with "$". Sessions you open yourself are untouched.
+if [[ -n ${TMUX:-} ]] && [[ $(tmux display-message -p '#S' 2>/dev/null) == dashvox_* ]]; then
+  # A plain PROMPT= assignment does not survive: p10k redraws the prompt from a
+  # precmd hook every time, so it has to be torn down rather than overwritten.
+  (( $+functions[prompt_powerlevel9k_teardown] )) && prompt_powerlevel9k_teardown
+  PROMPT='$ '
+  RPROMPT=''
+fi
+
 # Add customizations below
 
 # Local code configuration
