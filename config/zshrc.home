@@ -18,39 +18,16 @@ setopt share_history
 is_claude() { [[ -n "${CLAUDECODE}" ]] && return 0 || return 1 }
 not_claude() { ! is_claude && return 0 || return 1 }
 
-# DashVox reads the first bytes off the pane to classify the remote OS. A p10k
-# prompt is unreadable escape codes to that probe, so it falls through to
-# guessing Windows and the session dies asking for Git Bash. The marker is set
-# by ~/.dashvox/bin/dashvox-session, the forced command on the dashvox SSH key,
-# which is the only thing that sets it - every shell you type in is unaffected.
-is_dashvox() {
-  [[ -n ${DASHVOX:-} ]] && return 0
-  # DashVox also creates its own tmux sessions, named dashvox_<session-id>, and
-  # those panes never see the marker above - it is set by the forced command on
-  # the dashvox SSH key, which DashVox's own path does not go through.
-  [[ -n ${TMUX:-} ]] && [[ $(tmux display-message -p '#S' 2>/dev/null) == dashvox_* ]]
-}
-
 # Use full plugin set for human sessions
 export RAD_PLUGINS_FILE=~/.rad-plugins
 # Use default zgenom cache for human sessions
 export ZGEN_INIT=~/.zgenom/sources/init.zsh
 
-# Source base zshrc, and the prompt on top of it. DashVox gets neither: it needs
-# a shell that starts silently, and everything below this point - PATH, SDKMAN,
-# pnpm - still loads, which is what the agent it runs actually depends on.
-if is_dashvox; then
-  # PROMPT_SP prints a reverse-video % and a screen-width pad before every
-  # prompt to mark partial lines. It is the first thing on the pane and the
-  # first thing the OS probe reads, so it goes.
-  unsetopt PROMPT_SP PROMPT_CR
-  PS1='%~ $ '
-else
-  source "${DOTFILES_DIR}/config/zshrc.base"
+# Source base zshrc
+source "${DOTFILES_DIR}/config/zshrc.base"
 
-  # Load p10k theme (skip for Claude since we don't need fancy prompts)
-  [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
-fi
+# Load p10k theme (skip for Claude since we don't need fancy prompts)
+[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
 # Add customizations below
 
