@@ -1,0 +1,686 @@
+<!--
+  WORKED EXAMPLE for the voiced-explainer skill — Apple's Voice Control.
+
+  Reuse the skeleton: the audio contract (one <audio>, data-clip on every playable thing,
+  a/<id>.mp3), the three-state theme tokens, the say-this chip, the play-all queue.
+
+  Do NOT reuse the skin. The warm greys and the orange are macOS's mic-in-use indicator,
+  Bricolage Grotesque and Newsreader belong to this page's register, and the phone mock
+  belongs to a subject about phone screens. On another subject they are someone else's
+  clothes, and every page you build from them is this page with different words in it.
+  Derive the palette and the faces from your own subject's materials.
+-->
+<title>Say the Name</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#ECEBE8;
+  --surface:#FBFAF8;
+  --surface-2:#F4F2EE;
+  --ink:#1A1714;
+  --ink-2:#4A443D;
+  --muted:#6E675E;
+  --rule:#D9D4CC;
+  --rule-soft:#E4E0D9;
+  --accent:#C24A08;
+  --accent-strong:#B8440A;
+  --accent-soft:#F8E4D6;
+  --grid:#36407A;
+  --grid-soft:rgba(54,64,122,.10);
+  --screen:#FFFFFF;
+  --screen-chrome:#F3F2EF;
+  --screen-rule:#E5E2DC;
+  --shadow:0 1px 2px rgba(26,23,20,.05), 0 18px 44px -20px rgba(26,23,20,.30);
+
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;
+  --body:"Newsreader",Georgia,"Times New Roman",serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#121110;
+    --surface:#1B1815;
+    --surface-2:#232019;
+    --ink:#F1EDE7;
+    --ink-2:#C7BFB4;
+    --muted:#9A9186;
+    --rule:#302A24;
+    --rule-soft:#262119;
+    --accent:#FF8A3D;
+    --accent-strong:#FF8A3D;
+    --accent-soft:#3A2314;
+    --grid:#93A2E8;
+    --grid-soft:rgba(147,162,232,.14);
+    --screen:#0B0A09;
+    --screen-chrome:#191613;
+    --screen-rule:#282320;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 18px 44px -20px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#121110;
+  --surface:#1B1815;
+  --surface-2:#232019;
+  --ink:#F1EDE7;
+  --ink-2:#C7BFB4;
+  --muted:#9A9186;
+  --rule:#302A24;
+  --rule-soft:#262119;
+  --accent:#FF8A3D;
+  --accent-strong:#FF8A3D;
+  --accent-soft:#3A2314;
+  --grid:#93A2E8;
+  --grid-soft:rgba(147,162,232,.14);
+  --screen:#0B0A09;
+  --screen-chrome:#191613;
+  --screen-rule:#282320;
+  --shadow:0 1px 2px rgba(0,0,0,.5), 0 18px 44px -20px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--body);
+  font-size:17px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.page{max-width:1080px;margin:0 auto;padding-inline:22px;padding-block:0 0}
+h1,h2,h3{font-family:var(--display);font-weight:800;text-wrap:balance;margin:0}
+p{margin:0}
+a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+:focus-visible{outline:2.5px solid var(--accent);outline-offset:3px;border-radius:3px}
+
+.eyebrow{
+  font-family:var(--mono);font-size:.7rem;font-weight:500;
+  letter-spacing:.17em;text-transform:uppercase;color:var(--muted);
+}
+
+/* ── hero ─────────────────────────────────────────────── */
+.hero{padding-block:clamp(44px,8vw,86px) clamp(32px,5vw,54px)}
+.hero h1{
+  font-size:clamp(2.15rem,5.7vw,4rem);line-height:.99;letter-spacing:-.025em;
+  margin-block:18px 0;max-width:19ch;
+}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.deck{
+  font-size:clamp(1.05rem,1.7vw,1.3rem);color:var(--ink-2);
+  max-width:56ch;margin-block-start:22px;
+}
+.hero-actions{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-block-start:30px}
+
+/* ── the listening pill (macOS mic-in-use orange) ─────── */
+.pill{
+  display:inline-flex;align-items:center;gap:10px;
+  background:var(--surface);border:1px solid var(--rule);border-radius:999px;
+  padding:8px 16px 8px 12px;box-shadow:var(--shadow);
+  font-family:var(--mono);font-size:.78rem;color:var(--ink-2);
+  min-height:40px;
+}
+.meter{display:flex;align-items:center;gap:2.5px;height:15px}
+.meter i{display:block;width:2.5px;height:4px;border-radius:2px;background:var(--accent);opacity:.45}
+.pill.live .meter i{animation:lvl .9s ease-in-out infinite;opacity:1}
+.pill.live .meter i:nth-child(2){animation-delay:.12s}
+.pill.live .meter i:nth-child(3){animation-delay:.24s}
+.pill.live .meter i:nth-child(4){animation-delay:.07s}
+.pill.live .meter i:nth-child(5){animation-delay:.3s}
+@keyframes lvl{0%,100%{height:4px}50%{height:15px}}
+.pill-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:62ch}
+
+.btn{
+  font-family:var(--mono);font-size:.82rem;font-weight:500;
+  display:inline-flex;align-items:center;gap:9px;
+  background:var(--ink);color:var(--paper);border:1px solid var(--ink);
+  border-radius:999px;padding:11px 20px;cursor:pointer;min-height:44px;
+}
+.btn:hover{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+.btn svg{flex:none}
+
+/* ── sections ─────────────────────────────────────────── */
+section{border-block-start:1px solid var(--rule);padding-block:clamp(38px,6vw,68px)}
+.sec-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:12px 18px;margin-block-end:22px}
+.sec-head h2{font-size:clamp(1.55rem,3.1vw,2.15rem);line-height:1.08;letter-spacing:-.02em}
+.prose{max-width:60ch;color:var(--ink-2)}
+.prose + .prose{margin-block-start:16px}
+
+.listen{
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:7px;
+  background:transparent;color:var(--muted);border:1px solid var(--rule);
+  border-radius:999px;padding:6px 13px;cursor:pointer;min-height:32px;
+}
+.listen:hover{color:var(--accent);border-color:var(--accent)}
+.listen[aria-pressed="true"]{color:#fff;background:var(--accent-strong);border-color:var(--accent-strong)}
+.listen svg{flex:none}
+
+/* ── the say-this chip ────────────────────────────────── */
+.say{
+  font-family:var(--mono);font-size:.85rem;font-weight:500;line-height:1.35;
+  color:var(--ink);background:var(--surface);
+  border:1px solid var(--rule);border-radius:7px;
+  padding:7px 12px;cursor:pointer;text-align:start;
+  display:inline-flex;align-items:baseline;gap:1px;min-height:36px;
+}
+.say::before{content:"\201C";color:var(--accent);font-weight:600}
+.say::after{content:"\201D";color:var(--accent);font-weight:600}
+.say:hover{border-color:var(--accent);background:var(--accent-soft)}
+.say.playing{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+.say.playing::before,.say.playing::after{color:#fff}
+.says{display:flex;flex-wrap:wrap;gap:9px}
+
+/* ── not siri: the split ──────────────────────────────── */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-block-start:26px}
+.split > div{padding:22px 26px}
+.split > div:first-child{border-inline-end:1px solid var(--rule);padding-inline-start:0}
+.split h3{font-size:1rem;font-family:var(--mono);font-weight:600;letter-spacing:.02em;margin-block-end:9px}
+.split .who{color:var(--muted)}
+.split .vc h3{color:var(--accent)}
+.split p{color:var(--ink-2);font-size:1rem}
+@media (max-width:640px){
+  .split{grid-template-columns:1fr}
+  .split > div{padding-inline:0}
+  .split > div:first-child{border-inline-end:0;border-block-end:1px solid var(--rule);padding-block-end:20px}
+}
+
+/* ── the ladder + device ──────────────────────────────── */
+.ladder-wrap{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:clamp(26px,4vw,56px);align-items:start;margin-block-start:28px}
+@media (max-width:860px){.ladder-wrap{grid-template-columns:1fr}}
+
+.rungs{display:flex;flex-direction:column;gap:0;border-inline-start:2px solid var(--rule);}
+.rung{padding:18px 0 18px 22px;position:relative}
+.rung + .rung{border-block-start:1px solid var(--rule-soft)}
+.rung::before{
+  content:attr(data-n);position:absolute;inset-inline-start:-13px;inset-block-start:20px;
+  width:24px;height:24px;border-radius:50%;
+  background:var(--paper);border:2px solid var(--rule);color:var(--muted);
+  font-family:var(--mono);font-size:.72rem;font-weight:600;
+  display:grid;place-items:center;
+}
+.rung.on::before{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+.rung h3{font-size:1.18rem;letter-spacing:-.01em;margin-block-end:5px}
+.rung p{color:var(--ink-2);font-size:1rem;max-width:46ch;margin-block-end:12px}
+.rung .says{margin-block-start:2px}
+
+.note{
+  margin-block-start:26px;padding:16px 18px;border-radius:10px;
+  background:var(--surface-2);border:1px solid var(--rule-soft);
+  color:var(--ink-2);font-size:.97rem;max-width:56ch;
+}
+.note b{font-family:var(--mono);font-size:.82rem;font-weight:600;color:var(--ink);letter-spacing:.02em}
+
+/* device */
+.device-col{display:flex;flex-direction:column;gap:14px;align-items:center;width:min(320px,100%);justify-self:center}
+.device{
+  width:100%;background:var(--screen);border:1px solid var(--rule);
+  border-radius:30px;box-shadow:var(--shadow);overflow:hidden;position:relative;
+  padding:0;
+}
+.statusbar{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:12px 20px 6px;font-family:var(--mono);font-size:.62rem;color:var(--muted);
+}
+.dot-mic{display:inline-flex;align-items:center;gap:5px}
+.dot-mic i{width:7px;height:7px;border-radius:50%;background:var(--accent);display:block}
+.navbar{
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  padding:6px 14px 12px;border-block-end:1px solid var(--screen-rule);background:var(--screen-chrome);
+}
+.navbar .ttl{font-family:var(--display);font-weight:700;font-size:1.02rem}
+.navlink{font-family:var(--mono);font-size:.7rem;color:var(--accent);position:relative}
+.rows{display:flex;flex-direction:column}
+.row{display:flex;gap:11px;align-items:center;padding:11px 14px;position:relative}
+.row + .row{border-block-start:1px solid var(--screen-rule)}
+.av{width:30px;height:30px;border-radius:50%;background:var(--surface-2);border:1px solid var(--screen-rule);flex:none}
+.row .who2{font-family:var(--display);font-weight:700;font-size:.82rem;line-height:1.3}
+.row .snip{font-size:.76rem;color:var(--muted);line-height:1.3;font-family:var(--body)}
+.composer{display:flex;gap:8px;align-items:center;padding:11px 14px;border-block-start:1px solid var(--screen-rule);background:var(--screen-chrome)}
+.field{flex:1;background:var(--surface);border:1px solid var(--screen-rule);border-radius:999px;padding:7px 12px;font-size:.76rem;color:var(--muted);position:relative}
+.send{
+  background:var(--accent-strong);color:#fff;border-radius:999px;padding:7px 13px;
+  font-family:var(--mono);font-size:.7rem;font-weight:500;position:relative;flex:none;
+}
+.tabbar{display:flex;border-block-start:1px solid var(--screen-rule);background:var(--screen-chrome)}
+.tab{flex:1;text-align:center;padding:10px 4px 14px;font-family:var(--mono);font-size:.65rem;color:var(--muted);position:relative}
+
+/* overlays */
+.tag{position:absolute;inset:0;display:none;pointer-events:none;z-index:3}
+.tag::after{
+  position:absolute;inset-block-start:50%;inset-inline-start:50%;transform:translate(-50%,-50%);
+  font-family:var(--mono);font-weight:600;white-space:nowrap;
+}
+.device.mode-numbers .tag{display:block}
+.device.mode-numbers .tag::after{
+  content:attr(data-num);
+  background:var(--accent-strong);color:#fff;
+  min-width:21px;height:21px;border-radius:50%;
+  font-size:.66rem;display:grid;place-items:center;padding:0 5px;
+  box-shadow:0 1px 4px rgba(0,0,0,.28);
+}
+.device.mode-names .tag{display:block}
+.device.mode-names .tag::after{
+  content:attr(data-name);
+  background:var(--ink);color:var(--paper);
+  border-radius:5px;font-size:.62rem;padding:2.5px 6px;
+  box-shadow:0 1px 4px rgba(0,0,0,.28);
+}
+.row .tag::after{inset-inline-start:29px}
+.gridlayer{position:absolute;inset:0;display:none;z-index:4;pointer-events:none}
+.device.mode-grid .gridlayer{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
+.gcell{border:1px solid var(--grid);border-inline-start:0;border-block-start:0;position:relative;background:var(--grid-soft)}
+.gcell:nth-child(3n){border-inline-end:0}
+.gcell:nth-child(n+7){border-block-end:0}
+.gcell > span{
+  position:absolute;inset-block-start:4px;inset-inline-start:5px;
+  font-family:var(--mono);font-size:.66rem;font-weight:600;color:var(--grid);
+}
+.gcell.zoom{background:transparent;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);outline:2px solid var(--grid);outline-offset:-2px}
+.gcell.zoom > span{display:none}
+.gsub{border:1px solid var(--grid);border-inline-start:0;border-block-start:0;position:relative;background:rgba(255,255,255,.55)}
+:root[data-theme="dark"] .gsub{background:rgba(11,10,9,.62)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .gsub{background:rgba(11,10,9,.62)}}
+.gsub:nth-child(3n){border-inline-end:0}
+.gsub:nth-child(n+7){border-block-end:0}
+.gsub > span{position:absolute;inset-block-start:2px;inset-inline-start:3px;font-family:var(--mono);font-size:.55rem;font-weight:600;color:var(--grid)}
+.gsub.hit{background:var(--accent-soft)}
+.gsub.hit > span{color:var(--accent-strong)}
+
+.modeswitch{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.modeswitch .say[aria-pressed="true"]{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+.modeswitch .say[aria-pressed="true"]::before,.modeswitch .say[aria-pressed="true"]::after{color:#fff}
+.cap{font-family:var(--mono);font-size:.7rem;color:var(--muted);text-align:center;max-width:32ch;line-height:1.5}
+
+/* ── dictation ────────────────────────────────────────── */
+.dict{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:clamp(24px,3.5vw,44px);align-items:start;margin-block-start:26px}
+@media (max-width:760px){.dict{grid-template-columns:1fr}}
+.textfield{
+  background:var(--surface);border:1px solid var(--rule);border-radius:10px;
+  padding:18px 20px;box-shadow:var(--shadow);font-size:1.02rem;color:var(--ink);
+}
+.textfield .lbl{font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:block;margin-block-end:9px}
+.textfield + .textfield{margin-block-start:12px}
+.strike{text-decoration:line-through;text-decoration-color:var(--accent);color:var(--muted)}
+.ins{background:var(--accent-soft);border-block-end:2px solid var(--accent);padding:0 2px}
+:root[data-theme="dark"] .ins{color:var(--ink)}
+.caret{display:inline-block;width:2px;height:1.05em;background:var(--accent);vertical-align:-.18em;margin-inline-start:1px;animation:blink 1.1s step-end infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ── gestures + yours ─────────────────────────────────── */
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:clamp(20px,3vw,40px);margin-block-start:26px}
+.col h3{font-family:var(--mono);font-size:.72rem;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);margin-block-end:12px}
+.col p{color:var(--ink-2);font-size:1rem;margin-block-end:13px;max-width:40ch}
+
+/* ── colophon ─────────────────────────────────────────── */
+.colophon{
+  border-block-start:1px solid var(--rule);padding-block:30px 46px;
+  color:var(--muted);font-size:.9rem;max-width:64ch;
+}
+.colophon p + p{margin-block-start:10px}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+  html{scroll-behavior:auto}
+}
+</style>
+
+<main class="page">
+
+<header class="hero">
+  <p class="eyebrow">Apple accessibility · Voice Control</p>
+  <h1>It doesn't guess what you mean. It gives everything a <em>name</em>.</h1>
+  <p class="deck">Voice Control is not Siri with a bigger vocabulary. It is a pointer and a keyboard made of words, and it rests on one idea: before you can act on a thing, the thing needs a name. Everything below is a way of getting one.</p>
+  <div class="hero-actions">
+    <button class="btn" id="tour" aria-pressed="false">
+      <svg width="13" height="14" viewBox="0 0 13 14" aria-hidden="true"><path d="M1 1.4v11.2c0 .5.5.8.9.5l9.3-5.6a.6.6 0 0 0 0-1L1.9.9A.6.6 0 0 0 1 1.4Z" fill="currentColor"/></svg>
+      <span id="tour-label">Play the whole thing</span>
+    </button>
+    <div class="pill" id="pill">
+      <span class="meter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="pill-text" id="pill-text" aria-live="polite">Six parts, two and a half minutes, spoken aloud</span>
+    </div>
+  </div>
+</header>
+
+<section id="not-siri">
+  <div class="sec-head">
+    <h2>It isn't Siri</h2>
+    <button class="listen" data-clip="n-open" aria-pressed="false">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M5.2 1.2 2.8 3.4H1.2a.6.6 0 0 0-.6.6v4c0 .3.3.6.6.6h1.6l2.4 2.2c.4.3 1 .1 1-.4V1.6c0-.5-.6-.7-1-.4Z" fill="currentColor"/><path d="M8.3 3.6a.6.6 0 0 0-.2.9 2.6 2.6 0 0 1 0 3 .6.6 0 1 0 .9.7 3.8 3.8 0 0 0 0-4.4.6.6 0 0 0-.7-.2Z" fill="currentColor"/></svg>
+      Listen
+    </button>
+  </div>
+  <div class="split">
+    <div>
+      <h3 class="who">Siri</h3>
+      <p>Takes a request and decides what to do about it. You describe an outcome; something else picks the steps. When it misreads you, you get the wrong outcome.</p>
+    </div>
+    <div class="vc">
+      <h3>Voice Control</h3>
+      <p>Takes a command and performs it, exactly, on whatever is in front of you. You pick the steps. When it misreads you, you say the step again.</p>
+    </div>
+  </div>
+  <p class="prose" style="margin-block-start:26px">Apple shipped it in 2019, in macOS Catalina and iOS 13, and the recognition runs on the device. After the one-time download, it works with the network switched off.</p>
+</section>
+
+<section id="ladder">
+  <div class="sec-head">
+    <h2>The naming ladder</h2>
+    <button class="listen" data-clip="n-ladder" aria-pressed="false">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M5.2 1.2 2.8 3.4H1.2a.6.6 0 0 0-.6.6v4c0 .3.3.6.6.6h1.6l2.4 2.2c.4.3 1 .1 1-.4V1.6c0-.5-.6-.7-1-.4Z" fill="currentColor"/><path d="M8.3 3.6a.6.6 0 0 0-.2.9 2.6 2.6 0 0 1 0 3 .6.6 0 1 0 .9.7 3.8 3.8 0 0 0 0-4.4.6.6 0 0 0-.7-.2Z" fill="currentColor"/></svg>
+      Listen
+    </button>
+  </div>
+  <p class="prose">Three ways to name a thing, ordered by how much the app has already done for you. You climb down only as far as you need — and the rungs below never run out, which is the point.</p>
+
+  <div class="ladder-wrap">
+    <div class="rungs">
+      <div class="rung" data-n="1" data-mode="names">
+        <h3>The label it already has</h3>
+        <p>Buttons, links and menu items are named by whatever they say — or by the accessibility label behind them, which is how an icon with no text still answers to <span style="font-family:var(--mono);font-size:.88em">Compose</span>.</p>
+        <div class="says">
+          <button class="say" data-clip="c-tap-send">Tap Send</button>
+          <button class="say" data-clip="c-show-names">Show names</button>
+        </div>
+      </div>
+      <div class="rung" data-n="2" data-mode="numbers">
+        <h3>A number, handed out on request</h3>
+        <p>Every control on screen puts on a badge. Nothing needs a label, or even a sensible one — two buttons both called Open stop being ambiguous the moment they are 7 and 12.</p>
+        <div class="says">
+          <button class="say" data-clip="c-show-numbers">Show numbers</button>
+          <button class="say" data-clip="c-tap-14">Tap 14</button>
+          <button class="say" data-clip="c-hide-numbers">Hide numbers</button>
+        </div>
+      </div>
+      <div class="rung" data-n="3" data-mode="grid">
+        <h3>A coordinate, when there is no control at all</h3>
+        <p>The screen is cut into numbered squares. Say a number and that square becomes a grid of its own. Two or three steps in you are pointing at one pixel of a photo, inside an app that never labelled anything.</p>
+        <div class="says">
+          <button class="say" data-clip="c-show-grid">Show grid</button>
+          <button class="say" data-clip="c-zoom-in">Zoom in</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="device-col">
+      <div class="device mode-numbers" id="device" role="img" aria-label="A phone screen showing a messages app with the Voice Control numbers overlay: every control wears a numbered badge.">
+        <div class="statusbar"><span>9:41</span><span class="dot-mic"><i></i>mic</span></div>
+        <div class="navbar">
+          <span class="navlink">Back<span class="tag" data-num="1" data-name="Back"></span></span>
+          <span class="ttl">Messages</span>
+          <span class="navlink">Edit<span class="tag" data-num="2" data-name="Edit"></span></span>
+        </div>
+        <div class="rows">
+          <div class="row"><span class="av"></span><span><span class="who2">Dana Okonkwo</span><br><span class="snip">Sounds good — see you then</span></span><span class="tag" data-num="3" data-name="Dana"></span></div>
+          <div class="row"><span class="av"></span><span><span class="who2">Rooftop crew</span><br><span class="snip">Priya added 4 photos</span></span><span class="tag" data-num="4" data-name="Rooftop"></span></div>
+          <div class="row"><span class="av"></span><span><span class="who2">Mum</span><br><span class="snip">Call me when you land</span></span><span class="tag" data-num="5" data-name="Mum"></span></div>
+          <div class="row"><span class="av"></span><span><span class="who2">Dr. Vance</span><br><span class="snip">Appointment confirmed</span></span><span class="tag" data-num="6" data-name="Vance"></span></div>
+        </div>
+        <div class="composer">
+          <span class="field">Message<span class="tag" data-num="7" data-name="Message"></span></span>
+          <span class="send">Send<span class="tag" data-num="8" data-name="Send"></span></span>
+        </div>
+        <div class="tabbar">
+          <span class="tab">Chats<span class="tag" data-num="9" data-name="Chats"></span></span>
+          <span class="tab">Calls<span class="tag" data-num="10" data-name="Calls"></span></span>
+          <span class="tab">Contacts<span class="tag" data-num="11" data-name="People"></span></span>
+        </div>
+        <div class="gridlayer" aria-hidden="true">
+          <div class="gcell"><span>1</span></div>
+          <div class="gcell"><span>2</span></div>
+          <div class="gcell"><span>3</span></div>
+          <div class="gcell"><span>4</span></div>
+          <div class="gcell zoom">
+            <div class="gsub"><span>1</span></div><div class="gsub"><span>2</span></div><div class="gsub hit"><span>3</span></div>
+            <div class="gsub"><span>4</span></div><div class="gsub"><span>5</span></div><div class="gsub"><span>6</span></div>
+            <div class="gsub"><span>7</span></div><div class="gsub"><span>8</span></div><div class="gsub"><span>9</span></div>
+          </div>
+          <div class="gcell"><span>6</span></div>
+          <div class="gcell"><span>7</span></div>
+          <div class="gcell"><span>8</span></div>
+          <div class="gcell"><span>9</span></div>
+        </div>
+      </div>
+      <div class="modeswitch" role="group" aria-label="Change the overlay on the phone screen">
+        <button class="say" data-clip="c-show-names" data-mode="names" aria-pressed="false">Show names</button>
+        <button class="say" data-clip="c-show-numbers" data-mode="numbers" aria-pressed="true">Show numbers</button>
+        <button class="say" data-clip="c-show-grid" data-mode="grid" aria-pressed="false">Show grid</button>
+      </div>
+      <p class="cap" id="device-cap">Say it, or click it. The grid shows square 5 already subdivided — the next number picks one of nine again.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <p>Lost? <b>Show me what to say</b> lists the commands that work right here, in this app, on this screen — the one command worth memorising. And if you would rather not ask each time, Settings keeps names, numbers or the grid on screen permanently.</p>
+    <div class="says" style="margin-block-start:13px">
+      <button class="say" data-clip="c-what-to-say">Show me what to say</button>
+    </div>
+  </div>
+</section>
+
+<section id="dictation">
+  <div class="sec-head">
+    <h2>Dictation is just another mode</h2>
+    <button class="listen" data-clip="n-dictation" aria-pressed="false">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M5.2 1.2 2.8 3.4H1.2a.6.6 0 0 0-.6.6v4c0 .3.3.6.6.6h1.6l2.4 2.2c.4.3 1 .1 1-.4V1.6c0-.5-.6-.7-1-.4Z" fill="currentColor"/><path d="M8.3 3.6a.6.6 0 0 0-.2.9 2.6 2.6 0 0 1 0 3 .6.6 0 1 0 .9.7 3.8 3.8 0 0 0 0-4.4.6.6 0 0 0-.7-.2Z" fill="currentColor"/></svg>
+      Listen
+    </button>
+  </div>
+  <p class="prose">Inside a text field your words become text, and the editing commands keep working on the text you just made. Selection, replacement and correction are all spoken, so your hands never arrive.</p>
+
+  <div class="dict">
+    <div>
+      <div class="textfield">
+        <span class="lbl">You said</span>
+        I'll be <span class="strike">going tomorrow</span> and I'll bring the slides<span class="caret"></span>
+      </div>
+      <div class="textfield">
+        <span class="lbl">After “replace going tomorrow with going to Denver”</span>
+        I'll be <span class="ins">going to Denver</span> and I'll bring the slides<span class="caret"></span>
+      </div>
+    </div>
+    <div>
+      <div class="says">
+        <button class="say" data-clip="c-select-prev">Select the previous word</button>
+        <button class="say" data-clip="c-replace">Replace going tomorrow with going to Denver</button>
+        <button class="say" data-clip="c-correct">Correct that</button>
+        <button class="say" data-clip="c-capitalize">Capitalize that</button>
+        <button class="say" data-clip="c-delete">Delete that</button>
+      </div>
+      <p class="prose" style="margin-block-start:18px;font-size:1rem">Which leaves the interesting problem: how does it know <span style="font-family:var(--mono);font-size:.88em">delete that</span> is a command and not two words you wanted typed? It doesn't reason about it. A phrase it recognises as a command is treated as a command, every time — and when one particular phrase keeps stealing your sentences, you switch that single command off in Settings and keep the rest.</p>
+    </div>
+  </div>
+</section>
+
+<section id="gestures">
+  <div class="sec-head">
+    <h2>Fingers, supplied</h2>
+    <button class="listen" data-clip="n-gestures" aria-pressed="false">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M5.2 1.2 2.8 3.4H1.2a.6.6 0 0 0-.6.6v4c0 .3.3.6.6.6h1.6l2.4 2.2c.4.3 1 .1 1-.4V1.6c0-.5-.6-.7-1-.4Z" fill="currentColor"/><path d="M8.3 3.6a.6.6 0 0 0-.2.9 2.6 2.6 0 0 1 0 3 .6.6 0 1 0 .9.7 3.8 3.8 0 0 0 0-4.4.6.6 0 0 0-.7-.2Z" fill="currentColor"/></svg>
+      Listen
+    </button>
+  </div>
+  <p class="prose">A touchscreen expects fingers. Voice Control supplies them — and because the gestures compose with the grid, one can begin at square 19 and end wherever you say.</p>
+  <div class="cols">
+    <div class="col">
+      <h3>On the screen</h3>
+      <div class="says">
+        <button class="say" data-clip="c-swipe-left">Swipe left</button>
+        <button class="say" data-clip="c-scroll-down">Scroll down</button>
+        <button class="say" data-clip="c-long-press">Long press Mail</button>
+      </div>
+    </div>
+    <div class="col">
+      <h3>The hardware, too</h3>
+      <div class="says">
+        <button class="say" data-clip="c-go-home">Go home</button>
+        <button class="say" data-clip="c-control-center">Open Control Center</button>
+        <button class="say" data-clip="c-lock">Lock screen</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="yours">
+  <div class="sec-head">
+    <h2>Make it answer to you</h2>
+    <button class="listen" data-clip="n-yours" aria-pressed="false">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M5.2 1.2 2.8 3.4H1.2a.6.6 0 0 0-.6.6v4c0 .3.3.6.6.6h1.6l2.4 2.2c.4.3 1 .1 1-.4V1.6c0-.5-.6-.7-1-.4Z" fill="currentColor"/><path d="M8.3 3.6a.6.6 0 0 0-.2.9 2.6 2.6 0 0 1 0 3 .6.6 0 1 0 .9.7 3.8 3.8 0 0 0 0-4.4.6.6 0 0 0-.7-.2Z" fill="currentColor"/></svg>
+      Listen
+    </button>
+  </div>
+  <div class="cols">
+    <div class="col">
+      <h3>Custom commands</h3>
+      <p>Bind a phrase you choose to an action, a Shortcut, or a run of keystrokes — scoped to one app if you like. This is where a five-step routine collapses into four syllables.</p>
+    </div>
+    <div class="col">
+      <h3>Vocabulary</h3>
+      <p>Teach it the words it would otherwise fight you on: surnames, product names, the spelling your team insists on. Recognition is only as good as the list of things it expects to hear.</p>
+    </div>
+    <div class="col">
+      <h3>Sleep and wake</h3>
+      <p>When you need it to stop listening, say so. After that it listens for one phrase only, which is the whole safety story in two commands.</p>
+      <div class="says">
+        <button class="say" data-clip="c-sleep">Go to sleep</button>
+        <button class="say" data-clip="c-wake">Wake up</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="for">
+  <div class="sec-head">
+    <h2>Who it is held to</h2>
+    <button class="listen" data-clip="n-for" aria-pressed="false">
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M5.2 1.2 2.8 3.4H1.2a.6.6 0 0 0-.6.6v4c0 .3.3.6.6.6h1.6l2.4 2.2c.4.3 1 .1 1-.4V1.6c0-.5-.6-.7-1-.4Z" fill="currentColor"/><path d="M8.3 3.6a.6.6 0 0 0-.2.9 2.6 2.6 0 0 1 0 3 .6.6 0 1 0 .9.7 3.8 3.8 0 0 0 0-4.4.6.6 0 0 0-.7-.2Z" fill="currentColor"/></svg>
+      Listen
+    </button>
+  </div>
+  <p class="prose">Voice Control was built for people who cannot use a touchscreen or a trackpad, and it is held to that standard rather than to convenience. Every part of the interface has to be reachable by voice alone — which is why the grid exists at all, and why the overlay can be left on screen for good.</p>
+  <p class="prose">The rest follows from taking that seriously. On an iPhone with Face ID it can stop listening the moment you look away. Recognition happens on the device, and your audio only reaches Apple if you opt in to <span style="font-family:var(--mono);font-size:.88em">Improve Assistive Voice Features</span>. What you are left with is an operating system you can drive with a sentence — and, once you have driven it that way for an afternoon, a fairly sharp opinion about which apps ever bothered to label their buttons.</p>
+</section>
+
+<footer class="colophon">
+  <p>Every phrase on this page — the six narrations and each spoken command — was rendered by <a href="https://github.com/kyutai-labs/pocket-tts">Kyutai Pocket TTS</a> (voice <span style="font-family:var(--mono);font-size:.88em">alba</span>) on a laptop CPU at about five and a half times real time, then shipped with the page. Nothing is synthesised in your browser and nothing is fetched while you read.</p>
+  <p>Commands and settings check out against Apple Support: <a href="https://support.apple.com/en-us/111778">Use Voice Control on your iPhone, iPad, or iPod touch</a> and the <a href="https://support.apple.com/guide/iphone/use-voice-control-iph2c21a3c88/ios">iPhone User Guide</a>.</p>
+</footer>
+
+</main>
+
+<audio id="au" preload="none"></audio>
+
+<script>
+(function(){
+  var au = document.getElementById('au');
+  var pill = document.getElementById('pill');
+  var pillText = document.getElementById('pill-text');
+  var device = document.getElementById('device');
+  var tour = document.getElementById('tour');
+  var tourLabel = document.getElementById('tour-label');
+  var NARRATION = ['n-open','n-ladder','n-dictation','n-gestures','n-yours','n-for'];
+  var queue = [];
+  var current = null;
+
+  document.querySelectorAll('.say').forEach(function(b){
+    b.setAttribute('aria-label', 'Hear the command: ' + b.textContent.trim());
+  });
+
+  function clear(){
+    document.querySelectorAll('.say.playing').forEach(function(e){ e.classList.remove('playing'); });
+    document.querySelectorAll('.listen[aria-pressed="true"]').forEach(function(e){ e.setAttribute('aria-pressed','false'); });
+    pill.classList.remove('live');
+  }
+
+  function label(clip){
+    var el = document.querySelector('[data-clip="' + clip + '"]');
+    if (el && el.classList.contains('say')) return '“' + el.textContent.trim() + '”';
+    var sec = el && el.closest('section');
+    var h = sec && sec.querySelector('h2');
+    return h ? 'Narrating: ' + h.textContent.trim() : 'Speaking…';
+  }
+
+  function stop(){
+    au.pause();
+    current = null;
+    queue = [];
+    clear();
+    tour.setAttribute('aria-pressed','false');
+    tourLabel.textContent = 'Play the whole thing';
+    pillText.textContent = 'Six parts, two and a half minutes, spoken aloud';
+  }
+
+  function play(clip, btn){
+    clear();
+    current = clip;
+    au.src = 'a/' + clip + '.mp3';
+    pillText.textContent = label(clip);
+    pill.classList.add('live');
+    if (btn) {
+      if (btn.classList.contains('say')) btn.classList.add('playing');
+      else btn.setAttribute('aria-pressed','true');
+    }
+    au.play().catch(function(){
+      stop();
+      pillText.textContent = 'Tap once more — the browser wants a gesture first';
+    });
+  }
+
+  document.addEventListener('click', function(ev){
+    var b = ev.target.closest('.say, .listen');
+    if (!b) return;
+    var mode = b.getAttribute('data-mode');
+    if (mode) setMode(mode);
+    var clip = b.getAttribute('data-clip');
+    if (!clip) return;
+    if (current === clip && !au.paused) { stop(); return; }
+    queue = [];
+    tour.setAttribute('aria-pressed','false');
+    tourLabel.textContent = 'Play the whole thing';
+    play(clip, b);
+  });
+
+  au.addEventListener('ended', function(){
+    clear();
+    if (queue.length) {
+      var next = queue.shift();
+      var btn = document.querySelector('.listen[data-clip="' + next + '"]');
+      var sec = btn && btn.closest('section');
+      if (sec) sec.scrollIntoView({behavior:'smooth', block:'center'});
+      if (next === 'n-ladder') setMode('numbers');
+      play(next, btn);
+    } else {
+      stop();
+    }
+  });
+
+  tour.addEventListener('click', function(){
+    if (tour.getAttribute('aria-pressed') === 'true') { stop(); return; }
+    queue = NARRATION.slice(1);
+    tour.setAttribute('aria-pressed','true');
+    tourLabel.textContent = 'Stop';
+    play(NARRATION[0], document.querySelector('.listen[data-clip="n-open"]'));
+  });
+
+  var CAPS = {
+    names: 'Names come from the button’s own label — or the accessibility label behind an icon.',
+    numbers: 'Say it, or click it. Eleven controls, eleven badges; nothing had to be labelled well.',
+    grid: 'Square 5, already subdivided — the next number picks one of nine again, and again.'
+  };
+  function setMode(mode){
+    device.className = 'device mode-' + mode;
+    document.querySelectorAll('.modeswitch .say').forEach(function(b){
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-mode') === mode));
+    });
+    document.querySelectorAll('.rung').forEach(function(r){
+      r.classList.toggle('on', r.getAttribute('data-mode') === mode);
+    });
+    document.getElementById('device-cap').textContent = CAPS[mode];
+    device.setAttribute('aria-label', 'A phone screen showing a messages app with the Voice Control ' + mode + ' overlay.');
+  }
+  setMode('numbers');
+})();
+</script>
