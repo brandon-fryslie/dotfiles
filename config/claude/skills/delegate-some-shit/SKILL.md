@@ -120,11 +120,12 @@ and `<user-requirements>` sections and the Do-NOT list, but **not** its branch-a
 instructions — those would make it open a second PR. In their place:
 
 ```
-PR #<n> already exists on branch <branch>. In your worktree:
-`git fetch origin && git checkout -B <branch> origin/<branch>`. Read `gh pr diff <n>` before
+PR #<n> already exists on branch <branch>, which another worktree still has checked out,
+so do not check the branch itself out. In your worktree:
+`git fetch origin && git checkout --detach origin/<branch>`. Read `gh pr diff <n>` before
 changing anything. Do not create a branch or a PR. Fix the findings below the way the
-reply rules describe, push to <branch>, and stop once the fixes are pushed and you have
-replied one line per finding.
+reply rules describe, commit, `git push origin HEAD:<branch>`, and stop once the fixes are
+pushed and you have replied one line per finding.
 
 <findings>
 [the round's findings, verbatim]
