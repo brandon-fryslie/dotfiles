@@ -1,1 +1,1 @@
-(https?://)?claude\.ai/code/
+(https?://)?claude\.ai/code/[A-Za-z0-9_-]*[0-9_][A-Za-z0-9_-]*

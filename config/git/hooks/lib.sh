@@ -7,6 +7,23 @@ HOOKS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 # The one authoritative definition of what a Claude session URL looks like.
 # The history scrubber reads this same file; a second copy would be a second
 # clock, and the day they disagree the scrubber cleans what the hook rejects.
+#
+# What separates a session link from a product route is the shape of the first
+# path segment after /code/: a session id carries a digit or an underscore
+# (.../code/session_01ABCDEF, .../code/<uuid>), while every product route is a
+# plain word (/scheduled, /onboarding, /artifact, /artifacts, /routines).
+#
+# That discriminator is chosen to fail CLOSED. A session id format we have never
+# seen still contains a digit or an underscore, so it is still refused; a future
+# product route that happens to carry a digit is refused too -- loudly, at commit
+# time, where it can be fixed. The reverse bias would trade a visible false alarm
+# for a silent, irreversible leak, which is the whole thing this guard exists to
+# prevent.
+#
+# Matching bare /code/ was the earlier rule, and it refused any repo that merely
+# quotes a product URL -- including a vendored copy of Claude Code's own source,
+# where those routes appear in ordinary user-facing strings. A guard that cannot
+# be satisfied gets bypassed, and a bypassed guard protects nothing.
 session_url_pattern() {
   tr -d '\n' < "$HOOKS_DIR/claude-session-url.pattern"
 }
