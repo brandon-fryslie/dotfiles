@@ -167,6 +167,39 @@ class SessionUrlGuard(unittest.TestCase):
         ])
 
 
+class SessionUrlPattern(unittest.TestCase):
+    """The shared definition of a session URL, tested where both consumers read it:
+    the git hooks and guard-session-url.sh grep the same file, so the contract belongs
+    to the pattern rather than to either caller.
+
+    A session id's first path segment after /code/ carries a digit or an underscore;
+    a product route is a plain word. The discriminator fails closed -- an unfamiliar
+    id shape is still refused."""
+
+    PATTERN = (Path(__file__).resolve().parents[2] / "git" / "hooks" / "claude-session-url.pattern").read_text().strip()
+    # Assembled, never written whole, for the same reason as SESSION_URL above.
+    HOST = "https://claude" + ".ai/code"
+
+    def matches(self, url):
+        return subprocess.run(["grep", "-qiE", "-e", self.PATTERN], input=url, text=True).returncode == 0
+
+    def test_session_links_are_refused(self):
+        for suffix in ("/session_01ABCDEF", "/186b92c4-e723-4b0b-800b-3d3567406237",
+                       "/SESSION_01ABCDEF", "/session_01ABCDEF?tab=files", "/session_01ABCDEF#top"):
+            for prefix in (self.HOST, self.HOST.replace("https", "http"), self.HOST.replace("https://", "")):
+                with self.subTest(url=prefix + suffix):
+                    self.assertTrue(self.matches(prefix + suffix))
+
+    def test_product_routes_are_allowed(self):
+        """Claude Code's own source ships these in user-facing strings, so a repo
+        vendoring that source must remain committable."""
+        for suffix in ("", "/", "/scheduled", "/scheduled/{TRIGGER_ID}", "/routines",
+                       "/onboarding?magic=github-app-setup", "/onboarding?magic=env-setup",
+                       "/artifact", "/artifacts"):
+            with self.subTest(url=self.HOST + suffix):
+                self.assertFalse(self.matches(self.HOST + suffix))
+
+
 class GeneratedWorkflowGuard(unittest.TestCase):
     """guard-generated-workflow.sh denies by exiting 2."""
 
