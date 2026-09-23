@@ -115,9 +115,23 @@ reply with one line per finding: fixed (commit) / declined (why).
 Keep the worker's agent id — every later round goes back to **this** worker via
 SendMessage (load it with ToolSearch `select:SendMessage` if needed), because it holds the
 context the fixes depend on. If SendMessage is unavailable or the worker cannot be resumed,
-spawn a replacement with the same template plus the PR number, the branch, and the round's
-findings, told to read `gh pr diff` before changing anything. That is the fallback — you
-still do not write the fix.
+spawn a replacement (also `isolation: "worktree"`) with the template's `<ticket>`, `<goals>`
+and `<user-requirements>` sections and the Do-NOT list, but **not** its branch-and-PR
+instructions — those would make it open a second PR. In their place:
+
+```
+PR #<n> already exists on branch <branch>. In your worktree:
+`git fetch origin && git checkout -B <branch> origin/<branch>`. Read `gh pr diff <n>` before
+changing anything. Do not create a branch or a PR. Fix the findings below the way the
+reply rules describe, push to <branch>, and stop once the fixes are pushed and you have
+replied one line per finding.
+
+<findings>
+[the round's findings, verbatim]
+</findings>
+```
+
+That is the fallback — you still do not write the fix.
 
 ## 4. Validate before review
 
@@ -168,8 +182,16 @@ no open findings — only then merge.
 ## 7. Merge and close
 
 First record the review outcome on the PR — `gh pr comment <n>` with each round, what it
-found, and how each finding was resolved, and the goals checklist with its evidence. Then
-merge the way the repo merges (read `git log --oneline` on master; squash merges show as
+found, and how each finding was resolved, and the goals checklist with its evidence.
+
+Remove the worker's worktree before merging — it still has the PR branch checked out, and
+git will not delete a branch checked out in another worktree, so `--delete-branch` would
+fail after the merge already landed. Find it with `git worktree list`; confirm it has no
+uncommitted changes and nothing unpushed (`git -C <path> status -sb`); then
+`git worktree remove <path>`. If it holds anything unpushed, stop and ask — that is the
+worker's work, not debris.
+
+Then merge the way the repo merges (read `git log --oneline` on master; squash merges show as
 `Title (#N)`): e.g. `gh pr merge <n> --squash --delete-branch`. Then:
 
 - `git pull --rebase` on master — 0 ahead / 0 behind, `git status` clean.
