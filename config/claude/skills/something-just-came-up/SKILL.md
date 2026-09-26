@@ -27,7 +27,7 @@ mode is only five minutes" is not this guard; it is the first road wearing the g
 coat.
 
 Invoking this skill *is* choosing the second road. The decision is made; the rest of
-this run executes it.
+this run executes it. [LAW:escape-local-minima]
 
 It will try to reopen itself, roughly when the epic you are writing starts to look
 expensive: *"the extra mode doesn't make anything strictly worse — and YAGNI says
@@ -193,11 +193,11 @@ that cannot be deferred: after the reset, nobody knows a park was attempted.
 
 ## 4. Fire the bottle
 
-Load `memento:message-in-a-bottle` and fire it with `--reset clear`. Clear, not
-compact: the next agent should start from the epic and the code, never from your
-session's residue. A compacted summary of the run you just had is a map, and maps are
-the thing this skill refuses to draw. If a `/goal` is active, carry it — that skill
-says how.
+Load `memento:message-in-a-bottle` and fire it. It resets the next agent to a blank
+slate — the epic and the code, and none of your session's residue — which is exactly
+what this skill wants: a summary of the run you just had is a map, and maps are the
+thing this skill refuses to draw. If a `/goal` is active, carry it — that skill says
+how.
 
 The message is a pin like the others: the minimum that points the next agent the right
 way, and no more.
@@ -221,7 +221,7 @@ with *"no ready work in your claimed lane(s)"* and tells the reader to re-focus
 deliberately. Handing a fresh session `/next` opens it on an error. The id is a pin
 like any other, and it is the one pointer this message cannot do without.
 
-Say your one line to the user *before* you fire, not after: `--reset clear` ends your
+Say your one line to the user *before* you fire, not after: the handoff ends your
 turn at the launcher's line.
 
 ## Where this skill stops
