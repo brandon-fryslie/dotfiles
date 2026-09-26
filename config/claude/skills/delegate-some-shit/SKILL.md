@@ -264,7 +264,8 @@ on that change, answers its findings, and updates its PR comment. Then walk the 
 again. Merge only when they all hold and that review has no open findings.
 
 If D declines again and you still disagree about a major finding or a goal, stop: report
-it to the user with both sides instead of merging. If D cannot be resumed, spawn a
+it to the user with both sides instead of merging. If D cannot be resumed, first remove
+its worktree with the step-5 check, because it still holds the branch. Then spawn a
 replacement D (also `isolation: "worktree"`) from the step-5 template with the current
 head sha, told to skip the cycle and instead close the gap below, run one
 `/code-review medium <n>` on that change, and update the outcome comment:
@@ -277,7 +278,8 @@ head sha, told to skip the cycle and instead close the gap below, run one
 
 ## 7. Merge and close
 
-Remove D's worktree before merging, with the same check as at step 5 (nothing
+Remove every D worktree (the replacement's too, if step 6 spawned one) before merging,
+with the same check as at step 5 (nothing
 uncommitted, nothing unpushed), then `git worktree remove` (`-f -f` if the harness locked
 it) and `git branch -D` the harness's `worktree-agent-<id>` branch. Otherwise
 `--delete-branch` fails because the branch is still checked out, after the merge has
