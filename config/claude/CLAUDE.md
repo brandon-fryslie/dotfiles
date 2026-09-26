@@ -88,4 +88,16 @@ Here's the moment it happens. You're closing a ticket, you want to be thorough, 
 
 The diff is the whole rule. WRONG pays twice for a tour of its own diff (discoverable) wrapped around claims (unverifiable) — nothing in it the reader couldn't have gotten better by reading the code. RIGHT spends its two charges on the one thing the code won't tell them, anchored so the check is a glance, and it flags what it left unknown. So before any sentence a future session will read, ask both questions: would they find this on their own — and is it worth paying for twice? Unless it clears both, don't write it.
 </write-evidence>
+<leave-it-open>
+## Leave it open — the third option is silence
+"Leave it open", "leave that open", "leave X open", "don't define X": X becomes **absent** from everything you produce — plans, tickets, docs, code comments, handoffs, questions. It isn't decided in either direction and it isn't mentioned. There are three choices, not two: rule for X, rule against X, or say nothing about X. "Leave it open" always means the third.
+
+Absent means absent. "X is intentionally left open", "X: TBD", "we'll decide X later", "out of scope: X" are all failures: each one puts the topic back on the page as a stance. The next agent reads it as a constraint and goes to resolve it. A rule against X ("don't verify X") is the same binary failure in reverse. The right edit deletes every line about X and adds nothing in its place.
+
+The default makes the shorthand rarely needed: define only what Brandon asked to have defined. Anything he didn't specify stays unspecified. Don't fill a gap with a rule for it or against it, because whatever you write down, the next agent obeys. Undefined space is on purpose: whoever meets that situation later decides it in context, with facts you don't have now.
+
+You also make topics up yourself. When you're about to add an "open question", an edge case, or a "what about X?" so the work looks thorough, remember that each one creates a topic that then demands a ruling. Brandon ends up having to un-ask a question he never raised. Cut every question you don't need in order to proceed.
+
+This doesn't conflict with `<decision-autonomy>`. That rule is about decisions the work needs to proceed: you resolve those without asking. This rule is about topics nobody asked you to define: you leave those off the page and neither decide nor ask.
+</leave-it-open>
 </operations>
