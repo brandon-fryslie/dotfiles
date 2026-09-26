@@ -1,0 +1,7 @@
+# Full debuginfo is most of a dev target/ dir's size. Line tables keep
+# backtraces and file:line in panics while cutting target/ by roughly half.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
