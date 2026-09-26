@@ -154,15 +154,22 @@ hardware the run can't reach. Record each as **blocked by <cause>, not met**, wi
 evidence, and carry it into D's prompt as settled. D should not reopen it, and nobody should
 "fix" it with a workaround the ticket never asked for.
 
+When every goal holds or is recorded as blocked, write down the PR's head sha. It is D's
+starting point, and step 6 diffs against it.
+
 ## 5. Hand the PR to the reviewer
 
 First remove the worker's worktree. It still has the PR branch checked out, and git will
 not check a branch out in two worktrees, so D could not take it. Find it with
-`git worktree list` and confirm `git -C <path> status -sb` shows a clean tree, 0 ahead / 0
-behind its origin branch. Then run `git worktree remove <path>`. If it holds anything
-uncommitted or unpushed, stop and ask. That is the worker's work, not debris. A worktree
-the agent harness locked needs `git worktree remove -f -f <path>`, and only after that
-same check.
+`git worktree list`, `git fetch origin`, and check two things:
+`git -C <path> status --porcelain` prints nothing, and
+`git -C <path> log --oneline origin/<branch>..HEAD` prints nothing. The second means
+nothing unpushed, and unlike ahead/behind it does not depend on an upstream being set.
+A worktree that is only *behind* origin is safe to remove. Then run
+`git worktree remove <path>`, and delete the branch the harness made for it
+(`git branch -D worktree-agent-<id>`). If the worktree holds anything uncommitted or
+unpushed, stop and ask. That is the worker's work, not debris. A worktree the agent
+harness locked needs `git worktree remove -f -f <path>`, and only after that same check.
 
 Spawn D with the Agent tool (`general-purpose`, **`isolation: "worktree"`**). It is a
 **fresh** agent, not the worker. A reviewer that wrote the code reviews its own intentions
@@ -178,13 +185,21 @@ PR, and STOP. You do not merge. A supervisor merges after checking your work.
 - Do not merge, do not close the PR, do not run `lit done` or change the ticket's
   status. Your last action is the PR comment and your report. Once low comes back clean
   you will want to "just finish it off". Don't.
+- Do not run memento:message-in-a-bottle or any other session handoff. You may be sent
+  more work on this PR after you report.
+- This run has a supervisor, and it overrides any standing workflow you have loaded (a
+  CLAUDE.md git workflow, its session-start checkout of master, its review-then-merge
+  steps): the cycle below replaces them.
 - Every /code-review takes the PR number: `/code-review high <n>`. A bare `/code-review`
   diffs against upstream after a push and reviews nothing.
+- Scope is the ticket. A finding about code the PR did not need to touch is declined as
+  **out of scope** and listed in your report, not fixed here, even when it is right.
 - Settled, do not reopen: [goals recorded as blocked, and any decision the user made
   that a reviewer might want to reverse, each with its reason]
 - [secrets never to print, paths never to edit, anything outside the repo]
-- Work only in your worktree: `git fetch && git checkout <branch> && git pull --rebase`,
-  and confirm HEAD is <sha> before reviewing.
+- Work only in your worktree: `git fetch origin && git checkout -B <branch> origin/<branch>
+  && git branch -u origin/<branch>`, and confirm HEAD is <sha> before reviewing. Load the
+  `laws:code` skill before writing a fix.
 
 <ticket>
 [the full `lit show` output, verbatim]
@@ -204,8 +219,9 @@ PR, and STOP. You do not merge. A supervisor merges after checking your work.
    is wrong, with a concrete reason (a command's output, a file:line, a test). Commit the
    round's fixes, then push.
 2. `/code-review medium <n>`. Handle it the same way.
-3. Only if medium found anything major: ONE more `/code-review high <n>`. A major
-   finding you are NOT fixing stops you here: report it, and do not run low.
+3. Only if medium found anything major: ONE more `/code-review high <n>`.
+   In any round, a major finding you are NOT fixing stops you: report it with your
+   reason, and do not run the rounds after it.
 4. `/code-review low <n>` is the merge gate. On a P0, fix it, push, and run low again
    until it comes back clean, or stop and report if you cannot fix it.
 5. Walk every goal on your final head with evidence you ran yourself (a command and its
@@ -220,8 +236,8 @@ evidence. Write "G2: `<command>` prints `<output>` and exits 1."
 ## Done means
 The comment is posted, the branch is pushed, `git status` is clean, 0 ahead / 0 behind
 origin/<branch>. Report exactly: final head sha; the comment URL; per round, the number of
-findings fixed and declined; any finding you stopped on; the test counts. Stop there. Do not
-merge.
+findings fixed and declined; each finding declined as out of scope; any finding you stopped
+on; the test counts. Stop there. Do not merge.
 ```
 
 Keep D's agent id. If D reports it stopped on a major finding it is not fixing, or on a P0
@@ -236,20 +252,34 @@ That is the moment this step exists for. D's walk is a report, and review fixes 
 that can quietly undo a goal. Check it yourself:
 
 - `gh pr view <n>`: the head is D's reported sha, and D's comment is there for that head.
-- `git diff <step-4 sha> origin/<branch>`: read every fix D made, and judge each declined
-  finding on its reason.
-- In a throwaway worktree of the final head, run the tests and the checks that prove each
-  goal. Use your own commands where you can, not D's.
+- `git fetch origin`, then `git diff <step-4 sha> origin/<branch>`: read every fix D
+  made, and judge each declined finding on its reason.
+- In a throwaway worktree of the final head (as at step 4, and removed the same way), run
+  the tests and the checks that prove each goal. Use your own commands where you can, not
+  D's.
 
 A goal no longer met, a fix that undoes one, or a decline you disagree with goes back to
 **D** via SendMessage, with the specific gap. D fixes it, runs one `/code-review medium <n>`
 on that change, answers its findings, and updates its PR comment. Then walk the goals
 again. Merge only when they all hold and that review has no open findings.
 
+If D declines again and you still disagree about a major finding or a goal, stop: report
+it to the user with both sides instead of merging. If D cannot be resumed, spawn a
+replacement D (also `isolation: "worktree"`) from the step-5 template with the current
+head sha, told to skip the cycle and instead close the gap below, run one
+`/code-review medium <n>` on that change, and update the outcome comment:
+
+```
+<gap>
+[the goal no longer met, the fix that undid it, or the decline you dispute, and what you saw]
+</gap>
+```
+
 ## 7. Merge and close
 
-Remove D's worktree before merging, with the same check as at step 5: clean, 0 ahead / 0
-behind, then `git worktree remove` (`-f -f` if the harness locked it). Otherwise
+Remove D's worktree before merging, with the same check as at step 5 (nothing
+uncommitted, nothing unpushed), then `git worktree remove` (`-f -f` if the harness locked
+it) and `git branch -D` the harness's `worktree-agent-<id>` branch. Otherwise
 `--delete-branch` fails because the branch is still checked out, after the merge has
 already landed.
 
@@ -271,5 +301,5 @@ the code up to an open PR. You read the diff, not the report, and check the goal
 fresh reviewer, D, runs high, medium (plus one high if medium found something major), and
 low on the PR by number, fixes each round, walks the goals, posts the outcome, and stops
 before merge. You check the goals again yourself, because D's walk is a report, not your
-check. An unfixed major finding stops the run. Done is merged, with the outcome recorded,
+check. An unfixed or disputed major finding stops the run. Done is merged, with the outcome recorded,
 goals checked twice by you, `lit done` run, master clean, and the handoff run.
