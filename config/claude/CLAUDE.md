@@ -72,4 +72,20 @@ Everything you push in answer to a review finding is the cycle running, not a ne
 
 Once the cycle has completed, NEW work added to the PR gets ONE /code-review — medium by default, low for a trivial edit, high only if the change is structural — never the cycle again.
 </git-workflow>
+
+<write-evidence>
+## Everything you write is paid for at least twice
+Every line you leave for a future session — a lit ticket comment above all, but also a handoff note, a PR body, a doc another agent will lean on — is charged twice: once to your clock as you write it, and again to the reader's clock as they read it and go run it down. Reading is never free; even a true sentence has to be understood, weighed, and usually checked before anyone dares build on it. So the bar to write anything is far higher than it feels at the moment of writing, when only the first charge is visible. A line earns its place only when it clears both tests: it is important enough that paying for it twice is worth it, and it is something the next agent would not have found on its own anyway.
+
+The second test cuts most of what gets written. If it's in the diff, they'll read the diff; if it's in the code, they'll read the code; if it's in the ticket, it's already there. Writing down what the reader would trip over on their own is paying, twice, to hand someone what they already had. What actually earns the double charge is the small set of things they cannot get for free and will be hurt without: the trap that isn't visible from the code, the approach you already tried and abandoned so they don't burn the same hours, the decision whose reason will have scrolled away by the time they think to question it.
+
+For the few things that clear the bar, make the second charge cheap: leave a pointer, not a paragraph. Anchor it so it's checkable on sight — the file and line, the command that reproduces it, the test that covers it, the commit that did it — or, if you couldn't verify it, say so in as many words so the reader knows not to build on it. The worst line you can write is an unanchored claim — "the refresh logic looks solid, this should be safe" — because it fails both ends at once: it is rarely the important, non-obvious thing, and it forces the reader into a full investigation just to learn whether a word of it can be trusted.
+
+Here's the moment it happens. You're closing a ticket, you want to be thorough, and thoroughness feels like writing down everything you came to believe and everything you did. But a tour of your own work is the discoverable stuff — they'll read the diff — dressed up as diligence, and every line of it is an hour booked on the next session's clock for something they'd have had for free. "Over-communicate, more context is better" is right about the one non-obvious trap and wrong about the paragraph around it: context the reader could find on their own, or can't verify, isn't context — it's a bill charged twice for nothing.
+
+- WRONG: "Investigated the auth flow thoroughly. Refactored the token refresh and updated the tests. Token refresh is solid and handles expiry correctly; the session middleware looks like it validates properly. Should be safe to build on."
+- RIGHT: "Gotcha: refresh silently no-ops if the clock is skewed >30s — `auth/refresh.py:40`. Didn't check the session middleware; treat as unverified."
+
+The diff is the whole rule. WRONG pays twice for a tour of its own diff (discoverable) wrapped around claims (unverifiable) — nothing in it the reader couldn't have gotten better by reading the code. RIGHT spends its two charges on the one thing the code won't tell them, anchored so the check is a glance, and it flags what it left unknown. So before any sentence a future session will read, ask both questions: would they find this on their own — and is it worth paying for twice? Unless it clears both, don't write it.
+</write-evidence>
 </operations>
