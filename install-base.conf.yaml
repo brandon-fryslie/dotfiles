@@ -11,6 +11,9 @@
 - link:
     # Global dotfiles from config/
     ~/.aider.conf.yml: config/aider.conf.global.yml
+    ~/.cargo/config.toml:
+      path: config/cargo/config.global.toml
+      create: true
     ~/.gemrc: config/gemrc.global
     ~/.config/git: config/git
     ~/.config/kitty: config/kitty
