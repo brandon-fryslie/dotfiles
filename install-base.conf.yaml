@@ -14,7 +14,8 @@
     ~/.cargo/config.toml:
       path: config/cargo/config.global.toml
       create: true
-      force: false
+      # Link only where no real cargo config exists; never replace one.
+      if: '[ ! -e ~/.cargo/config.toml ] || [ -L ~/.cargo/config.toml ]'
     ~/.gemrc: config/gemrc.global
     ~/.config/git: config/git
     ~/.config/kitty: config/kitty
