@@ -1,0 +1,5 @@
+# Every GitHub remote goes over SSH, whatever URL it was cloned with. HTTPS
+# pushes authenticate with the gh OAuth token, which lacks `workflow` scope and
+# rejects any commit touching .github/workflows/.
+[url "git@github.com:"]
+	insteadOf = https://github.com/
