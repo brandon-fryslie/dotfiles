@@ -1,0 +1,5 @@
+# Pushes to GitHub go over SSH with the user's key. HTTPS pushes authenticate
+# with the gh OAuth token, whose scopes (e.g. `workflow`) reject some pushes.
+# Fetches stay on HTTPS so anonymous clones work before a key is set up.
+[url "git@github.com:"]
+	pushInsteadOf = https://github.com/
