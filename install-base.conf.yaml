@@ -14,6 +14,7 @@
     ~/.cargo/config.toml:
       path: config/cargo/config.global.toml
       create: true
+      force: false
     ~/.gemrc: config/gemrc.global
     ~/.config/git: config/git
     ~/.config/kitty: config/kitty
