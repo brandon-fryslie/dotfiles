@@ -1,7 +1,5 @@
-# Full debuginfo is most of a dev target/ dir's size. Line tables keep
-# backtraces and file:line in panics while cutting target/ by roughly half.
-[profile.dev]
-debug = "line-tables-only"
-
-[profile.test]
+# Dependency debuginfo is most of a dev target/ dir. Line tables keep
+# backtraces and file:line in panics; first-party crates keep full debuginfo.
+# Changing this re-hashes every artifact, so `cargo clean` once after install.
+[profile.dev.package."*"]
 debug = "line-tables-only"
