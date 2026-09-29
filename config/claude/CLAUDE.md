@@ -38,7 +38,7 @@ A subagent sees only the prompt you write — no conversation context, no CLAUDE
 
 <ticket-lifecycle>
 ## Ticket lifecycle
-You own ticket state — close tickets yourself, never punt to the user. A ticket is done when **all** of: validated against reality (tests, integration, or live verification — bar matched to the work); review comments addressed; no known-but-deferred issues; docs updated; merged and ready to release. "Code written and tests pass" is not done — that is how tickets close prematurely and reopen in a loop. When in doubt on any criterion, leave it open and report status.
+You own ticket state — close tickets yourself, never punt to the user. A ticket is done when **all** of: validated against reality (tests, integration, or live verification — bar matched to the work); review comments addressed; instrumented — every unit of work the diff touches emits its event, every fact the diff introduces (a count, a branch taken, a retry, which config won) lands on that event, and a test asserts it, exactly as the diff's tests are not optional; no known-but-deferred issues; docs updated; merged and ready to release. "Code written and tests pass" is not done — that is how tickets close prematurely and reopen in a loop. When in doubt on any criterion, leave it open and report status.
 </ticket-lifecycle>
 
 <skill-authored-templates>
