@@ -20,8 +20,10 @@ pass over- or under-reached.
 
 Run `lit quickstart` if you haven't this session — it defines the commands below.
 Then read the whole working set before changing anything: `lit backlog` (full
-rank-ordered view with the dependency rationale) and `lit ready` (what's actually
-pullable). For every epic in scope, `lit show <epic-id>` prints its plan.
+rank-ordered view with the dependency rationale; blocked rows are shown inline, so
+what is pullable is what carries no blocked line). For every epic in scope,
+`lit show <epic-id>` prints its plan, and `lit show <id>` on every open ticket is
+where the detail pass's judgments come from.
 
 **Scope:** default is the entire workable backlog. If the user passed an epic id or
 topic slug, restrict every pass to that subtree / topic and say so in the report.
@@ -210,9 +212,10 @@ which question it settles. The completeness pass owns that.
      where the blocked ticket will read it, ranked directly above the ticket it informs.
 
    The writing is delegated. Decomposing an epic is `laws:backlog` work and each ticket's
-   text is `laws:ticket` work; dispatch a **fresh general-purpose subagent — not a fork**
-   — told to load those two skills and nothing else (a fork carries this session's loaded
-   crafts into the ticket text, and the text comes out wrong). The prompt carries, verbatim:
+   text is `laws:prompt` work (a ticket is text a future agent reads); dispatch a **fresh
+   general-purpose subagent — not a fork** — told to load those two skills and nothing
+   else (a fork carries this session's loaded crafts into the ticket text, and the text
+   comes out wrong). The prompt carries, verbatim:
    the epic's `lit show` body, its existing children's titles and rank, the gap you found
    in the words above, the output of `lit quickstart new`, and the reference ceiling from
    this document. It returns proposed tickets as text; **you** verify each proposed child
