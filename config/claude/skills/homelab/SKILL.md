@@ -65,6 +65,14 @@ Brandon runs a private homelab: four NixOS VMs on Proxmox at home, plus a NAS. T
 - **Quick way to prototype:** create the dashboard in the UI, export JSON (gear icon → JSON model), attach it to the ticket.
 - **Datasource UID:** always `"prometheus"` — VictoriaMetrics is wired in behind that name. Reference it that way in exported JSON.
 
+### Telemetry — wide events, traces, metrics through one collector
+The app-side shape (one wide event per unit of work, the shared layer, the default field set, the OTLP export edge with a file fallback) is `laws:code-observability`'s job. This section is only *where it goes on this machine*.
+- **Collector:** `otel.sanctuary.gdn`, OTLP gRPC on `4317`, OTLP HTTP on `4318`. Apps read the address from config (`OTEL_EXPORTER_OTLP_ENDPOINT`), emit OTLP to it, and never know what sits behind it.
+- **File fallback:** when the endpoint is unset or unreachable, the export edge appends JSONL to `${XDG_STATE_HOME:-$HOME/.local/state}/<service>/events.jsonl` and counts the drop. Never block or crash the unit of work on telemetry.
+- **Behind the collector:** metrics → VictoriaMetrics (datasource `prometheus`, above); wide events → ClickHouse; traces → Grafana Tempo. All three front in Grafana.
+- **Status:** the collector, ClickHouse, and Tempo are not live yet — `home-observability-66u` in `~/code/home-infra` is the epic. Build the app side against the file fallback now; the address goes live without an app change.
+- **Resource attributes:** always set `service.name=<your-project>` and `deployment.environment=prod|dev|local`; they are what every store keys on. Same cardinality rule as VictoriaMetrics for anything that becomes a metric label; events themselves may carry anything.
+
 ### Ollama — local LLM inference (GPU)
 - **Endpoint:** `http://192.168.7.218:11434` (on the `gpu` VM, NVIDIA RTX 2070 with 8GB VRAM)
 - **API shape:** Ollama native + an OpenAI-compatible endpoint at `/v1/chat/completions`.
