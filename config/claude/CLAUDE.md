@@ -61,7 +61,7 @@ Session start, every step required, in order:
 6. Do the work; `git pull --rebase` once or twice a day on longer tasks
 7. Commit the finished work as its own commit — required, every time. Leave the tree clean.
 8. Push your work to a branch and open a PR unless the repo you're working has other conventions.
-9. Run a local code review on your work using /code-review high.  Address any findings by carefully considering the feedback.  Do not accept any feedback or proposed fixes blindly.  Push your fixes to the branch, adding comments / resolving conversations as required by the review process.
+9. Run a local code review on your work using /code-review high.  Judge every finding by `<review-findings>` below.  Push your fixes to the branch, adding comments / resolving conversations as required by the review process.
 10. Run another local code-review medium.  Address the comments the same.
 11. Triage what the medium pass found.  Major findings: run ONE more /code-review high and address it — then step 12 if you fixed them.  Not fixing a major finding is only ever one of two things, and they are not the same: a reasoned resolution you can defend — the code doesn't need to change, and you can say why, in writing, on the ticket — is a decision you make and record, not a reason to stop; only the absence of one, a finding you cannot resolve or won't commit to a position on, stops you, because merging past THAT is what this branch exists to prevent.  Anything else, zero findings included: straight to step 12.  The escalation runs at most once.
 12. Run /code-review low.  It is the merge gate and is never skipped.  No P0 / critical bugs: update the PR with that and merge.  A P0: fix it, push, run low again, and repeat until it comes back clean — or stop and report if you cannot fix it.  Those re-runs are still step 12, not a new cycle.
@@ -72,6 +72,29 @@ Everything you push in answer to a review finding is the cycle running, not a ne
 
 Once the cycle has completed, NEW work added to the PR gets ONE /code-review — medium by default, low for a trivial edit, high only if the change is structural — never the cycle again.
 </git-workflow>
+
+<review-findings>
+## A review finding is weighed, never obeyed
+Every finding from any review pass, reviewer, or agent is someone pointing at where it hurts, with a guess at the cure attached. Those are two claims. Judge each one against the laws (`laws:code`) and the project's goals (the ticket, its epic, what the repo is for): does it meaningfully move us toward the goals AND into alignment with the laws? Think about it adversarially. Argue it as its author, then as its opponent, before you decide.
+
+Findings come in four shapes:
+- **Great**: the hurt is real and the cure is right. Implement it.
+- **Directionally correct, wrong solution**: the hurt is real. The cure is a guess, often the local-minimum one (a guard, a fallback, one more mode). Keep the diagnosis and build the fix the laws ask for.
+- **Wrong, with a kernel**: the claim fails, but something inside it points toward better alignment. Dig the kernel out and act on it.
+- **Completely wrong**: nothing in it moves us toward the goals or the laws. Reject it.
+
+**From each finding, take as much as brings us into further alignment with the laws and the project goals, and implement that. Where it does not, look for a way it could: a different fix, a narrower change, the real problem behind the stated one. If one exists, go that direction. Any change that takes us out of alignment with the laws or the project goals is rejected, however small and however confidently proposed. A tie is rejected.** A change that moves nothing still carries its cost forever [LAW:carrying-cost]. The burden of proof is on the change.
+
+Three voices will come for this, and each one sounds like diligence:
+- The reviewer is confident and the fix is three lines: *"just apply it, it closes the thread."* That is how a crash the review rightly found gets "fixed" by making it silent.
+- The finding is plainly wrong: *"false positive, dismiss."* That is how the one true thing inside it goes out with the rest.
+- *"It's harmless either way, and the reviewer wants it."* Harmless is a tie. Reject it.
+
+- WRONG: "`load_config` can return None; add `cfg = cfg or {}`." Applied as written. The crash is gone, and so is the error. The next session debugs an empty config.
+- RIGHT: The hurt is real, but the cure violates [LAW:no-silent-failure]. `load_config` fails loudly with the missing path, and its return type stops admitting None [LAW:types-are-the-program].
+- WRONG: "This helper duplicates `parse.py`; inline it here." Dismissed, because inlining is wrong. The duplication it spotted stays.
+- RIGHT: Inlining is wrong, but the duplication is the kernel [LAW:one-source-of-truth]. Both callers now use the one parser.
+</review-findings>
 
 <write-evidence>
 ## Everything you write is paid for at least twice
