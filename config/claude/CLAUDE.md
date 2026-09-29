@@ -57,18 +57,18 @@ Session start, every step required, in order:
 
 **HARD GATE:** after step 4 you are 0 ahead / 0 behind, or you STOP, touch no code, and report the exact state. Working on a stale or diverged master is always wrong; there is no exception.
 
-**Woke from a handoff message instead?** The message names a branch, a PR, and the step to resume at. Go there. Steps 1–4 open a *new* unit of work; running them on a resumed one checks out master and strands the PR you were sent to finish. Step 4's gate still holds on that branch: `git pull --rebase` on it before you touch anything.
+**Woke holding a message in a bottle instead?** The message names a branch, a PR, and the step to resume at. Go there. Steps 1–4 open a *new* unit of work; running them on a resumed one checks out master and strands the PR you were sent to finish. Step 4's gate still holds on that branch: `git pull --rebase` on it before you touch anything.
 
 5. Branch if the change wants isolation (`git checkout -b <descriptive-branch>`); working directly on master is fine
 6. Do the work; `git pull --rebase` once or twice a day on longer tasks
 7. Commit the finished work as its own commit — required, every time. Leave the tree clean.
 8. Push your work to a branch and open a PR unless the repo you're working has other conventions.
-9. **Clear the deck before the review.** Run `finalize-session` (the `message-in-a-bottle` skill) with a message that names the branch, the PR, and `resume at step 10`. The context that wrote the code holds every assumption the code was built on, and a review run inside that context cannot see past them — it reads its own intent instead of the diff. The clear is what makes the reviewer a reviewer. The session continues from your message with the fog gone; nothing is lost that the branch and the PR do not already hold.
+9. **Send a message in a bottle before the review.** Run `finalize-session` (the `message-in-a-bottle` skill) with a message that names the branch, the PR, and `resume at step 10`. The context that wrote the code holds every assumption the code was built on, and a review run inside that context cannot see past them — it reads its own intent instead of the diff. The bottle is what makes the reviewer a reviewer: the stale context washes away, the session continues from the message, and nothing is lost that the branch and the PR do not already hold.
 10. Run /code-review high.  Judge every finding by `<review-findings>` below.  Push your fixes to the branch, adding comments / resolving conversations as required by the review process.
 11. Run /code-review medium.  Judge and push the same way.
 12. Triage what the medium pass found.  Major findings: run ONE more /code-review high and address it — then step 13 if you fixed them.  Not fixing a major finding is only ever one of two things, and they are not the same: a reasoned resolution you can defend — the code doesn't need to change, and you can say why, in writing, on the ticket — is a decision you make and record, not a reason to stop; only the absence of one, a finding you cannot resolve or won't commit to a position on, stops you, because merging past THAT is what this branch exists to prevent.  Anything else, zero findings included: straight to step 13.  The escalation runs at most once.
 13. Run /code-review low.  It is the merge gate and is never skipped.  No P0 / critical bugs: update the PR with that and merge.  A P0: fix it, push, run low again, and repeat until it comes back clean — or stop and report if you cannot fix it.  Those re-runs are still step 13, not a new cycle.
-14. Close the ticket per `<ticket-lifecycle>`, then **clear the deck again**: `finalize-session` with `/next` in a lit repo, otherwise the next concrete instruction. The merged PR's context is ballast for whatever comes next.
+14. Close the ticket per `<ticket-lifecycle>`, then **send another bottle**: `finalize-session` with `/next` in a lit repo, otherwise the next concrete instruction. The merged PR's context is ballast for whatever comes next.
 
 **How many passes.** That cycle — high, medium, low, at most one escalation high at step 12, and any low re-runs step 13 needs — runs ONCE per PR, and the size of the diff does not shorten it: a one-line fix in a brand-new PR gets all of it.
 
@@ -76,9 +76,9 @@ Everything you push in answer to a review finding is the cycle running, not a ne
 
 Once the cycle has completed, NEW work added to the PR gets ONE /code-review — medium by default, low for a trivial edit, high only if the change is structural — never the cycle again.
 
-**The two clears are steps, not judgment calls.** Both arrive at the moment you feel most in flow, and the voice will say *"I have the whole thing in my head right now — clearing throws that away, I'll review first and clear after."* What you have in your head is the reason the review needs a clear: it is the author's certainty, and a review that shares it finds nothing. The thread lives in the branch, the PR, and the message you write; the context you would keep is the part that was never going to survive contact with the next unit anyway. Commit, push, say your one line, call it, and write nothing after the call — the clear lands seconds later and takes whatever you were mid-way through with it.
+**The two bottles are steps, not judgment calls.** Both arrive at the moment you feel most in flow, and the voice will say *"I have the whole thing in my head right now — sending the bottle throws that away, I'll review first and send after."* What you have in your head is the reason the review needs the bottle: it is the author's certainty, and a review that shares it finds nothing. The thread lives in the branch, the PR, and the message you write; the context you would keep is the part that was never going to survive contact with the next unit anyway. Commit, push, say your one line, send it, and write nothing after — the reset lands seconds later and takes whatever you were mid-way through with it.
 
-The message is the only thing the resumed context holds, so it carries the position, not the story:
+The message is the only thing that reaches the far shore, so it carries the position, not the story:
 - WRONG: `Finished the parser refactor, tests pass, please review.` — no branch, no PR, no step; the next context starts at step 1, checks out master, and the PR is orphaned.
 - RIGHT: `Branch fix/parser-null, PR #91, ticket lit-42. Resume at step 10: /code-review high. Cycle not started.`
 </git-workflow>
