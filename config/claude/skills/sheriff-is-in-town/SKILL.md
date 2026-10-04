@@ -10,9 +10,11 @@ code and reports where it breaks the **universal architectural laws**. Read-only
 
 ## The rubric is already loaded
 
-The laws live in your global CLAUDE.md (`universal-laws`). That is the single source of truth
-for what counts as a violation. **Do not restate or paraphrase them here** — read them there
-and cite them by token. [LAW:one-source-of-truth]
+The laws plugin names the rubric at session start, in a line beginning "The laws of code at
+rung S": each law's statement, diagnostic and lineage, at the path that line gives. Read that
+file before auditing; it is the single source of truth for what counts as a violation and for
+the tokens you cite. **Do not restate or paraphrase the laws here** — read them there and cite
+them by token. [LAW:one-source-of-truth]
 
 ## Scope
 
@@ -34,7 +36,7 @@ that. State the scope at the top of the report so it's unambiguous what was *not
    blast-radius framing as code-shaped violations.
 5. **Use candidate patterns to aim the audit.** The patterns below are heuristics, not laws.
    They help find likely violations, but a finding is valid only when it maps to exactly one
-   universal law from `CLAUDE.md`. [LAW:one-source-of-truth]
+   law in the rung S file. [LAW:one-source-of-truth]
 6. **Do not edit anything.** The sheriff reports; the town fixes. [LAW:single-enforcer]
 
 ## Candidate Patterns
