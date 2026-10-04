@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# [LAW:decomposition] This part does ONE thing: put a fresh claude (via fritter,
+# skip-permissions) in the tmux session named for a repo, wait until it is ready
+# for input, and print its address. Briefing it and reading its work is the
+# controller's job through /tmux-talk and /tmux-command — not fused here.
+
+USAGE="repo-session — launch claude (fritter, --dangerously-skip-permissions) in a repo's tmux session
+
+Usage:
+  repo-session <repo> [-- <extra fritter args>...]
+
+  <repo>   A directory path, or a bare name resolved as ~/code/<name>.
+
+The tmux session is named after the directory's basename ('.' and ':' become
+'_', as tmux requires). Missing session: created detached, rooted at the repo.
+Existing session: a new detached window is added to it — no existing pane is
+reused, and no attached client's view is switched.
+
+Prints the claude pane's address (session:window.pane) on stdout once claude
+shows its input prompt. Fails loudly, with the pane's screen, if claude does not
+come up within REPO_SESSION_BOOT_TIMEOUT seconds (default 90) or stops at a dialog."
+
+[[ $# -ge 1 ]] || { echo "$USAGE" >&2; exit 1; }
+case "$1" in -h|--help) echo "$USAGE"; exit 0 ;; esac
+
+REPO_ARG="$1"; shift
+EXTRA_ARGS=()
+if [[ $# -gt 0 ]]; then
+  [[ "$1" == "--" ]] || { echo "repo-session: unexpected argument '$1' (extra fritter args go after --)" >&2; exit 1; }
+  shift
+  EXTRA_ARGS=("$@")
+fi
+
+# [LAW:no-silent-failure] a bare name means ~/code/<name>; anything else is a path.
+# Either way it must exist — never create a repo directory by accident.
+if [[ "$REPO_ARG" != */* && ! -d "$REPO_ARG" ]]; then
+  REPO_ARG="$HOME/code/$REPO_ARG"
+fi
+[[ -d "$REPO_ARG" ]] || { echo "repo-session: no such directory: $REPO_ARG" >&2; exit 1; }
+REPO_DIR=$(cd "$REPO_ARG" && pwd -P)
+
+BASENAME=$(basename "$REPO_DIR")
+SESSION=${BASENAME//[.:]/_}
+
+ADDR_FMT='#{session_name}:#{window_index}.#{pane_index}'
+# [LAW:no-ambient-temporal-coupling] -d on both paths: the user is usually
+# attached to these sessions, and a non-detached new-window switches their screen.
+if tmux has-session -t "=$SESSION" 2>/dev/null; then
+  ADDRESS=$(tmux new-window -d -t "=$SESSION:" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT")
+else
+  ADDRESS=$(tmux new-session -d -s "$SESSION" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT")
+fi
+[[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no address" >&2; exit 1; }
+
+# printf %q so the receiving shell reparses every token exactly.
+CMD="fritter --dangerously-skip-permissions"
+for arg in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
+  CMD+=" $(printf '%q' "$arg")"
+done
+
+# Two-step send (literal text, then a separate Enter): a combined send races the
+# reader and drops the Enter. The first sleep lets the new shell finish its rc.
+sleep 1
+tmux send-keys -t "$ADDRESS" -l "$CMD"
+sleep 1
+tmux send-keys -t "$ADDRESS" Enter
+echo "repo-session: $ADDRESS (cwd $REPO_DIR) running: $CMD" >&2
+
+# [LAW:no-silent-failure] the address is only worth printing once claude can
+# take a message. A dialog at boot means a human decision is pending: report it
+# with the screen rather than answering it on the user's behalf.
+TIMEOUT=${REPO_SESSION_BOOT_TIMEOUT:-90}
+DEADLINE=$((SECONDS + TIMEOUT))
+while (( SECONDS < DEADLINE )); do
+  sleep 2
+  SCREEN=$(tmux capture-pane -p -t "$ADDRESS")
+  if grep -qiE 'trust (the files in )?this folder|Bypass Permissions mode|Yes, I accept' <<<"$SCREEN"; then
+    echo "repo-session: claude in $ADDRESS stopped at a dialog that needs the user:" >&2
+    echo "$SCREEN" >&2
+    exit 2
+  fi
+  # Ready = the shell has handed the pane to claude (the p10k shell prompt is a
+  # '❯' too), claude's input prompt is drawn, and nothing is spinning.
+  FG=$(tmux display-message -p -t "$ADDRESS" '#{pane_current_command}')
+  case "$FG" in zsh|bash|sh|fish|-zsh|-bash) continue ;; esac
+  if grep -q '❯' <<<"$SCREEN" && ! grep -q 'ing…' <<<"$SCREEN"; then
+    echo "$ADDRESS"
+    exit 0
+  fi
+done
+
+echo "repo-session: claude in $ADDRESS not ready after ${TIMEOUT}s; screen:" >&2
+tmux capture-pane -p -t "$ADDRESS" >&2
+exit 1
