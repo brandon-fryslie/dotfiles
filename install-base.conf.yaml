@@ -27,7 +27,18 @@
     ~/.config/zellij: config/zellij
     ~/.config/nvim: config/nvim
     ~/.config/certs: config/certs
-    ~/.zshenv: config/zshenv.global
+    ~/.zshenv: config/shellenv.global
+    # Never replace a real or foreign bash startup file: an occupied slot fails
+    # the install loudly instead of being overwritten or silently skipped.
+    # [LAW:no-silent-failure]
+    ~/.bashrc:
+      path: config/shellenv.global
+      force: false
+      relink: false
+    ~/.bash_profile:
+      path: config/shellenv.global
+      force: false
+      relink: false
     ~/.local/bin/claude-cleanup:
       path: bin/claude-cleanup
       create: true
