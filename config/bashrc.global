@@ -1,0 +1,5 @@
+# bash reads none of zsh's startup files, so a bash shell (a script, an agent's
+# tool shell, an ssh command) would otherwise run without the CA trust config.
+# env.sh is rendered by config/certs/regen-ca-bundle.py; source it, never copy it.
+# Linked as both ~/.bashrc and ~/.bash_profile so login and non-login shells agree.
+source ~/.config/certs/env.sh

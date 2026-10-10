@@ -28,6 +28,13 @@
     ~/.config/nvim: config/nvim
     ~/.config/certs: config/certs
     ~/.zshenv: config/zshenv.global
+    # Link only where no real bash startup file exists; never replace one.
+    ~/.bashrc:
+      path: config/bashrc.global
+      if: '[ ! -e ~/.bashrc ] || [ -L ~/.bashrc ]'
+    ~/.bash_profile:
+      path: config/bashrc.global
+      if: '[ ! -e ~/.bash_profile ] || [ -L ~/.bash_profile ]'
     ~/.local/bin/claude-cleanup:
       path: bin/claude-cleanup
       create: true

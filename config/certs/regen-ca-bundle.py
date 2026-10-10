@@ -34,12 +34,17 @@ ENV_SH = CERTS / "env.sh"
 # is rendered from this table, so the two can never drift apart.
 # [LAW:one-source-of-truth]
 #
-# NODE_EXTRA_CA_CERTS ADDS to the trust store, so it takes the Proxyman CA alone.
-# SSL_CERT_FILE and REQUESTS_CA_BUNDLE REPLACE it, so they need the full bundle.
+# Every variable points at the full keychain-derived bundle, so each runtime
+# trusts exactly what this Mac trusts. NODE_EXTRA_CA_CERTS adds to Node's bundled
+# Mozilla roots; given the Proxyman CA alone, Node would miss admin-installed and
+# local roots (e.g. Caddy's). Node's own --use-system-ca is not usable instead: on
+# Node 26 it lists the keychain CAs and still rejects their chains.
+# SSL_CERT_FILE and REQUESTS_CA_BUNDLE REPLACE the trust store, so they need the
+# full bundle regardless.
 # uv ships its own root list and ignores the keychain unless UV_SYSTEM_CERTS is
 # set, so without it every uv fetch through Proxyman fails with UnknownIssuer.
 TRUST_ENV = {
-    "NODE_EXTRA_CA_CERTS": PROXYMAN_CA,
+    "NODE_EXTRA_CA_CERTS": OUT,
     "SSL_CERT_FILE": OUT,
     "REQUESTS_CA_BUNDLE": OUT,
     "UV_SYSTEM_CERTS": "1",
