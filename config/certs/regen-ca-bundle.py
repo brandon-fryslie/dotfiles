@@ -36,10 +36,13 @@ ENV_SH = CERTS / "env.sh"
 #
 # NODE_EXTRA_CA_CERTS ADDS to the trust store, so it takes the Proxyman CA alone.
 # SSL_CERT_FILE and REQUESTS_CA_BUNDLE REPLACE it, so they need the full bundle.
+# uv ships its own root list and ignores the keychain unless UV_SYSTEM_CERTS is
+# set, so without it every uv fetch through Proxyman fails with UnknownIssuer.
 TRUST_ENV = {
     "NODE_EXTRA_CA_CERTS": PROXYMAN_CA,
     "SSL_CERT_FILE": OUT,
     "REQUESTS_CA_BUNDLE": OUT,
+    "UV_SYSTEM_CERTS": "1",
 }
 
 KEYCHAINS = [
@@ -210,7 +213,7 @@ def main():
 
     print(f"wrote {write_env_sh()}")
     print(f"wrote {write_launch_agent()}")
-    print(f"reloaded {LAUNCH_LABEL} in {reload_launch_agent()}; all 3 vars verified present")
+    print(f"reloaded {LAUNCH_LABEL} in {reload_launch_agent()}; all {len(TRUST_ENV)} vars verified present")
 
 
 if __name__ == "__main__":

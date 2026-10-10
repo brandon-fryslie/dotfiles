@@ -27,6 +27,7 @@
     ~/.config/zellij: config/zellij
     ~/.config/nvim: config/nvim
     ~/.config/certs: config/certs
+    ~/.zshenv: config/zshenv.global
     ~/.local/bin/claude-cleanup:
       path: bin/claude-cleanup
       create: true

@@ -1,0 +1,7 @@
+# Homebrew on the PATH of every zsh, including the non-interactive ones ssh runs commands in
+export PATH=/opt/homebrew/bin:/opt/homebrew/sbin:$PATH
+
+# Proxyman trust config (SSL_CERT_FILE, UV_SYSTEM_CERTS, ...) for every zsh. The
+# local.ca-env launchd agent only reaches the GUI session; ssh sessions start
+# outside it. Both are rendered by config/certs/regen-ca-bundle.py from one table.
+source ~/.config/certs/env.sh
