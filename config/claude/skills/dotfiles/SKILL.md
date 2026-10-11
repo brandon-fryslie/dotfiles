@@ -84,7 +84,8 @@ Agent CLIs:
 
 | Home path | Repo address |
 |---|---|
-| `~/.claude/CLAUDE.md`, `settings.json` | `config/claude/CLAUDE.md`, `config/claude/settings.json` |
+| `~/.claude/CLAUDE.md` | `config/claude/CLAUDE.md` |
+| `/Library/Application Support/ClaudeCode/managed-settings.json` (a root-owned copy, not a link; `~/.claude/settings.json` is unmanaged) | `config/claude/settings.managed.json` |
 | `~/.claude/skills`, `commands`, `agents`, `personal-synced` (and `*-disabled`) | `config/claude/<same name>/` |
 | `~/.agents/skills/<name>` | `config/agents/skills/<name>/` |
 | `~/.gemini/GEMINI.md`, `~/.gemini/skills` | `config/gemini/` |

@@ -56,15 +56,17 @@ Each tool may have multiple variants:
 - **Never remove files** - only remove symlinks, and document with timestamp
 - **Backup before deleting** - move regular files/directories to timestamped backup location
 - **Keep configs valid** - run `just validate` before committing YAML changes
-- **`config/claude/settings.json` is marked `skip-worktree`** - it stays tracked so a
-  fresh install still gets the permissions allowlist, the `kill-server` hooks, and the
-  statusline wiring, but local edits (model, effort level, plugin and marketplace
-  toggles) are machine-specific and deliberately do not propagate. `git status` will
-  report the file clean no matter how much it has changed - that is the intended
-  behavior, not a bug to fix. Check with `git ls-files -v config/claude/settings.json`
-  (`S` = skipped). To commit a change to the shared baseline, unset it, commit, re-set:
-  `git update-index --no-skip-worktree <path>` ... `git update-index --skip-worktree <path>`.
-  The flag lives in the local index only, so each machine sets it once.
+- **Claude Code settings are split in two.** The stable baseline (permissions, hooks,
+  statusLine, always-on plugins and their marketplaces) is `config/claude/settings.managed.json`.
+  `scripts/install-claude-managed-settings.sh` (run by `just install`) copies it,
+  root-owned, to `/Library/Application Support/ClaudeCode/managed-settings.json`, which
+  Claude Code loads with no flag and never writes. Copy, not symlink: Claude Code won't
+  read a managed file through a link. Editing the baseline means re-running the install,
+  which asks for sudo when the file changed. `~/.claude/settings.json` is untracked and
+  belongs to Claude Code (model, effort, plugin toggles); leave it out of git. Never put
+  `model` or `effortLevel` in the baseline - a managed value can't be overridden, so
+  `/model` would stop working - and never a plugin set to `false`, which managed settings
+  turn into an install block at every scope.
 
 ## Agent Skills
 
