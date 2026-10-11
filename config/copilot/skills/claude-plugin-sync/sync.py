@@ -637,14 +637,10 @@ def read_plugin_toggles(settings_file: Path) -> Dict[str, bool]:
     if not settings_file.exists():
         return {}
 
-    try:
-        with open(settings_file) as f:
-            settings = json.load(f)
-
-        return settings.get("enabledPlugins", {})
-
-    except Exception:
-        return {}
+    # [LAW:no-silent-failure] an unreadable file must not read as "no plugins":
+    # the managed tier is the only home of the always-on plugins
+    with open(settings_file) as f:
+        return json.load(f).get("enabledPlugins", {})
 
 
 def get_plugin_path(plugin_info: list) -> Optional[Path]:

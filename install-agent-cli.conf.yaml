@@ -22,6 +22,11 @@
 # managed-settings path instead, which Claude Code reads but never rewrites.
 - shell:
     -
+      command: DOTFILES_DIR="$PWD" ./migrations/run-migrations.sh
+      description: Run pending migrations (every profile; only zshrc.home runs them at shell start)
+      stdout: true
+      stderr: true
+    -
       command: ./scripts/install-claude-managed-settings.sh
       description: Deploy Claude Code managed settings baseline (sudo when it changed)
       stdin: true

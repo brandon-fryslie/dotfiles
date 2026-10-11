@@ -15,7 +15,10 @@
 #   place, not copied, so it leaves the repo instead of sitting there untracked.
 #   With no leftover, the file is restored from the commit before the tracked
 #   file was deleted - the committed baseline, not this machine's live edits.
-#   Either way, the baseline's copy is stripped back out once the baseline is live.
+#   Either way the file still carries the old baseline, which keeps hooks and
+#   permissions live until the managed copy is installed. After that, delete
+#   hooks, permissions, statusLine and the baseline's enabledPlugins entries
+#   from it once: lists union across tiers, so a stale copy outlives baseline edits.
 #
 # `git pull` aborts with "would be overwritten" on config/claude/settings.json?
 #   That machine still has the old skip-worktree flag. Do this migration's work
@@ -31,7 +34,6 @@
 TARGET_FILE="${HOME}/.claude/settings.json"
 REPO="${DOTFILES_DIR:-$HOME/code/dotfiles}"
 TRACKED="config/claude/settings.json"
-source "$REPO/scripts/claude-managed-settings.lib.sh"
 
 migrate_check() {
     [[ -L "$TARGET_FILE" ]]
@@ -52,7 +54,6 @@ migrate_apply() {
         command rm -f "$TARGET_FILE" || return 1
         printf '%s\n' "$content" > "$TARGET_FILE" || return 1
     fi
-    strip_claude_user_settings "$REPO/config/claude/settings.managed.json" || return 1
 
     # [LAW:verifiable-goals] a fresh check finds nothing left to do.
     ! migrate_check

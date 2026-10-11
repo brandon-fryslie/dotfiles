@@ -63,10 +63,9 @@ Each tool may have multiple variants:
   Claude Code loads with no flag and never writes. Copy, not symlink: Claude Code won't
   read a managed file through a link. Editing the baseline means re-running the install,
   which asks for sudo when the file changed. `~/.claude/settings.json` is untracked and
-  belongs to Claude Code (model, effort, plugin toggles); leave it out of git. The
-  install strips from it whatever the baseline already sets, so the baseline has one home. Never put
-  `model` or `effortLevel` in the baseline - a managed value can't be overridden, so
-  `/model` would stop working - and never a plugin set to `false`, which managed settings
+  belongs to Claude Code (model, effort, plugin toggles); leave it out of git. Never put
+  `model`, `effortLevel` or `permissions.defaultMode` in the baseline - a managed value
+  outranks every scope, so `/model` and per-repo modes would stop working - and never a plugin set to `false`, which managed settings
   turn into an install block at every scope.
 
 ## Agent Skills

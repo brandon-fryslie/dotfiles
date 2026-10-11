@@ -14,15 +14,17 @@
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/claude/settings.managed.json"
-source "$(dirname "${BASH_SOURCE[0]}")/claude-managed-settings.lib.sh"
-DEST="$CLAUDE_MANAGED_DEST"
+DIR="/Library/Application Support/ClaudeCode"
+DEST="$DIR/managed-settings.json"
 
-# A managed value cannot be overridden from the user file: a model or effort key
-# would pin every session and break /model and /effort, and a plugin set to false
-# becomes an install block at every scope. A parse error aborts here under set -e,
-# with jq's own message. [LAW:single-enforcer]
+# A managed value outranks every other scope: a model, effort or default
+# permission mode here would pin every session and every project, breaking
+# /model, /effort and per-repo modes, and a plugin set to false becomes an install
+# block at every scope. A parse error aborts here under set -e, with jq's own
+# message. [LAW:single-enforcer]
 violations=$(jq -r '
-  (("model", "effortLevel") as $k | select(has($k)) | "\($k) belongs in ~/.claude/settings.json"),
+  ((["model"], ["effortLevel"], ["permissions", "defaultMode"]) as $p | select(getpath($p) != null)
+    | "\($p | join(".")) belongs in ~/.claude/settings.json"),
   (.enabledPlugins // {} | to_entries[] | select(.value == false) | "enabledPlugins.\(.key) is false")
 ' "$SRC")
 if [[ -n "$violations" ]]; then
@@ -33,9 +35,7 @@ fi
 if cmp -s "$SRC" "$DEST"; then
   echo "✓ $DEST is current"
 else
-  sudo install -d -o root -g wheel -m 755 "$(dirname "$DEST")"
+  sudo install -d -o root -g wheel -m 755 "$DIR"
   sudo install -o root -g wheel -m 644 "$SRC" "$DEST"
   echo "✓ Installed $DEST"
 fi
-
-strip_claude_user_settings "$SRC"
