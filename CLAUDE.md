@@ -57,7 +57,7 @@ Each tool may have multiple variants:
 - **Backup before deleting** - move regular files/directories to timestamped backup location
 - **Keep configs valid** - run `just validate` before committing YAML changes
 - **Claude Code settings are split in two.** The stable baseline (permissions, hooks,
-  statusLine, always-on plugins and their marketplaces) is `config/claude/settings.managed.json`.
+  statusLine, always-on plugins and their marketplaces, hand-set keys like attribution) is `config/claude/settings.managed.json`.
   `scripts/install-claude-managed-settings.sh` (run by `just install`) copies it,
   root-owned, to `/Library/Application Support/ClaudeCode/managed-settings.json`, which
   Claude Code loads with no flag and never writes. Copy, not symlink: Claude Code won't

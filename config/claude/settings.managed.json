@@ -1,4 +1,17 @@
 {
+  "cleanupPeriodDays": 99999,
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "includeCoAuthoredBy": false,
+  "worktree": {
+    "baseRef": "fresh"
+  },
   "permissions": {
     "allow": [
       "Bash(cat:*)",
