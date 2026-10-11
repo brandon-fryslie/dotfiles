@@ -48,7 +48,7 @@ migrate_apply() {
         command rm -f "$TARGET_FILE" || return 1
         command mv -f "$leftover" "$TARGET_FILE" || return 1
     else
-        deleted_in=$(git -C "$REPO" log -1 --format=%H --diff-filter=D -- "$TRACKED") || return 1
+        deleted_in=$(git -C "$REPO" log -1 --format=%H --no-renames --diff-filter=D -- "$TRACKED") || return 1
         [[ -n "$deleted_in" ]] || { echo "[migrate] no commit deletes $TRACKED in $REPO" >&2; return 1; }
         content=$(git -C "$REPO" show "${deleted_in}^:$TRACKED") || return 1
         command rm -f "$TARGET_FILE" || return 1
