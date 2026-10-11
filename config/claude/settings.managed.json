@@ -10,6 +10,9 @@
     "sessionUrl": false
   },
   "includeCoAuthoredBy": false,
+  "worktree": {
+    "baseRef": "fresh"
+  },
   "permissions": {
     "allow": [
       "Bash(cat:*)",
@@ -88,11 +91,20 @@
     ],
     "deny": [
       "Bash(tmux kill-server:*)"
-    ],
-    "defaultMode": "auto"
+    ]
   },
-  "model": "claude-fable-5-1[1m]",
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_response.filePath // .tool_input.file_path // empty'); case \"$f\" in *claude/settings*.json) exit 0;; esac; if [ -n \"$f\" ] && [ -f \"$f\" ] && grep -qi 'kill-server' \"$f\"; then m=\"HARD STOP. You just wrote kill-server into $f. That line destroys the ENTIRE tmux server and every session and every process attached to it. On 2026-08-25 this exact line, buried in a test teardown, wiped every Claude session on this machine and hours of work across nine projects. That was a stupid, careless thing to write, and you are being shut down for it. Go delete that line right now. If you need to tear down tmux in a test, use 'tmux kill-session -t <name>' or an isolated '-L <socket>' - never a server-wide kill.\"; jq -n --arg m \"$m\" '{continue:false,decision:\"block\",reason:$m,stopReason:$m,systemMessage:$m}'; fi"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -116,65 +128,25 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit|NotebookEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "f=$(jq -r '.tool_response.filePath // .tool_input.file_path // empty'); case \"$f\" in *claude/settings*.json) exit 0;; esac; if [ -n \"$f\" ] && [ -f \"$f\" ] && grep -qi 'kill-server' \"$f\"; then m=\"HARD STOP. You just wrote kill-server into $f. That line destroys the ENTIRE tmux server and every session and every process attached to it. On 2026-08-25 this exact line, buried in a test teardown, wiped every Claude session on this machine and hours of work across nine projects. That was a stupid, careless thing to write, and you are being shut down for it. Go delete that line right now. If you need to tear down tmux in a test, use 'tmux kill-session -t <name>' or an isolated '-L <socket>' - never a server-wide kill.\"; jq -n --arg m \"$m\" '{continue:false,decision:\"block\",reason:$m,stopReason:$m,systemMessage:$m}'; fi"
-          }
-        ]
-      }
     ]
   },
-  "worktree": {
-    "baseRef": "fresh"
-  },
-  "enableWorkflows": false,
-  "workflowKeywordTriggerEnabled": false,
   "statusLine": {
     "type": "command",
     "command": "/Users/bmf/.claude/statusline-candybar",
     "refreshInterval": 1
   },
   "enabledPlugins": {
-    "code-review@claude-plugins-official": false,
-    "feature-dev@claude-plugins-official": false,
-    "frontend-design@claude-plugins-official": false,
-    "playwright@claude-plugins-official": false,
-    "plugin-dev@claude-plugins-official": false,
-    "pr-review-toolkit@claude-plugins-official": false,
-    "pyright-lsp@claude-plugins-official": false,
-    "repomix-commands@repomix": false,
-    "repomix-explorer@repomix": false,
-    "repomix-mcp@repomix": false,
-    "typescript-lsp@claude-plugins-official": false,
-    "ralph-loop@claude-plugins-official": false,
-    "code-simplifier@claude-plugins-official": false,
-    "github@claude-plugins-official": false,
-    "clangd-lsp@claude-plugins-official": false,
-    "rust-analyzer-lsp@claude-plugins-official": false,
-    "claude-md-management@claude-plugins-official": false,
-    "claude-code-setup@claude-plugins-official": false,
-    "explanatory-output-style@claude-plugins-official": false,
-    "playground@claude-plugins-official": false,
-    "learning-output-style@claude-plugins-official": false,
-    "gopls-lsp@claude-plugins-official": false,
+    "lit@lit": true,
     "laws@promptctl": true,
-    "memento@memento": true,
-    "huggingface-skills@claude-plugins-official": false,
-    "session-report@claude-plugins-official": false,
-    "mattpocock-skills@claude-plugins-official": false,
-    "pydantic-ai@claude-plugins-official": false,
-    "skill-creator@claude-plugins-official": false,
-    "unreal-engine-skills-for-claude-code@claude-plugins-official": false,
-    "modern-web-guidance@claude-plugins-official": false,
-    "deepeval@claude-plugins-official": false,
-    "lit@lit": true
+    "memento@memento": true
   },
   "extraKnownMarketplaces": {
+    "lit": {
+      "source": {
+        "source": "github",
+        "repo": "promptctl/links-issue-tracker"
+      }
+    },
     "promptctl": {
       "source": {
         "source": "directory",
@@ -186,48 +158,15 @@
         "source": "github",
         "repo": "promptctl/memento"
       }
-    },
-    "lit": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/bmf/code/links-issue-tracker"
-      }
     }
   },
-  "sandbox": {
-    "enabled": false
-  },
-  "effortLevel": "high",
-  "promptSuggestionEnabled": false,
-  "autoUpdatesChannel": "latest",
-  "tui": "fullscreen",
-  "voice": {
-    "enabled": true,
-    "mode": "hold"
-  },
-  "autoMemoryEnabled": true,
-  "skipDangerousModePermissionPrompt": true,
-  "theme": "dark",
-  "editorMode": "normal",
-  "verbose": false,
-  "preferredNotifChannel": "auto",
-  "autoCompactEnabled": true,
-  "switchModelsOnFlag": true,
-  "autoScrollEnabled": true,
-  "fileCheckpointingEnabled": true,
-  "showTurnDuration": true,
-  "terminalProgressBarEnabled": true,
-  "remoteControlAtStartup": true,
-  "inputNeededNotifEnabled": false,
-  "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "useAutoModeDuringPlan": false,
+  "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
   "autoMode": {
     "allow": [
       "$defaults",
       "Bash(lit:*)",
       "Bash(crom:*)"
     ]
-  },
-  "voiceEnabled": true
+  }
 }

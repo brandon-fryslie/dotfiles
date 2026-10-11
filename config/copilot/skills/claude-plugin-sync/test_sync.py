@@ -12,6 +12,7 @@ import pytest
 
 # Import functions to test
 from sync import (
+    load_enabled_plugins,
     # Frontmatter parsing
     extract_frontmatter,
     parse_frontmatter_to_dict,
@@ -894,6 +895,34 @@ def test_sync_extensions_writes_shared_manifest_and_cleans_stale():
         manifest = json.loads(paths['manifest_file'].read_text())
         assert manifest['skills']['plug-keeper']['status'] == "active"
         assert manifest['skills']['plug-goner']['status'] == "removed"
+
+
+# ============================================================================
+# Enabled plugins across settings tiers
+# ============================================================================
+
+def write_settings(path, plugins):
+    path.write_text(json.dumps({"enabledPlugins": plugins}))
+    return path
+
+
+def test_load_enabled_plugins_higher_tier_wins(tmp_path):
+    user = write_settings(tmp_path / "user.json", {"a@m": True, "lit@lit": False})
+    managed = write_settings(tmp_path / "managed.json", {"lit@lit": True})
+    assert load_enabled_plugins([user, managed]) == {"a@m", "lit@lit"}
+
+
+def test_load_enabled_plugins_missing_tier_contributes_nothing(tmp_path):
+    user = write_settings(tmp_path / "user.json", {"a@m": True})
+    assert load_enabled_plugins([user, tmp_path / "absent.json"]) == {"a@m"}
+
+
+def test_load_enabled_plugins_malformed_tier_fails_loudly(tmp_path):
+    user = write_settings(tmp_path / "user.json", {"a@m": True})
+    broken = tmp_path / "managed.json"
+    broken.write_text("{")
+    with pytest.raises(json.JSONDecodeError):
+        load_enabled_plugins([user, broken])
 
 
 if __name__ == '__main__':

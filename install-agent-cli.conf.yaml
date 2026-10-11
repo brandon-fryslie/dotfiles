@@ -15,8 +15,23 @@
     ~/.claude/personal-synced: config/claude/personal-synced
     ~/.claude/skills: config/claude/skills
     ~/.claude/CLAUDE.md: config/claude/CLAUDE.md
-    ~/.claude/settings.json: config/claude/settings.json
     ~/.claude/statusline-candybar: config/claude/statusline-candybar
+
+# ~/.claude/settings.json is Claude Code's own scratch file (model, effort, plugin
+# toggles) and is deliberately unmanaged. The stable baseline is deployed to the
+# managed-settings path instead, which Claude Code reads but never rewrites.
+- shell:
+    -
+      command: DOTFILES_DIR="$PWD" ./migrations/run-migrations.sh
+      description: Run pending migrations (every profile; only zshrc.home runs them at shell start)
+      stdout: true
+      stderr: true
+    -
+      command: ./scripts/install-claude-managed-settings.sh
+      description: Deploy Claude Code managed settings baseline (sudo when it changed)
+      stdin: true
+      stdout: true
+      stderr: true
 
 - create:
     - ~/.gemini
