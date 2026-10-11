@@ -30,6 +30,7 @@ ALLOWED_SKILL_FIELDS = {
 DEFAULT_PATHS = {
     'claude_plugins_file': Path.home() / ".claude" / "plugins" / "installed_plugins.json",
     'claude_settings_file': Path.home() / ".claude" / "settings.json",
+    'claude_managed_settings_file': Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
     'copilot_skills_dir': Path.home() / ".copilot" / "skills",
     'copilot_agents_dir': Path.home() / ".copilot" / "agents",
     'manifest_file': Path.home() / ".copilot" / "claude-sync-manifest.json"
@@ -608,27 +609,42 @@ def load_installed_plugins(plugins_file: Path) -> Dict:
     return data.get("plugins", {})
 
 
-def load_enabled_plugins(settings_file: Path) -> Set[str]:
-    """Load enabled plugins from settings.json.
+def load_enabled_plugins(settings_files: List[Path]) -> Set[str]:
+    """Load the plugins Claude Code treats as enabled.
+
+    Args:
+        settings_files: Settings files from lowest to highest precedence; a
+            higher file's toggle for a plugin wins, as in Claude Code's merge
+
+    Returns:
+        Set of enabled plugin keys
+    """
+    merged: Dict[str, bool] = {}
+    for settings_file in settings_files:
+        merged.update(read_plugin_toggles(settings_file))
+    return {key for key, is_enabled in merged.items() if is_enabled}
+
+
+def read_plugin_toggles(settings_file: Path) -> Dict[str, bool]:
+    """Read one settings file's enabledPlugins map.
 
     Args:
         settings_file: Path to settings file
 
     Returns:
-        Set of enabled plugin keys
+        Plugin key -> enabled toggle
     """
     if not settings_file.exists():
-        return set()
+        return {}
 
     try:
         with open(settings_file) as f:
             settings = json.load(f)
 
-        enabled_plugins = settings.get("enabledPlugins", {})
-        return {key for key, is_enabled in enabled_plugins.items() if is_enabled}
+        return settings.get("enabledPlugins", {})
 
     except Exception:
-        return set()
+        return {}
 
 
 def get_plugin_path(plugin_info: list) -> Optional[Path]:
@@ -965,7 +981,8 @@ def sync_plugins(paths: Optional[Dict[str, Path]] = None) -> Dict[str, int]:
 
     # Load plugins
     installed = load_installed_plugins(paths['claude_plugins_file'])
-    enabled = load_enabled_plugins(paths['claude_settings_file'])
+    # [LAW:one-source-of-truth] always-on plugins live only in the managed baseline
+    enabled = load_enabled_plugins([paths['claude_settings_file'], paths['claude_managed_settings_file']])
 
     if not installed:
         print("No plugins installed.")

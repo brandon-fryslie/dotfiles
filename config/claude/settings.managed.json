@@ -1,7 +1,8 @@
 {
   "cleanupPeriodDays": 99999,
   "env": {
-    "DISABLE_AUTOUPDATER": "1"
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_CODE_TMUX_TRUECOLOR": "1"
   },
   "attribution": {
     "commit": "",
@@ -90,7 +91,8 @@
     ],
     "deny": [
       "Bash(tmux kill-server:*)"
-    ]
+    ],
+    "defaultMode": "auto"
   },
   "hooks": {
     "PostToolUse": [
@@ -158,5 +160,14 @@
         "repo": "promptctl/memento"
       }
     }
+  },
+  "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Bash(lit:*)",
+      "Bash(crom:*)"
+    ]
   }
 }
