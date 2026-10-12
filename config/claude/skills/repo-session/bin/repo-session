@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# [LAW:decomposition] This part does ONE thing: put a fresh claude (via fritter,
+# [LAW:decomposition] This part does ONE thing: put a fresh claude (with
 # skip-permissions) in the tmux session named for a repo, wait until it is ready
 # for input, and print its address. Briefing it and reading its work is the
 # controller's job through /tmux-talk and /tmux-command — not fused here.
 
-USAGE="repo-session — launch claude (fritter, --dangerously-skip-permissions) in a repo's tmux session
+USAGE="repo-session — launch claude (--dangerously-skip-permissions) in a repo's tmux session
 
 Usage:
-  repo-session <repo> [-- <extra fritter args>...]
+  repo-session <repo> [-- <extra claude args>...]
 
   <repo>   A directory path, or a bare name resolved as ~/code/<name>.
 
@@ -28,7 +28,7 @@ case "$1" in -h|--help) echo "$USAGE"; exit 0 ;; esac
 REPO_ARG="$1"; shift
 EXTRA_ARGS=()
 if [[ $# -gt 0 ]]; then
-  [[ "$1" == "--" ]] || { echo "repo-session: unexpected argument '$1' (extra fritter args go after --)" >&2; exit 1; }
+  [[ "$1" == "--" ]] || { echo "repo-session: unexpected argument '$1' (extra claude args go after --)" >&2; exit 1; }
   shift
   EXTRA_ARGS=("$@")
 fi
@@ -55,7 +55,7 @@ fi
 [[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no address" >&2; exit 1; }
 
 # printf %q so the receiving shell reparses every token exactly.
-CMD="fritter --dangerously-skip-permissions"
+CMD="claude --dangerously-skip-permissions"
 for arg in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
   CMD+=" $(printf '%q' "$arg")"
 done

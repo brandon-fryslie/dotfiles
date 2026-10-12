@@ -1,6 +1,6 @@
 ---
 name: repo-session
-description: Start a Claude instance in another repo and delegate work to it over tmux. Creates (or adds a window to) the tmux session named after the repo's directory, launches `fritter --dangerously-skip-permissions` there, waits until it takes input, and prints its pane address; you then brief it with /tmux-talk, wait, and verify what it produced. Use when the user says "start a session in <repo>", "spin up claude in ~/code/<repo>", "launch fritter in <repo>", "delegate this to <repo>", "have an agent in <repo> do X", or when work you have found belongs to a repo other than the one you are in (file the ticket there, then hand it to an instance started here).
+description: Start a Claude instance in another repo and delegate work to it over tmux. Creates (or adds a window to) the tmux session named after the repo's directory, launches `claude --dangerously-skip-permissions` there, waits until it takes input, and prints its pane address; you then brief it with /tmux-talk, wait, and verify what it produced. Use when the user says "start a session in <repo>", "spin up claude in ~/code/<repo>", "launch claude in <repo>", "delegate this to <repo>", "have an agent in <repo> do X", or when work you have found belongs to a repo other than the one you are in (file the ticket there, then hand it to an instance started here).
 ---
 
 # repo-session
@@ -20,7 +20,7 @@ CMD=~/.claude/skills/tmux-command/bin/tmux-command
 ```bash
 ADDR=$("$RS" gh-pages-multiplexer)               # bare name → ~/code/<name>
 ADDR=$("$RS" ~/code/some/path)                    # or any directory
-ADDR=$("$RS" home-infra -- --model sonnet)        # extra fritter/claude args after --
+ADDR=$("$RS" home-infra -- --model sonnet)        # extra claude args after --
 ```
 
 What the script does, so you don't redo any of it by hand:
@@ -29,7 +29,7 @@ What the script does, so you don't redo any of it by hand:
   No session yet → it creates one, detached, rooted at the repo. Session exists →
   it adds a new detached window. It never types into an existing pane and never
   switches what an attached user is looking at.
-- Launches `fritter --dangerously-skip-permissions` in the new pane.
+- Launches `claude --dangerously-skip-permissions` in the new pane.
 - Waits until Claude's input prompt is up, then prints **one line on stdout: the
   pane address** (`session:window.pane`). Keep it — every later step goes through it.
 - Exit 2 with the screen on stderr if Claude stops at a dialog (folder trust,
