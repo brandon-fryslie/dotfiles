@@ -1,21 +1,24 @@
 #!/bin/bash
 # Deploy the tracked Claude Code baseline as this machine's managed settings.
 #
-# config/claude/settings.managed.json is canonical; the copy under /Library is
-# derived from it here and nowhere else. Claude Code reads that path on every
-# launch with no flag, ranks it above ~/.claude/settings.json, and never writes
-# it - so the baseline survives the user file's constant programmatic rewrites.
+# config/claude/settings.managed.json is canonical; the drop-in under /Library is
+# a symlink to it, so an edit to the baseline is live with no re-install.
+# Claude Code merges every file in managed-settings.d/ on each launch with no
+# flag, ranks it above ~/.claude/settings.json, and never writes it - so the
+# baseline survives the user file's constant programmatic rewrites.
 # [LAW:one-source-of-truth]
 #
-# A copy, not a symlink: Claude Code refuses to read a managed settings file
-# through a link on its route ("boundRead: not reading ..."), and the managed
-# tier is meant to be administrator-owned. Hence sudo, once per baseline change;
-# an unchanged baseline never prompts.
+# The link is the one thing here that needs root (the managed tier is
+# administrator-owned), so sudo runs only when the link is missing or wrong.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/claude/settings.managed.json"
-DIR="/Library/Application Support/ClaudeCode"
-DEST="$DIR/managed-settings.json"
+BASE="/Library/Application Support/ClaudeCode"
+DIR="$BASE/managed-settings.d"
+DEST="$DIR/10-dotfiles.json"
+# The pre-symlink installer copied the baseline here; left in place it would be a
+# second source that drifts from the repo file. [LAW:one-source-of-truth]
+LEGACY="$BASE/managed-settings.json"
 
 # A managed value outranks every other scope: a model, effort or default
 # permission mode here would pin every session and every project, breaking
@@ -32,10 +35,15 @@ if [[ -n "$violations" ]]; then
   exit 1
 fi
 
-if cmp -s "$SRC" "$DEST"; then
+if [[ -f "$LEGACY" && ! -L "$LEGACY" ]]; then
+  sudo mv "$LEGACY" "$LEGACY.bak.$(date +%Y%m%d%H%M%S)"
+  echo "✓ Moved legacy copy $LEGACY aside"
+fi
+
+if [[ "$(readlink "$DEST" 2>/dev/null || true)" == "$SRC" ]]; then
   echo "✓ $DEST is current"
 else
   sudo install -d -o root -g wheel -m 755 "$DIR"
-  sudo install -o root -g wheel -m 644 "$SRC" "$DEST"
-  echo "✓ Installed $DEST"
+  sudo ln -sfn "$SRC" "$DEST"
+  echo "✓ Linked $DEST -> $SRC"
 fi

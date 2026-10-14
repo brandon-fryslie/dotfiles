@@ -30,7 +30,7 @@ ALLOWED_SKILL_FIELDS = {
 DEFAULT_PATHS = {
     'claude_plugins_file': Path.home() / ".claude" / "plugins" / "installed_plugins.json",
     'claude_settings_file': Path.home() / ".claude" / "settings.json",
-    'claude_managed_settings_file': Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
+    'claude_managed_settings_file': Path("/Library/Application Support/ClaudeCode/managed-settings.d/10-dotfiles.json"),
     'copilot_skills_dir': Path.home() / ".copilot" / "skills",
     'copilot_agents_dir': Path.home() / ".copilot" / "agents",
     'manifest_file': Path.home() / ".copilot" / "claude-sync-manifest.json"

@@ -28,7 +28,7 @@
       stderr: true
     -
       command: ./scripts/install-claude-managed-settings.sh
-      description: Deploy Claude Code managed settings baseline (sudo when it changed)
+      description: Link Claude Code managed settings baseline into managed-settings.d (sudo when the link changed)
       stdin: true
       stdout: true
       stderr: true

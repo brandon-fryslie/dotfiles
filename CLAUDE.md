@@ -58,11 +58,12 @@ Each tool may have multiple variants:
 - **Keep configs valid** - run `just validate` before committing YAML changes
 - **Claude Code settings are split in two.** The stable baseline (permissions, hooks,
   statusLine, always-on plugins and their marketplaces, hand-set keys like attribution) is `config/claude/settings.managed.json`.
-  `scripts/install-claude-managed-settings.sh` (run by `just install`) copies it,
-  root-owned, to `/Library/Application Support/ClaudeCode/managed-settings.json`, which
-  Claude Code loads with no flag and never writes. Copy, not symlink: Claude Code won't
-  read a managed file through a link. Editing the baseline means re-running the install,
-  which asks for sudo when the file changed. `~/.claude/settings.json` is untracked and
+  `scripts/install-claude-managed-settings.sh` (run by `just install`) symlinks it to
+  `/Library/Application Support/ClaudeCode/managed-settings.d/10-dotfiles.json`, which
+  Claude Code merges at launch with no flag and never writes. A link, so editing the
+  baseline is live with no re-install; the install asks for sudo only when the link is
+  missing or wrong, and moves aside a legacy `managed-settings.json` copy.
+  `~/.claude/settings.json` is untracked and
   belongs to Claude Code (model, effort, plugin toggles); leave it out of git. Never put
   `model`, `effortLevel` or `permissions.defaultMode` in the baseline - a managed value
   outranks every scope, so `/model` and per-repo modes would stop working - and never a plugin set to `false`, which managed settings
