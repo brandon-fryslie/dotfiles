@@ -58,16 +58,14 @@ Each tool may have multiple variants:
 - **Keep configs valid** - run `just validate` before committing YAML changes
 - **Claude Code settings are split in two.** The stable baseline (permissions, hooks,
   statusLine, always-on plugins and their marketplaces, hand-set keys like attribution) is `config/claude/settings.managed.json`.
-  `scripts/install-claude-managed-settings.sh` (run by `just install`) symlinks it to
+  `install-agent-cli.conf.yaml` links it to
   `/Library/Application Support/ClaudeCode/managed-settings.d/10-dotfiles.json`, which
   Claude Code merges at launch with no flag and never writes. A link, so editing the
-  baseline is live with no re-install; the install asks for sudo only when the link is
-  missing or wrong, and moves aside a legacy `managed-settings.json` copy.
+  baseline is live with no re-install. The drop-in directory is made user-writable
+  once per machine (the install's only sudo) so dotbot can manage the link.
+  A managed value outranks every other scope.
   `~/.claude/settings.json` is untracked and
-  belongs to Claude Code (model, effort, plugin toggles); leave it out of git. Never put
-  `model`, `effortLevel` or `permissions.defaultMode` in the baseline - a managed value
-  outranks every scope, so `/model` and per-repo modes would stop working - and never a plugin set to `false`, which managed settings
-  turn into an install block at every scope.
+  belongs to Claude Code (model, effort, plugin toggles); leave it out of git.
 
 ## Agent Skills
 

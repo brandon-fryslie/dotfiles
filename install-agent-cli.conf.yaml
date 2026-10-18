@@ -18,20 +18,27 @@
     ~/.claude/statusline-candybar: config/claude/statusline-candybar
 
 # ~/.claude/settings.json is Claude Code's own scratch file (model, effort, plugin
-# toggles) and is deliberately unmanaged. The stable baseline is deployed to the
-# managed-settings path instead, which Claude Code reads but never rewrites.
+# toggles) and is deliberately unmanaged. The stable baseline is linked into the
+# managed-settings drop-in directory instead, which Claude Code merges at every
+# launch, ranks above the user file, and never writes.
 - shell:
     -
       command: DOTFILES_DIR="$PWD" ./migrations/run-migrations.sh
       description: Run pending migrations (every profile; only zshrc.home runs them at shell start)
       stdout: true
       stderr: true
+    # /Library/Application Support is root-owned, so dotbot can only link into the
+    # drop-in directory once it belongs to the user. This is the one root step,
+    # and it asks for sudo only on a machine where that has not happened yet.
     -
-      command: ./scripts/install-claude-managed-settings.sh
-      description: Link Claude Code managed settings baseline into managed-settings.d (sudo when the link changed)
+      command: d="/Library/Application Support/ClaudeCode/managed-settings.d"; [ -w "$d" ] || { sudo mkdir -p "$d" && sudo chown "$USER" "$d"; }
+      description: Make the Claude Code managed-settings drop-in directory user-writable (sudo once per machine)
       stdin: true
       stdout: true
       stderr: true
+
+- link:
+    "/Library/Application Support/ClaudeCode/managed-settings.d/10-dotfiles.json": config/claude/settings.managed.json
 
 - create:
     - ~/.gemini
