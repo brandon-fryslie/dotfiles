@@ -179,7 +179,7 @@
   "skipAutoPermissionPrompt": true,
   "useAutoModeDuringPlan": true,
   "remoteControlAtStartup": true,
-  "inputNeededNotifEnabled": false,
+  "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "showTurnDuration": true,
   "terminalProgressBarEnabled": true,
