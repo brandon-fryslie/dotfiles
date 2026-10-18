@@ -20,13 +20,14 @@ DEST="$DIR/10-dotfiles.json"
 # second source that drifts from the repo file. [LAW:one-source-of-truth]
 LEGACY="$BASE/managed-settings.json"
 
-# A managed value outranks every other scope: a model, effort or default
-# permission mode here would pin every session and every project, breaking
-# /model, /effort and per-repo modes, and a plugin set to false becomes an install
-# block at every scope. A parse error aborts here under set -e, with jq's own
-# message. [LAW:single-enforcer]
+# A managed value outranks every other scope: a model or effort here would pin
+# every session and every project, breaking /model and /effort, and a plugin set
+# to false becomes an install block at every scope. The default permission mode
+# is pinned here on purpose, so a repo's own defaultMode no longer takes effect.
+# A parse error aborts here under set -e, with jq's own message.
+# [LAW:single-enforcer]
 violations=$(jq -r '
-  ((["model"], ["effortLevel"], ["permissions", "defaultMode"]) as $p | select(getpath($p) != null)
+  ((["model"], ["effortLevel"]) as $p | select(getpath($p) != null)
     | "\($p | join(".")) belongs in ~/.claude/settings.json"),
   (.enabledPlugins // {} | to_entries[] | select(.value == false) | "enabledPlugins.\(.key) is false")
 ' "$SRC")

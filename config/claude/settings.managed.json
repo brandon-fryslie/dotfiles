@@ -92,7 +92,8 @@
     "deny": [
       "Bash(tmux kill-server:*)",
       "mcp__claude_ai_Claude_Docs"
-    ]
+    ],
+    "defaultMode": "auto"
   },
   "hooks": {
     "PostToolUse": [
