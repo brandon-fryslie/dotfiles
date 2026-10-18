@@ -90,7 +90,8 @@
       "mcp__cherry-chatgpt__chatgpt_find_conversation"
     ],
     "deny": [
-      "Bash(tmux kill-server:*)"
+      "Bash(tmux kill-server:*)",
+      "mcp__claude_ai_Claude_Docs"
     ]
   },
   "hooks": {
