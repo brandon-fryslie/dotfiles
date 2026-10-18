@@ -169,5 +169,21 @@
       "Bash(lit:*)",
       "Bash(crom:*)"
     ]
-  }
+  },
+  "enableArtifact": false,
+  "spinnerTipsEnabled": false,
+  "feedbackDrafts": "off",
+  "promptSuggestionEnabled": false,
+  "autoMemoryEnabled": false,
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
+  "useAutoModeDuringPlan": true,
+  "remoteControlAtStartup": true,
+  "inputNeededNotifEnabled": false,
+  "agentPushNotifEnabled": true,
+  "showTurnDuration": true,
+  "terminalProgressBarEnabled": true,
+  "theme": "dark",
+  "editorMode": "normal",
+  "tui": "fullscreen"
 }
