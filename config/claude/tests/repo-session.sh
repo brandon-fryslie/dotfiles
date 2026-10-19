@@ -26,6 +26,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd -P)
 rs="$here/../skills/repo-session/bin/repo-session"
 resolve="$here/../skills/tmux-shared/bin/tmux-resolve"
+panes="$here/../skills/tmux-shared/bin/tmux-panes"
 repo="$(cd "$here/../../.." && pwd -P)/rs.test"
 
 sessions=()
@@ -41,9 +42,8 @@ fail() { echo "FAIL - $*" >&2; exit 1; }
 announced() { sed -n 's/^repo-session: \(%[0-9]*\) at .*/\1/p' "$1"; }
 # Whether session $1 holds pane $2, asked of tmux rather than of the stderr line.
 in_session() { tmux list-panes -s -t "=$1" -F '#{pane_id}' | grep -qx "$2"; }
-# Where pane $1 sits right now. list-panes errors on an id no pane has;
-# display-message would answer ':.' and exit 0.
-where() { tmux list-panes -t "$1" -f "#{==:#{pane_id},$1}" -F '#{session_name}:#{window_index}.#{pane_index}'; }
+# Where pane $1 sits right now, through the drivers' shared exact-id lookup.
+where() { "$panes" "$1" '#{session_name}:#{window_index}.#{pane_index}'; }
 
 # --session without a name is refused before anything is launched.
 if err=$("$rs" --session 2>&1 >/dev/null); then fail "--session with no name exited 0"; fi
@@ -84,8 +84,7 @@ echo "ok   - --session $named: window landed in $named_clean; ready arm printed 
 # it throughout, and the resolver maps both the id and whatever address the
 # pane has at the moment to that id. The inserted window runs a fixed command,
 # so its lifetime is the test's and not a login shell's.
-# set-option takes no "=" exact-match prefix on a session; "name:" is exact.
-tmux set-option -t "$named_clean:" renumber-windows on
+tmux set-option -t "=$named_clean:" renumber-windows on
 [[ "$("$resolve" "$addr")" == "$addr" ]] || fail "tmux-resolve did not return $addr for itself"
 before=$(where "$addr")
 [[ "$("$resolve" "$before")" == "$addr" ]] || fail "tmux-resolve did not map $before to $addr"

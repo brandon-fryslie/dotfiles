@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# [LAW:one-source-of-truth] The ONE definition of the pane line the drivers
-# show an agent: id first, as the handle to record, then where the pane sits
-# right now, then what runs in it. tmux-talk list, tmux-command list, and
-# tmux-command context all print this line, so a column added here appears in
-# all three and the SKILL docs describe one shape.
+# [LAW:one-source-of-truth] Two things have one definition here. The pane line
+# the drivers show an agent: id first, as the handle to record, then where the
+# pane sits right now, then what runs in it; tmux-talk list, tmux-command list,
+# and tmux-command context print it, so a column added here appears in all
+# three. And the exact-id lookup: the one way a pane id becomes that pane's
+# fields, which the resolver, the From: header, and the test all ask of this
+# file rather than carrying their own copy of the filter.
 #
-#   tmux-panes          every pane on the server
-#   tmux-panes %N       that pane alone; exits 1 if no pane has the id
+#   tmux-panes                 every pane on the server, one line each
+#   tmux-panes %N              that pane's line; exits 1 if no pane has the id
+#   tmux-panes %N <format>     that pane, through a tmux format of the caller's
 #
-# The single-pane form filters list-panes on the exact id: list-panes -t %N
-# lists the pane's whole window, and display-message -t on an id no pane has
-# exits 0 with every field empty [LAW:no-silent-failure].
+# list-panes -t %N lists the pane's whole window, so the exact-id filter picks
+# the one; display-message -t on an id no pane has would exit 0 with every
+# field empty [LAW:no-silent-failure]. The id is checked against %N before it
+# is spliced into the filter, so no other text can reshape the filter.
 
 LINE='#{pane_id}  #{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}'
+ID="${1:-}"
+FORMAT="${2:-$LINE}"
 
-case "${1:-}" in
-  '') tmux list-panes -a -F "$LINE" ;;
-  %*) tmux list-panes -t "$1" -f "#{==:#{pane_id},$1}" -F "$LINE" ;;
-  *)  echo "tmux-panes: expected a pane id (%N) or nothing, got '$1'" >&2; exit 1 ;;
+case "$ID" in
+  '') tmux list-panes -a -F "$FORMAT" ;;
+  *)
+    [[ "$ID" =~ ^%[0-9]+$ ]] || { echo "tmux-panes: pane id must be %N, got '$ID'" >&2; exit 1; }
+    tmux list-panes -t "$ID" -f "#{==:#{pane_id},$ID}" -F "$FORMAT"
+    ;;
 esac

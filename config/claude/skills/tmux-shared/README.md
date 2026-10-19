@@ -19,9 +19,11 @@ Run `bin/tmux-resolve` with no argument for the grammar.
 
 ## bin/tmux-panes
 
-The one definition of the pane line the drivers show: id, address right now, running
-command, title. `tmux-talk list`, `tmux-command list`, and `tmux-command context` all
-print it, so its shape changes in one place.
+The one definition of the pane line the drivers show (id, address right now, running
+command, title), and of the exact-id lookup that turns a pane id into that pane's
+fields. `tmux-talk list`, `tmux-command list`, and `tmux-command context` print the
+line; the resolver, the `From:` header, and the repo-session test ask it for a pane's
+fields through a format of their own, so the lookup has one home.
 
 ## bin/tmux-sender-info
 

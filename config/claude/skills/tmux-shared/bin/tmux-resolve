@@ -21,9 +21,9 @@ set -euo pipefail
 # Grammar (self = S0:W0.P0 — the invoking agent's own pane, via $TMUX_PANE):
 #   %N                 pane id              %41
 #   session:win.pane   full                 dotfiles:2.1
-#   session:win        pane => 1            dotfiles:2     (win may be a NAME: dotfiles:orca)
+#   session:win        the active pane      dotfiles:2     (win may be a NAME: dotfiles:orca)
 #   :win.pane          session => S0        :2.1
-#   :win               + pane => 1          :2  /  :orca
+#   :win               + the active pane    :2  /  :orca
 #   .pane              same window          .2   => S0:W0.2
 #   :self              own pane             => S0:W0.P0
 # Rejected, loudly: a bare token (no ':' and no leading '.'), an empty win/pane,
@@ -32,6 +32,7 @@ set -euo pipefail
 # name, a nonexistent window or pane index, and an id no pane has.
 
 die() { echo "tmux-resolve: $*" >&2; exit 1; }
+PANES_BIN="$(cd "$(dirname "$0")" && pwd)/tmux-panes"
 
 TARGET="${1:-}"
 [ -n "$TARGET" ] || die "missing target (e.g. %41, dotfiles:2.1, :3, .2, :self)"
@@ -55,17 +56,15 @@ case "$TARGET" in
     exit 0
     ;;
   %*)
-    # list-panes with an exact-id filter: it errors on an id no pane has, where
-    # display-message -t on one exits 0 with every field empty — the silent
-    # fallback this part exists to prevent [LAW:no-silent-failure].
-    [[ "$TARGET" =~ ^%[0-9]+$ ]] || die "pane id must be %N, got '$TARGET'"
-    tmux list-panes -t "$TARGET" -f "#{==:#{pane_id},$TARGET}" -F '#{pane_id}' \
-      || die "no pane $TARGET"
+    # The exact-id lookup lives in tmux-panes; an id that is not %N, or that
+    # no pane has, is its error, folded into this one.
+    FOUND="$("$PANES_BIN" "$TARGET" '#{pane_id}' 2>&1)" || die "no pane $TARGET ($FOUND)"
+    echo "$FOUND"
     exit 0
     ;;
   .*)
     PANE="${TARGET#.}"
-    [ -n "$PANE" ] || die "empty pane in '$TARGET' (use .N)"
+    [[ "$PANE" =~ ^[0-9]+$ ]] || die "pane must be a number, got '$TARGET' (use .N)"
     SESSION="$(self_field '#{session_name}')"
     WIN="$(self_field '#{window_index}')"
     ;;
@@ -85,11 +84,10 @@ esac
 # only honored on a numeric index; a non-numeric token is a window name verbatim.
 if [ -n "$WINPART" ]; then
   if [[ "$WINPART" =~ ^[0-9]+$ ]]; then
-    WIN="$WINPART"; PANE="1"
+    WIN="$WINPART"
   elif [[ "$WINPART" =~ ^[0-9]+\.[0-9]+$ ]]; then
     WIN="${WINPART%.*}"; PANE="${WINPART##*.}"
   else
-    PANE="1"
     # Explicit name->index lookup; never `tmux -t <name>`, which mis-resolves.
     WINS="$(tmux list-windows -t "$SESSION" -F '#{window_index}'$'\t''#{window_name}' 2>&1)" \
       || die "session '$SESSION' not found ($WINS)"
@@ -103,12 +101,14 @@ if [ -n "$WINPART" ]; then
 fi
 
 # Final existence check, and the stamp [LAW:parse-dont-validate]: list-panes
-# errors loudly on a bad session/window, and the pane index must be present in
-# that window — its id is what leaves here.
-[[ "$PANE" =~ ^[0-9]+$ ]] || die "pane must be a number, got '.$PANE' in '$TARGET'"
-PANES="$(tmux list-panes -t "$SESSION:$WIN" -F '#{pane_index}'$'\t''#{pane_id}' 2>&1)" \
+# errors loudly on a bad session/window, and the pane must be present in that
+# window — its id is what leaves here. A target with no pane part names the
+# window's active pane, whatever its index: a hardcoded 1 held only on servers
+# with pane-base-index 1. The index is compared as a string, so '.01' is no
+# pane rather than awk's numeric 1.
+PANES="$(tmux list-panes -t "$SESSION:$WIN" -F '#{pane_index}'$'\t''#{pane_id}'$'\t''#{pane_active}' 2>&1)" \
   || die "window '$SESSION:$WIN' not found ($PANES)"
-ID="$(awk -F'\t' -v p="$PANE" '$1==p {print $2}' <<<"$PANES")"
+ID="$(awk -F'\t' -v p="$PANE" '(p == "" ? $3 == 1 : ($1 "") == p) {print $2}' <<<"$PANES")"
 [ -n "$ID" ] || die "no pane .$PANE in '$SESSION:$WIN' (panes present: $(cut -f1 <<<"$PANES" | tr '\n' ' '))"
 
 echo "$ID"
