@@ -66,7 +66,7 @@ The population is read from disk on every run, never from a list: every git repo
 N repos: U unchanged, V updated, F failed
 ```
 
-Exit 1 if any repo failed. `workflow=` is GitHub's registered state of the file: `active`, `disabled_manually`, `disabled_inactivity`, or `unregistered` (the file is not on the default branch yet). `secrets=` lists each required secret absent from a store, with the store named.
+Exit 1 if any repo failed. `workflow=` is GitHub's registered state of the file, verbatim (`active`, `disabled_manually`, `disabled_inactivity`, `disabled_fork`, `deleted`), or `unregistered` (the file is not on the default branch yet). A failed repo's file is left untouched; the re-run after the fix writes it and reports `updated`. `secrets=` lists each required secret absent from a store, with the store named.
 
 **It never commits, never pushes, never writes a secret, never enables a workflow.** It writes one file per repo and reports; everything else is yours to do, per repo, after reading the line:
 
@@ -88,9 +88,9 @@ The `Review` check's colour does not answer "was this head reviewed". A failed r
 bash ~/.claude/skills/agent-code-review-setup/review-outcome.sh <owner/repo> <pr-number>
 ```
 
-It reads the markers the action appends to the PR review bodies it posts, selects only those whose commit is the PR's **current** head, and prints one of:
+It reads the markers the action appends to the PR review bodies it posts, keeps only reviews a Bot account posted, selects those whose commit is the PR's **current** head, and prints one of:
 
-- `reviewed` — a review was posted for this head. Exit 0; the only exit 0.
+- `reviewed` — a review was posted for this head **and** a run of the workflow on this head concluded success. Exit 0; the only exit 0. The second half is load-bearing: when the head moves mid-review, the action re-posts the old head's review without a commit id and GitHub stamps it with the new head, so the stamp alone can name a head the action never read.
 - `not-reviewed:<reason>` — the action ran and declined, and says why (a fork PR, or the round cap).
 - `unfinished` — the action started on this head and did not complete.
 - `none` — nothing was posted for this head: the run failed, never ran, or the workflow is disabled. Older heads may carry markers; they do not speak for this one.

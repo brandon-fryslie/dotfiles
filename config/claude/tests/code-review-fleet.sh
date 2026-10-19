@@ -55,8 +55,9 @@ case "$1 $2" in
   "api "*)
     path="$2"; repo="${path#repos/}"; repo="${repo%%/actions/*}"; repo="${repo%%/pulls/*}"
     case "$path" in
-      */actions/workflows) f="$FAKE_GH/$(key "$repo").workflows.json" ;;
-      */pulls/*/reviews)   n="${path##*/pulls/}"; f="$FAKE_GH/$(key "$repo").pr.${n%%/*}.reviews.json" ;;
+      */actions/workflows)                f="$FAKE_GH/$(key "$repo").workflows.json" ;;
+      */actions/workflows/*/runs?head_sha=*) f="$FAKE_GH/$(key "$repo").runs.${path##*head_sha=}.json" ;;
+      */pulls/*/reviews)                  n="${path##*/pulls/}"; f="$FAKE_GH/$(key "$repo").pr.${n%%/*}.reviews.json" ;;
     esac
     [ -f "$f" ] || { echo "fake gh: HTTP 404 $path" >&2; exit 1; }
     shift 2; args=(); filter=""
@@ -118,14 +119,16 @@ has "$(cat "$root/s/.github/workflows/code-review.yml")" 'uses: ./' "s render: t
 has "$(cat "$root/a/.github/workflows/code-review.yml")" 'MAX_REVIEW_ROUNDS: "5"' "a render: fleet default rounds"
 lacks "$(cat "$root/a/.github/workflows/code-review.yml")" '__' "a render: no marker left unrendered"
 [ "$(cat "$root/d/.github/workflows/code-review.yml")" = stale ] || fail "run 1: wrote into a non-repo directory"
-[ "$(cat "$root/w/.github/workflows/code-review.yml")" != stale ] || fail "run 1: w's file should be written before its listing failed"
+[ "$(cat "$root/w/.github/workflows/code-review.yml")" = stale ] || fail "run 1: a repo whose listing failed must not have been written"
+has "$(cat "$work/err")" "    fake gh: HTTP 404 repos/o/w/actions/workflows" "run 1: a failed repo's full stderr sits under its line"
 echo "ok   - run 1: population, per-repo lines, render, failures named, exit 1"
 
 # --- run 2: the two failures fixed, everything else a no-op
 rm "$root/c/.github/code-review.conf"; workflows o__w "$active"
 out="$("$fleet" "$root" 2>/dev/null)"
 has "$out" "c                                updated  branch=trunk" "run 2 c"
-has "$out" "5 repos: 4 unchanged, 1 updated, 0 failed" "run 2 summary"
+has "$out" "w                                updated  branch=trunk" "run 2 w: the repo that failed last time is written now, and says so"
+has "$out" "5 repos: 3 unchanged, 2 updated, 0 failed" "run 2 summary"
 echo "ok   - run 2: fixed repos converge, the rest unchanged, exit 0"
 
 # --- run 3: converged fleet is a no-op that says so
@@ -144,23 +147,31 @@ has "$(cat "$work/err")" "not at the root of a git repository" "install from sub
 echo "ok   - install.sh: same render, both stores, root only"
 
 # --- review-outcome reads the current head's newest marker, never an older head's
-echo HEAD1 >"$fixtures/o__a.pr.1.head"
-cat >"$fixtures/o__a.pr.1.reviews.json" <<'JSON'
-[ {"id": 10, "commit_id": "OLD",   "body": "round on an old head\n<!-- copirate-code-review-agent -->"},
-  {"id": 30, "commit_id": "HEAD1", "body": "spent, posted nothing <!-- copirate-code-review-agent:unfinished -->"},
-  {"id": 20, "commit_id": "HEAD1", "body": "a round\n<!-- copirate-code-review-agent -->\n"} ]
+bot='"user": {"type": "Bot"}'
+runs() { printf '{"workflow_runs": [%s]}\n' "$2" >"$fixtures/o__a.runs.$1.json"; }
+echo HEAD1 >"$fixtures/o__a.pr.1.head"; runs HEAD1 '{"id": 1, "conclusion": "failure"}'
+cat >"$fixtures/o__a.pr.1.reviews.json" <<JSON
+[ {"id": 10, "commit_id": "OLD",   $bot, "body": "round on an old head\n<!-- copirate-code-review-agent -->"},
+  {"id": 30, "commit_id": "HEAD1", $bot, "body": "spent, posted nothing <!-- copirate-code-review-agent:unfinished -->"},
+  {"id": 20, "commit_id": "HEAD1", $bot, "body": "a round\n<!-- copirate-code-review-agent -->\n"},
+  {"id": 50, "commit_id": "HEAD1", $bot, "body": "review of OLD, re-posted without commit_id after a 422; the host stamped HEAD1\n<!-- copirate-code-review-agent -->"} ]
 JSON
-echo HEAD2 >"$fixtures/o__a.pr.2.head"; printf '[{"id": 1, "commit_id": "OLD", "body": "x <!-- copirate-code-review-agent -->"}]\n' >"$fixtures/o__a.pr.2.reviews.json"
-echo HEAD3 >"$fixtures/o__a.pr.3.head"; printf '[{"id": 1, "commit_id": "HEAD3", "body": "cap <!-- copirate-code-review-agent:not-reviewed:round-cap -->"}]\n' >"$fixtures/o__a.pr.3.reviews.json"
-echo HEAD4 >"$fixtures/o__a.pr.4.head"; printf '[{"id": 1, "commit_id": "HEAD4", "body": "ok\\n<!-- copirate-code-review-agent -->"}, {"id": 2, "commit_id": "HEAD4", "state": "APPROVED"}]\n' >"$fixtures/o__a.pr.4.reviews.json"
+echo HEAD2 >"$fixtures/o__a.pr.2.head"; runs HEAD2 ''; printf '[{"id": 1, "commit_id": "OLD", %s, "body": "x <!-- copirate-code-review-agent -->"}]\n' "$bot" >"$fixtures/o__a.pr.2.reviews.json"
+echo HEAD3 >"$fixtures/o__a.pr.3.head"; runs HEAD3 '{"id": 3, "conclusion": "success"}'; printf '[{"id": 1, "commit_id": "HEAD3", %s, "body": "cap <!-- copirate-code-review-agent:not-reviewed:round-cap -->"}]\n' "$bot" >"$fixtures/o__a.pr.3.reviews.json"
+echo HEAD4 >"$fixtures/o__a.pr.4.head"; runs HEAD4 '{"id": 4, "conclusion": "cancelled"}, {"id": 5, "conclusion": "success"}'
+printf '[{"id": 1, "commit_id": "HEAD4", %s, "body": "ok\\n<!-- copirate-code-review-agent -->"}, {"id": 2, "commit_id": "HEAD4", "user": {"type": "User"}, "state": "APPROVED"}]\n' "$bot" >"$fixtures/o__a.pr.4.reviews.json"
+echo HEAD5 >"$fixtures/o__a.pr.5.head"; runs HEAD5 '{"id": 6, "conclusion": "failure"}'; printf '[{"id": 1, "commit_id": "HEAD5", %s, "body": "stamped by the 422 retry\\n<!-- copirate-code-review-agent -->"}]\n' "$bot" >"$fixtures/o__a.pr.5.reviews.json"
+echo HEAD6 >"$fixtures/o__a.pr.6.head"; runs HEAD6 '{"id": 7, "conclusion": "success"}'; printf '[{"id": 1, "commit_id": "HEAD6", "user": {"type": "User"}, "body": "pasted\\n<!-- copirate-code-review-agent -->"}]\n' >"$fixtures/o__a.pr.6.reviews.json"
 expect() { # pr expected-output expected-rc
   local got rc; set +e; got="$("$outcome" o/a "$1")"; rc=$?; set -e
   [ "$got" = "$2" ] && [ "$rc" -eq "$3" ] || fail "review-outcome PR $1: expected '$2' rc=$3, got '$got' rc=$rc"
 }
-expect 1 unfinished 1               # newest by id on the current head, not list order, not the old head's round
+expect 1 unfinished 1               # newest by id on the current head, not list order, not the old head's round; the mis-stamped retry (no successful run) does not outrank it
 expect 2 none 1                     # the only marker belongs to a previous head
 expect 3 not-reviewed:round-cap 1
 expect 4 reviewed 0                 # a bodiless human approval on the same head is not an artifact
-echo "ok   - review-outcome: head-bound, newest-by-id, four outcomes, exit code"
+expect 5 none 1                     # a `reviewed` stamp on a head whose run never succeeded is the 422 retry's, not this head's
+expect 6 none 1                     # a marker pasted by a non-Bot account is not the action's
+echo "ok   - review-outcome: head-bound, newest-by-id, Bot-only, run-crossed, four outcomes, exit code"
 
 echo "PASS - agent-code-review-setup"

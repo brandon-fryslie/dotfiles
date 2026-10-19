@@ -2,9 +2,10 @@
 # The ONE home of the code-review workflow: the fleet policy, the per-repo configuration
 # reader, the template, and the render that joins them. Sourced — never run — by the two
 # callers that converge a repo onto it: install.sh (the cwd repo, plus its secrets) and
-# reconverge-fleet.sh (every repo under a root, workflow file only). Both render through
-# the functions here, so there is exactly one template and two effects, never two
-# templates. [LAW:one-source-of-truth] [LAW:decomposition]
+# reconverge-fleet.sh (every repo under a root, workflow file only), and by
+# review-outcome.sh, which reads the workflow's path and nothing else. The two writers
+# render through the functions here, so there is exactly one template and two effects,
+# never two templates. [LAW:one-source-of-truth] [LAW:decomposition]
 #
 # Every function here is scoped to the CURRENT DIRECTORY, which must be the root of the
 # repo being converged. Nothing here commits, pushes, or touches a secret store beyond
@@ -51,6 +52,20 @@ SECRETS=(
   "CLAUDE_CODE_OAUTH_TOKEN|CLAUDE_CODE_OAUTH_TOKEN_SIGNUP"
 )
 WORKFLOW_PATH=".github/workflows/code-review.yml"
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+# The table's shape is proved HERE, once, as it is declared — so every caller reads a row
+# with a bare `IFS='|' read -r name item` and re-checks nothing. A row carrying a third
+# column (the removed override) would otherwise fold into the item name and provision from
+# "ITEM|junk"; a row missing one would provision an empty name. Both die at source time,
+# before any caller runs a step. [LAW:parse-dont-validate] [LAW:single-enforcer]
+for secret_entry in "${SECRETS[@]}"; do
+  IFS='|' read -r secret_name declared_item extra <<<"$secret_entry"
+  [ -n "$secret_name" ] && [ -n "$declared_item" ] && [ -z "$extra" ] \
+    || die "malformed SECRETS entry '$secret_entry' in template.sh — expected '<secret>|<keychain item>'."
+done
+unset secret_entry secret_name declared_item extra
 # The two stores a secret must exist in. GitHub feeds Dependabot-triggered runs from a
 # SEPARATE store, so a secret present in one and absent from the other leaves half the
 # PRs unauthenticated — see the template's own Dependabot note. A store is a value here:
@@ -130,8 +145,6 @@ REPO_CONFIG_PATH=".github/code-review.conf"
 # A second setting is one more entry here plus its own reader. [LAW:no-silent-failure]
 CONFIG_KEYS="EXCLUDE_PATTERNS_EXTRA MAX_REVIEW_ROUNDS"
 
-die() { echo "ERROR: $*" >&2; exit 1; }
-
 # Whether the current directory is the ROOT of a git work tree. The one predicate behind
 # both "which directories are repos" (reconverge-fleet.sh's discovery) and "may this
 # converge here" (resolve_repo's gate), so the population and the gate cannot disagree.
@@ -169,6 +182,12 @@ resolve_repo() {
 # copy free to drift from it — retarget ACTION_REF and this follows in the same edit. That
 # drift is not hypothetical: the removed branch's own comment recorded the repo name having
 # already diverged from ACTION_REF's owner/name. [LAW:one-source-of-truth]
+#
+# NOT YET the whole accommodation: since its #181 the source repo reviews on a `/review`
+# comment through a gate job, a trigger model this template does not carry, so converging
+# that repo today removes its gate (observed, reverted). Carrying the trigger model as a
+# rendered value is dotfiles-unfiled-25bc.4px; until it lands, do not commit that repo's
+# `updated` diff.
 action_ref_for() {
   local repo="$1"
   if [ "$repo" = "${ACTION_REF%@*}" ]; then printf './'; else printf '%s' "$ACTION_REF"; fi
@@ -464,18 +483,21 @@ render_workflow() {
 # tag, and that is a difference of ONE VALUE, the action ref, rendered through the
 # marker list above exactly as any other rendered value. It is not a reason to
 # skip convergence. [LAW:dataflow-not-control-flow]
+#
+# The write carries its own failure arm: the caller captures this in `$(...)`, where errexit
+# is off, so a refused write (read-only file, root-owned .github) would otherwise still echo
+# `updated` and the stale file would keep running in CI, reported converged on every pass.
+# [LAW:no-silent-failure]
 converge_workflow() {
   local repo="$1" desired
-  desired="$(mktemp)"
-  render_workflow "$repo" > "$desired" || { rm -f "$desired"; return 1; }
-  if [ -f "$WORKFLOW_PATH" ] && cmp -s "$desired" "$WORKFLOW_PATH"; then
+  desired="$(render_workflow "$repo")" || return 1
+  if [ -f "$WORKFLOW_PATH" ] && cmp -s <(printf '%s\n' "$desired") "$WORKFLOW_PATH"; then
     printf 'unchanged'
   else
-    mkdir -p "$(dirname "$WORKFLOW_PATH")"
-    cp "$desired" "$WORKFLOW_PATH"
+    mkdir -p "$(dirname "$WORKFLOW_PATH")" && printf '%s\n' "$desired" > "$WORKFLOW_PATH" \
+      || die "could not write $WORKFLOW_PATH in $PWD."
     printf 'updated'
   fi
-  rm -f "$desired"
 }
 
 # The stores in SECRET_STORES that lack secret $1 on repo $2, space-separated; empty

@@ -25,7 +25,7 @@
 set -euo pipefail
 
 # shellcheck source=template.sh
-source "${BASH_SOURCE[0]%/*}/template.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/template.sh"
 
 [ "$#" -eq 1 ] || die "usage: reconverge-fleet.sh <root>  (the directory whose immediate subdirectories are the repos)"
 ROOT="$1"
@@ -39,18 +39,22 @@ gh auth status >/dev/null 2>&1 || die "gh is not authenticated. Run: gh auth log
 # value on one line. Runs in a subshell so a `die` in any step ends this repo, not the
 # pass — through the explicit `|| exit 1` arms, because the caller's `if` switches
 # errexit off for everything it runs. [LAW:dataflow-not-control-flow]
+#
+# The write is LAST. A read that fails after the write would report `failed:` for a repo
+# whose file had already changed, and the re-run after the fix would say `unchanged` — so
+# the one word SKILL.md tells the operator to commit on would never be said for that repo.
+# Reads first, write last: a failed repo's file is untouched, and the re-run writes it and
+# says so. [LAW:no-silent-failure]
 converge_one() {
-  local repo status state secret_name declared_item extra missing secrets=""
+  local repo status state secret_name declared_item missing secrets=""
   repo="$(resolve_repo)" || exit 1
-  status="$(converge_workflow "$repo")" || exit 1
   state="$(workflow_state "$repo")" || exit 1
   for secret_entry in "${SECRETS[@]}"; do
-    IFS='|' read -r secret_name declared_item extra <<<"$secret_entry"
-    [ -n "$secret_name" ] && [ -n "$declared_item" ] && [ -z "$extra" ] \
-      || die "malformed SECRETS entry '$secret_entry' — expected '<secret>|<keychain item>'."
+    IFS='|' read -r secret_name declared_item <<<"$secret_entry"
     missing="$(secret_stores_missing "$secret_name" "$repo")" || exit 1
     [ -z "$missing" ] || secrets="${secrets:+$secrets }${secret_name}(${missing// /,})"
   done
+  status="$(converge_workflow "$repo")" || exit 1
   printf '%s  branch=%s  workflow=%s  secrets=%s' \
     "$status" "$(git rev-parse --abbrev-ref HEAD)" "$state" "${secrets:+missing }${secrets:-ok}"
 }
@@ -63,8 +67,6 @@ for dir in "$ROOT"/*/; do
   ( cd "$dir" && at_work_tree_root ) && [ -f "$dir$WORKFLOW_PATH" ] || continue
   name="$(basename "$dir")"
   if line="$( (cd "$dir" && converge_one) 2>"$errfile" )"; then
-    # The render's own notes (a conf adding patterns) belong beside the repo they describe.
-    sed "s/^/    /" "$errfile" >&2
     case "$line" in
       unchanged*) unchanged=$((unchanged + 1)) ;;
       updated*)   updated=$((updated + 1)) ;;
@@ -73,7 +75,11 @@ for dir in "$ROOT"/*/; do
     failed=$((failed + 1))
     line="failed: $(tail -n 1 "$errfile")"
   fi
+  # The repo's line first, then everything the repo said on stderr under it, indented —
+  # the render's notes (a conf adding patterns) on a converged repo, and on a failed one
+  # the full cause (gh's own HTTP line, not only the last line the status carries).
   printf '%-32s %s\n' "$name" "$line"
+  sed "s/^/    /" "$errfile" >&2
 done
 
 echo

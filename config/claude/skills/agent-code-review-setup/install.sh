@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # shellcheck source=template.sh
-source "${BASH_SOURCE[0]%/*}/template.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/template.sh"
 
 # --- Per-process preconditions. Each fails loudly with a specific cause; the
 # keychain is deliberately NOT here — it is an input to exactly one effect and is
@@ -87,15 +87,10 @@ converge_secret() {
   fi
 }
 
-# Split by the delimiter, not by prefix/suffix trimming: %%|* and ##*| silently read
-# the wrong columns the moment a row grows. [LAW:no-silent-failure]
+# Each row's shape was proved where SECRETS is declared (template.sh), so a row is read here
+# and re-checked nowhere. [LAW:parse-dont-validate]
 for secret_entry in "${SECRETS[@]}"; do
-  IFS='|' read -r secret_name declared_item extra <<<"$secret_entry"
-  # `extra` catches a row that still carries the removed override column: read -r would
-  # otherwise fold the third field into the second and provision from an item named
-  # "ITEM|junk". Reject the shape instead of resolving it. [LAW:no-silent-failure]
-  [ -n "$secret_name" ] && [ -n "$declared_item" ] && [ -z "$extra" ] \
-    || die "malformed SECRETS entry '$secret_entry' — expected '<secret>|<keychain item>'."
+  IFS='|' read -r secret_name declared_item <<<"$secret_entry"
   converge_secret "$secret_name" "$declared_item"
 done
 
