@@ -167,7 +167,7 @@ Leave `-w` bare: `security` prompts for the value, keeping the token out of shel
 - the current directory is not the root of a git work tree
 - the GitHub repo can't be resolved from the current directory (no GitHub remote / no access)
 - `.github/workflows/code-review.yml` exists and its header names another generator — the file is another tool's and is not overwritten
-- `.github/code-review.conf` is present and malformed (unknown key, duplicate key, empty value, or `|`, `&`, `\` in a value) — the message names the file and line
+- `.github/code-review.conf` is present and malformed (unknown key, duplicate key, empty value, or `|`, `&`, `\`, `"` in a value) — the message names the file and line
 - a listed repo secret is missing from a store **and** its keychain item is not available to set it — the one state where the reviewer genuinely cannot authenticate; the message names the store
 
 A missing keychain item on its own is *not* fatal when both stores already hold the secret: the script warns on stderr that re-syncing is impossible from this machine and exits 0. If you see an abort, fix the named cause and re-run — nothing partial is left in a bad state, since the workflow write and the secret set are independent and each convergent.

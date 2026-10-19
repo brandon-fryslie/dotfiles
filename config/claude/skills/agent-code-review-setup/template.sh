@@ -103,7 +103,7 @@ SECRET_STORES="actions dependabot"
 # on the next install run. The exclusion lives here, not in a trigger-level paths-ignore:
 # skipping the whole run would leave a head SHA with no review, which downstream tooling
 # reads as a broken reviewer.
-BASELINE_EXCLUDES=".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
+BASELINE_EXCLUDES="${WORKFLOW_PATH},dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
 
 # The review-round cap EVERY repo gets unless it declares its own. The action stops
 # reviewing a PR after this many rounds and posts a marked not-reviewed notice instead,
@@ -172,8 +172,8 @@ workflow_origin() {
 # [LAW:parse-dont-validate] What leaves here is a resolved repo, so no later step asks again.
 resolve_repo() {
   at_work_tree_root || die "not at the root of a git repository (cwd=$PWD)."
-  gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null \
-    || die "gh could not resolve a GitHub repo for $PWD (no GitHub remote, or no access)."
+  gh repo view --json nameWithOwner -q .nameWithOwner \
+    || die "gh could not resolve a GitHub repo for $PWD (its own message is above)."
 }
 
 # The action's own source repo reviews each PR with THAT PR's code, which is the one
@@ -253,10 +253,11 @@ read_repo_config() {
 
     [ -n "$value" ] || die "$REPO_CONFIG_PATH:$lineno: '$key' has an empty value. Delete the line instead."
     # The value is substituted into the template by sed, which reads | as the delimiter and
-    # & and \ as replacement metacharacters. A pattern carrying one would silently corrupt
-    # the rendered workflow rather than fail, so it is refused here at the boundary.
+    # & and \ as replacement metacharacters, and lands inside a double-quoted YAML scalar,
+    # which a " would close early. A pattern carrying one would silently corrupt the
+    # rendered workflow rather than fail, so it is refused here at the boundary.
     case "$value" in
-      *'|'*|*'&'*|*'\'*) die "$REPO_CONFIG_PATH:$lineno: '$key' may not contain | & or \\." ;;
+      *'|'*|*'&'*|*'\'*|*'"'*) die "$REPO_CONFIG_PATH:$lineno: '$key' may not contain | & \\ or \"." ;;
     esac
 
     if [ "$key" = "$want" ]; then found="$value"; fi
@@ -476,7 +477,7 @@ render_workflow() {
   # entry here and no new code. Each marker is checked before it is replaced — a template
   # that lost one would otherwise ship a literal __ACTION_REF__ into a consuming repo's
   # workflow [LAW:no-silent-failure].
-  local rendered="" marker value
+  local rendered="" pair marker value
   rendered="$(workflow_template)"
   for pair in "__ACTION_REF__|${action_ref}" "__EXCLUDE_PATTERNS__|${excludes}" "__MAX_REVIEW_ROUNDS__|${max_review_rounds}"; do
     marker="${pair%%|*}"
@@ -536,10 +537,11 @@ secret_stores_missing() {
   printf '%s' "$missing"
 }
 
-# GitHub's registered state of the cwd repo's workflow: `active`, `disabled_manually`,
-# `disabled_inactivity`, or `unregistered` when the default branch does not carry the
-# file yet. Selected by path from the full listing — a parse, not a text match on an
-# error message. A disabled workflow is a reviewer that reviews nothing and shows no
+# GitHub's registered state of the cwd repo's workflow, passed through verbatim (`active`,
+# `disabled_manually`, `disabled_inactivity`, `disabled_fork`, `deleted` — whatever the API
+# reports, not a closed set checked here), or `unregistered` when the default branch does
+# not carry the file yet. Selected by path from the full listing — a parse, not a text
+# match on an error message. A disabled workflow is a reviewer that reviews nothing and shows no
 # check at all, invisible to a converged file. [LAW:no-silent-failure]
 workflow_state() {
   local repo="$1" listing state

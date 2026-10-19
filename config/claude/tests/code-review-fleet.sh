@@ -48,6 +48,8 @@ case "$1 $2" in
     f="$FAKE_GH/$(key "$(flag -R "$@")").secrets.$(flag --app "$@")"
     [ -f "$f" ] || { echo "fake gh: HTTP 403 listing secrets" >&2; exit 1; }
     cat "$f" ;;
+  "secret set")   # the value arrives on stdin; what was set lands in <repo>.set.<store>.<name>, byte for byte
+    cat >"$FAKE_GH/$(key "$(flag -R "$@")").set.$(flag --app "$@").$3" ;;
   "pr view")
     f="$FAKE_GH/$(key "$(flag -R "$@")").pr.$3.head"
     [ -f "$f" ] || { echo "fake gh: no such PR" >&2; exit 1; }
@@ -68,9 +70,15 @@ case "$1 $2" in
   *) echo "fake gh: unhandled: $*" >&2; exit 1 ;;
 esac
 SH
+# --- the fake keychain: an item is a file $FAKE_KEYCHAIN/<item>; -w prints its value. With
+# FAKE_KEYCHAIN unset no item exists, which is the suite's default.
 cat >"$bin/security" <<'SH'
 #!/usr/bin/env bash
-exit 1
+[ "$1" = find-generic-password ] && [ "$2" = -s ] || { echo "fake security: unhandled: $*" >&2; exit 1; }
+f="${FAKE_KEYCHAIN:-/nonexistent}/$3"
+[ -f "$f" ] || exit 44
+[ "${4-}" = -w ] && cat "$f"
+exit 0
 SH
 chmod +x "$bin/gh" "$bin/security"
 
@@ -152,6 +160,17 @@ echo "ok   - run 3: re-running a converged fleet reports 0 updated"
 out="$(cd "$root/a" && "$install" 2>"$work/err")" || fail "install.sh in a: exited $?: $(cat "$work/err")"
 has "$out" ".github/workflows/code-review.yml is up to date (uses promptctl/copirate-code-review-agent@v1)" "install a: same render as the fleet"
 has "$(cat "$work/err")" "! secret CLAUDE_CODE_OAUTH_TOKEN exists on o/a but keychain item" "install a: no keychain, secret present in both stores -> warn"
+mkdir -p "$work/kc"; printf 'tok-1\n' >"$work/kc/CLAUDE_CODE_OAUTH_TOKEN_SIGNUP"
+out="$(cd "$root/a" && FAKE_KEYCHAIN="$work/kc" "$install" 2>"$work/err")" || fail "install.sh in a with a keychain item: exited $?: $(cat "$work/err")"
+has "$out" "✓ set secret CLAUDE_CODE_OAUTH_TOKEN on o/a (actions dependabot)" "install a + keychain: re-syncs from the item"
+for store in actions dependabot; do
+  set_file="$fixtures/o__a.set.$store.CLAUDE_CODE_OAUTH_TOKEN"
+  [ -f "$set_file" ] || fail "install a + keychain: nothing was set in the $store store"
+  [ "$(cat "$set_file")" = "tok-1" ] && [ "$(wc -c <"$set_file")" -eq 5 ] || fail "install a + keychain: $store store got '$(cat "$set_file")', expected the item's value with its newline stripped"
+done
+: >"$work/kc/CLAUDE_CODE_OAUTH_TOKEN_SIGNUP"
+if (cd "$root/a" && FAKE_KEYCHAIN="$work/kc" "$install" >/dev/null 2>"$work/err"); then fail "install.sh with an empty keychain item: expected exit 1"; fi
+has "$(cat "$work/err")" "has an empty value — refusing to set an empty CLAUDE_CODE_OAUTH_TOKEN" "install a + empty item: refused before any store is written"
 if (cd "$root/b" && "$install" >/dev/null 2>"$work/err"); then fail "install.sh in b: expected exit 1 (dependabot store lacks the secret)"; fi
 has "$(cat "$work/err")" "secret CLAUDE_CODE_OAUTH_TOKEN is not set on o/b (dependabot)" "install b: names the store that lacks it"
 if (cd "$root/f" && "$install" >/dev/null 2>"$work/err"); then fail "install.sh in f: expected exit 1 (another generator's file)"; fi
