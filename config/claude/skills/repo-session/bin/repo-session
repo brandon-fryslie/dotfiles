@@ -64,10 +64,11 @@ ADDR_FMT='#{session_name}:#{window_index}.#{pane_index}'
 # [LAW:no-ambient-temporal-coupling] -d on both paths: the user is usually
 # attached to these sessions, and a non-detached new-window switches their screen.
 # remain-on-exit failed is set in the same tmux request that creates the window,
-# so a claude that dies at once cannot outrun it: a crash, at boot or hours in,
-# keeps its screen for whoever reads the pane; a clean exit closes the pane. The
-# option is addressed to {end}, where -a puts the new window — a bare target in
-# a command sequence is the user's current window.
+# so a claude that dies at once cannot outrun it. A crash keeps its screen: at
+# boot this script reads it, reports it, and removes the window; hours in, it
+# stays for whoever reads the pane. A clean exit closes the pane. The option is
+# addressed to {end}, where -a puts the new window — a bare target in a command
+# sequence is the user's current window.
 REMAIN=(set-option -w -t "=$SESSION:{end}" remain-on-exit failed)
 if tmux has-session -t "=$SESSION" 2>/dev/null; then
   ADDRESS=$(tmux new-window -d -a -t "=$SESSION:{end}" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT" "${CMD[@]}" \; "${REMAIN[@]}")
@@ -75,7 +76,7 @@ else
   ADDRESS=$(tmux new-session -d -s "$SESSION" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT" "${CMD[@]}" \; "${REMAIN[@]}")
 fi
 [[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no address" >&2; exit 1; }
-echo "repo-session: $ADDRESS (cwd $REPO_DIR) running: ${CMD[*]}" >&2
+echo "repo-session: $ADDRESS (cwd $REPO_DIR) running:$(printf ' %q' "${CMD[@]}")" >&2
 
 # [LAW:no-silent-failure] the address is only worth printing once claude can
 # take a message. A dialog at boot means a human decision is pending: report it
@@ -84,7 +85,12 @@ TIMEOUT=${REPO_SESSION_BOOT_TIMEOUT:-90}
 DEADLINE=$((SECONDS + TIMEOUT))
 while (( SECONDS < DEADLINE )); do
   sleep 2
-  SCREEN=$(tmux capture-pane -p -t "$ADDRESS")
+  # A pane that exited 0 has already closed (remain-on-exit failed keeps only
+  # failures), so the window itself can be gone here: say so, in these words.
+  SCREEN=$(tmux capture-pane -p -t "$ADDRESS") || {
+    echo "repo-session: $ADDRESS is gone: claude exited 0 before it was ready, or the window was closed" >&2
+    exit 1
+  }
   if [[ $(tmux display-message -p -t "$ADDRESS" '#{pane_dead}') == 1 ]]; then
     # The status is reported with the screen: a process that exits within
     # milliseconds can leave the screen blank (unread pty output is dropped).
