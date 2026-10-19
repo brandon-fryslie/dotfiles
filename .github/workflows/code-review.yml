@@ -4,7 +4,7 @@
 # installer, which lives here:
 #
 #   https://github.com/brandon-fryslie/dotfiles
-#   config/claude/skills/agent-code-review-setup/install.sh
+#   config/claude/skills/agent-code-review-setup/template.sh
 #
 # To change the workflow: edit the template in that repo, then re-run the
 # installer from this repo's root. This file is a derived copy — the installer
@@ -122,10 +122,14 @@ jobs:
           DEPENDENCY_DIFF: "true"
           # RENDERED, not literal. The value is the universal baseline joined with
           # whatever this repo declared in .github/code-review.conf, composed in one
-          # place — see BASELINE_EXCLUDES at the top of install.sh, where the rationale
+          # place — see BASELINE_EXCLUDES at the top of template.sh, where the rationale
           # for each baseline pattern lives beside the patterns themselves, and
           # read_repo_config, which parses the per-repo half. [LAW:one-source-of-truth]
           EXCLUDE_PATTERNS: ".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
+          # RENDERED, not literal. This repo's MAX_REVIEW_ROUNDS from .github/code-review.conf,
+          # else the fleet default — see DEFAULT_MAX_REVIEW_ROUNDS in template.sh for what a
+          # spent cap does and why the number is a per-repo declaration.
+          MAX_REVIEW_ROUNDS: "5"
 
       # The transcript is the only artifact that can explain a review that failed,
       # hung, or misbehaved — the exact prompt, the raw engine output including

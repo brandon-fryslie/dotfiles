@@ -71,6 +71,10 @@ validate:
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
 
+# Assert the code-review installer, fleet pass and review-outcome reader against a throwaway fleet (no network)
+test-code-review-fleet:
+    ./config/claude/tests/code-review-fleet.sh
+
 # Assert the managed settings decide Claude's Bash-tool shell (runs a claude -p)
 test-claude-shell:
     ./config/claude/tests/tool-shell.sh

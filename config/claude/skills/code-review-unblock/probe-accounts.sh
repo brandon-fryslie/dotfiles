@@ -23,9 +23,15 @@ PROBE_TIMEOUT_SECS=90
 ITEM_PREFIX="CLAUDE_CODE_OAUTH_TOKEN_"
 
 # The installer's SECRETS table is the one map of which account the fleet is
-# configured to use; this reads it rather than restating it, so the two can
-# never disagree. [LAW:one-source-of-truth]
-INSTALLER="$HOME/.claude/skills/agent-code-review-setup/install.sh"
+# configured to use; this SOURCES it and reads the table itself rather than
+# scraping the file for a literal, so a reshuffle of that file cannot leave this
+# silently reading nothing (it did once: the table moved from install.sh to
+# template.sh and the scrape fell back to "(unknown)" on every run). A missing
+# file or a malformed row fails loudly on the source line. [LAW:one-source-of-truth]
+# The path is relative to this script: both skills live side by side in the repo
+# and under ~/.claude/skills alike.
+# shellcheck source=../agent-code-review-setup/template.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../agent-code-review-setup/template.sh"
 
 for binary in security claude; do
   command -v "$binary" >/dev/null 2>&1 || {
@@ -34,17 +40,9 @@ for binary in security claude; do
   }
 done
 
-configured=""
-if [[ -r "$INSTALLER" ]]; then
-  configured=$(sed -n 's/.*"CLAUDE_CODE_OAUTH_TOKEN|'"$ITEM_PREFIX"'\([A-Z0-9_]*\)".*/\1/p' "$INSTALLER" | head -1)
-fi
-# [LAW:no-silent-failure] An unreadable or unparseable table is reported, never
-# quietly rendered as "no account is configured" — that reads identically to a
-# real answer and would send the caller rotating away from a fine account.
-[[ -n "$configured" ]] || {
-  echo "WARNING: could not read the configured account from $INSTALLER" >&2
-  configured="(unknown)"
-}
+# The first row's keychain item, minus the pool prefix, is the configured account.
+configured="${SECRETS[0]#*|}"
+configured="${configured#"$ITEM_PREFIX"}"
 
 mapfile -t accounts < <(
   security dump-keychain 2>/dev/null |
@@ -57,7 +55,7 @@ mapfile -t accounts < <(
   exit 1
 }
 
-printf 'configured in install.sh: %s\n\n' "$configured"
+printf 'configured in template.sh: %s\n\n' "$configured"
 
 available=0
 for account in "${accounts[@]}"; do
@@ -96,7 +94,7 @@ for account in "${accounts[@]}"; do
   fi
 done
 
-printf '\n(* = the account install.sh currently names)\n'
+printf '\n(* = the account template.sh currently names)\n'
 
 # [LAW:no-silent-failure] "Every account is out of quota" is a real state with a
 # real consequence — it is the one case the caller cannot resolve by rotating —
