@@ -224,7 +224,19 @@ expect 4 reviewed 0                 # a bodiless human approval on the same head
 expect 5 none 1                     # a `reviewed` stamp on a head whose run never succeeded is the 422 retry's, not this head's; another PR's success on the same commit does not vouch
 expect 6 none 1                     # a marker pasted by a non-Bot account is not the action's
 expect 7 reviewed 0                 # two markers survive on one head: the higher id wins, numerically (10 over 9), not by list order
-echo "ok   - review-outcome: head-bound, newest-by-id, Bot-only, run-crossed, four outcomes, exit code"
+# Each read the script depends on fails loudly, naming the repo and PR, and prints no
+# outcome at all: a `none` here would be an answer-shaped void for a gh outage.
+echo HEAD9 >"$fixtures/o__a.pr.9.head"                                      # head only: no reviews fixture
+echo HEAD10 >"$fixtures/o__a.pr.10.head"; echo '[]' >"$fixtures/o__a.pr.10.reviews.json"   # no runs fixture
+expect_die() { # pr expected-stderr
+  local got rc; set +e; got="$("$outcome" o/a "$1" 2>"$work/err")"; rc=$?; set -e
+  [ -z "$got" ] && [ "$rc" -eq 1 ] || fail "review-outcome PR $1: expected no output and rc=1, got '$got' rc=$rc"
+  has "$(cat "$work/err")" "$2" "review-outcome PR $1 stderr"
+}
+expect_die 8  "ERROR: could not read the head of o/a#8."
+expect_die 9  "ERROR: could not list reviews on o/a#9."
+expect_die 10 "ERROR: could not list runs on o/a for HEAD10."
+echo "ok   - review-outcome: head-bound, newest-by-id, Bot-only, run-crossed, four outcomes, exit code, every read dies loudly"
 
 # --- probe-accounts reads the configured account off template.sh's own table
 cat >"$bin/claude" <<'SH'

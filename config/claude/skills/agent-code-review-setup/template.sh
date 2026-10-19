@@ -2,10 +2,11 @@
 # The ONE home of the code-review workflow: the fleet policy, the per-repo configuration
 # reader, the template, and the render that joins them. Sourced — never run — by the two
 # callers that converge a repo onto it: install.sh (the cwd repo, plus its secrets) and
-# reconverge-fleet.sh (every repo under a root, workflow file only), and by
-# review-outcome.sh, which reads the workflow's path and nothing else. The two writers
-# render through the functions here, so there is exactly one template and two effects,
-# never two templates. [LAW:one-source-of-truth] [LAW:decomposition]
+# reconverge-fleet.sh (every repo under a root, workflow file only); by
+# review-outcome.sh, which reads the workflow's path and nothing else; and by
+# code-review-unblock/probe-accounts.sh, which reads the SECRETS table and nothing else.
+# The two writers render through the functions here, so there is exactly one template
+# and two effects, never two templates. [LAW:one-source-of-truth] [LAW:decomposition]
 #
 # Every function here is scoped to the CURRENT DIRECTORY, which must be the root of the
 # repo being converged. Nothing here commits, pushes, or touches a secret store beyond
@@ -478,12 +479,12 @@ render_workflow() {
   # that lost one would otherwise ship a literal __ACTION_REF__ into a consuming repo's
   # workflow [LAW:no-silent-failure].
   local rendered="" pair marker value
-  rendered="$(workflow_template)"
+  rendered="$(workflow_template)" || die "could not read the workflow template."
   for pair in "__ACTION_REF__|${action_ref}" "__EXCLUDE_PATTERNS__|${excludes}" "__MAX_REVIEW_ROUNDS__|${max_review_rounds}"; do
     marker="${pair%%|*}"
     value="${pair#*|}"
     grep -q "$marker" <<<"$rendered" || die "workflow template lost its ${marker} marker."
-    rendered="$(sed "s|${marker}|${value}|" <<<"$rendered")"
+    rendered="$(sed "s|${marker}|${value}|" <<<"$rendered")" || die "could not render ${marker} into the workflow."
   done
   printf '%s\n' "$rendered"
 }
