@@ -5,7 +5,7 @@ description: Install the agent code-review GitHub Action into the current reposi
 
 # agent-code-review-setup
 
-Installs the [coding agent review](https://github.com/brandon-fryslie/coding-agent-review) GitHub Action into the repository the user is currently working in: writes the workflow file and provisions the repository secrets the action reads. After that, the action runs on every pull request. Two companions keep it true afterwards: a fleet pass that brings every installed repo's workflow back onto the current template, and an outcome reader that says whether a given PR was actually reviewed.
+Installs the [copirate code review](https://github.com/promptctl/copirate-code-review-agent) GitHub Action (`ACTION_REF` in `template.sh` is the one place its ref lives) into the repository the user is currently working in: writes the workflow file and provisions the repository secrets the action reads. After that, the action runs on every pull request. Two companions keep it true afterwards: a fleet pass that brings every installed repo's workflow back onto the current template, and an outcome reader that says whether a given PR was actually reviewed.
 
 ## When to use
 

@@ -19,6 +19,7 @@ skill="$here/../skills/agent-code-review-setup"
 fleet="$skill/reconverge-fleet.sh"
 install="$skill/install.sh"
 outcome="$skill/review-outcome.sh"
+probe="$here/../skills/code-review-unblock/probe-accounts.sh"
 
 command -v jq >/dev/null || { echo "FAIL - jq is required" >&2; exit 1; }
 
@@ -70,15 +71,22 @@ case "$1 $2" in
   *) echo "fake gh: unhandled: $*" >&2; exit 1 ;;
 esac
 SH
-# --- the fake keychain: an item is a file $FAKE_KEYCHAIN/<item>; -w prints its value. With
+# --- the fake keychain: an item is a file $FAKE_KEYCHAIN/<item>. dump-keychain lists them;
+# find-generic-password [-a acct] -s <item> [-w] finds one and -w prints its value. With
 # FAKE_KEYCHAIN unset no item exists, which is the suite's default.
 cat >"$bin/security" <<'SH'
 #!/usr/bin/env bash
-[ "$1" = find-generic-password ] && [ "$2" = -s ] || { echo "fake security: unhandled: $*" >&2; exit 1; }
-f="${FAKE_KEYCHAIN:-/nonexistent}/$3"
-[ -f "$f" ] || exit 44
-[ "${4-}" = -w ] && cat "$f"
-exit 0
+kc="${FAKE_KEYCHAIN:-/nonexistent}"
+case "$1" in
+  dump-keychain) for f in "$kc"/*; do [ -f "$f" ] && printf '    "svce"<blob>="%s"\n' "$(basename "$f")"; done; exit 0 ;;
+  find-generic-password)
+    shift; item=""; print=0
+    while [ $# -gt 0 ]; do case "$1" in -a) shift ;; -s) item="$2"; shift ;; -w) print=1 ;; esac; shift; done
+    [ -f "$kc/$item" ] || exit 44
+    [ "$print" -eq 1 ] && cat "$kc/$item"
+    exit 0 ;;
+  *) echo "fake security: unhandled: $*" >&2; exit 1 ;;
+esac
 SH
 chmod +x "$bin/gh" "$bin/security"
 
@@ -109,6 +117,8 @@ repo s promptctl/copirate-code-review-agent; secrets promptctl__copirate-code-re
 secrets promptctl__copirate-code-review-agent dependabot; workflows promptctl__copirate-code-review-agent "$disabled"
 repo w o/w;            secrets o__w actions; secrets o__w dependabot                               # no workflows fixture
 repo f o/f "$foreign"; secrets o__f actions; secrets o__f dependabot; workflows o__f "$active"      # another generator's file
+repo q o/q;            secrets o__q actions; secrets o__q dependabot; workflows o__q "$active"
+printf 'EXCLUDE_PATTERNS_EXTRA=docs/"drafts"/**\n' >"$root/q/.github/code-review.conf"                 # a " would close the YAML scalar it lands in
 mkdir -p "$root/n/.github/workflows"; git -C "$root/n" init -q -b trunk; git -C "$root/n" remote add origin git@github.com:o/n.git
 printf '%s\n' "$stale" >"$root/n/.github/workflows/code-review.yml"                                # unborn branch: no commit yet
 secrets o__n actions; secrets o__n dependabot; workflows o__n "$active"
@@ -122,11 +132,13 @@ has "$out" "c                                failed: ERROR: .github/code-review.
 has "$out" "s                                updated  branch=trunk  workflow=disabled_manually  secrets=ok" "run 1 s"
 has "$out" "w                                failed: ERROR: could not list workflows on o/w." "run 1 w"
 has "$out" "n                                updated  branch=trunk  workflow=active  secrets=ok" "run 1 n: an unborn branch is named, not a git usage line"
+has "$out" "q                                failed: ERROR: .github/code-review.conf:1: 'EXCLUDE_PATTERNS_EXTRA' may not contain | & \\ or \"." "run 1 q: a render metacharacter is refused at the conf, naming file:line"
+[ "$(cat "$root/q/.github/workflows/code-review.yml")" = "$stale" ] || fail "run 1 q: a refused conf must not render anything"
 ! grep -qE '^d ' <<<"$out" || fail "run 1: a non-repo directory is not in the population"
 ! grep -qE '^e ' <<<"$out" || fail "run 1: a repo without the file is not in the population"
 ! grep -qE '^f ' <<<"$out" || fail "run 1: a repo whose file another tool generated is not in the population"
 [ "$(cat "$root/f/.github/workflows/code-review.yml")" = "$foreign" ] || fail "run 1: wrote over another tool's file"
-has "$out" "6 repos: 0 unchanged, 4 updated, 2 failed" "run 1 summary"
+has "$out" "7 repos: 0 unchanged, 4 updated, 3 failed" "run 1 summary"
 has "$(cat "$work/err")" "    → .github/code-review.conf adds exclude pattern(s): foo/**" "run 1: render notes sit under their repo"
 rendered_b="$(cat "$root/b/.github/workflows/code-review.yml")"
 has "$rendered_b" 'EXCLUDE_PATTERNS: ".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml,foo/**,a#b/**"' "b render: conf extra appended to the baseline, # inside a value kept, trailing comment dropped"
@@ -144,16 +156,17 @@ has "$(cat "$work/err")" "ERROR: no repo under $work/no-fleet carries an install
 echo "ok   - run 1: population, per-repo lines, render, failures named, empty root refused, exit 1"
 
 # --- run 2: the two failures fixed, everything else a no-op
-rm "$root/c/.github/code-review.conf"; workflows o__w "$active"
+rm "$root/c/.github/code-review.conf" "$root/q/.github/code-review.conf"; workflows o__w "$active"
 out="$("$fleet" "$root" 2>/dev/null)"
 has "$out" "c                                updated  branch=trunk" "run 2 c"
+has "$out" "q                                updated  branch=trunk" "run 2 q"
 has "$out" "w                                updated  branch=trunk" "run 2 w: the repo that failed last time is written now, and says so"
-has "$out" "6 repos: 4 unchanged, 2 updated, 0 failed" "run 2 summary"
+has "$out" "7 repos: 4 unchanged, 3 updated, 0 failed" "run 2 summary"
 echo "ok   - run 2: fixed repos converge, the rest unchanged, exit 0"
 
 # --- run 3: converged fleet is a no-op that says so
 out="$("$fleet" "$root" 2>/dev/null)"
-has "$out" "6 repos: 6 unchanged, 0 updated, 0 failed" "run 3 summary"
+has "$out" "7 repos: 7 unchanged, 0 updated, 0 failed" "run 3 summary"
 echo "ok   - run 3: re-running a converged fleet reports 0 updated"
 
 # --- the one-repo installer renders the same file and reads the same stores
@@ -198,6 +211,8 @@ echo HEAD4 >"$fixtures/o__a.pr.4.head"; runs HEAD4 "$(run 4 cancelled 4), $(run 
 printf '[{"id": 1, "commit_id": "HEAD4", %s, "body": "ok\\n<!-- copirate-code-review-agent -->"}, {"id": 2, "commit_id": "HEAD4", "user": {"type": "User"}, "state": "APPROVED"}]\n' "$bot" >"$fixtures/o__a.pr.4.reviews.json"
 echo HEAD5 >"$fixtures/o__a.pr.5.head"; runs HEAD5 "$(run 6 failure 5), $(run 8 success 55)"; printf '[{"id": 1, "commit_id": "HEAD5", %s, "body": "stamped by the 422 retry\\n<!-- copirate-code-review-agent -->"}]\n' "$bot" >"$fixtures/o__a.pr.5.reviews.json"
 echo HEAD6 >"$fixtures/o__a.pr.6.head"; runs HEAD6 "$(run 7 success 6)"; printf '[{"id": 1, "commit_id": "HEAD6", "user": {"type": "User"}, "body": "pasted\\n<!-- copirate-code-review-agent -->"}]\n' >"$fixtures/o__a.pr.6.reviews.json"
+echo HEAD7 >"$fixtures/o__a.pr.7.head"; runs HEAD7 "$(run 11 success 7)"
+printf '[{"id": 10, "commit_id": "HEAD7", %s, "body": "round two\\n<!-- copirate-code-review-agent -->"}, {"id": 9, "commit_id": "HEAD7", %s, "body": "cap <!-- copirate-code-review-agent:not-reviewed:round-cap -->"}]\n' "$bot" "$bot" >"$fixtures/o__a.pr.7.reviews.json"
 expect() { # pr expected-output expected-rc
   local got rc; set +e; got="$("$outcome" o/a "$1")"; rc=$?; set -e
   [ "$got" = "$2" ] && [ "$rc" -eq "$3" ] || fail "review-outcome PR $1: expected '$2' rc=$3, got '$got' rc=$rc"
@@ -208,6 +223,25 @@ expect 3 not-reviewed:round-cap 1
 expect 4 reviewed 0                 # a bodiless human approval on the same head is not an artifact
 expect 5 none 1                     # a `reviewed` stamp on a head whose run never succeeded is the 422 retry's, not this head's; another PR's success on the same commit does not vouch
 expect 6 none 1                     # a marker pasted by a non-Bot account is not the action's
+expect 7 reviewed 0                 # two markers survive on one head: the higher id wins, numerically (10 over 9), not by list order
 echo "ok   - review-outcome: head-bound, newest-by-id, Bot-only, run-crossed, four outcomes, exit code"
+
+# --- probe-accounts reads the configured account off template.sh's own table
+cat >"$bin/claude" <<'SH'
+#!/usr/bin/env bash
+echo ok
+SH
+cat >"$bin/timeout" <<'SH'
+#!/usr/bin/env bash
+shift; exec "$@"
+SH
+chmod +x "$bin/claude" "$bin/timeout"
+printf 'tok-2\n' >"$work/kc/CLAUDE_CODE_OAUTH_TOKEN_SIGNUP"; printf 'tok-3\n' >"$work/kc/CLAUDE_CODE_OAUTH_TOKEN_OTHER"
+out="$(FAKE_KEYCHAIN="$work/kc" "$probe" 2>"$work/err")" || fail "probe-accounts: exited $?: $(cat "$work/err")"
+has "$out" "configured in template.sh: SIGNUP" "probe: the configured account is the SECRETS table's, read by sourcing it"
+has "$out" "* SIGNUP" "probe: the configured account is starred"
+has "$out" "  OTHER" "probe: every pool item is probed"
+lacks "$out" "(unknown)" "probe: never falls back to an unknown account"
+echo "ok   - probe-accounts: configured account read from the table, pool probed"
 
 echo "PASS - agent-code-review-setup"
