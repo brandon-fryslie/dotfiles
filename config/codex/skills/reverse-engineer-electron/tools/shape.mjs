@@ -72,13 +72,14 @@ export function isFunctionNode(node) {
   return isFunction(node);
 }
 
-// The name a member key or property states. A computed one (`[t](){}`,
-// `o[t] = ...`) states none: its expression is a value, and an Identifier there
-// is a variable, not the name.
+// The name a member key or property states. A string literal states it whether
+// quoted or computed (`"m"(){}`, `o["m"] = ...`); a computed Identifier
+// (`[t](){}`, `o[t] = ...`) is a variable, not a name.
 function keyName(key, computed) {
-  if (!key || computed) return null;
+  if (!key) return null;
   if (key.type === 'PrivateName') return `#${key.id.name}`;
-  return key.name || (typeof key.value === 'string' ? key.value : null);
+  if (typeof key.value === 'string') return key.value;
+  return computed ? null : key.name ?? null;
 }
 
 export function resolveFunctionName(node, parent) {
@@ -86,6 +87,7 @@ export function resolveFunctionName(node, parent) {
   // Methods carry their own key; a function-valued property's key is on the parent.
   if (node.key) return keyName(node.key, node.computed);
   if (!parent) return null;
+  if (parent.type === 'ExportDefaultDeclaration') return 'default';
   if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
   if (parent.type === 'ObjectProperty' || parent.type === 'ClassProperty' ||
       parent.type === 'ClassPrivateProperty') {
@@ -206,6 +208,16 @@ function privateNamesIn(node) {
   return [...names];
 }
 
+// What a function is apart from its params and body: its member kind and the
+// flags a rewrite must not flip. `m: function(a){}` and `m(a){}` share a head;
+// a getter, a static, an async or generator function, and an arrow (no `this`
+// of its own) each have their own.
+function functionHead(node) {
+  const kind = node.type === 'ArrowFunctionExpression' ? 'arrow' : (node.kind ?? 'method');
+  const flags = ['static', 'async', 'generator'].filter((f) => node[f]).map((f) => `+${f}`).join('');
+  return `F:${kind}${flags}`;
+}
+
 // Normalize one function node's source text through esbuild's syntax minifier
 // and return its shape tokens. Throws on unparseable input; callers own the
 // fallback so degradation is loud at the boundary. [LAW:no-silent-failure]
@@ -241,8 +253,58 @@ export function normalizedFunctionTokens(node, code, loader) {
   if (!fnNode || !isFunctionNode(fnNode)) {
     throw new Error('no function node survived normalization');
   }
-  // The slice's tokens are its params and body. The member key and the kind of
-  // function are the wrapper's concern: a deminifier may turn `m: function(a){}`
-  // into `m(a){}` without changing what the function does.
-  return [...fnNode.params, fnNode.body].flatMap(functionShapeTokens);
+  // The slice's tokens are its head, params and body; its key is the member's,
+  // not the function's.
+  return [functionHead(fnNode), ...[...fnNode.params, fnNode.body].flatMap(functionShapeTokens)];
+}
+
+// --- Similarity scoring ---
+// [LAW:one-source-of-truth] One LCS, one score: report, compare and substitute
+// must agree on what "95%" means for the same pair of token streams.
+
+
+function lcsLength(a, b) {
+  if (a.length === 0 || b.length === 0) return 0;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen > 500) {
+    return lcsLengthBanded(a, b, Math.min(100, Math.floor(maxLen * 0.2)));
+  }
+  const m = a.length, n = b.length;
+  const prev = new Uint16Array(n + 1);
+  const curr = new Uint16Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1] + 1
+        : Math.max(prev[j], curr[j - 1]);
+    }
+    prev.set(curr);
+    curr.fill(0);
+  }
+  return prev[n];
+}
+
+function lcsLengthBanded(a, b, bandwidth) {
+  const m = a.length, n = b.length;
+  const prev = new Uint16Array(n + 1);
+  const curr = new Uint16Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    const jStart = Math.max(1, Math.floor(i * n / m) - bandwidth);
+    const jEnd = Math.min(n, Math.floor(i * n / m) + bandwidth);
+    for (let j = jStart; j <= jEnd; j++) {
+      curr[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1] + 1
+        : Math.max(prev[j], curr[j - 1]);
+    }
+    prev.set(curr);
+    curr.fill(0);
+  }
+  return prev[n];
+}
+
+export function tokenSimilarity(tokensA, tokensB) {
+  if (tokensA.length === 0 && tokensB.length === 0) return 1.0;
+  if (tokensA.length === 0 || tokensB.length === 0) return 0.0;
+  const lcs = lcsLength(tokensA, tokensB);
+  return (2 * lcs) / (tokensA.length + tokensB.length);
 }

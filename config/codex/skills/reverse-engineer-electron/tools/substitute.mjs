@@ -18,6 +18,7 @@ import { parse } from '@babel/parser';
 import { transformSync } from 'esbuild';
 import fs from 'fs';
 import {
+  tokenSimilarity,
   walkWithParent,
   isFunctionNode,
   resolveFunctionName,
@@ -63,54 +64,6 @@ function minifyCode(code) {
     console.warn(`  Minify error: ${e.message.split('\n')[0]}`);
     return null;
   }
-}
-
-// --- LCS Similarity ---
-
-function lcsLength(a, b) {
-  if (a.length === 0 || b.length === 0) return 0;
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen > 500) {
-    return lcsLengthBanded(a, b, Math.min(100, Math.floor(maxLen * 0.2)));
-  }
-  const m = a.length, n = b.length;
-  const prev = new Uint16Array(n + 1);
-  const curr = new Uint16Array(n + 1);
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      curr[j] = a[i - 1] === b[j - 1]
-        ? prev[j - 1] + 1
-        : Math.max(prev[j], curr[j - 1]);
-    }
-    prev.set(curr);
-    curr.fill(0);
-  }
-  return prev[n];
-}
-
-function lcsLengthBanded(a, b, bandwidth) {
-  const m = a.length, n = b.length;
-  const prev = new Uint16Array(n + 1);
-  const curr = new Uint16Array(n + 1);
-  for (let i = 1; i <= m; i++) {
-    const jStart = Math.max(1, Math.floor(i * n / m) - bandwidth);
-    const jEnd = Math.min(n, Math.floor(i * n / m) + bandwidth);
-    for (let j = jStart; j <= jEnd; j++) {
-      curr[j] = a[i - 1] === b[j - 1]
-        ? prev[j - 1] + 1
-        : Math.max(prev[j], curr[j - 1]);
-    }
-    prev.set(curr);
-    curr.fill(0);
-  }
-  return prev[n];
-}
-
-function tokenSimilarity(tokensA, tokensB) {
-  if (tokensA.length === 0 && tokensB.length === 0) return 1.0;
-  if (tokensA.length === 0 || tokensB.length === 0) return 0.0;
-  const lcs = lcsLength(tokensA, tokensB);
-  return (2 * lcs) / (tokensA.length + tokensB.length);
 }
 
 // --- Function extraction ---

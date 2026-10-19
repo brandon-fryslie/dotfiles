@@ -174,7 +174,7 @@ function collectScopes(ast, code, relPath) {
       const parentId =
         parentCharOffset !== null && scope.parent ? scopeId(relPath, lineIndex, parentCharOffset) : null;
 
-      const kind = nodePath.type === "Program" ? "program" : nodePath.type.includes("Function") || nodePath.type.includes("Arrow") ? "function" : nodePath.type.includes("Class") ? "class" : "block";
+      const kind = nodePath.isProgram() ? "program" : nodePath.isFunction() ? "function" : nodePath.isClass() ? "class" : "block";
 
       const bindings = {};
       for (const [name, binding] of Object.entries(scope.bindings)) {

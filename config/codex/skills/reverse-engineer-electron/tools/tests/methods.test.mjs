@@ -40,9 +40,10 @@ const MINIFIED_ORIGINAL = [
   "#walk(n){return n?this.#walk(n-1):0}[k](){return this.#walk(3)}}",
   "function wrap(){return [1].map(x=>arguments[0]+x)}",
   "const proto={get constructor(){return Bag}};",
+  'const q={"quoted"(n){return n}};',
 ].join("");
 
-const METHOD_NAMES = ["constructor", "empty", "total", "#log", "stream", "fmt", "plain", "#walk", "wrap", "#h"];
+const METHOD_NAMES = ["constructor", "empty", "total", "#log", "stream", "fmt", "plain", "#walk", "wrap", "#h", "quoted"];
 // Nameless but present: the reducer arrow, `[Symbol.iterator]`, `[k]`, the `arguments` arrow.
 const NAMELESS_COUNT = 4;
 
@@ -103,6 +104,22 @@ test("normalizedFunctionTokens collapses method shorthand and a function-valued 
   );
 });
 
+test("normalizedFunctionTokens keeps getter, static, async, generator and arrow apart from a plain method", () => {
+  const method = normalizedOf("class A { m() { return this.a + 1; } }", "ClassMethod");
+  for (const variant of [
+    "class A { get m() { return this.a + 1; } }",
+    "class A { static m() { return this.a + 1; } }",
+    "class A { async m() { return this.a + 1; } }",
+    "class A { *m() { return this.a + 1; } }",
+  ]) {
+    assert.notDeepEqual(normalizedOf(variant, "ClassMethod"), method, variant);
+  }
+  assert.notDeepEqual(
+    normalizedOf("const o = { m: () => this.a + 1 };", "ArrowFunctionExpression"),
+    normalizedOf("const o = { m: function () { return this.a + 1; } };", "FunctionExpression"),
+  );
+});
+
 test("normalizedFunctionTokens accepts a decorated method and a private-name computed key", () => {
   assert.ok(normalizedOf("class A { @dec m() { return 1; } }", "ClassMethod", ["decorators"]).length > 0);
   assert.ok(normalizedOf("class A { #k; [this.#k]() { return 1; } }", "ClassMethod").length > 0);
@@ -111,6 +128,8 @@ test("normalizedFunctionTokens accepts a decorated method and a private-name com
 test("resolveFunctionName names a private member assignment and refuses a computed one", () => {
   assert.ok(namedFunctions("class A { #h; constructor() { this.#h = () => 1; } }").includes("#h"));
   assert.deepEqual(namedFunctions("o[k] = function () {};"), [null]);
+  assert.deepEqual(namedFunctions('o["lit"] = function () {}; const p = { ["m"]: () => 1 };'), ["o.lit", "m"]);
+  assert.deepEqual(namedFunctions("export default function () {}"), ["default"]);
 });
 
 test("prepare manifests methods, gate prepare accepts the manifest, and report resolves them", () => {
