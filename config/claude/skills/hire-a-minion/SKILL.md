@@ -26,10 +26,16 @@ ADDR=$("$MINION" --worktree feature-auth --resume <session-id>)
 ADDR=$("$MINION" --model sonnet --append-system-prompt "Be terse. Ask before large refactors.")
 ```
 
-The script prints **one line on stdout: the minion's tmux address**
-(`session:window.pane`). Capture it. Everything you do to the minion afterward
-goes through that address. A worktree is always used — there is no way to run a
-minion without one. It fails loudly if you are not inside tmux.
+The script runs claude as the new window's own process (no shell in front of
+it, so none of your rc files, prompt theme, or plugins run there), waits until
+claude's input prompt is up, then prints **one line on stdout: the minion's
+tmux address** (`session:window.pane`). Capture it. Everything you do to the
+minion afterward goes through that address. A worktree is always used — there
+is no way to run a minion without one. It fails loudly if you are not inside
+tmux; exit 2 with the screen on stderr if claude stopped at a dialog that needs
+the user (tell them, don't answer it); exit 1 with the screen if claude exited
+before it was up or isn't up within 90s (`REPO_SESSION_BOOT_TIMEOUT`). The
+launch itself is `repo-session`'s mechanism, pointed at your own session.
 
 Flags: `--worktree [name]` (omit name to auto-create), `--model sonnet|opus`
 (default opus), `--resume <session-id>` (needs `--worktree <name>`;
@@ -44,8 +50,7 @@ address the spawn printed:
 ```bash
 TALK=~/.claude/skills/tmux-talk/bin/tmux-talk
 
-$TALK wait "$ADDR" 60                 # let it boot before the first message
-$TALK send "$ADDR" "<your brief>"     # brief it
+$TALK send "$ADDR" "<your brief>"     # brief it (the spawn returned once it could take input)
 $TALK read-screen "$ADDR" 300         # see what it's doing
 ```
 
@@ -86,8 +91,8 @@ the backlog, and review the last result. Your responsibilities:
   ticket, the requirements in the user's actual words, the acceptance criteria,
   where to look, what "done" means) must be in the messages you send. If it
   isn't in the message, it doesn't exist for the minion.
-- **Confirm it actually started.** After spawning, `wait` then `read-screen` to
-  see claude booted in the right worktree and isn't stuck. Don't assume — look.
+- **Confirm it is where you think.** The spawn returns only once claude takes
+  input; `read-screen` to see it booted in the right worktree. Don't assume — look.
 - **Track each minion.** Keep a ledger: address → worktree → what it's working
   on → status. The address is the one handle; don't lose it.
 - **Review its work yourself.** Read the diff and the PR, not the minion's

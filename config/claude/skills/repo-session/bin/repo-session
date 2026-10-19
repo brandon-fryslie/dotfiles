@@ -9,12 +9,15 @@ set -euo pipefail
 USAGE="repo-session — launch claude (--dangerously-skip-permissions) in a repo's tmux session
 
 Usage:
-  repo-session <repo> [-- <extra claude args>...]
+  repo-session [--session <name>] <repo> [-- <extra claude args>...]
 
   <repo>   A directory path, or a bare name resolved as ~/code/<name>.
+  --session <name>   Put the window in this tmux session instead of the one
+                     named for the directory.
 
 The tmux session is named after the directory's basename ('.' and ':' become
-'_', as tmux requires). Missing session: created detached, rooted at the repo.
+'_', as tmux requires), unless --session names one. Missing session: created
+detached, rooted at the repo.
 Existing session: a new detached window is added to it — no existing pane is
 reused, and no attached client's view is switched.
 
@@ -27,8 +30,13 @@ shows its input prompt. Fails loudly, with the pane's screen, if claude exits or
 stops at a dialog before then, or is not up within REPO_SESSION_BOOT_TIMEOUT
 seconds (default 90)."
 
+case "${1:-}" in -h|--help) echo "$USAGE"; exit 0 ;; esac
+SESSION_ARG=""
+if [[ "${1:-}" == "--session" ]]; then
+  [[ -n "${2:-}" ]] || { echo "repo-session: --session requires a name" >&2; exit 1; }
+  SESSION_ARG="$2"; shift 2
+fi
 [[ $# -ge 1 ]] || { echo "$USAGE" >&2; exit 1; }
-case "$1" in -h|--help) echo "$USAGE"; exit 0 ;; esac
 
 REPO_ARG="$1"; shift
 EXTRA_ARGS=()
@@ -46,8 +54,10 @@ fi
 [[ -d "$REPO_ARG" ]] || { echo "repo-session: no such directory: $REPO_ARG" >&2; exit 1; }
 REPO_DIR=$(cd "$REPO_ARG" && pwd -P)
 
+# [LAW:dataflow-not-control-flow] the session is one value on every path:
+# the caller's, or derived from the directory's basename.
 BASENAME=$(basename "$REPO_DIR")
-SESSION=${BASENAME//[.:]/_}
+SESSION=${SESSION_ARG:-${BASENAME//[.:]/_}}
 
 # [LAW:one-source-of-truth] the claude this controller runs is the claude the
 # instance runs. The window inherits the tmux server's environment, not this
