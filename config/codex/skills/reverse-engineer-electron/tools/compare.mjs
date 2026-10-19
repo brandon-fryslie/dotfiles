@@ -224,7 +224,7 @@ function extractFunctions(file, shouldMinify) {
     let domain = 'source';
     if (shouldMinify) {
       try {
-        tokens = normalizedFunctionTokens(file.content.slice(node.start, node.end), loader);
+        tokens = normalizedFunctionTokens(node, file.content, loader);
         domain = 'normalized';
       } catch (e) {
         console.warn(`  Normalize error ${file.path}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
@@ -352,15 +352,12 @@ function extractFingerprints(files, shouldMinify, includeLiterals) {
             regexes.set(pat, (regexes.get(pat) || 0) + 1);
           }
           break;
-        case 'FunctionDeclaration':
-        case 'FunctionExpression':
-        case 'ArrowFunctionExpression': {
-          functionCount++;
-          const hash = tokensToHash(functionShapeTokens(node));
-          if (shapes.has(hash)) shapes.get(hash).count++;
-          else shapes.set(hash, { hash, count: 1 });
-          break;
-        }
+      }
+      if (isFunctionNode(node)) {
+        functionCount++;
+        const hash = tokensToHash(functionShapeTokens(node));
+        if (shapes.has(hash)) shapes.get(hash).count++;
+        else shapes.set(hash, { hash, count: 1 });
       }
     });
   }

@@ -1,5 +1,6 @@
 //
-// shape.mjs — the structural-shape contract shared by prepare.mjs and report.mjs
+// shape.mjs — the structural-shape contract shared by every tool that finds,
+// hashes, or compares functions: prepare, gate, report, compare, substitute.
 //
 // [LAW:one-source-of-truth] The manifest's shapeHash is only meaningful if every
 // tool that produces or looks up a hash derives it from the same algorithm over
@@ -20,6 +21,7 @@
 //     ever compared against tokens produced by this same function.
 
 import { parse } from '@babel/parser';
+import { isFunction } from '@babel/types';
 import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
 
@@ -60,19 +62,30 @@ export function walkWithParent(node, parent, visitor) {
   }
 }
 
+// [LAW:one-source-of-truth] babel's Function alias is the list of body-bearing
+// node kinds — FunctionDeclaration, FunctionExpression, ArrowFunctionExpression,
+// ObjectMethod, ClassMethod, ClassPrivateMethod — maintained by the parser's own
+// package, so the toolchain cannot drift from what the parser emits (ticket ayg:
+// a hand-kept list of three left every method invisible).
 export function isFunctionNode(node) {
-  return node.type === 'FunctionDeclaration' ||
-         node.type === 'FunctionExpression' ||
-         node.type === 'ArrowFunctionExpression';
+  return isFunction(node);
+}
+
+function keyName(key) {
+  if (!key) return null;
+  if (key.type === 'PrivateName') return `#${key.id.name}`;
+  return key.name || (typeof key.value === 'string' ? key.value : null);
 }
 
 export function resolveFunctionName(node, parent) {
   if (node.id?.name) return node.id.name;
+  // Methods carry their own key; a function-valued property's key is on the parent.
+  if (node.key) return keyName(node.key);
   if (!parent) return null;
   if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
-  if (parent.type === 'Property' || parent.type === 'MethodDefinition') {
-    const key = parent.key;
-    return key?.name || (typeof key?.value === 'string' ? key.value : null);
+  if (parent.type === 'ObjectProperty' || parent.type === 'ClassProperty' ||
+      parent.type === 'ClassPrivateProperty') {
+    return keyName(parent.key);
   }
   if (parent.type === 'AssignmentExpression' && parent.left) {
     if (parent.left.type === 'MemberExpression') {
@@ -154,13 +167,41 @@ export function charToLineCol(lineIndex, charOffset) {
 
 // --- Similarity domain ---
 
-// Normalize one function's source text through esbuild's syntax minifier and
-// return its shape tokens. Throws on unparseable input; callers own the
+// A function's source slice is a syntactically complete unit only inside a
+// wrapper, and the wrapper is one shape for every kind: an exported class body.
+// The export is load-bearing (a bare `(function(){...});` statement is
+// side-effect-free, so minifySyntax deletes it); the class body is what lets a
+// method slice (`static async *m(){}`) and any body reading `this.#x` parse at
+// all, since esbuild refuses a private name no enclosing class declares.
+// Which member form the slice takes is data keyed by node kind.
+// [LAW:dataflow-not-control-flow]
+const MEMBER = {
+  FunctionDeclaration:     (src) => `static f = (${src});`,
+  FunctionExpression:      (src) => `static f = (${src});`,
+  ArrowFunctionExpression: (src) => `static f = (${src});`,
+  ObjectMethod:            (src) => src,
+  ClassMethod:             (src) => src,
+  ClassPrivateMethod:      (src) => src,
+};
+
+// Private names the function's params and body reach for. The node's own key
+// is excluded by construction: a `#m(){}` must not also be declared as a field.
+function privateNamesIn(node) {
+  const names = new Set();
+  const collect = (n) => { if (n.type === 'PrivateName') names.add(n.id.name); };
+  for (const param of node.params) walk(param, collect);
+  walk(node.body, collect);
+  return [...names];
+}
+
+// Normalize one function node's source text through esbuild's syntax minifier
+// and return its shape tokens. Throws on unparseable input; callers own the
 // fallback so degradation is loud at the boundary. [LAW:no-silent-failure]
-export function normalizedFunctionTokens(fnSource, loader) {
-  // The export anchor is load-bearing: a bare `(function(){...});` expression
-  // statement is side-effect-free, so minifySyntax deletes it outright.
-  const wrapped = `export default (${fnSource});`;
+export function normalizedFunctionTokens(node, code, loader) {
+  const member = MEMBER[node.type];
+  if (!member) throw new Error(`not a function node: ${node.type}`);
+  const fields = privateNamesIn(node).map((name) => `#${name};`).join(' ');
+  const wrapped = `export default class { ${fields} ${member(code.slice(node.start, node.end))} }`;
   const minified = transformSync(wrapped, {
     loader,
     minify: true,

@@ -152,7 +152,7 @@ function buildIndexFromManifest(preparedDir) {
 
       let tokens;
       try {
-        tokens = normalizedFunctionTokens(rawCode.slice(node.start, node.end), 'js');
+        tokens = normalizedFunctionTokens(node, rawCode, 'js');
       } catch (e) {
         console.warn(`  Normalize error ${relPath}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
         tokens = identityTokens;
@@ -239,7 +239,7 @@ function buildDeminifiedIndex(dir) {
 
       let tokens;
       try {
-        tokens = normalizedFunctionTokens(file.content.slice(node.start, node.end), loader);
+        tokens = normalizedFunctionTokens(node, file.content, loader);
       } catch (e) {
         console.warn(`  Normalize error ${file.relPath}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
         tokens = functionShapeTokens(node);

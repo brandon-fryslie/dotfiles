@@ -16,8 +16,14 @@
 
 import { parse } from '@babel/parser';
 import { transformSync } from 'esbuild';
-import { createHash } from 'crypto';
 import fs from 'fs';
+import {
+  walkWithParent,
+  isFunctionNode,
+  resolveFunctionName,
+  functionShapeTokens,
+  tokensToHash,
+} from './shape.mjs';
 
 // --- CLI ---
 
@@ -57,100 +63,6 @@ function minifyCode(code) {
     console.warn(`  Minify error: ${e.message.split('\n')[0]}`);
     return null;
   }
-}
-
-// --- AST Walking ---
-
-const SKIP_KEYS = new Set([
-  'type', 'start', 'end', 'loc', 'leadingComments',
-  'trailingComments', 'innerComments', 'extra', 'range', 'comments',
-]);
-
-function walk(node, visitor) {
-  if (!node || typeof node !== 'object') return;
-  if (node.type) visitor(node);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const val = node[key];
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (item && typeof item === 'object' && item.type) walk(item, visitor);
-      }
-    } else if (val && typeof val === 'object' && val.type) {
-      walk(val, visitor);
-    }
-  }
-}
-
-function walkWithParent(node, parent, visitor) {
-  if (!node || typeof node !== 'object') return;
-  if (node.type) visitor(node, parent);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const val = node[key];
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (item && typeof item === 'object' && item.type) walkWithParent(item, node, visitor);
-      }
-    } else if (val && typeof val === 'object' && val.type) {
-      walkWithParent(val, node, visitor);
-    }
-  }
-}
-
-// --- Function Name Resolution ---
-
-function resolveFunctionName(node, parent) {
-  if (node.id?.name) return node.id.name;
-  if (!parent) return null;
-  if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
-  if (parent.type === 'Property' || parent.type === 'MethodDefinition') {
-    const key = parent.key;
-    return key?.name || (typeof key?.value === 'string' ? key.value : null);
-  }
-  if (parent.type === 'AssignmentExpression' && parent.left) {
-    if (parent.left.type === 'MemberExpression') {
-      const obj = parent.left.object?.name || '';
-      const prop = parent.left.property?.name || '';
-      return obj ? `${obj}.${prop}` : prop || null;
-    }
-    if (parent.left.type === 'Identifier') return parent.left.name;
-  }
-  return null;
-}
-
-// --- Structural Fingerprinting ---
-
-function functionShapeTokens(node) {
-  const parts = [];
-  walk(node, (n) => {
-    switch (n.type) {
-      case 'Identifier':        break;
-      case 'StringLiteral':     parts.push('S'); break;
-      case 'NumericLiteral':    parts.push('N'); break;
-      case 'BooleanLiteral':    parts.push(n.value ? 'T' : 'F'); break;
-      case 'NullLiteral':       parts.push('null'); break;
-      case 'RegExpLiteral':     parts.push('R'); break;
-      case 'BigIntLiteral':     parts.push('BI'); break;
-      case 'TemplateLiteral':   parts.push('TL'); break;
-      case 'TemplateElement':   break;
-      case 'BinaryExpression':
-      case 'LogicalExpression':
-      case 'AssignmentExpression':
-        parts.push(n.operator); break;
-      case 'UnaryExpression':
-        parts.push(`U:${n.operator}`); break;
-      case 'UpdateExpression':
-        parts.push(`${n.prefix ? 'pre' : 'post'}${n.operator}`); break;
-      default:
-        parts.push(n.type);
-    }
-  });
-  return parts;
-}
-
-function tokensToHash(tokens) {
-  return createHash('sha256').update(tokens.join(',')).digest('hex').slice(0, 16);
 }
 
 // --- LCS Similarity ---
@@ -213,10 +125,7 @@ function extractFunctions(code) {
 
   const functions = [];
   walkWithParent(ast, null, (node, parent) => {
-    const isFn = node.type === 'FunctionDeclaration' ||
-                 node.type === 'FunctionExpression' ||
-                 node.type === 'ArrowFunctionExpression';
-    if (!isFn) return;
+    if (!isFunctionNode(node)) return;
 
     const tokens = functionShapeTokens(node);
     functions.push({
