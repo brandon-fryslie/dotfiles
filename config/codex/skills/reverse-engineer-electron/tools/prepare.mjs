@@ -26,7 +26,8 @@ import {
   buildLineIndex,
   charToLineCol,
   parseFile,
-  isSourceFile,
+  listSourceFiles,
+  SOURCE_TREE_EXCLUDES,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -40,26 +41,10 @@ function parseArgs(argv) {
 
 function discoverJsFiles(dir) {
   const absDir = path.resolve(dir);
-  const results = [];
-
-  function scan(d) {
-    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === '.git') continue;
-        scan(full);
-      } else if (isSourceFile(entry.name)) {
-        results.push(full);
-      }
-    }
-  }
-
-  scan(absDir);
-  results.sort();
-  return results.map(f => ({
-    absPath: f,
-    relPath: path.relative(absDir, f),
-    content: fs.readFileSync(f, 'utf8'),
+  return listSourceFiles(absDir, SOURCE_TREE_EXCLUDES).map(rel => ({
+    absPath: path.join(absDir, rel),
+    relPath: rel,
+    content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
   }));
 }
 

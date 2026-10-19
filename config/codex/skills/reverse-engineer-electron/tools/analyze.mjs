@@ -21,7 +21,7 @@ import path from "path";
 import process from "process";
 import { execFileSync } from "child_process";
 import traverseImport from "@babel/traverse";
-import { parseFile, isSourceFile } from "./shape.mjs";
+import { parseFile, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const traverseAst = traverseImport.default || traverseImport;
 
@@ -52,35 +52,6 @@ function parseArgs(argv) {
 
   opts.buildDir = positional[0] || null;
   return { help: false, opts };
-}
-
-// ---------------------------------------------------------------------------
-// File discovery
-// ---------------------------------------------------------------------------
-
-function listSourceFiles(dir) {
-  const out = [];
-  const stack = [dir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries;
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === ".git" || entry.name === "node_modules") continue;
-        stack.push(full);
-        continue;
-      }
-      if (entry.isFile() && isSourceFile(entry.name)) out.push(full);
-    }
-  }
-  out.sort();
-  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -628,11 +599,7 @@ function main() {
 
   console.log(`Analyzing: ${buildDir}`);
 
-  const jsFiles = listSourceFiles(buildDir);
-  // Filter out manifest.json and analysis.json from processing
-  const sourceFiles = jsFiles.filter(
-    (f) => path.basename(f) !== "manifest.json" && path.basename(f) !== "analysis.json",
-  );
+  const sourceFiles = listSourceFiles(buildDir, SOURCE_TREE_EXCLUDES).map((rel) => path.join(buildDir, rel));
   console.log(`Found ${sourceFiles.length} JS files`);
 
   const fileResults = {};

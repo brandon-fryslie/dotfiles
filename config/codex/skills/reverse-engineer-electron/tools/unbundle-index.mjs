@@ -15,7 +15,7 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { walk, parseSource } from "./shape.mjs";
+import { walk, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -40,28 +40,9 @@ function ensureDir(dirPath) {
 }
 
 function listJsFiles(rootDir) {
-  const out = [];
-  const stack = [rootDir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const abs = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === ".git" || entry.name === "node_modules") continue;
-        stack.push(abs);
-        continue;
-      }
-      if (entry.isFile() && path.extname(entry.name) === ".js") out.push(abs);
-    }
-  }
-  out.sort();
-  return out;
+  return listFiles(rootDir, SOURCE_TREE_EXCLUDES)
+    .filter((rel) => path.extname(rel) === ".js")
+    .map((rel) => path.join(rootDir, rel));
 }
 
 function collectCandidateCalls(node, out) {
