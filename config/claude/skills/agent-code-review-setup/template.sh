@@ -211,7 +211,11 @@ read_repo_config() {
   local lineno=0 line key value found="" seen=" "
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
-    line="${line%%#*}"
+    # A comment starts at a `#` that opens the line or follows whitespace, as in a shell —
+    # never at a `#` inside a value, which `%%#*` would cut off silently. The leading space
+    # makes an opening `#` the same case as an inline one. [LAW:no-silent-failure]
+    line=" $line"
+    line="${line%%[[:space:]]#*}"
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
     [ -n "$line" ] || continue

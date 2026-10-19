@@ -5,9 +5,13 @@
 # automation whose exit condition is "no unresolved findings" reads every one of those
 # as approval. [LAW:no-silent-failure]
 #
-# The action posts exactly one of three disjoint markers at the end of a PR review body
+# The action ends each PR review body it posts with one of four disjoint markers
 # (copirate-code-review-agent, src/transport.js: REVIEW_MARKER, NOT_REVIEWED_MARKER_PREFIX,
-# UNFINISHED_MARKER), every one a PR review created against the commit it concerns.
+# UNFINISHED_MARKER, RELEASE_FAILED_MARKER), every one a PR review created against the
+# commit it concerns. Three answer "was this head reviewed" and are read here. The fourth,
+# release-failed, is a notice that a block from an earlier round could not be released; it
+# is posted beside a review or a not-reviewed notice, says nothing about whether THIS head
+# was read, and is passed over so it cannot outrank the marker that does.
 # [LAW:one-source-of-truth] exception: the marker strings are restated here because they
 # are the action's published contract for consumers, and this script is one; transport.js
 # is the source, and a change there is a change here.
@@ -31,6 +35,12 @@
 # success — a successful run always posts its own, newer marker, so when one exists the
 # newest marker is the run's. The not-reviewed and unfinished notices are posted with the
 # commit_id and never retried, so their stamp needs no cross-check. [LAW:no-silent-failure]
+#
+# The cost of that cross-check, stated: a run that posts its review and then fails (the
+# ledger append, a block release) reads `none` here, not `reviewed`. From the PR alone that
+# head is indistinguishable from the mis-stamped retry, and of the two ways to be wrong,
+# waving an unreviewed head through is the one this script exists to prevent; the other
+# sends the operator to a red run whose log names the step that failed after the post.
 #
 # Usage: review-outcome.sh <owner/repo> <pr-number>
 # Prints one of: reviewed | not-reviewed:<reason> | unfinished | none
