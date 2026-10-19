@@ -26,16 +26,25 @@ function runNode(scriptPath, args, cwd) {
 // Every body-bearing kind babel emits that is not a plain function: constructor,
 // static, getter, private, async generator, computed-key, object-literal method,
 // and a function-valued property for contrast. Ticket ayg: none of the methods
-// were seen by any tool.
+// were seen by any tool. The second class and `wrap` are the slices the esbuild
+// wrapper once rejected: a `super()` constructor, a private method recursing
+// through its own name, an identifier-computed key, an arrow reading `arguments`,
+// and an object getter keyed `constructor`.
 const MINIFIED_ORIGINAL = [
   "class Cart{#tax=0.2;constructor(items){this.items=items}static empty(){return new Cart([])}",
   "get total(){return this.items.reduce((a,i)=>a+i.price*i.qty,0)*(1+this.#tax)}",
   '#log(msg){console.log("cart:"+msg)}async *stream(){for(const i of this.items){yield i}}',
   "[Symbol.iterator](){return this.items[Symbol.iterator]()}}",
   "const util={fmt(n){return n.toFixed(2)},plain:function(a){return a+1}};",
+  "const k=\"size\";class Bag extends Cart{constructor(o){super([]);this.o=o}",
+  "#walk(n){return n?this.#walk(n-1):0}[k](){return this.#walk(3)}}",
+  "function wrap(){return [1].map(x=>arguments[0]+x)}",
+  "const proto={get constructor(){return Bag}};",
 ].join("");
 
-const METHOD_NAMES = ["constructor", "empty", "total", "#log", "stream", "fmt", "plain"];
+const METHOD_NAMES = ["constructor", "empty", "total", "#log", "stream", "fmt", "plain", "#walk", "wrap"];
+// Nameless but present: the reducer arrow, `[Symbol.iterator]`, `[k]`, the `arguments` arrow.
+const NAMELESS_COUNT = 4;
 
 function parseModule(code) {
   return parse(code, { sourceType: "module", plugins: [], errorRecovery: true, allowReturnOutsideFunction: true });
@@ -54,8 +63,8 @@ test("isFunctionNode and resolveFunctionName see every method kind babel emits",
   for (const name of METHOD_NAMES) {
     assert.ok(names.includes(name), `${name} must be found, got ${JSON.stringify(names)}`);
   }
-  // The reducer arrow inside total() and the computed-key method: nameless, but present.
-  assert.equal(names.filter((n) => n === null).length, 2, JSON.stringify(names));
+  assert.equal(names.filter((n) => n === null).length, NAMELESS_COUNT, JSON.stringify(names));
+  assert.ok(!names.includes("k"), `a computed key's identifier is not a name: ${JSON.stringify(names)}`);
 });
 
 test("normalizedFunctionTokens parses a method slice standalone and bridges a stylistic rewrite", () => {
@@ -70,6 +79,15 @@ test("normalizedFunctionTokens parses a method slice standalone and bridges a st
     return found;
   };
   assert.deepEqual(tokensOf(original), tokensOf(rewrite));
+});
+
+test("normalizedFunctionTokens parses a private method that recurses through its own name", () => {
+  const code = "class A { #f(n) { return n ? this.#f(n - 1) : 0; } }";
+  let tokens = null;
+  walkWithParent(parseModule(code), null, (node) => {
+    if (node.type === "ClassPrivateMethod") tokens = normalizedFunctionTokens(node, code, "js");
+  });
+  assert.ok(tokens.length > 0);
 });
 
 test("prepare manifests methods, gate prepare accepts the manifest, and report resolves them", () => {

@@ -18,9 +18,9 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { builtinModules } from "module";
-import { createHash } from "crypto";
 import { fileURLToPath } from "url";
 import { parse } from "@babel/parser";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
 const traverseAst = traverseImport.default || traverseImport;
@@ -29,19 +29,6 @@ const FINGERPRINTS_PATH = path.join(SCRIPT_DIR, "third-party-fingerprints.json")
 const BUNDLE_FORMAT_UNKNOWN = "plain";
 const BUILTIN_SET = new Set(builtinModules.map((item) => (item.startsWith("node:") ? item.slice(5) : item)));
 const LOADER_RUNTIME_PACKAGES = new Set(["style-loader", "css-loader", "file-loader", "url-loader"]);
-const SKIP_KEYS = new Set([
-  "type",
-  "start",
-  "end",
-  "loc",
-  "leadingComments",
-  "trailingComments",
-  "innerComments",
-  "extra",
-  "range",
-  "comments",
-]);
-
 function parseArgs(argv) {
   const opts = {
     appDir: "resources/app",
@@ -119,82 +106,14 @@ function parseJs(code) {
   });
 }
 
-function walk(node, visitor) {
-  if (!node || typeof node !== "object") return;
-  if (node.type) visitor(node);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const value = node[key];
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item === "object" && item.type) walk(item, visitor);
-      }
-      continue;
-    }
-    if (value && typeof value === "object" && value.type) walk(value, visitor);
-  }
-}
-
-function structuralTokens(node) {
-  const tokens = [];
-  walk(node, (current) => {
-    switch (current.type) {
-      case "Identifier":
-      case "PrivateName":
-        break;
-      case "StringLiteral":
-        tokens.push("S");
-        break;
-      case "NumericLiteral":
-        tokens.push("N");
-        break;
-      case "BooleanLiteral":
-        tokens.push(current.value ? "T" : "F");
-        break;
-      case "NullLiteral":
-        tokens.push("null");
-        break;
-      case "RegExpLiteral":
-        tokens.push("R");
-        break;
-      case "BigIntLiteral":
-        tokens.push("BI");
-        break;
-      case "TemplateLiteral":
-        tokens.push("TL");
-        break;
-      case "TemplateElement":
-        break;
-      case "BinaryExpression":
-      case "LogicalExpression":
-      case "AssignmentExpression":
-        tokens.push(current.operator);
-        break;
-      case "UnaryExpression":
-        tokens.push(`U:${current.operator}`);
-        break;
-      case "UpdateExpression":
-        tokens.push(`${current.prefix ? "pre" : "post"}${current.operator}`);
-        break;
-      default:
-        tokens.push(current.type);
-    }
-  });
-  return tokens;
-}
-
-function hashTokens(tokens) {
-  return createHash("sha256").update(tokens.join(",")).digest("hex").slice(0, 16);
-}
-
 function extractProgramBodyHash(code) {
   const ast = parseJs(code);
-  return hashTokens(structuralTokens(ast.program));
+  return tokensToHash(functionShapeTokens(ast.program));
 }
 
 function extractFunctionBodyHash(node) {
   const targetBody = node && node.body ? node.body : node;
-  return hashTokens(structuralTokens(targetBody));
+  return tokensToHash(functionShapeTokens(targetBody));
 }
 
 function isBareSpecifier(specifier) {
@@ -341,16 +260,10 @@ function indexPackageShapeHashes(packages) {
         const ast = parseJs(code);
         // [LAW:one-source-of-truth] Reuse the same structural walker for all detached-node hashing so traversal semantics stay consistent.
         walk(ast.program, (node) => {
-          if (
-            node.type !== "FunctionDeclaration" &&
-            node.type !== "FunctionExpression" &&
-            node.type !== "ArrowFunctionExpression"
-          ) {
-            return;
-          }
-          const tokens = structuralTokens(node.body);
+          if (!isFunctionNode(node)) return;
+          const tokens = functionShapeTokens(node.body);
           if (tokens.length < 20) return;
-          const functionHash = hashTokens(tokens);
+          const functionHash = tokensToHash(tokens);
           const items = byHash.get(functionHash) || [];
           items.push({
             package: pkg.name,
