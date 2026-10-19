@@ -4,9 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { parse } from "@babel/parser";
 
-import { walkWithParent, isFunctionNode, resolveFunctionName, normalizedFunctionTokens } from "../shape.mjs";
+import { walkWithParent, isFunctionNode, resolveFunctionName, normalizedFunctionTokens, parseSource } from "../shape.mjs";
 
 const TOOLS_DIR = path.resolve(import.meta.dirname, "..");
 
@@ -47,13 +46,10 @@ const METHOD_NAMES = ["constructor", "empty", "total", "#log", "stream", "fmt", 
 // Nameless but present: the reducer arrow, `[Symbol.iterator]`, `[k]`, the `arguments` arrow.
 const NAMELESS_COUNT = 4;
 
-function parseModule(code) {
-  return parse(code, { sourceType: "module", plugins: [], errorRecovery: true, allowReturnOutsideFunction: true });
-}
 
 function namedFunctions(code) {
   const names = [];
-  walkWithParent(parseModule(code), null, (node, parent) => {
+  walkWithParent(parseSource(code, "js"), null, (node, parent) => {
     if (isFunctionNode(node)) names.push(resolveFunctionName(node, parent));
   });
   return names;
@@ -74,7 +70,7 @@ test("normalizedFunctionTokens parses a method slice standalone and bridges a st
   const rewrite = "class A { #k; m(flag) { return flag ? this.#k : 2; } }";
   const tokensOf = (code) => {
     let found = null;
-    walkWithParent(parseModule(code), null, (node) => {
+    walkWithParent(parseSource(code, "js"), null, (node) => {
       if (!found && node.type === "ClassMethod") found = normalizedFunctionTokens(node, code, "js");
     });
     return found;
@@ -83,8 +79,8 @@ test("normalizedFunctionTokens parses a method slice standalone and bridges a st
 });
 
 // Tokens of the first node of the given kind in code, normalized.
-function normalizedOf(code, type, plugins = []) {
-  const ast = parse(code, { sourceType: "module", plugins, errorRecovery: true });
+function normalizedOf(code, type) {
+  const ast = parseSource(code, "js");
   let tokens = null;
   walkWithParent(ast, null, (node) => {
     if (!tokens && node.type === type) tokens = normalizedFunctionTokens(node, code, "js");
@@ -121,7 +117,7 @@ test("normalizedFunctionTokens keeps getter, static, async, generator and arrow 
 });
 
 test("normalizedFunctionTokens accepts a decorated method and a private-name computed key", () => {
-  assert.ok(normalizedOf("class A { @dec m() { return 1; } }", "ClassMethod", ["decorators"]).length > 0);
+  assert.ok(normalizedOf("class A { @dec m() { return 1; } }", "ClassMethod").length > 0);
   assert.ok(normalizedOf("class A { #k; [this.#k]() { return 1; } }", "ClassMethod").length > 0);
 });
 

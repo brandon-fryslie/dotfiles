@@ -26,8 +26,7 @@ import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { parse } from "@babel/parser";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, loaderFor } from "./shape.mjs";
 
 const EXIT = {
   PASS: 0,
@@ -148,29 +147,6 @@ function runAsarExtract(asarPath, outDir) {
   if (result.status !== 0) {
     throw new Error(`asar extract failed: ${result.stderr || result.stdout || "unknown error"}`);
   }
-}
-
-function parseJs(code) {
-  return parse(code, {
-    sourceType: "unambiguous",
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-    plugins: [
-      "jsx",
-      "classProperties",
-      "classPrivateProperties",
-      "classPrivateMethods",
-      "dynamicImport",
-      "importMeta",
-      "optionalChaining",
-      "nullishCoalescingOperator",
-      "topLevelAwait",
-      "numericSeparator",
-      "logicalAssignment",
-      "objectRestSpread",
-      "decorators-legacy",
-    ],
-  });
 }
 
 function countBy(items) {
@@ -348,8 +324,9 @@ function runPrepareGate(opts) {
     if (!fs.existsSync(preparedPath)) continue;
 
     try {
-      const origAst = parseJs(fs.readFileSync(origPath, "utf8"));
-      const preparedAst = parseJs(fs.readFileSync(preparedPath, "utf8"));
+      const loader = loaderFor(rel);
+      const origAst = parseSource(fs.readFileSync(origPath, "utf8"), loader);
+      const preparedAst = parseSource(fs.readFileSync(preparedPath, "utf8"), loader);
 
       const origProgramHash = tokensToHash(functionShapeTokens(origAst.program));
       const preparedProgramHash = tokensToHash(functionShapeTokens(preparedAst.program));

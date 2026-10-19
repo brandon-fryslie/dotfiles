@@ -10,7 +10,6 @@
 // Note: This script only formats and analyzes with AST parsing.
 // It does NOT rename identifiers and does NOT use regex-based code parsing.
 
-import { parse } from '@babel/parser';
 import prettier from 'prettier';
 import fs from 'fs';
 import path from 'path';
@@ -26,6 +25,8 @@ import {
   extractStrings,
   buildLineIndex,
   charToLineCol,
+  parseSource,
+  loaderFor,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -65,12 +66,7 @@ function discoverJsFiles(dir) {
 // --- Extract manifest entries from formatted code ---
 
 function extractManifestEntries(code, relPath) {
-  const ast = parse(code, {
-    sourceType: 'module',
-    plugins: [],
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-  });
+  const ast = parseSource(code, loaderFor(relPath));
 
   const lineIndex = buildLineIndex(code);
   const entries = [];

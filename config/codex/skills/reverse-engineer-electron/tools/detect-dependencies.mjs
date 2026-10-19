@@ -19,8 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { parse } from "@babel/parser";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
 const traverseAst = traverseImport.default || traverseImport;
@@ -84,26 +83,7 @@ function listJsFiles(targetPath) {
 }
 
 function parseJs(code) {
-  return parse(code, {
-    sourceType: "unambiguous",
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-    plugins: [
-      "jsx",
-      "classProperties",
-      "classPrivateProperties",
-      "classPrivateMethods",
-      "dynamicImport",
-      "importMeta",
-      "optionalChaining",
-      "nullishCoalescingOperator",
-      "topLevelAwait",
-      "numericSeparator",
-      "logicalAssignment",
-      "objectRestSpread",
-      "decorators-legacy",
-    ],
-  });
+  return parseSource(code, "js");
 }
 
 function extractProgramBodyHash(code) {

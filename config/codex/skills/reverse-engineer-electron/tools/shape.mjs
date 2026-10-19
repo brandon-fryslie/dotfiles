@@ -26,6 +26,62 @@ import { isFunction, isClassMethod, isClassPrivateMethod, isObjectMethod } from 
 import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
 
+// [LAW:one-source-of-truth] The parse that feeds every tool. gate once compared its
+// own parse of a prepared file against prepare's parse of the same file under a
+// different config (ticket qtw: three configs across nine tools), so any input the
+// two read differently failed the gate or passed it for the wrong reason. One
+// entry point, keyed by the file's loader, makes "same parse" structural.
+//
+// The loader is the one discriminator both readers of a file key on: babel's
+// plugin set here, esbuild's loader in normalizedFunctionTokens. JS is read as
+// JSX on both sides — JSX only claims a `<` where plain JS has no legal reading,
+// so it rejects nothing a js loader accepts — which is why .jsx is not its own
+// loader. [LAW:dataflow-not-control-flow] the per-loader differences are data;
+// every loader parses as 'unambiguous' with error recovery.
+const LOADERS = Object.freeze({
+  js: { esbuild: 'jsx', plugins: ['jsx', 'decorators'] },
+  ts: { esbuild: 'ts', plugins: ['typescript', 'decorators'] },
+  tsx: { esbuild: 'tsx', plugins: ['typescript', 'jsx', 'decorators'] },
+});
+
+const LOADER_BY_EXTENSION = Object.freeze({
+  '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js',
+  '.ts': 'ts', '.mts': 'ts', '.cts': 'ts',
+  '.tsx': 'tsx',
+});
+
+function loaderSpec(loader) {
+  const spec = LOADERS[loader];
+  if (!spec) throw new Error(`unknown loader ${JSON.stringify(loader)}`); // [LAW:no-silent-failure]
+  return spec;
+}
+
+// A file the toolchain reads: one with a loader, and not a declaration file,
+// which parses as ts but declares no bodies.
+export function isSourceFile(filePath) {
+  return !filePath.endsWith('.d.ts') && filePath.slice(filePath.lastIndexOf('.')) in LOADER_BY_EXTENSION;
+}
+
+export function loaderFor(filePath) {
+  const loader = LOADER_BY_EXTENSION[filePath.slice(filePath.lastIndexOf('.'))];
+  if (!loader) throw new Error(`no loader for ${filePath}`); // [LAW:no-silent-failure]
+  return loader;
+}
+
+// esbuild's loader name for one of ours; the one place the two vocabularies meet.
+export function esbuildLoader(loader) {
+  return loaderSpec(loader).esbuild;
+}
+
+export function parseSource(code, loader) {
+  return parse(code, {
+    sourceType: 'unambiguous',
+    plugins: loaderSpec(loader).plugins,
+    errorRecovery: true,
+    allowReturnOutsideFunction: true,
+  });
+}
+
 const SKIP_KEYS = new Set([
   'type', 'start', 'end', 'loc', 'leadingComments',
   'trailingComments', 'innerComments', 'extra', 'range', 'comments',
@@ -226,7 +282,7 @@ export function normalizedFunctionTokens(node, code, loader) {
   const wrapper = wrapperFor(node, code.slice(node.start, node.end));
   const wrapped = `export default class extends Object { ${fields} ${wrapper.member} }`;
   const minified = transformSync(wrapped, {
-    loader,
+    loader: esbuildLoader(loader),
     minify: true,
     minifyWhitespace: true,
     minifySyntax: true,
@@ -235,14 +291,9 @@ export function normalizedFunctionTokens(node, code, loader) {
     format: 'esm',
   }).code;
 
-  // esbuild emits decorators unchanged at target esnext; the read-back must
-  // accept what the callers' parsers accepted.
-  const ast = parse(minified, {
-    sourceType: 'module',
-    plugins: ['decorators'],
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-  });
+  // esbuild emits plain JS for every loader (types stripped, JSX lowered) and
+  // passes decorators through unchanged; the read-back is the js parse.
+  const ast = parseSource(minified, 'js');
 
   // The wrapper is ours, so the slice's position in it is known: the one
   // function-bearing member of the sole top-level class (esbuild names the

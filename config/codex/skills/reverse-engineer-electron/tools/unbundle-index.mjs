@@ -15,8 +15,7 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { parse } from "@babel/parser";
-import { walk } from "./shape.mjs";
+import { walk, parseSource } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -66,26 +65,7 @@ function listJsFiles(rootDir) {
 }
 
 function parseJs(code) {
-  return parse(code, {
-    sourceType: "unambiguous",
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-    plugins: [
-      "jsx",
-      "classProperties",
-      "classPrivateProperties",
-      "classPrivateMethods",
-      "dynamicImport",
-      "importMeta",
-      "optionalChaining",
-      "nullishCoalescingOperator",
-      "topLevelAwait",
-      "numericSeparator",
-      "logicalAssignment",
-      "objectRestSpread",
-      "decorators-legacy",
-    ],
-  });
+  return parseSource(code, "js");
 }
 
 function collectCandidateCalls(node, out) {
