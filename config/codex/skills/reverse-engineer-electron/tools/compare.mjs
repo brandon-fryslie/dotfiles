@@ -19,8 +19,6 @@
 //   --exclude=<pat>   Additional directory names to exclude (comma-separated)
 //   --include=<pat>   Override default excludes (comma-separated)
 
-import { parse } from '@babel/parser';
-import { transformSync } from 'esbuild';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -32,6 +30,11 @@ import {
   functionShapeTokens,
   tokensToHash,
   normalizedFunctionTokens,
+  parseSource,
+  parseFile,
+  loaderFor,
+  minifySource,
+  isSourceFile,
 } from './shape.mjs';
 
 // --- Configuration ---
@@ -85,17 +88,8 @@ function parseArgs(argv) {
 // --- Minification ---
 
 function minifyCode(code, filepath) {
-  const loader = /\.tsx?$/.test(filepath) ? 'ts' : 'js';
   try {
-    return transformSync(code, {
-      loader,
-      minify: true,
-      minifyWhitespace: true,
-      minifySyntax: true,
-      minifyIdentifiers: false,
-      target: 'esnext',
-      format: 'esm',
-    }).code;
+    return minifySource(code, loaderFor(filepath));
   } catch (e) {
     console.warn(`  Minify error ${filepath}: ${e.message.split('\n')[0]}`);
     return null;
@@ -114,7 +108,7 @@ function discoverFiles(dir, excludes) {
       if (entry.isDirectory()) {
         if (excludes.has(entry.name)) continue;
         scan(full);
-      } else if (/\.(js|ts|mjs|cjs)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+      } else if (isSourceFile(entry.name)) {
         results.push(full);
       }
     }
@@ -128,17 +122,6 @@ function discoverFiles(dir, excludes) {
   }));
 }
 
-// --- Parsing ---
-
-function parseCode(code, filepath, withTS = false) {
-  const plugins = withTS ? ['typescript', 'jsx', 'decorators'] : [];
-  try {
-    return parse(code, { sourceType: 'module', plugins, errorRecovery: true, allowReturnOutsideFunction: true });
-  } catch (e) {
-    console.warn(`  Parse error ${filepath}: ${e.message.split('\n')[0]}`);
-    return null;
-  }
-}
 
 // --- Extract functions from a source file ---
 // Names, lines, and char offsets come from the source AST (the file the user
@@ -147,9 +130,8 @@ function parseCode(code, filepath, withTS = false) {
 // a one-line minified string nobody can navigate to.
 
 function extractFunctions(file, shouldMinify) {
-  const loader = /\.tsx?$/.test(file.path) ? 'ts' : 'js';
-  const ast = parseCode(file.content, file.path, loader === 'ts');
-  if (!ast) return [];
+  const loader = loaderFor(file.path);
+  const ast = parseFile(file.content, file.path);
 
   const functions = [];
   walkWithParent(ast, null, (node, parent) => {
@@ -257,14 +239,14 @@ function extractFingerprints(files, shouldMinify, includeLiterals) {
   let minifyFailures = 0;
 
   for (const file of files) {
-    let code = file.content;
+    let ast;
     if (shouldMinify) {
-      const m = minifyCode(code, file.path);
+      const m = minifyCode(file.content, file.path);
       if (m == null) { minifyFailures++; continue; }
-      code = m;
+      ast = parseSource(m, 'js');
+    } else {
+      ast = parseFile(file.content, file.path);
     }
-    const ast = parseCode(code, file.path);
-    if (!ast) continue;
 
     walk(ast, (node) => {
       totalNodes++;

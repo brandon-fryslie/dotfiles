@@ -19,8 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { parse } from "@babel/parser";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
 const traverseAst = traverseImport.default || traverseImport;
@@ -83,31 +82,8 @@ function listJsFiles(targetPath) {
   return out;
 }
 
-function parseJs(code) {
-  return parse(code, {
-    sourceType: "unambiguous",
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-    plugins: [
-      "jsx",
-      "classProperties",
-      "classPrivateProperties",
-      "classPrivateMethods",
-      "dynamicImport",
-      "importMeta",
-      "optionalChaining",
-      "nullishCoalescingOperator",
-      "topLevelAwait",
-      "numericSeparator",
-      "logicalAssignment",
-      "objectRestSpread",
-      "decorators-legacy",
-    ],
-  });
-}
-
 function extractProgramBodyHash(code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   return tokensToHash(functionShapeTokens(ast.program));
 }
 
@@ -257,7 +233,7 @@ function indexPackageShapeHashes(packages) {
       byHash.set(hash, current);
 
       try {
-        const ast = parseJs(code);
+        const ast = parseSource(code, "js");
         // [LAW:one-source-of-truth] Reuse the same structural walker for all detached-node hashing so traversal semantics stay consistent.
         walk(ast.program, (node) => {
           if (!isFunctionNode(node)) return;
@@ -326,7 +302,7 @@ function loadLockfilePackages(appDir) {
 }
 
 function parseStaticBareSpecifiers(code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   const specifiers = [];
 
   traverseAst(ast, {
@@ -453,7 +429,7 @@ function entryModuleFromCode(code) {
 }
 
 function detectBundle(filePath, code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   const call = pickBestCandidateCall(ast);
   if (!call) return null;
 

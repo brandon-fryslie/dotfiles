@@ -13,15 +13,15 @@
  * // [LAW:verifiable-goals] Emits machine-readable JSON; every field is deterministic and reproducible.
  * // [LAW:one-source-of-truth] All analysis derives from the AST — no duplicated parsing, no heuristic guessing.
  * // [LAW:dataflow-not-control-flow] Every file goes through the same five passes; variability lives in the resulting data.
- * // [LAW:one-way-deps] analyze.mjs depends only on @babel/parser + @babel/traverse + child_process. No tool module imports.
+ * // [LAW:one-way-deps] analyze.mjs depends on @babel/traverse, child_process and shape.mjs — the base of the tools layer, which imports no tool.
  */
 
 import fs from "fs";
 import path from "path";
 import process from "process";
 import { execFileSync } from "child_process";
-import { parse } from "@babel/parser";
 import traverseImport from "@babel/traverse";
+import { parseFile, isSourceFile } from "./shape.mjs";
 
 const traverseAst = traverseImport.default || traverseImport;
 
@@ -58,7 +58,7 @@ function parseArgs(argv) {
 // File discovery
 // ---------------------------------------------------------------------------
 
-function listJsFiles(dir) {
+function listSourceFiles(dir) {
   const out = [];
   const stack = [dir];
   while (stack.length > 0) {
@@ -76,7 +76,7 @@ function listJsFiles(dir) {
         stack.push(full);
         continue;
       }
-      if (entry.isFile() && path.extname(entry.name) === ".js") out.push(full);
+      if (entry.isFile() && isSourceFile(entry.name)) out.push(full);
     }
   }
   out.sort();
@@ -89,26 +89,7 @@ function listJsFiles(dir) {
 
 function parseSafe(code, filePath) {
   try {
-    return parse(code, {
-      sourceType: "unambiguous",
-      errorRecovery: true,
-      allowReturnOutsideFunction: true,
-      plugins: [
-        "jsx",
-        "classProperties",
-        "classPrivateProperties",
-        "classPrivateMethods",
-        "dynamicImport",
-        "importMeta",
-        "optionalChaining",
-        "nullishCoalescingOperator",
-        "topLevelAwait",
-        "numericSeparator",
-        "logicalAssignment",
-        "objectRestSpread",
-        "decorators-legacy",
-      ],
-    });
+    return parseFile(code, filePath);
   } catch (error) {
     return { parseError: error.message, filePath };
   }
@@ -647,7 +628,7 @@ function main() {
 
   console.log(`Analyzing: ${buildDir}`);
 
-  const jsFiles = listJsFiles(buildDir);
+  const jsFiles = listSourceFiles(buildDir);
   // Filter out manifest.json and analysis.json from processing
   const sourceFiles = jsFiles.filter(
     (f) => path.basename(f) !== "manifest.json" && path.basename(f) !== "analysis.json",

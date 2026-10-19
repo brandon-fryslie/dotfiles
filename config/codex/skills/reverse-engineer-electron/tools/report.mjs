@@ -9,9 +9,9 @@
 //   --json          Output as JSON instead of text
 //
 // The prepared-dir must contain manifest.json (from prepare.mjs) and the
-// formatted original files. The deminified-dir contains agent-produced .ts/.js files.
+// formatted original files. The deminified-dir contains agent-produced source files
+// (any extension isSourceFile in shape.mjs accepts).
 
-import { parse } from '@babel/parser';
 import fs from 'fs';
 import path from 'path';
 
@@ -27,6 +27,9 @@ import {
   functionShapeTokens,
   tokensToHash,
   normalizedFunctionTokens,
+  parseFile,
+  loaderFor,
+  isSourceFile,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -79,13 +82,8 @@ function buildIndexFromManifest(preparedDir) {
     const filePath = path.join(preparedDir, relPath);
     const rawCode = fs.readFileSync(filePath, 'utf8');
 
-    const ast = parse(rawCode, {
-      sourceType: 'module',
-      plugins: [],
-      errorRecovery: true,
-      allowReturnOutsideFunction: true,
-    });
-    if (!ast) continue;
+    const loader = loaderFor(relPath);
+    const ast = parseFile(rawCode, relPath);
 
     const manifestByHash = new Map();
     for (const entry of entries) {
@@ -108,7 +106,7 @@ function buildIndexFromManifest(preparedDir) {
       let tokens;
       let domain = 'source';
       try {
-        tokens = normalizedFunctionTokens(node, rawCode, 'js');
+        tokens = normalizedFunctionTokens(node, rawCode, loader);
         domain = 'normalized';
       } catch (e) {
         console.warn(`  Normalize error ${relPath}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
@@ -159,7 +157,7 @@ function discoverFiles(dir) {
       if (entry.isDirectory()) {
         if (DEMINIFIED_EXCLUDES.has(entry.name)) continue;
         scan(full);
-      } else if (/\.(js|ts|mjs|cjs)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+      } else if (isSourceFile(entry.name)) {
         results.push(full);
       }
     }
@@ -182,15 +180,8 @@ function buildDeminifiedIndex(dir) {
   const results = [];
 
   for (const file of files) {
-    const ast = parse(file.content, {
-      sourceType: 'module',
-      plugins: ['typescript', 'jsx', 'decorators'],
-      errorRecovery: true,
-      allowReturnOutsideFunction: true,
-    });
-    if (!ast) continue;
-
-    const loader = /\.tsx?$/.test(file.relPath) ? 'ts' : 'js';
+    const loader = loaderFor(file.relPath);
+    const ast = parseFile(file.content, file.relPath);
 
     walkWithParent(ast, null, (node, parent) => {
       if (!isFunctionNode(node)) return;

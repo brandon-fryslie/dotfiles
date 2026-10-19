@@ -15,8 +15,7 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { parse } from "@babel/parser";
-import { walk } from "./shape.mjs";
+import { walk, parseSource } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -63,29 +62,6 @@ function listJsFiles(rootDir) {
   }
   out.sort();
   return out;
-}
-
-function parseJs(code) {
-  return parse(code, {
-    sourceType: "unambiguous",
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-    plugins: [
-      "jsx",
-      "classProperties",
-      "classPrivateProperties",
-      "classPrivateMethods",
-      "dynamicImport",
-      "importMeta",
-      "optionalChaining",
-      "nullishCoalescingOperator",
-      "topLevelAwait",
-      "numericSeparator",
-      "logicalAssignment",
-      "objectRestSpread",
-      "decorators-legacy",
-    ],
-  });
 }
 
 function collectCandidateCalls(node, out) {
@@ -236,7 +212,7 @@ function extractBundleDependencyInfo(moduleRecord, format) {
 }
 
 function detectBundle(code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   const call = pickBestCandidateCall(ast);
   if (!call) return null;
 

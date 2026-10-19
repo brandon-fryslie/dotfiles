@@ -118,9 +118,9 @@ test("collection-B lines come from the deminified source the agent wrote", () =>
 
 // A function whose normalization fails on exactly one side must not be
 // LCS-scored against normalized-domain tokens: the resulting low score reads
-// as a semantic difference when it is a normalization artifact. JSX inside a
-// .ts file is the trigger — babel's jsx plugin parses it, esbuild's ts
-// loader rejects it.
+// as a semantic difference when it is a normalization artifact. A class with
+// two constructors is the trigger — babel parses it without error, esbuild
+// refuses to transform it.
 test("normalization-failure fallback never cross-compares token domains", () => {
   const tmp = mkTmpDir();
   writeText(
@@ -136,7 +136,8 @@ test("normalization-failure fallback never cross-compares token domains", () => 
       "  for (let i = 0; i < count; i++) {",
       "    items.push(i * 2 + 1);",
       "  }",
-      "  return <div>{items.length}</div>;",
+      "  class K { constructor() {} constructor() {} }",
+      "  return items.length;",
       "};",
       "",
       "function tinyHelper(x) {",

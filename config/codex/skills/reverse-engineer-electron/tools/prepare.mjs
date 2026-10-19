@@ -4,13 +4,12 @@
 //
 // Usage: node prepare.mjs <input-dir> <output-dir>
 //
-// Input:  Directory of minified .js files (e.g., /tmp/codex-extracted/.vite/build/)
+// Input:  Directory of minified source files (e.g., /tmp/codex-extracted/.vite/build/)
 // Output: Formatted files in output-dir + manifest.json with function metadata
 //
 // Note: This script only formats and analyzes with AST parsing.
 // It does NOT rename identifiers and does NOT use regex-based code parsing.
 
-import { parse } from '@babel/parser';
 import prettier from 'prettier';
 import fs from 'fs';
 import path from 'path';
@@ -26,6 +25,8 @@ import {
   extractStrings,
   buildLineIndex,
   charToLineCol,
+  parseFile,
+  isSourceFile,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -47,7 +48,7 @@ function discoverJsFiles(dir) {
       if (entry.isDirectory()) {
         if (entry.name === 'node_modules' || entry.name === '.git') continue;
         scan(full);
-      } else if (path.extname(entry.name) === '.js') {
+      } else if (isSourceFile(entry.name)) {
         results.push(full);
       }
     }
@@ -65,12 +66,7 @@ function discoverJsFiles(dir) {
 // --- Extract manifest entries from formatted code ---
 
 function extractManifestEntries(code, relPath) {
-  const ast = parse(code, {
-    sourceType: 'module',
-    plugins: [],
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-  });
+  const ast = parseFile(code, relPath);
 
   const lineIndex = buildLineIndex(code);
   const entries = [];
@@ -123,7 +119,7 @@ async function main() {
 
   // Discover input files
   const files = discoverJsFiles(inputDir);
-  console.log(`\nFound ${files.length} .js files`);
+  console.log(`\nFound ${files.length} source files`);
 
   // Ensure output directory exists
   fs.mkdirSync(outputDir, { recursive: true });
@@ -142,7 +138,7 @@ async function main() {
     let formatted;
     try {
       formatted = await prettier.format(file.content, {
-        parser: 'babel',
+        filepath: file.relPath, // prettier picks its parser by the extension, as loaderFor does
         printWidth: 100,
         tabWidth: 2,
         semi: true,

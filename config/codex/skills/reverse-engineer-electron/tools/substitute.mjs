@@ -14,8 +14,6 @@
 // structural comparison, so cosmetic differences (whitespace, JSDoc comments,
 // if→ternary) don't affect similarity scores.
 
-import { parse } from '@babel/parser';
-import { transformSync } from 'esbuild';
 import fs from 'fs';
 import {
   tokenSimilarity,
@@ -24,6 +22,8 @@ import {
   resolveFunctionName,
   functionShapeTokens,
   tokensToHash,
+  parseSource,
+  minifySource,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -51,15 +51,7 @@ function parseArgs(argv) {
 
 function minifyCode(code) {
   try {
-    return transformSync(code, {
-      loader: 'js',
-      minify: true,
-      minifyWhitespace: true,
-      minifySyntax: true,
-      minifyIdentifiers: false,
-      target: 'esnext',
-      format: 'esm',
-    }).code;
+    return minifySource(code, 'js');
   } catch (e) {
     console.warn(`  Minify error: ${e.message.split('\n')[0]}`);
     return null;
@@ -69,12 +61,7 @@ function minifyCode(code) {
 // --- Function extraction ---
 
 function extractFunctions(code) {
-  const ast = parse(code, {
-    sourceType: 'module',
-    plugins: [],
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-  });
+  const ast = parseSource(code, 'js');
 
   const functions = [];
   walkWithParent(ast, null, (node, parent) => {

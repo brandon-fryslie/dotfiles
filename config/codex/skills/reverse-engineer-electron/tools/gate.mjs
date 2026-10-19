@@ -26,8 +26,7 @@ import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { parse } from "@babel/parser";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, isSourceFile } from "./shape.mjs";
 
 const EXIT = {
   PASS: 0,
@@ -120,8 +119,8 @@ function listFiles(rootDir) {
   return out;
 }
 
-function listJsFiles(rootDir) {
-  return listFiles(rootDir).filter((rel) => rel.endsWith(".js"));
+function listSourceFiles(rootDir) {
+  return listFiles(rootDir).filter(isSourceFile);
 }
 
 function mapFileHashes(rootDir, relFiles) {
@@ -148,29 +147,6 @@ function runAsarExtract(asarPath, outDir) {
   if (result.status !== 0) {
     throw new Error(`asar extract failed: ${result.stderr || result.stdout || "unknown error"}`);
   }
-}
-
-function parseJs(code) {
-  return parse(code, {
-    sourceType: "unambiguous",
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-    plugins: [
-      "jsx",
-      "classProperties",
-      "classPrivateProperties",
-      "classPrivateMethods",
-      "dynamicImport",
-      "importMeta",
-      "optionalChaining",
-      "nullishCoalescingOperator",
-      "topLevelAwait",
-      "numericSeparator",
-      "logicalAssignment",
-      "objectRestSpread",
-      "decorators-legacy",
-    ],
-  });
 }
 
 function countBy(items) {
@@ -326,8 +302,8 @@ function runPrepareGate(opts) {
     return artifact;
   }
 
-  const origJs = listJsFiles(origDir);
-  const preparedJs = listJsFiles(preparedDir);
+  const origJs = listSourceFiles(origDir);
+  const preparedJs = listSourceFiles(preparedDir);
   const missingFiles = setDiff(origJs, preparedJs);
   const extraFiles = setDiff(preparedJs, origJs);
 
@@ -348,8 +324,8 @@ function runPrepareGate(opts) {
     if (!fs.existsSync(preparedPath)) continue;
 
     try {
-      const origAst = parseJs(fs.readFileSync(origPath, "utf8"));
-      const preparedAst = parseJs(fs.readFileSync(preparedPath, "utf8"));
+      const origAst = parseFile(fs.readFileSync(origPath, "utf8"), rel);
+      const preparedAst = parseFile(fs.readFileSync(preparedPath, "utf8"), rel);
 
       const origProgramHash = tokensToHash(functionShapeTokens(origAst.program));
       const preparedProgramHash = tokensToHash(functionShapeTokens(preparedAst.program));
@@ -504,8 +480,8 @@ function runRemoveDepsGate(opts) {
   }
 
   if (fs.existsSync(baselineDir) && fs.existsSync(workingDir)) {
-    const baselineJs = listJsFiles(baselineDir);
-    const workingJs = listJsFiles(workingDir);
+    const baselineJs = listSourceFiles(baselineDir);
+    const workingJs = listSourceFiles(workingDir);
     artifact.metrics.baselineJsFiles = baselineJs.length;
     artifact.metrics.workingJsFiles = workingJs.length;
 
