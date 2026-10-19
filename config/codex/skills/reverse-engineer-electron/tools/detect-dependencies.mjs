@@ -82,12 +82,8 @@ function listJsFiles(targetPath) {
   return out;
 }
 
-function parseJs(code) {
-  return parseSource(code, "js");
-}
-
 function extractProgramBodyHash(code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   return tokensToHash(functionShapeTokens(ast.program));
 }
 
@@ -237,7 +233,7 @@ function indexPackageShapeHashes(packages) {
       byHash.set(hash, current);
 
       try {
-        const ast = parseJs(code);
+        const ast = parseSource(code, "js");
         // [LAW:one-source-of-truth] Reuse the same structural walker for all detached-node hashing so traversal semantics stay consistent.
         walk(ast.program, (node) => {
           if (!isFunctionNode(node)) return;
@@ -306,7 +302,7 @@ function loadLockfilePackages(appDir) {
 }
 
 function parseStaticBareSpecifiers(code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   const specifiers = [];
 
   traverseAst(ast, {
@@ -433,7 +429,7 @@ function entryModuleFromCode(code) {
 }
 
 function detectBundle(filePath, code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   const call = pickBestCandidateCall(ast);
   if (!call) return null;
 

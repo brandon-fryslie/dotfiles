@@ -64,10 +64,6 @@ function listJsFiles(rootDir) {
   return out;
 }
 
-function parseJs(code) {
-  return parseSource(code, "js");
-}
-
 function collectCandidateCalls(node, out) {
   if (!node || typeof node !== "object") return;
   if (node.type === "CallExpression" && Array.isArray(node.arguments)) {
@@ -216,7 +212,7 @@ function extractBundleDependencyInfo(moduleRecord, format) {
 }
 
 function detectBundle(code) {
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   const call = pickBestCandidateCall(ast);
   if (!call) return null;
 

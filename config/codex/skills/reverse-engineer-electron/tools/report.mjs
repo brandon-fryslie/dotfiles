@@ -9,7 +9,8 @@
 //   --json          Output as JSON instead of text
 //
 // The prepared-dir must contain manifest.json (from prepare.mjs) and the
-// formatted original files. The deminified-dir contains agent-produced .ts/.js files.
+// formatted original files. The deminified-dir contains agent-produced source files
+// (any extension isSourceFile in shape.mjs accepts).
 
 import fs from 'fs';
 import path from 'path';
@@ -26,7 +27,7 @@ import {
   functionShapeTokens,
   tokensToHash,
   normalizedFunctionTokens,
-  parseSource,
+  parseFile,
   loaderFor,
   isSourceFile,
 } from './shape.mjs';
@@ -82,7 +83,7 @@ function buildIndexFromManifest(preparedDir) {
     const rawCode = fs.readFileSync(filePath, 'utf8');
 
     const loader = loaderFor(relPath);
-    const ast = parseSource(rawCode, loader);
+    const ast = parseFile(rawCode, relPath);
 
     const manifestByHash = new Map();
     for (const entry of entries) {
@@ -180,7 +181,7 @@ function buildDeminifiedIndex(dir) {
 
   for (const file of files) {
     const loader = loaderFor(file.relPath);
-    const ast = parseSource(file.content, loader);
+    const ast = parseFile(file.content, file.relPath);
 
     walkWithParent(ast, null, (node, parent) => {
       if (!isFunctionNode(node)) return;

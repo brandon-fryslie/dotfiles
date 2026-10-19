@@ -50,10 +50,6 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
 }
 
-function parseJs(code) {
-  return parseSource(code, "js");
-}
-
 function countBy(items) {
   const out = {};
   for (const item of items) out[item] = (out[item] || 0) + 1;
@@ -212,7 +208,7 @@ function buildReachableFileSet(pkgRoot, pkgJson) {
 
     let ast;
     try {
-      ast = parseJs(code);
+      ast = parseSource(code, "js");
     } catch {
       continue;
     }
@@ -235,7 +231,7 @@ function buildReachableFileSet(pkgRoot, pkgJson) {
 
 function fileStructuralInfo(absPath) {
   const code = fs.readFileSync(absPath, "utf8");
-  const ast = parseJs(code);
+  const ast = parseSource(code, "js");
   const programHash = tokensToHash(functionShapeTokens(ast.program));
 
   const functionHashes = [];

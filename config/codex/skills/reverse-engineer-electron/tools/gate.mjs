@@ -26,7 +26,7 @@ import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, loaderFor } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, isSourceFile } from "./shape.mjs";
 
 const EXIT = {
   PASS: 0,
@@ -119,8 +119,8 @@ function listFiles(rootDir) {
   return out;
 }
 
-function listJsFiles(rootDir) {
-  return listFiles(rootDir).filter((rel) => rel.endsWith(".js"));
+function listSourceFiles(rootDir) {
+  return listFiles(rootDir).filter(isSourceFile);
 }
 
 function mapFileHashes(rootDir, relFiles) {
@@ -302,8 +302,8 @@ function runPrepareGate(opts) {
     return artifact;
   }
 
-  const origJs = listJsFiles(origDir);
-  const preparedJs = listJsFiles(preparedDir);
+  const origJs = listSourceFiles(origDir);
+  const preparedJs = listSourceFiles(preparedDir);
   const missingFiles = setDiff(origJs, preparedJs);
   const extraFiles = setDiff(preparedJs, origJs);
 
@@ -324,9 +324,8 @@ function runPrepareGate(opts) {
     if (!fs.existsSync(preparedPath)) continue;
 
     try {
-      const loader = loaderFor(rel);
-      const origAst = parseSource(fs.readFileSync(origPath, "utf8"), loader);
-      const preparedAst = parseSource(fs.readFileSync(preparedPath, "utf8"), loader);
+      const origAst = parseFile(fs.readFileSync(origPath, "utf8"), rel);
+      const preparedAst = parseFile(fs.readFileSync(preparedPath, "utf8"), rel);
 
       const origProgramHash = tokensToHash(functionShapeTokens(origAst.program));
       const preparedProgramHash = tokensToHash(functionShapeTokens(preparedAst.program));
@@ -481,8 +480,8 @@ function runRemoveDepsGate(opts) {
   }
 
   if (fs.existsSync(baselineDir) && fs.existsSync(workingDir)) {
-    const baselineJs = listJsFiles(baselineDir);
-    const workingJs = listJsFiles(workingDir);
+    const baselineJs = listSourceFiles(baselineDir);
+    const workingJs = listSourceFiles(workingDir);
     artifact.metrics.baselineJsFiles = baselineJs.length;
     artifact.metrics.workingJsFiles = workingJs.length;
 

@@ -65,6 +65,7 @@ test("one parse feeds prepare, gate and report: a decorated JSX fixture passes t
 test("shape.mjs is the only importer of @babel/parser", () => {
   const files = ["", "tests"].flatMap((d) =>
     fs.readdirSync(path.join(TOOLS_DIR, d)).filter((f) => f.endsWith(".mjs")).map((f) => path.join(d, f)));
-  const importers = files.filter((f) => /from ["']@babel\/parser["']/.test(fs.readFileSync(path.join(TOOLS_DIR, f), "utf8")));
+  // Any import form: static, dynamic, or a deep path under the package.
+  const importers = files.filter((f) => /["']@babel\/parser(\/[^"']*)?["']/.test(fs.readFileSync(path.join(TOOLS_DIR, f), "utf8")));
   assert.deepEqual(importers, ["shape.mjs"]);
 });

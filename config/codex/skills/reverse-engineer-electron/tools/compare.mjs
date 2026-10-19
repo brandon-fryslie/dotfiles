@@ -19,7 +19,6 @@
 //   --exclude=<pat>   Additional directory names to exclude (comma-separated)
 //   --include=<pat>   Override default excludes (comma-separated)
 
-import { transformSync } from 'esbuild';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -32,8 +31,9 @@ import {
   tokensToHash,
   normalizedFunctionTokens,
   parseSource,
+  parseFile,
   loaderFor,
-  esbuildLoader,
+  minifySource,
   isSourceFile,
 } from './shape.mjs';
 
@@ -89,15 +89,7 @@ function parseArgs(argv) {
 
 function minifyCode(code, filepath) {
   try {
-    return transformSync(code, {
-      loader: esbuildLoader(loaderFor(filepath)),
-      minify: true,
-      minifyWhitespace: true,
-      minifySyntax: true,
-      minifyIdentifiers: false,
-      target: 'esnext',
-      format: 'esm',
-    }).code;
+    return minifySource(code, loaderFor(filepath));
   } catch (e) {
     console.warn(`  Minify error ${filepath}: ${e.message.split('\n')[0]}`);
     return null;
@@ -139,7 +131,7 @@ function discoverFiles(dir, excludes) {
 
 function extractFunctions(file, shouldMinify) {
   const loader = loaderFor(file.path);
-  const ast = parseSource(file.content, loader);
+  const ast = parseFile(file.content, file.path);
 
   const functions = [];
   walkWithParent(ast, null, (node, parent) => {
@@ -247,15 +239,14 @@ function extractFingerprints(files, shouldMinify, includeLiterals) {
   let minifyFailures = 0;
 
   for (const file of files) {
-    let code = file.content;
-    let loader = loaderFor(file.path);
+    let ast;
     if (shouldMinify) {
-      const m = minifyCode(code, file.path);
+      const m = minifyCode(file.content, file.path);
       if (m == null) { minifyFailures++; continue; }
-      code = m;
-      loader = 'js'; // esbuild output is plain JS whatever the input loader
+      ast = parseSource(m, 'js');
+    } else {
+      ast = parseFile(file.content, file.path);
     }
-    const ast = parseSource(code, loader);
 
     walk(ast, (node) => {
       totalNodes++;

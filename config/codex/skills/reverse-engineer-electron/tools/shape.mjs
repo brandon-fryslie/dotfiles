@@ -25,6 +25,7 @@ import { parse } from '@babel/parser';
 import { isFunction, isClassMethod, isClassPrivateMethod, isObjectMethod } from '@babel/types';
 import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
+import path from 'path';
 
 // [LAW:one-source-of-truth] The parse that feeds every tool. gate once compared its
 // own parse of a prepared file against prepare's parse of the same file under a
@@ -56,21 +57,18 @@ function loaderSpec(loader) {
   return spec;
 }
 
+const DECLARATION_FILE = /\.d\.[mc]?ts$/;
+
 // A file the toolchain reads: one with a loader, and not a declaration file,
 // which parses as ts but declares no bodies.
 export function isSourceFile(filePath) {
-  return !filePath.endsWith('.d.ts') && filePath.slice(filePath.lastIndexOf('.')) in LOADER_BY_EXTENSION;
+  return !DECLARATION_FILE.test(filePath) && path.extname(filePath) in LOADER_BY_EXTENSION;
 }
 
 export function loaderFor(filePath) {
-  const loader = LOADER_BY_EXTENSION[filePath.slice(filePath.lastIndexOf('.'))];
+  const loader = LOADER_BY_EXTENSION[path.extname(filePath)];
   if (!loader) throw new Error(`no loader for ${filePath}`); // [LAW:no-silent-failure]
   return loader;
-}
-
-// esbuild's loader name for one of ours; the one place the two vocabularies meet.
-export function esbuildLoader(loader) {
-  return loaderSpec(loader).esbuild;
 }
 
 export function parseSource(code, loader) {
@@ -80,6 +78,32 @@ export function parseSource(code, loader) {
     errorRecovery: true,
     allowReturnOutsideFunction: true,
   });
+}
+
+// The parse for code that came from a file: the loader is the file's, and a
+// failure names the file — babel's SyntaxError carries only a line and column.
+export function parseFile(code, filePath) {
+  try {
+    return parseSource(code, loaderFor(filePath));
+  } catch (e) {
+    throw new Error(`${filePath}: ${e.message}`, { cause: e }); // [LAW:no-silent-failure]
+  }
+}
+
+// [LAW:one-source-of-truth] The esbuild side of "both readers see one file":
+// the one transform whose output normalizedFunctionTokens and the whole-file
+// fingerprints read back. Output is plain JS for every loader (types stripped,
+// JSX lowered, decorators passed through), so the read-back is parseSource(.., 'js').
+export function minifySource(code, loader) {
+  return transformSync(code, {
+    loader: loaderSpec(loader).esbuild,
+    minify: true,
+    minifyWhitespace: true,
+    minifySyntax: true,
+    minifyIdentifiers: false,
+    target: 'esnext',
+    format: 'esm',
+  }).code;
 }
 
 const SKIP_KEYS = new Set([
@@ -281,18 +305,7 @@ export function normalizedFunctionTokens(node, code, loader) {
   const fields = privateNamesIn(node).map((name) => `#${name};`).join(' ');
   const wrapper = wrapperFor(node, code.slice(node.start, node.end));
   const wrapped = `export default class extends Object { ${fields} ${wrapper.member} }`;
-  const minified = transformSync(wrapped, {
-    loader: esbuildLoader(loader),
-    minify: true,
-    minifyWhitespace: true,
-    minifySyntax: true,
-    minifyIdentifiers: false,
-    target: 'esnext',
-    format: 'esm',
-  }).code;
-
-  // esbuild emits plain JS for every loader (types stripped, JSX lowered) and
-  // passes decorators through unchanged; the read-back is the js parse.
+  const minified = minifySource(wrapped, loader);
   const ast = parseSource(minified, 'js');
 
   // The wrapper is ours, so the slice's position in it is known: the one

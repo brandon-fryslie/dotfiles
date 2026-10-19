@@ -14,7 +14,6 @@
 // structural comparison, so cosmetic differences (whitespace, JSDoc comments,
 // if→ternary) don't affect similarity scores.
 
-import { transformSync } from 'esbuild';
 import fs from 'fs';
 import {
   tokenSimilarity,
@@ -24,7 +23,7 @@ import {
   functionShapeTokens,
   tokensToHash,
   parseSource,
-  esbuildLoader,
+  minifySource,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -52,15 +51,7 @@ function parseArgs(argv) {
 
 function minifyCode(code) {
   try {
-    return transformSync(code, {
-      loader: esbuildLoader('js'),
-      minify: true,
-      minifyWhitespace: true,
-      minifySyntax: true,
-      minifyIdentifiers: false,
-      target: 'esnext',
-      format: 'esm',
-    }).code;
+    return minifySource(code, 'js');
   } catch (e) {
     console.warn(`  Minify error: ${e.message.split('\n')[0]}`);
     return null;
