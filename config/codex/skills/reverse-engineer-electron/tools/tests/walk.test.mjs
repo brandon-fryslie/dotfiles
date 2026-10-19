@@ -46,3 +46,39 @@ test("gate prepare passes over an input containing node_modules", () => {
   assert.deepEqual(artifact.mismatches.missingFiles, []);
   assert.equal(artifact.metrics.filesCompared, 1);
 });
+
+test("listFiles throws on an unreadable root instead of returning a shorter inventory", () => {
+  const tmp = inputTree();
+  assert.throws(() => listFiles(path.join(tmp, "absent"), SOURCE_TREE_EXCLUDES), /ENOENT/);
+});
+
+// The remove-deps gate checks the app's own code is unchanged. node_modules is
+// what remove-deps changes: replace-dependency swaps a package dir for a symlink,
+// which no walk descends, so a walk that listed node_modules reported every
+// swapped package's files as missing and failed the gate on its own success.
+test("gate remove-deps passes when the only change is a swapped package", () => {
+  const tmp = inputTree();
+  const baseline = path.join(tmp, "input");
+  const working = path.join(tmp, "working");
+  fs.cpSync(baseline, working, { recursive: true });
+  const swapped = path.join(working, "node_modules", "dep");
+  fs.rmSync(swapped, { recursive: true });
+  fs.symlinkSync(path.join(baseline, "node_modules", "dep"), swapped, "junction");
+
+  const depsDir = path.join(tmp, "deps");
+  fs.mkdirSync(depsDir);
+  fs.writeFileSync(path.join(depsDir, "near-matches.json"), "{}");
+  fs.writeFileSync(path.join(depsDir, "replacements.json"), JSON.stringify({ packages: {} }));
+
+  const gate = runNode(
+    "gate.mjs",
+    ["remove-deps", "--baseline", baseline, "--working", working,
+     "--deps-dir", depsDir, "--out", path.join(tmp, "gate.json")],
+    tmp,
+  );
+  assert.equal(gate.status, 0, `gate.mjs remove-deps failed:\n${gate.stdout}\n${gate.stderr}`);
+  const artifact = JSON.parse(fs.readFileSync(path.join(tmp, "gate.json"), "utf8"));
+  assert.equal(artifact.checks.workingCodeUnchanged, true);
+  assert.equal(artifact.pass, true);
+  assert.equal(artifact.metrics.baselineJsFiles, 1);
+});

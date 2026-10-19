@@ -26,7 +26,7 @@ import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, isSourceFile, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const EXIT = {
   PASS: 0,
@@ -93,13 +93,12 @@ function sha256File(filePath) {
 }
 
 // The extract gate verifies an extracted dir against the asar's full contents,
-// so it excludes nothing; the prepare and remove-deps gates walk the same tree
-// prepare walked, so they exclude what prepare excludes.
-const NO_EXCLUDES = new Set();
-
-function listSourceFiles(rootDir) {
-  return listFiles(rootDir, SOURCE_TREE_EXCLUDES).filter(isSourceFile);
-}
+// so it skips only the repo a user may have initialized around their work. The
+// prepare gate walks the tree prepare walked, and the remove-deps gate checks the
+// app's own code, which is everything outside node_modules: node_modules is what
+// remove-deps changes, and replace-dependency leaves symlinks there that no walk
+// descends. Both use the source-tree set.
+const EXTRACT_EXCLUDES = new Set([".git"]);
 
 function mapFileHashes(rootDir, relFiles) {
   const hashes = {};
@@ -198,8 +197,8 @@ function runExtractGate(opts) {
   try {
     runAsarExtract(upstreamAsar, tmpRoot);
 
-    const expectedFiles = listFiles(tmpRoot, NO_EXCLUDES);
-    const actualFiles = listFiles(extractedDir, NO_EXCLUDES);
+    const expectedFiles = listFiles(tmpRoot, EXTRACT_EXCLUDES);
+    const actualFiles = listFiles(extractedDir, EXTRACT_EXCLUDES);
 
     const missingFiles = setDiff(expectedFiles, actualFiles);
     const extraFiles = setDiff(actualFiles, expectedFiles);
@@ -280,8 +279,8 @@ function runPrepareGate(opts) {
     return artifact;
   }
 
-  const origJs = listSourceFiles(origDir);
-  const preparedJs = listSourceFiles(preparedDir);
+  const origJs = listSourceFiles(origDir, SOURCE_TREE_EXCLUDES);
+  const preparedJs = listSourceFiles(preparedDir, SOURCE_TREE_EXCLUDES);
   const missingFiles = setDiff(origJs, preparedJs);
   const extraFiles = setDiff(preparedJs, origJs);
 
@@ -458,8 +457,8 @@ function runRemoveDepsGate(opts) {
   }
 
   if (fs.existsSync(baselineDir) && fs.existsSync(workingDir)) {
-    const baselineJs = listSourceFiles(baselineDir);
-    const workingJs = listSourceFiles(workingDir);
+    const baselineJs = listSourceFiles(baselineDir, SOURCE_TREE_EXCLUDES);
+    const workingJs = listSourceFiles(workingDir, SOURCE_TREE_EXCLUDES);
     artifact.metrics.baselineJsFiles = baselineJs.length;
     artifact.metrics.workingJsFiles = workingJs.length;
 

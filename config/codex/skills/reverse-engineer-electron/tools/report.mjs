@@ -29,8 +29,7 @@ import {
   normalizedFunctionTokens,
   parseFile,
   loaderFor,
-  isSourceFile,
-  listFiles,
+  listSourceFiles,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -150,7 +149,7 @@ const DEMINIFIED_EXCLUDES = new Set(['node_modules', '.git', 'dist', 'prepared']
 
 function discoverFiles(dir) {
   const absDir = path.resolve(dir);
-  return listFiles(absDir, DEMINIFIED_EXCLUDES).filter(isSourceFile).map(rel => ({
+  return listSourceFiles(absDir, DEMINIFIED_EXCLUDES).map(rel => ({
     absPath: path.join(absDir, rel),
     relPath: rel,
     content: fs.readFileSync(path.join(absDir, rel), 'utf8'),

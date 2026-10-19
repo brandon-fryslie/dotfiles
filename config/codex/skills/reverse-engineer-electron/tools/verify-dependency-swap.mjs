@@ -15,7 +15,7 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -65,32 +65,10 @@ function multisetIntersectionCount(left, right) {
   return sum;
 }
 
-function listJsFiles(rootDir) {
-  const out = [];
-  const stack = [rootDir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
+const SCRIPT_EXTENSIONS = new Set([".js", ".mjs", ".cjs"]);
 
-    for (const entry of entries) {
-      const abs = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === "node_modules" || entry.name === ".git") continue;
-        stack.push(abs);
-        continue;
-      }
-      if (entry.isFile() && [".js", ".mjs", ".cjs"].includes(path.extname(entry.name))) {
-        out.push(path.relative(rootDir, abs).split(path.sep).join("/"));
-      }
-    }
-  }
-  out.sort();
-  return out;
+function listJsFiles(rootDir) {
+  return listFiles(rootDir, SOURCE_TREE_EXCLUDES).filter((rel) => SCRIPT_EXTENSIONS.has(path.extname(rel)));
 }
 
 function readJson(filePath) {

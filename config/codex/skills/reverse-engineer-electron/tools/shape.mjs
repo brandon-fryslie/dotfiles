@@ -66,7 +66,7 @@ export function isSourceFile(filePath) {
   return !DECLARATION_FILE.test(filePath) && path.extname(filePath) in LOADER_BY_EXTENSION;
 }
 
-// [LAW:one-source-of-truth] The walk that feeds every tool. Five copies drifted
+// [LAW:one-source-of-truth] The walk that feeds every tool. Nine copies drifted
 // once (ticket 67o: gate skipped only .git while prepare skipped node_modules, so
 // gate prepare demanded files prepare never wrote). The exclude set is data the
 // caller passes [LAW:dataflow-not-control-flow]; the walk and its order are the
@@ -75,7 +75,7 @@ export function isSourceFile(filePath) {
 export const SOURCE_TREE_EXCLUDES = new Set(['node_modules', '.git']);
 
 // Sorted posix-relative paths of every regular file under rootDir, not descending
-// into a directory whose name is in excludes.
+// into a directory whose name is in excludes. Symlinks are neither walked nor listed.
 export function listFiles(rootDir, excludes) {
   const out = [];
   const stack = [rootDir];
@@ -91,6 +91,12 @@ export function listFiles(rootDir, excludes) {
     }
   }
   return out.sort();
+}
+
+// The source inventory every tool that parses a tree starts from: the walk,
+// narrowed to the files parseFile can load.
+export function listSourceFiles(rootDir, excludes) {
+  return listFiles(rootDir, excludes).filter(isSourceFile);
 }
 
 export function loaderFor(filePath) {

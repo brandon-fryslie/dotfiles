@@ -19,7 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
 const traverseAst = traverseImport.default || traverseImport;
@@ -57,29 +57,7 @@ function listJsFiles(targetPath) {
   if (stats.isFile()) {
     return path.extname(targetPath) === ".js" ? [targetPath] : [];
   }
-
-  const out = [];
-  const stack = [targetPath];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === ".git" || entry.name === "node_modules") continue;
-        stack.push(full);
-        continue;
-      }
-      if (entry.isFile() && path.extname(entry.name) === ".js") out.push(full);
-    }
-  }
-  out.sort();
-  return out;
+  return listPackageJsFiles(targetPath);
 }
 
 function extractProgramBodyHash(code) {
@@ -183,27 +161,9 @@ function listOnDiskPackages(appDir) {
 }
 
 function listPackageJsFiles(pkgDir) {
-  const out = [];
-  const stack = [pkgDir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === "node_modules" || entry.name === ".git") continue;
-        stack.push(full);
-        continue;
-      }
-      if (entry.isFile() && path.extname(entry.name) === ".js") out.push(full);
-    }
-  }
-  return out;
+  return listFiles(pkgDir, SOURCE_TREE_EXCLUDES)
+    .filter((rel) => path.extname(rel) === ".js")
+    .map((rel) => path.join(pkgDir, rel));
 }
 
 function indexPackageShapeHashes(packages) {

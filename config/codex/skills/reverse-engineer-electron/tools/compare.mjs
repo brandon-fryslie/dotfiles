@@ -34,8 +34,7 @@ import {
   parseFile,
   loaderFor,
   minifySource,
-  isSourceFile,
-  listFiles,
+  listSourceFiles,
 } from './shape.mjs';
 
 // --- Configuration ---
@@ -101,7 +100,7 @@ function minifyCode(code, filepath) {
 
 function discoverFiles(dir, excludes) {
   const absDir = path.resolve(dir);
-  return listFiles(absDir, excludes).filter(isSourceFile).map(rel => ({
+  return listSourceFiles(absDir, excludes).map(rel => ({
     path: rel,
     content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
   }));

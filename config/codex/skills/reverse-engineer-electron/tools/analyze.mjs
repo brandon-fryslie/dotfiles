@@ -21,7 +21,7 @@ import path from "path";
 import process from "process";
 import { execFileSync } from "child_process";
 import traverseImport from "@babel/traverse";
-import { parseFile, isSourceFile, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { parseFile, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const traverseAst = traverseImport.default || traverseImport;
 
@@ -599,9 +599,7 @@ function main() {
 
   console.log(`Analyzing: ${buildDir}`);
 
-  const sourceFiles = listFiles(buildDir, SOURCE_TREE_EXCLUDES)
-    .filter(isSourceFile)
-    .map((rel) => path.join(buildDir, rel));
+  const sourceFiles = listSourceFiles(buildDir, SOURCE_TREE_EXCLUDES).map((rel) => path.join(buildDir, rel));
   console.log(`Found ${sourceFiles.length} JS files`);
 
   const fileResults = {};

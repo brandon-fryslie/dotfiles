@@ -26,8 +26,7 @@ import {
   buildLineIndex,
   charToLineCol,
   parseFile,
-  isSourceFile,
-  listFiles,
+  listSourceFiles,
   SOURCE_TREE_EXCLUDES,
 } from './shape.mjs';
 
@@ -42,7 +41,7 @@ function parseArgs(argv) {
 
 function discoverJsFiles(dir) {
   const absDir = path.resolve(dir);
-  return listFiles(absDir, SOURCE_TREE_EXCLUDES).filter(isSourceFile).map(rel => ({
+  return listSourceFiles(absDir, SOURCE_TREE_EXCLUDES).map(rel => ({
     absPath: path.join(absDir, rel),
     relPath: rel,
     content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
