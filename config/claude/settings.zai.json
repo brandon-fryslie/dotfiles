@@ -8,7 +8,6 @@
     "ANTHROPIC_SMALL_FAST_MODEL": "glm-4.7",
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
-    "SHELL": "bash",
     "OPENAI_BASE_URL": "http://127.0.0.1:62499"
   },
   "promptSuggestionEnabled": false,

@@ -1,6 +1,7 @@
 {
   "cleanupPeriodDays": 99999,
   "env": {
+    "SHELL": "bash",
     "DISABLE_AUTOUPDATER": "1",
     "CLAUDE_CODE_TMUX_TRUECOLOR": "1"
   },
