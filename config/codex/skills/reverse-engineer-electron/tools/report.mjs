@@ -20,6 +20,7 @@ import path from 'path';
 // from the exact normalizer applied to both sides. Both contracts live in
 // shape.mjs — see the rationale there.
 import {
+  tokenSimilarity,
   walkWithParent,
   isFunctionNode,
   resolveFunctionName,
@@ -45,54 +46,6 @@ function parseArgs(argv) {
   }
 
   return { positional, opts };
-}
-
-// --- LCS similarity ---
-
-function lcsLength(a, b) {
-  if (a.length === 0 || b.length === 0) return 0;
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen > 500) {
-    return lcsLengthBanded(a, b, Math.min(100, Math.floor(maxLen * 0.2)));
-  }
-  const m = a.length, n = b.length;
-  const prev = new Uint16Array(n + 1);
-  const curr = new Uint16Array(n + 1);
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      curr[j] = a[i - 1] === b[j - 1]
-        ? prev[j - 1] + 1
-        : Math.max(prev[j], curr[j - 1]);
-    }
-    prev.set(curr);
-    curr.fill(0);
-  }
-  return prev[n];
-}
-
-function lcsLengthBanded(a, b, bandwidth) {
-  const m = a.length, n = b.length;
-  const prev = new Uint16Array(n + 1);
-  const curr = new Uint16Array(n + 1);
-  for (let i = 1; i <= m; i++) {
-    const jStart = Math.max(1, Math.floor(i * n / m) - bandwidth);
-    const jEnd = Math.min(n, Math.floor(i * n / m) + bandwidth);
-    for (let j = jStart; j <= jEnd; j++) {
-      curr[j] = a[i - 1] === b[j - 1]
-        ? prev[j - 1] + 1
-        : Math.max(prev[j], curr[j - 1]);
-    }
-    prev.set(curr);
-    curr.fill(0);
-  }
-  return prev[n];
-}
-
-function tokenSimilarity(tokensA, tokensB) {
-  if (tokensA.length === 0 && tokensB.length === 0) return 1.0;
-  if (tokensA.length === 0 || tokensB.length === 0) return 0.0;
-  const lcs = lcsLength(tokensA, tokensB);
-  return (2 * lcs) / (tokensA.length + tokensB.length);
 }
 
 // --- Build index from manifest + prepared files ---
@@ -150,9 +103,13 @@ function buildIndexFromManifest(preparedDir) {
       const manifestEntry = candidates.shift() || null;
       if (!manifestEntry) unmatched++;
 
+      // Each record carries the domain its tokens came from, so a function
+      // that fell back to source tokens is never scored against normalized ones.
       let tokens;
+      let domain = 'source';
       try {
-        tokens = normalizedFunctionTokens(rawCode.slice(node.start, node.end), 'js');
+        tokens = normalizedFunctionTokens(node, rawCode, 'js');
+        domain = 'normalized';
       } catch (e) {
         console.warn(`  Normalize error ${relPath}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
         tokens = identityTokens;
@@ -163,6 +120,7 @@ function buildIndexFromManifest(preparedDir) {
       const record = {
         name: manifestEntry?.name ?? resolveFunctionName(node, parent),
         tokens,
+        domain,
         hash: tokensToHash(tokens),
         tokenCount: tokens.length,
         file: relPath,
@@ -238,8 +196,10 @@ function buildDeminifiedIndex(dir) {
       if (!isFunctionNode(node)) return;
 
       let tokens;
+      let domain = 'source';
       try {
-        tokens = normalizedFunctionTokens(file.content.slice(node.start, node.end), loader);
+        tokens = normalizedFunctionTokens(node, file.content, loader);
+        domain = 'normalized';
       } catch (e) {
         console.warn(`  Normalize error ${file.relPath}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
         tokens = functionShapeTokens(node);
@@ -250,6 +210,7 @@ function buildDeminifiedIndex(dir) {
         name: resolveFunctionName(node, parent),
         line: node.loc?.start?.line ?? 0,
         tokens,
+        domain,
         hash: tokensToHash(tokens),
         tokenCount: tokens.length,
       });
@@ -262,9 +223,10 @@ function buildDeminifiedIndex(dir) {
 // --- Find best match ---
 
 function findBestMatch(fnB, indexA) {
-  // Exact hash match first
-  const exactMatches = indexA.byHash.get(fnB.hash);
-  if (exactMatches) {
+  // Exact hash match first (within the same token domain)
+  const exactMatches = (indexA.byHash.get(fnB.hash) || [])
+    .filter((fnA) => fnA.domain === fnB.domain);
+  if (exactMatches.length > 0) {
     return { match: exactMatches[0], similarity: 1.0 };
   }
 
@@ -274,6 +236,7 @@ function findBestMatch(fnB, indexA) {
   const sizeB = fnB.tokens.length;
 
   for (const fnA of indexA.allFunctions) {
+    if (fnA.domain !== fnB.domain) continue;
     const sizeA = fnA.tokenCount;
     const maxPossible = (2 * Math.min(sizeA, sizeB)) / (sizeA + sizeB);
     if (maxPossible <= bestSim) continue;

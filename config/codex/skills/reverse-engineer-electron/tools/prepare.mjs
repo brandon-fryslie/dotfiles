@@ -148,6 +148,9 @@ async function main() {
         semi: true,
         singleQuote: false,
         trailingComma: 'all',
+        // The identity domain assumes prettier changes layout only; unquoting a
+        // key turns a StringLiteral into an Identifier and changes the tokens.
+        quoteProps: 'preserve',
       });
     } catch (e) {
       console.warn(`    prettier error: ${e.message.split('\n')[0]}`);

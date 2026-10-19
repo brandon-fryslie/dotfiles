@@ -24,6 +24,7 @@ import { transformSync } from 'esbuild';
 import fs from 'fs';
 import path from 'path';
 import {
+  tokenSimilarity,
   walk,
   walkWithParent,
   isFunctionNode,
@@ -101,67 +102,6 @@ function minifyCode(code, filepath) {
   }
 }
 
-// --- Similarity: LCS-based ---
-// For two token arrays, compute similarity as 2*LCS / (len(a) + len(b))
-// For performance, use a banded LCS when both sequences are long
-
-function lcsLength(a, b) {
-  if (a.length === 0 || b.length === 0) return 0;
-
-  // For very long sequences, use banded approach
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen > 500) {
-    return lcsLengthBanded(a, b, Math.min(100, Math.floor(maxLen * 0.2)));
-  }
-
-  // Standard DP
-  const m = a.length, n = b.length;
-  const prev = new Uint16Array(n + 1);
-  const curr = new Uint16Array(n + 1);
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        curr[j] = prev[j - 1] + 1;
-      } else {
-        curr[j] = Math.max(prev[j], curr[j - 1]);
-      }
-    }
-    prev.set(curr);
-    curr.fill(0);
-  }
-  return prev[n];
-}
-
-function lcsLengthBanded(a, b, bandwidth) {
-  const m = a.length, n = b.length;
-  // Only compute cells within `bandwidth` of the diagonal
-  const prev = new Uint16Array(n + 1);
-  const curr = new Uint16Array(n + 1);
-
-  for (let i = 1; i <= m; i++) {
-    const jStart = Math.max(1, Math.floor(i * n / m) - bandwidth);
-    const jEnd = Math.min(n, Math.floor(i * n / m) + bandwidth);
-    for (let j = jStart; j <= jEnd; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        curr[j] = prev[j - 1] + 1;
-      } else {
-        curr[j] = Math.max(prev[j], curr[j - 1]);
-      }
-    }
-    prev.set(curr);
-    curr.fill(0);
-  }
-  return prev[n];
-}
-
-function tokenSimilarity(tokensA, tokensB) {
-  if (tokensA.length === 0 && tokensB.length === 0) return 1.0;
-  if (tokensA.length === 0 || tokensB.length === 0) return 0.0;
-  const lcs = lcsLength(tokensA, tokensB);
-  return (2 * lcs) / (tokensA.length + tokensB.length);
-}
-
 // --- File Discovery ---
 
 function discoverFiles(dir, excludes) {
@@ -224,7 +164,7 @@ function extractFunctions(file, shouldMinify) {
     let domain = 'source';
     if (shouldMinify) {
       try {
-        tokens = normalizedFunctionTokens(file.content.slice(node.start, node.end), loader);
+        tokens = normalizedFunctionTokens(node, file.content, loader);
         domain = 'normalized';
       } catch (e) {
         console.warn(`  Normalize error ${file.path}:${node.loc?.start?.line}: ${e.message.split('\n')[0]} — using source-domain tokens for this function`);
@@ -352,15 +292,12 @@ function extractFingerprints(files, shouldMinify, includeLiterals) {
             regexes.set(pat, (regexes.get(pat) || 0) + 1);
           }
           break;
-        case 'FunctionDeclaration':
-        case 'FunctionExpression':
-        case 'ArrowFunctionExpression': {
-          functionCount++;
-          const hash = tokensToHash(functionShapeTokens(node));
-          if (shapes.has(hash)) shapes.get(hash).count++;
-          else shapes.set(hash, { hash, count: 1 });
-          break;
-        }
+      }
+      if (isFunctionNode(node)) {
+        functionCount++;
+        const hash = tokensToHash(functionShapeTokens(node));
+        if (shapes.has(hash)) shapes.get(hash).count++;
+        else shapes.set(hash, { hash, count: 1 });
       }
     });
   }

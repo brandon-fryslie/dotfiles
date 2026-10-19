@@ -157,7 +157,7 @@ function collectScopes(ast, code, relPath) {
   // // [LAW:dataflow-not-control-flow] Every path triggers the same visitor; scope data varies, not execution paths.
   traverseAst(ast, {
     // Collect scope info at every scope-creating node
-    "Program|FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ClassDeclaration|ClassExpression|ForStatement|ForInStatement|ForOfStatement|BlockStatement"(
+    "Program|Function|ClassDeclaration|ClassExpression|ForStatement|ForInStatement|ForOfStatement|BlockStatement"(
       nodePath,
     ) {
       const scope = nodePath.scope;
@@ -174,7 +174,7 @@ function collectScopes(ast, code, relPath) {
       const parentId =
         parentCharOffset !== null && scope.parent ? scopeId(relPath, lineIndex, parentCharOffset) : null;
 
-      const kind = nodePath.type === "Program" ? "program" : nodePath.type.includes("Function") || nodePath.type.includes("Arrow") ? "function" : nodePath.type.includes("Class") ? "class" : "block";
+      const kind = nodePath.isProgram() ? "program" : nodePath.isFunction() ? "function" : nodePath.isClass() ? "class" : "block";
 
       const bindings = {};
       for (const [name, binding] of Object.entries(scope.bindings)) {
@@ -422,7 +422,7 @@ function buildCrossReferences(ast, code, relPath) {
 
   traverseAst(ast, {
     // Visit every scope to collect binding definitions and their references
-    "Program|FunctionDeclaration|FunctionExpression|ArrowFunctionExpression"(nodePath) {
+    "Program|Function"(nodePath) {
       const scope = nodePath.scope;
 
       for (const [name, binding] of Object.entries(scope.bindings)) {

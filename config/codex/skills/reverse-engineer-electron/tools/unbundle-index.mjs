@@ -16,6 +16,7 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { parse } from "@babel/parser";
+import { walk } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -191,19 +192,6 @@ function literalValue(node) {
   if (node.type === "StringLiteral") return node.value;
   if (node.type === "NumericLiteral") return String(node.value);
   return null;
-}
-
-function walk(node, visitor) {
-  if (!node || typeof node !== "object") return;
-  if (node.type) visitor(node);
-  for (const key of Object.keys(node)) {
-    const value = node[key];
-    if (Array.isArray(value)) {
-      for (const item of value) walk(item, visitor);
-      continue;
-    }
-    if (value && typeof value === "object") walk(value, visitor);
-  }
 }
 
 function extractBundleDependencyInfo(moduleRecord, format) {

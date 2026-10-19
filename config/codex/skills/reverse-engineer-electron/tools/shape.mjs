@@ -1,5 +1,7 @@
 //
-// shape.mjs — the structural-shape contract shared by prepare.mjs and report.mjs
+// shape.mjs — the structural-shape contract shared by every tool that finds,
+// hashes, or compares functions: prepare, gate, report, compare, substitute,
+// detect-dependencies, verify-dependency-swap, unbundle-index (walker).
 //
 // [LAW:one-source-of-truth] The manifest's shapeHash is only meaningful if every
 // tool that produces or looks up a hash derives it from the same algorithm over
@@ -20,6 +22,7 @@
 //     ever compared against tokens produced by this same function.
 
 import { parse } from '@babel/parser';
+import { isFunction, isClassMethod, isClassPrivateMethod, isObjectMethod } from '@babel/types';
 import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
 
@@ -60,25 +63,42 @@ export function walkWithParent(node, parent, visitor) {
   }
 }
 
+// [LAW:one-source-of-truth] babel's Function alias is the list of body-bearing
+// node kinds — FunctionDeclaration, FunctionExpression, ArrowFunctionExpression,
+// ObjectMethod, ClassMethod, ClassPrivateMethod — maintained by the parser's own
+// package, so the toolchain cannot drift from what the parser emits (ticket ayg:
+// a hand-kept list of three left every method invisible).
 export function isFunctionNode(node) {
-  return node.type === 'FunctionDeclaration' ||
-         node.type === 'FunctionExpression' ||
-         node.type === 'ArrowFunctionExpression';
+  return isFunction(node);
+}
+
+// The name a member key or property states. A string literal states it whether
+// quoted or computed (`"m"(){}`, `o["m"] = ...`); a computed Identifier
+// (`[t](){}`, `o[t] = ...`) is a variable, not a name.
+function keyName(key, computed) {
+  if (!key) return null;
+  if (key.type === 'PrivateName') return `#${key.id.name}`;
+  if (typeof key.value === 'string') return key.value;
+  return computed ? null : key.name ?? null;
 }
 
 export function resolveFunctionName(node, parent) {
   if (node.id?.name) return node.id.name;
+  // Methods carry their own key; a function-valued property's key is on the parent.
+  if (node.key) return keyName(node.key, node.computed);
   if (!parent) return null;
+  if (parent.type === 'ExportDefaultDeclaration') return 'default';
   if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
-  if (parent.type === 'Property' || parent.type === 'MethodDefinition') {
-    const key = parent.key;
-    return key?.name || (typeof key?.value === 'string' ? key.value : null);
+  if (parent.type === 'ObjectProperty' || parent.type === 'ClassProperty' ||
+      parent.type === 'ClassPrivateProperty') {
+    return keyName(parent.key, parent.computed);
   }
   if (parent.type === 'AssignmentExpression' && parent.left) {
     if (parent.left.type === 'MemberExpression') {
-      const obj = parent.left.object?.name || '';
-      const prop = parent.left.property?.name || '';
-      return obj ? `${obj}.${prop}` : prop || null;
+      const prop = keyName(parent.left.property, parent.left.computed);
+      if (!prop) return null;
+      const obj = parent.left.object?.name;
+      return obj ? `${obj}.${prop}` : prop;
     }
     if (parent.left.type === 'Identifier') return parent.left.name;
   }
@@ -154,13 +174,57 @@ export function charToLineCol(lineIndex, charOffset) {
 
 // --- Similarity domain ---
 
-// Normalize one function's source text through esbuild's syntax minifier and
-// return its shape tokens. Throws on unparseable input; callers own the
+// A function's source slice is a syntactically complete unit only inside a
+// wrapper, and the wrapper is one shape for every kind: an exported derived
+// class body. The export is load-bearing (a bare `(function(){...});` statement
+// is side-effect-free, so minifySyntax deletes it); the class body is what lets
+// a method slice (`static async *m(){}`) and any body reading `this.#x` parse
+// at all, since esbuild refuses a private name no enclosing class declares;
+// `extends Object` is what lets a constructor slice call `super()`.
+//
+// A class method stands in the body as itself. Every other kind is returned
+// from a static method: a method body admits `arguments` in a nested arrow (a
+// field initializer does not), and an object literal admits members a class
+// body refuses (`get constructor(){}`). Each form knows where its slice sits
+// in the minified member, so the read-back is positional, never by name.
+function wrapperFor(node, src) {
+  if (isClassMethod(node) || isClassPrivateMethod(node)) {
+    return { member: src, slice: (m) => m };
+  }
+  if (isObjectMethod(node)) {
+    return { member: `static f() { return ({ ${src} }); }`, slice: (m) => m.body.body[0].argument.properties[0] };
+  }
+  return { member: `static f() { return (${src}); }`, slice: (m) => m.body.body[0].argument };
+}
+
+// Private names the slice reaches for anywhere — a computed key, a decorator, a
+// param, the body — minus the node's own key: a `#m(){}` is already declared by
+// the member itself, and a body that recurses through `this.#m` must not
+// redeclare it as a field.
+function privateNamesIn(node) {
+  const names = new Set();
+  walk(node, (n) => { if (n.type === 'PrivateName') names.add(n.id.name); });
+  if (node.key?.type === 'PrivateName') names.delete(node.key.id.name);
+  return [...names];
+}
+
+// What a function is apart from its params and body: its member kind and the
+// flags a rewrite must not flip. `m: function(a){}` and `m(a){}` share a head;
+// a getter, a static, an async or generator function, and an arrow (no `this`
+// of its own) each have their own.
+function functionHead(node) {
+  const kind = node.type === 'ArrowFunctionExpression' ? 'arrow' : (node.kind ?? 'method');
+  const flags = ['static', 'async', 'generator'].filter((f) => node[f]).map((f) => `+${f}`).join('');
+  return `F:${kind}${flags}`;
+}
+
+// Normalize one function node's source text through esbuild's syntax minifier
+// and return its shape tokens. Throws on unparseable input; callers own the
 // fallback so degradation is loud at the boundary. [LAW:no-silent-failure]
-export function normalizedFunctionTokens(fnSource, loader) {
-  // The export anchor is load-bearing: a bare `(function(){...});` expression
-  // statement is side-effect-free, so minifySyntax deletes it outright.
-  const wrapped = `export default (${fnSource});`;
+export function normalizedFunctionTokens(node, code, loader) {
+  const fields = privateNamesIn(node).map((name) => `#${name};`).join(' ');
+  const wrapper = wrapperFor(node, code.slice(node.start, node.end));
+  const wrapped = `export default class extends Object { ${fields} ${wrapper.member} }`;
   const minified = transformSync(wrapped, {
     loader,
     minify: true,
@@ -171,19 +235,76 @@ export function normalizedFunctionTokens(fnSource, loader) {
     format: 'esm',
   }).code;
 
+  // esbuild emits decorators unchanged at target esnext; the read-back must
+  // accept what the callers' parsers accepted.
   const ast = parse(minified, {
     sourceType: 'module',
-    plugins: [],
+    plugins: ['decorators'],
     errorRecovery: true,
     allowReturnOutsideFunction: true,
   });
 
-  let fnNode = null;
-  walk(ast, (n) => {
-    if (!fnNode && isFunctionNode(n)) fnNode = n;
-  });
-  if (!fnNode) {
+  // The wrapper is ours, so the slice's position in it is known: the one
+  // function-bearing member of the sole top-level class (esbuild names the
+  // class and exports it in a separate statement), then the form's own path.
+  const cls = ast.program.body.find((n) => n.type === 'ClassDeclaration');
+  const member = cls?.body.body.find(isFunctionNode);
+  const fnNode = member && wrapper.slice(member);
+  if (!fnNode || !isFunctionNode(fnNode)) {
     throw new Error('no function node survived normalization');
   }
-  return functionShapeTokens(fnNode);
+  // The slice's tokens are its head, params and body; its key is the member's,
+  // not the function's.
+  return [functionHead(fnNode), ...[...fnNode.params, fnNode.body].flatMap(functionShapeTokens)];
+}
+
+// --- Similarity scoring ---
+// [LAW:one-source-of-truth] One LCS, one score: report, compare and substitute
+// must agree on what "95%" means for the same pair of token streams.
+
+
+function lcsLength(a, b) {
+  if (a.length === 0 || b.length === 0) return 0;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen > 500) {
+    return lcsLengthBanded(a, b, Math.min(100, Math.floor(maxLen * 0.2)));
+  }
+  const m = a.length, n = b.length;
+  const prev = new Uint16Array(n + 1);
+  const curr = new Uint16Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1] + 1
+        : Math.max(prev[j], curr[j - 1]);
+    }
+    prev.set(curr);
+    curr.fill(0);
+  }
+  return prev[n];
+}
+
+function lcsLengthBanded(a, b, bandwidth) {
+  const m = a.length, n = b.length;
+  const prev = new Uint16Array(n + 1);
+  const curr = new Uint16Array(n + 1);
+  for (let i = 1; i <= m; i++) {
+    const jStart = Math.max(1, Math.floor(i * n / m) - bandwidth);
+    const jEnd = Math.min(n, Math.floor(i * n / m) + bandwidth);
+    for (let j = jStart; j <= jEnd; j++) {
+      curr[j] = a[i - 1] === b[j - 1]
+        ? prev[j - 1] + 1
+        : Math.max(prev[j], curr[j - 1]);
+    }
+    prev.set(curr);
+    curr.fill(0);
+  }
+  return prev[n];
+}
+
+export function tokenSimilarity(tokensA, tokensB) {
+  if (tokensA.length === 0 && tokensB.length === 0) return 1.0;
+  if (tokensA.length === 0 || tokensB.length === 0) return 0.0;
+  const lcs = lcsLength(tokensA, tokensB);
+  return (2 * lcs) / (tokensA.length + tokensB.length);
 }

@@ -12,24 +12,11 @@
  * // [LAW:dataflow-not-control-flow] Every trial evaluates the same package identity + reachable-code similarity checks.
  */
 
-import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
 import process from "process";
 import { parse } from "@babel/parser";
-
-const SKIP_KEYS = new Set([
-  "type",
-  "start",
-  "end",
-  "loc",
-  "leadingComments",
-  "trailingComments",
-  "innerComments",
-  "extra",
-  "range",
-  "comments",
-]);
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -85,74 +72,6 @@ function parseJs(code) {
       "decorators-legacy",
     ],
   });
-}
-
-function walk(node, visitor) {
-  if (!node || typeof node !== "object") return;
-  if (node.type) visitor(node);
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) continue;
-    const value = node[key];
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item && typeof item === "object" && item.type) walk(item, visitor);
-      }
-      continue;
-    }
-    if (value && typeof value === "object" && value.type) walk(value, visitor);
-  }
-}
-
-function structuralTokens(node) {
-  const tokens = [];
-  walk(node, (current) => {
-    switch (current.type) {
-      case "Identifier":
-      case "PrivateName":
-        break;
-      case "StringLiteral":
-        tokens.push("S");
-        break;
-      case "NumericLiteral":
-        tokens.push("N");
-        break;
-      case "BooleanLiteral":
-        tokens.push(current.value ? "T" : "F");
-        break;
-      case "NullLiteral":
-        tokens.push("null");
-        break;
-      case "RegExpLiteral":
-        tokens.push("R");
-        break;
-      case "BigIntLiteral":
-        tokens.push("BI");
-        break;
-      case "TemplateLiteral":
-        tokens.push("TL");
-        break;
-      case "TemplateElement":
-        break;
-      case "BinaryExpression":
-      case "LogicalExpression":
-      case "AssignmentExpression":
-        tokens.push(current.operator);
-        break;
-      case "UnaryExpression":
-        tokens.push(`U:${current.operator}`);
-        break;
-      case "UpdateExpression":
-        tokens.push(`${current.prefix ? "pre" : "post"}${current.operator}`);
-        break;
-      default:
-        tokens.push(current.type);
-    }
-  });
-  return tokens;
-}
-
-function hashTokens(tokens) {
-  return createHash("sha256").update(tokens.join(",")).digest("hex").slice(0, 16);
 }
 
 function countBy(items) {
@@ -337,17 +256,11 @@ function buildReachableFileSet(pkgRoot, pkgJson) {
 function fileStructuralInfo(absPath) {
   const code = fs.readFileSync(absPath, "utf8");
   const ast = parseJs(code);
-  const programHash = hashTokens(structuralTokens(ast.program));
+  const programHash = tokensToHash(functionShapeTokens(ast.program));
 
   const functionHashes = [];
   walk(ast.program, (node) => {
-    if (
-      node.type === "FunctionDeclaration" ||
-      node.type === "FunctionExpression" ||
-      node.type === "ArrowFunctionExpression"
-    ) {
-      functionHashes.push(hashTokens(structuralTokens(node)));
-    }
+    if (isFunctionNode(node)) functionHashes.push(tokensToHash(functionShapeTokens(node)));
   });
 
   return {
