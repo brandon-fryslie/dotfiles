@@ -31,7 +31,7 @@ A target is a pane id, a `session:window.pane` address, or a shorthand; the shar
 | --- | --- |
 | `%41` | pane id — what repo-session and hire-a-minion print; survives window renumbering |
 | `dotfiles:2.1` | full address |
-| `dotfiles:2` | window 2, pane defaults to 1 |
+| `dotfiles:2` | window 2, its active pane |
 | `dotfiles:orca` | window **named** `orca` (looked up; ambiguous/unknown names error) |
 | `:2.1` / `:2` | same session |
 | `.2` | same session **and** window, pane 2 |
