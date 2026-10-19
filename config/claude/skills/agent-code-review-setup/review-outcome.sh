@@ -72,14 +72,16 @@ lines="$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '
   | "\(.id)\t\(.commit_id)\t\($kind)"')" \
   || die "could not list reviews on $REPO#$PR."
 
-# The ids of this workflow's runs on this head that concluded success; empty when none has.
-# Read from the repo's run list, not the workflow's own: a workflow the default branch does
-# not carry yet answers its own endpoint with 404, and that head has simply never run.
-# Runs are matched by head_sha, which the pull_request trigger this template renders sets
-# to the PR head; a repo on another trigger is outside this reader until
+# The ids of this workflow's runs on this head, FOR THIS PR, that concluded success; empty
+# when none has. Bound to the PR as well as the head: one branch can be open as two PRs,
+# and the other PR's run on the same commit does not vouch for this one's marker. Read
+# from the repo's run list, not the workflow's own: a workflow the default branch does not
+# carry yet answers its own endpoint with 404, and that head has simply never run. Runs
+# are matched by head_sha, which the pull_request trigger this template renders sets to
+# the PR head; a repo on another trigger is outside this reader until
 # dotfiles-unfiled-25bc.4px carries that model.
 succeeded="$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD" --paginate \
-  --jq ".workflow_runs[] | select(.path == \"$WORKFLOW_PATH\" and .conclusion == \"success\") | .id")" \
+  --jq ".workflow_runs[] | select(.path == \"$WORKFLOW_PATH\" and .conclusion == \"success\" and any(.pull_requests[]; .number == $PR)) | .id")" \
   || die "could not list runs on $REPO for $HEAD."
 
 outcome="$(awk -F '\t' -v head="$HEAD" -v succeeded="${succeeded:+1}" \

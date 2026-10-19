@@ -53,7 +53,7 @@ converge_one() {
   # --show-current names the branch on an unborn head too (rev-parse fails there, with git's
   # usage text as the last stderr line) and prints nothing on a detached one, which is the
   # value the column then carries. [LAW:no-silent-failure]
-  branch="$(git branch --show-current)" || exit 1
+  branch="$(git branch --show-current)" || die "could not read the checked-out branch of $PWD."
   branch="${branch:-detached}"
   state="$(workflow_state "$repo")" || exit 1
   for secret_entry in "${SECRETS[@]}"; do

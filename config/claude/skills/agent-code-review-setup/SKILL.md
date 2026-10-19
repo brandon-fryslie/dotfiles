@@ -90,7 +90,7 @@ bash ~/.claude/skills/agent-code-review-setup/review-outcome.sh <owner/repo> <pr
 
 It reads the markers the action appends to the PR review bodies it posts, keeps only reviews a Bot account posted, selects those whose commit is the PR's **current** head, and prints one of:
 
-- `reviewed` — a review was posted for this head **and** a run of the workflow on this head concluded success. Exit 0; the only exit 0. The second half is load-bearing: when the head moves mid-review, the action re-posts the old head's review without a commit id and GitHub stamps it with the new head, so the stamp alone can name a head the action never read.
+- `reviewed` — a review was posted for this head **and** a run of the workflow on this head, for this PR, concluded success. Exit 0; the only exit 0. The second half is load-bearing: when the head moves mid-review, the action re-posts the old head's review without a commit id and GitHub stamps it with the new head, so the stamp alone can name a head the action never read.
 - `not-reviewed:<reason>` — the action ran and declined, and says why (a fork PR, or the round cap).
 - `unfinished` — the action started on this head and did not complete.
 - `none` — no run on this head concluded success and no notice speaks for it: the run failed (before posting, or after — the ledger append and the block release run after the review is posted, and the Actions log names which), never ran, or the workflow is disabled. Older heads may carry markers; they do not speak for this one.
