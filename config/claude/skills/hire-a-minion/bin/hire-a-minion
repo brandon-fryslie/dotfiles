@@ -29,8 +29,9 @@ detached, in this tmux session, rooted at this pane's cwd.
 
 Prints the minion's tmux address (session:window.pane) on stdout once claude
 shows its input prompt; feed it straight into /tmux-talk. Fails loudly, with
-the pane's screen, if claude exits or stops at a dialog before then (exit 2),
-or is not up within REPO_SESSION_BOOT_TIMEOUT seconds (default 90).
+the pane's screen: exit 2 if claude stopped at a dialog that needs the user
+(the window stays for them); exit 1, window removed, if claude exited before
+it was up or is not up within REPO_SESSION_BOOT_TIMEOUT seconds (default 90).
 
 Must be run from inside tmux."
 
