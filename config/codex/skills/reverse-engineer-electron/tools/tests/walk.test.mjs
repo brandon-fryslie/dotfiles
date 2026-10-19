@@ -82,3 +82,17 @@ test("gate remove-deps passes when the only change is a swapped package", () => 
   assert.equal(artifact.pass, true);
   assert.equal(artifact.metrics.baselineJsFiles, 1);
 });
+
+// The deleted try/catch was per directory: a readable root with one unreadable
+// child returned the rest of the tree as if it were the whole tree.
+test("listFiles throws on an unreadable subdirectory mid-walk", { skip: process.getuid?.() === 0 && "root reads everything" }, () => {
+  const tmp = inputTree();
+  const locked = path.join(tmp, "input", "locked");
+  fs.mkdirSync(locked);
+  fs.chmodSync(locked, 0o000);
+  try {
+    assert.throws(() => listFiles(path.join(tmp, "input"), SOURCE_TREE_EXCLUDES), /EACCES/);
+  } finally {
+    fs.chmodSync(locked, 0o755);
+  }
+});

@@ -124,13 +124,7 @@ function listOnDiskPackages(appDir) {
 
     if (entry.name.startsWith("@")) {
       const scopeDir = path.join(nmDir, entry.name);
-      let scopeEntries = [];
-      try {
-        scopeEntries = fs.readdirSync(scopeDir, { withFileTypes: true });
-      } catch {
-        continue;
-      }
-      for (const scoped of scopeEntries) {
+      for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
         if (!scoped.isDirectory()) continue;
         const pkgDir = path.join(scopeDir, scoped.name);
         const pkg = readPackageJson(pkgDir);
