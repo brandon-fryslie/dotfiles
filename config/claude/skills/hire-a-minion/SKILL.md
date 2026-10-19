@@ -32,11 +32,10 @@ claude's input prompt is up, then prints **one line on stdout: the minion's
 tmux address** (`session:window.pane`). Capture it. Everything you do to the
 minion afterward goes through that address. A worktree is always used — there
 is no way to run a minion without one. It fails loudly if you are not inside
-tmux; exit 2 with the screen on stderr if claude stopped at a dialog that needs
-the user (tell them, don't answer it); exit 1 with the screen if claude exited
-before it was up (window removed) or isn't up within 90s
-(`REPO_SESSION_BOOT_TIMEOUT`; the window stays, its address in the message). The
-launch itself is `repo-session`'s mechanism, pointed at your own session.
+tmux. The launch itself is `repo-session`'s mechanism, pointed at your own
+session, and its failure exits are repo-session's: exit 2 with the screen on
+stderr means claude stopped at a dialog that needs the user (tell them, don't
+answer it); exit 1 means it is not up. The repo-session skill has the detail.
 
 Flags: `--worktree [name]` (omit name to auto-create), `--model sonnet|opus`
 (default opus), `--resume <session-id>` (needs `--worktree <name>`;

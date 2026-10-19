@@ -28,11 +28,9 @@ file, prompt theme, or shell plugin runs in that pane. The window is added
 detached, in this tmux session, rooted at this pane's cwd.
 
 Prints the minion's tmux address (session:window.pane) on stdout once claude
-shows its input prompt; feed it straight into /tmux-talk. Fails loudly, with
-the pane's screen: exit 2 if claude stopped at a dialog that needs the user;
-exit 1 if claude exited before it was up (window removed) or is not up within
-REPO_SESSION_BOOT_TIMEOUT seconds (default 90; the window stays, its address
-in the message).
+shows its input prompt; feed it straight into /tmux-talk. The launch, the
+readiness wait, and the failure exits (2: a dialog that needs the user; 1:
+not up) are repo-session's: see its --help for the contract.
 
 Must be run from inside tmux."
 

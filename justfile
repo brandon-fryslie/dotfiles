@@ -75,7 +75,7 @@ test-hooks:
 test-claude-shell:
     ./config/claude/tests/tool-shell.sh
 
-# Assert repo-session lands claude in the named or derived tmux session (launches claude three times)
+# Assert repo-session lands claude in the named or derived tmux session (one claude boots)
 test-repo-session:
     ./config/claude/tests/repo-session.sh
 

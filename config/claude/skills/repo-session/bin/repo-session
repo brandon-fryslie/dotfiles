@@ -97,7 +97,9 @@ echo "repo-session: $ADDRESS (cwd $REPO_DIR) running:$(printf ' %q' "${CMD[@]}")
 # with the screen rather than answering it on the user's behalf.
 TIMEOUT=${REPO_SESSION_BOOT_TIMEOUT:-90}
 DEADLINE=$((SECONDS + TIMEOUT))
-while (( SECONDS < DEADLINE )); do
+# The deadline is checked after each poll, so the last screen read decides
+# gone/dead/dialog/ready before not-ready is declared, and is the screen reported.
+while :; do
   sleep 2
   # A pane that exited 0 has already closed (remain-on-exit failed keeps only
   # failures), so the window itself can be gone here: say so, in these words.
@@ -124,11 +126,12 @@ while (( SECONDS < DEADLINE )); do
     echo "$ADDRESS"
     exit 0
   fi
+  (( SECONDS < DEADLINE )) || break
 done
 
 # Not ready is an unknown state, not a dead one: a slow boot or a dialog the
 # detector above does not know. The window stays, as it did for a dialog, so a
 # person can read or answer it; the address in this line is the handle.
 echo "repo-session: claude in $ADDRESS not ready after ${TIMEOUT}s; screen:" >&2
-tmux capture-pane -p -t "$ADDRESS" >&2
+echo "$SCREEN" >&2
 exit 1
