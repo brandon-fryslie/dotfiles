@@ -29,8 +29,12 @@ ADDR=$("$MINION" --model sonnet --append-system-prompt "Be terse. Ask before lar
 The script runs claude as the new window's own process (no shell in front of
 it, so none of your rc files, prompt theme, or plugins run there), waits until
 claude's input prompt is up, then prints **one line on stdout: the minion's
-tmux address** (`session:window.pane`). Capture it. Everything you do to the
-minion afterward goes through that address. A worktree is always used — there
+tmux pane id** (`%N`). Capture it. Everything you do to the minion afterward
+goes through that id. It is the pane's identity, not its position: when one
+minion among several exits, its window closes and every later window in the
+session renumbers (`renumber-windows on`), so a `session:window.pane` address
+in your ledger would now name a different minion; the pane id never moves.
+A worktree is always used — there
 is no way to run a minion without one. It fails loudly if you are not inside
 tmux. The launch itself is `repo-session`'s mechanism, pointed at your own
 session, and its failure exits are repo-session's: exit 2 with the screen on
@@ -45,7 +49,7 @@ Flags: `--worktree [name]` (omit name to auto-create), `--model sonnet|opus`
 ## Talking to your minion
 
 Use **/tmux-talk** for every message to and read from the minion — feed it the
-address the spawn printed:
+pane id the spawn printed:
 
 ```bash
 TALK=~/.claude/skills/tmux-talk/bin/tmux-talk
@@ -93,8 +97,10 @@ the backlog, and review the last result. Your responsibilities:
   isn't in the message, it doesn't exist for the minion.
 - **Confirm it is where you think.** The spawn returns only once claude takes
   input; `read-screen` to see it booted in the right worktree. Don't assume — look.
-- **Track each minion.** Keep a ledger: address → worktree → what it's working
-  on → status. The address is the one handle; don't lose it.
+- **Track each minion.** Keep a ledger: pane id → worktree → what it's working
+  on → status. The pane id is the one handle; never key the ledger on a
+  `session:window.pane` address, which renumbers as other minions exit. Lost
+  one? `$TALK list` prints every pane's id beside its running command.
 - **Review its work yourself.** Read the diff and the PR, not the minion's
   self-report. Minions report success on work that misses the point. Validate
   against the requirements you were given, not against what the minion claims.

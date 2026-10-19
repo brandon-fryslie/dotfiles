@@ -16,20 +16,21 @@ TMUXCMD=~/.claude/skills/tmux-command/bin/tmux-command
 ## Subcommands
 
 ```bash
-tmux-command list                          # discover panes: address, running cmd, title
-tmux-command whoami                        # your own tmux address
+tmux-command list                          # discover panes: pane id, address, running cmd, title
+tmux-command whoami                        # your own pane id (%N)
 tmux-command context <target> [N]          # gather before acting: the pane's id line + N screen lines (default 200)
 tmux-command send  <target> <command...>   # type a literal command line, then submit it
 tmux-command keys  <target> <key...>       # send raw keys (Enter Down Up Escape BSpace) to drive a picker
 tmux-command read-screen <target> [N]      # capture N lines (default 200) — re-check / verify the effect
 ```
 
-`target` is tmux's `session:window.pane`, or a shorthand the shared resolver expands (same grammar in `/tmux-talk`):
+`target` is a pane id, a `session:window.pane` address, or a shorthand; the shared resolver turns each into the pane id and every tmux call uses that, so a target survives window renumbering (same grammar in `/tmux-talk`):
 
 | form | means |
 | --- | --- |
+| `%41` | pane id — what repo-session and hire-a-minion print; survives window renumbering |
 | `dotfiles:2.1` | full address |
-| `dotfiles:2` | window 2, pane defaults to 1 |
+| `dotfiles:2` | window 2, its active pane |
 | `dotfiles:orca` | window **named** `orca` (looked up; ambiguous/unknown names error) |
 | `:2.1` / `:2` | same session |
 | `.2` | same session **and** window, pane 2 |

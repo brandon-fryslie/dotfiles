@@ -253,14 +253,11 @@ Note that `tmux` itself has a scrollback limit (`history-limit` in tmux.conf, de
 ### Target not found
 
 ```bash
-verify_target() {
-  local target="$1"
-  if ! tmux list-panes -t "$target" &>/dev/null; then
-    echo "tmux-talk: target '$target' not found. Available panes:" >&2
-    tmux list-panes -a -F "  #{session_name}:#{window_index}.#{pane_index}  (#{pane_current_command})" >&2
-    return 1
-  fi
-}
+# Every verb resolves its target first and fails loudly on one that does not
+# exist; never probe with a bare `tmux -t`, which widens a bad window name to
+# the active window. To find the pane again, list them: the first column is
+# the pane id, the handle to record (it survives window renumbering).
+$TALK list
 ```
 
 ### Remote Claude outputs to a file instead of stdout

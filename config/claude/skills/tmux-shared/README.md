@@ -7,13 +7,23 @@ exactly once instead of being copied into each skill.
 
 ## bin/tmux-resolve
 
-The single definition of tmux target addressing. Turns a full or shorthand
-address into a canonical, verified `session:window.pane`, or rejects it loudly.
+The single definition of tmux target addressing. Turns a pane id, a full, or a shorthand
+address into the pane's id (`%N`), verified to exist, or rejects it loudly. The id is
+what the drivers hold: tmux never reassigns it, where a `session:window.pane` address
+renumbers when an earlier window closes.
 One enforcer means the two skills cannot drift — a target that resolves in one
 resolves identically in the other, and a bad name that errors in one errors in
 both (rather than tmux silently retargeting the active pane).
 
 Run `bin/tmux-resolve` with no argument for the grammar.
+
+## bin/tmux-panes
+
+The one definition of the pane line the drivers show (id, address right now, running
+command, title), and of the exact-id lookup that turns a pane id into that pane's
+fields. `tmux-talk list`, `tmux-command list`, and `tmux-command context` print the
+line; the resolver, the `From:` header, and the repo-session test ask it for a pane's
+fields through a format of their own, so the lookup has one home.
 
 ## bin/tmux-sender-info
 

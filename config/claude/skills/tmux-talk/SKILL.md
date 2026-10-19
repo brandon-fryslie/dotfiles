@@ -15,7 +15,7 @@ TALK=~/.claude/skills/tmux-talk/bin/tmux-talk
 
 ```bash
 tmux-talk list                        # discover all panes
-tmux-talk whoami                      # print this pane's tmux address
+tmux-talk whoami                      # print this pane's id (%N)
 tmux-talk sender                      # print this pane's sender line (model, context size, cwd)
 tmux-talk send   <target> <message...>  # send a message wrapped with From:/Sender:/To-reply: envelope
 tmux-talk read-screen <target> [N]    # capture N lines of scrollback (default 200)
@@ -25,33 +25,34 @@ tmux-talk idle   <target>             # exit 0 if idle, 1 if not — use in cond
 
 ## Target Addressing
 
-tmux uses `session:window.pane`, or a shorthand the shared resolver expands (same grammar in `/tmux-command`):
+A target is a pane id, a `session:window.pane` address, or a shorthand; the shared resolver turns each into the pane id and every tmux call uses that, so a target survives window renumbering (same grammar in `/tmux-command`):
 
 | form | means |
 | --- | --- |
+| `%41` | pane id — what repo-session and hire-a-minion print; survives window renumbering |
 | `dotfiles:2.1` | full address |
-| `dotfiles:2` | window 2, pane defaults to 1 |
+| `dotfiles:2` | window 2, its active pane |
 | `dotfiles:orca` | window **named** `orca` (looked up; ambiguous/unknown names error) |
 | `:2.1` / `:2` | same session |
 | `.2` | same session **and** window, pane 2 |
-| `:self` | your own pane — what `whoami` and the `From:` header report |
+| `:self` | your own pane — `whoami` and the `From:` header report its id |
 
 Every target resolves through `tmux-shared/bin/tmux-resolve` first, so a bad, unknown, or ambiguous target fails loudly rather than tmux silently retargeting the active pane.
 
-Run `tmux-talk list` to see all available panes with their addresses and running commands. Verify the target shows `cmd=claude` or `cmd=node`, not `zsh`/`bash`.
+Run `tmux-talk list` to see every pane with its id, its address right now, and its running command; the id is the handle to record. Verify the target shows `cmd=claude` or `cmd=node`, not `zsh`/`bash`.
 
 ## Message Envelope
 
 Every `send` wraps the message body with a `From:` header, a `Sender:` line, and a `To reply:` footer:
 
 ```
-From: <sender-address>
+From: <sender pane id> (<sender address right now>)
 Sender: <model> · <N>k tokens of context · <working directory>
 <your message>
-To reply: Use /tmux-talk send <sender-address> <message...>
+To reply: Use /tmux-talk send <sender pane id> <message...>
 ```
 
-The sender's address is auto-detected from the invoking pane — no need to pass it. Run `tmux-talk whoami` if you want to print your own address explicitly (e.g. to log it). Both resolve `:self` through the shared resolver, which hard-errors when `$TMUX_PANE` is unset rather than silently sending an empty `From:` line.
+The sender's pane id is auto-detected from the invoking pane — no need to pass it. It is the handle to reply to and to key a ledger on; the address in parentheses says which session is talking and moves as windows renumber. Run `tmux-talk whoami` if you want to print your own id explicitly (e.g. to log it). Both resolve `:self` through the shared resolver, which hard-errors when `$TMUX_PANE` is unset rather than silently sending an empty `From:` line.
 
 The `Sender:` line tells the receiver who it is talking to: the sender's model, how much context the sender has used, and the directory it is working in. The model and context size come from the sender's own session transcript (`tmux-shared/bin/tmux-sender-info`; `tmux-talk sender` prints it alone), so they are current as of its last turn; a sender that is not a Claude session (a human shell) has neither, and its line carries the working directory alone. A subagent shares its parent's session, so a message sent from inside a subagent reports the parent's model and context. When you receive a message, read the context size as a budget: a sender deep into its context wants short replies and will lose detail soon, so put anything it must keep in a file and send the path.
 

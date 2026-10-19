@@ -17,38 +17,41 @@ set -euo pipefail
 # That extends to sender identity: tmux-talk's envelope carries a `Sender:` line
 # because a model reads it, and nothing here does — a slash command is parsed, and
 # the caller already knows which pane it just drove. `whoami` reports this pane's
-# own address for composing targets, and means exactly what it means in tmux-talk.
+# own id for composing targets, and means exactly what it means in tmux-talk.
 
 USAGE="tmux-command — inject built-in slash commands / keystrokes into another agent harness's pane
 
 Subcommands:
-  list                           List all tmux panes with session:window.pane address and running command
-  whoami                         Print this pane's tmux address (session:window.pane)
+  list                           List all tmux panes with pane id, session:window.pane address and running command
+  whoami                         Print this pane's id (%N)
   context <target> [lines]       Gather before acting: the target's id line (cmd/title) + its current screen
   send  <target> <command...>    Type a literal command line into the pane, then submit it (no envelope)
   keys  <target> <key...>        Send raw tmux key names (Enter, Down, Up, Escape, BSpace, …) — drive pickers
   read-screen <target> [lines]   Capture pane content (default: 200 lines) — re-check / verify a command's effect
 
-target: session:window.pane, or shorthand — :win.pane / :win / .pane (same session/window),
-  :self (own pane), and window-by-name (dotfiles:orca). See tmux-shared/bin/tmux-resolve.
+target: a pane id (%N, as repo-session and hire-a-minion print — it survives window
+  renumbering), session:window.pane, or shorthand — :win.pane / :win / .pane (same
+  session/window), :self (own pane), and window-by-name (dotfiles:orca). See
+  tmux-shared/bin/tmux-resolve.
 
 The command set differs per harness (claude code, codex, opencode). Run 'list' to find the
 target and its running command, then read the matching references/<harness>.md before sending."
 
-# [LAW:single-enforcer] Addressing is not defined here. Every target — full or
-# shorthand (`:3`, `.2`, `:self`, `dotfiles:orca`) — is resolved to a canonical,
-# verified session:window.pane by the one shared resolver, which rejects a bad or
-# ambiguous target loudly [LAW:no-silent-failure]. Resolving up front means no
-# verb below ever touches an unresolved or nonexistent pane.
-RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
-resolve_target() { "$RESOLVE" "$1"; }
+# [LAW:single-enforcer] Addressing is not defined here. Every target — a pane id,
+# full, or shorthand (`:3`, `.2`, `:self`, `dotfiles:orca`) — is resolved to the
+# pane's id (%N, verified to exist) by the one shared resolver, which rejects a
+# bad or ambiguous target loudly [LAW:no-silent-failure]. Every tmux -t below
+# takes that id, so the settle between text and Enter cannot land the Enter in a
+# pane that moved into the index [LAW:no-ambient-temporal-coupling].
+SHARED="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin"
+resolve_target() { "$SHARED/tmux-resolve" "$1"; }
 
 CMD="${1:-}"
 
 case "$CMD" in
 
   list)
-    tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    "$SHARED/tmux-panes"
     ;;
 
   whoami)
@@ -68,9 +71,9 @@ case "$CMD" in
     # asking nothing: the pane's identity (cmd=/title= name the harness) and its
     # live screen (idle vs generating, and which screen is up). The agent reads
     # this, decides, then sends — so SKILL.md need not script the gather by hand.
-    # display-message -t resolves the EXACT pane; list-panes -t widens to the
-    # whole window, so it is the wrong verb for a single-pane identity line.
-    tmux display-message -p -t "$TARGET" "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    # The same line `list` prints, for this one pane: the id leads it as the
+    # handle to record, the address beside it is where the pane sits right now.
+    "$SHARED/tmux-panes" "$TARGET"
     echo "---"
     tmux capture-pane -t "$TARGET" -p -S -"$LINES"
     ;;

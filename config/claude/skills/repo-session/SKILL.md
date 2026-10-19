@@ -1,6 +1,6 @@
 ---
 name: repo-session
-description: Start a Claude instance in another repo and delegate work to it over tmux. Creates (or adds a window to) the tmux session named after the repo's directory, launches `claude --dangerously-skip-permissions` there, waits until it takes input, and prints its pane address; you then brief it with /tmux-talk, wait, and verify what it produced. Use when the user says "start a session in <repo>", "spin up claude in ~/code/<repo>", "launch claude in <repo>", "delegate this to <repo>", "have an agent in <repo> do X", or when work you have found belongs to a repo other than the one you are in (file the ticket there, then hand it to an instance started here).
+description: Start a Claude instance in another repo and delegate work to it over tmux. Creates (or adds a window to) the tmux session named after the repo's directory, launches `claude --dangerously-skip-permissions` there, waits until it takes input, and prints its pane id; you then brief it with /tmux-talk, wait, and verify what it produced. Use when the user says "start a session in <repo>", "spin up claude in ~/code/<repo>", "launch claude in <repo>", "delegate this to <repo>", "have an agent in <repo> do X", or when work you have found belongs to a repo other than the one you are in (file the ticket there, then hand it to an instance started here).
 ---
 
 # repo-session
@@ -36,16 +36,22 @@ What the script does, so you don't redo any of it by hand:
   exits cleanly; a Claude that crashes leaves its screen in a dead pane, so a
   failure hours in can still be read.
 - Waits until Claude's input prompt is up, then prints **one line on stdout: the
-  pane address** (`session:window.pane`). Keep it — every later step goes through it.
+  pane id** (`%N`). Keep it — every later step goes through it. It is the
+  pane's identity, not its position: tmux never reassigns it, whereas a
+  `session:window.pane` address renumbers when an earlier window in the
+  session closes (`renumber-windows on`), so an address held across hours
+  can quietly point at a different instance. The stderr line carries the
+  address the window landed at, for finding it on screen only.
 - Exit 2 with the screen on stderr if Claude stops at a dialog (folder trust,
   bypass-mode acceptance). That is the user's decision; tell them, don't answer it.
   Exit 1 with the screen if Claude exits before it is up (window removed) or
   isn't up within 90s (`REPO_SESSION_BOOT_TIMEOUT`; the window stays, its
-  address in the message).
+  pane id in the message).
 
 One instance per line of work. For follow-up work in the same repo, reuse the
-address you already hold — check it with `$TALK idle "$ADDR"` — rather than
-starting another.
+pane id you already hold — check it with `$TALK idle "$ADDR"` — rather than
+starting another. Lost it? `$TALK list` prints every pane's id beside its
+address and running command.
 
 ## Brief it
 
@@ -93,7 +99,7 @@ Long-running work: if the brief is big, write it to a file and send the path.
   go through `$CMD send`, never `$TALK` — the envelope hides them from the CLI.
 - **Its context may reset on its own.** Instances follow the user's git workflow,
   which hands off to a fresh context mid-PR (message-in-a-bottle). The pane and
-  address survive; the new context resumes from its own message. Don't re-brief
+  its id survive; the new context resumes from its own message. Don't re-brief
   just because the screen went blank — read it first.
 
 ## When it says it's done

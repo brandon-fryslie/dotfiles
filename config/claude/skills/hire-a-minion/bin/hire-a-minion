@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # [LAW:decomposition] This part does ONE thing: spawn a worktree-backed claude
-# minion in a fresh tmux window and print its address. Driving the minion —
+# minion in a fresh tmux window and print its pane id. Driving the minion —
 # briefing, reviewing, clearing, killing — is the controlling agent's job via
 # /tmux-talk (conversation), /tmux-command (slash commands like /clear), and raw
 # tmux. That is a separate seam, deliberately not fused here.
@@ -27,8 +27,10 @@ claude is the window's own process: no shell runs in front of it, so no rc
 file, prompt theme, or shell plugin runs in that pane. The window is added
 detached, in this tmux session, rooted at this pane's cwd.
 
-Prints the minion's tmux address (session:window.pane) on stdout once claude
-shows its input prompt; feed it straight into /tmux-talk. The launch, the
+Prints the minion's tmux pane id (%N) on stdout once claude shows its input
+prompt; feed it straight into /tmux-talk. It stays the same pane for as long
+as the minion lives, where a session:window.pane address moves when an earlier
+window closes (renumber-windows on). The launch, the
 readiness wait, and the failure exits (2: a dialog that needs the user; 1:
 not up) are repo-session's: see its --help for the contract.
 
@@ -101,7 +103,7 @@ CLAUDE_ARGS+=(--model "$MODEL")
 [[ -n "$APPEND_SYSTEM_PROMPT" ]]  && CLAUDE_ARGS+=(--append-system-prompt "$APPEND_SYSTEM_PROMPT")
 
 # [LAW:one-source-of-truth] starting claude as a tmux window's own command,
-# waiting for its prompt, and printing the address is repo-session's job; this
+# waiting for its prompt, and printing the pane id is repo-session's job; this
 # launcher only decides the session, the cwd, and claude's argv. argv reaches
 # claude token for token with no shell in the pane, so no rc, prompt theme, or
 # plugin runs there. --dangerously-skip-permissions is repo-session's to add.
