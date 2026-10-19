@@ -17,5 +17,8 @@
     ],
     "deny": [],
     "ask": []
+  },
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
   }
 }
