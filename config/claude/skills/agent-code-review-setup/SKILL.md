@@ -166,6 +166,7 @@ Leave `-w` bare: `security` prompts for the value, keeping the token out of shel
 - `gh` is not authenticated (`gh auth login`)
 - the current directory is not the root of a git work tree
 - the GitHub repo can't be resolved from the current directory (no GitHub remote / no access)
+- `.github/workflows/code-review.yml` exists and its header names another generator — the file is another tool's and is not overwritten
 - `.github/code-review.conf` is present and malformed (unknown key, duplicate key, empty value, or `|`, `&`, `\` in a value) — the message names the file and line
 - a listed repo secret is missing from a store **and** its keychain item is not available to set it — the one state where the reviewer genuinely cannot authenticate; the message names the store
 
@@ -173,7 +174,7 @@ A missing keychain item on its own is *not* fatal when both stores already hold 
 
 `reconverge-fleet.sh` aborts before touching any repo when `gh` is missing or unauthenticated, or `<root>` is not a directory. Per repo, a remote `gh` cannot resolve, a malformed `.github/code-review.conf`, or a secret or workflow listing `gh` cannot read lands on that repo's line as `failed: <cause>` and the pass continues; exit 1 at the end if any line failed.
 
-`review-outcome.sh` aborts when it cannot read the PR's head or list its reviews; it never guesses `none` on a failed read.
+`review-outcome.sh` aborts when it cannot read the PR's head, list its reviews, or list the repo's runs; it never guesses `none` on a failed read.
 
 ## Testing
 

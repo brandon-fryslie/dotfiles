@@ -66,16 +66,21 @@ lines="$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '
   | (.body // "") as $b
   | (if   ($b | test("<!-- copirate-code-review-agent -->\\s*$"))                       then "reviewed"
      elif ($b | test("<!-- copirate-code-review-agent:unfinished -->\\s*$"))            then "unfinished"
-     elif ($b | test("<!-- copirate-code-review-agent:not-reviewed:[a-z-]+ -->\\s*$"))  then
-          "not-reviewed:" + ($b | capture("not-reviewed:(?<r>[a-z-]+) -->\\s*$").r)
+     elif ($b | test("<!-- copirate-code-review-agent:not-reviewed:[^ >]+ -->\\s*$"))   then
+          "not-reviewed:" + ($b | capture("not-reviewed:(?<r>[^ >]+) -->\\s*$").r)
      else empty end) as $kind
   | "\(.id)\t\(.commit_id)\t\($kind)"')" \
   || die "could not list reviews on $REPO#$PR."
 
 # The ids of this workflow's runs on this head that concluded success; empty when none has.
-succeeded="$(gh api "repos/$REPO/actions/workflows/${WORKFLOW_PATH##*/}/runs?head_sha=$HEAD" --paginate \
-  --jq '.workflow_runs[] | select(.conclusion == "success") | .id')" \
-  || die "could not list runs of $WORKFLOW_PATH on $REPO for $HEAD."
+# Read from the repo's run list, not the workflow's own: a workflow the default branch does
+# not carry yet answers its own endpoint with 404, and that head has simply never run.
+# Runs are matched by head_sha, which the pull_request trigger this template renders sets
+# to the PR head; a repo on another trigger is outside this reader until
+# dotfiles-unfiled-25bc.4px carries that model.
+succeeded="$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD" --paginate \
+  --jq ".workflow_runs[] | select(.path == \"$WORKFLOW_PATH\" and .conclusion == \"success\") | .id")" \
+  || die "could not list runs on $REPO for $HEAD."
 
 outcome="$(awk -F '\t' -v head="$HEAD" -v succeeded="${succeeded:+1}" \
   '$2 == head && ($3 != "reviewed" || succeeded)' <<<"$lines" | sort -n | tail -n 1 | cut -f3)"
