@@ -57,7 +57,7 @@ CLAUDE_BIN=$(command -v claude) || { echo "repo-session: no 'claude' on PATH" >&
 # A multi-argument window command is exec'd by tmux as-is, with no shell: argv
 # reaches claude token for token, and nothing sources a rc. Claude's own
 # subprocess shell is the managed settings' decision (settings.managed.json
-# env.SHELL), not this launcher's.
+# env.CLAUDE_CODE_SHELL), not this launcher's.
 CMD=("$CLAUDE_BIN" --dangerously-skip-permissions ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
 
 ADDR_FMT='#{session_name}:#{window_index}.#{pane_index}'
