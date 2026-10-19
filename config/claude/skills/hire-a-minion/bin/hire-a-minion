@@ -23,8 +23,14 @@ Flags:
   --system-prompt <prompt>     Replace the minion's system prompt.
   --append-system-prompt <p>   Append to the minion's system prompt.
 
-Prints the minion's tmux address (session:window.pane) on stdout. Feed that
-address straight into /tmux-talk to brief the minion and read its screen.
+claude is the window's own process: no shell runs in front of it, so no rc
+file, prompt theme, or shell plugin runs in that pane. The window is added
+detached, in this tmux session, rooted at this pane's cwd.
+
+Prints the minion's tmux address (session:window.pane) on stdout once claude
+shows its input prompt; feed it straight into /tmux-talk. The launch, the
+readiness wait, and the failure exits (2: a dialog that needs the user; 1:
+not up) are repo-session's: see its --help for the contract.
 
 Must be run from inside tmux."
 
@@ -94,33 +100,11 @@ CLAUDE_ARGS+=(--model "$MODEL")
 [[ -n "$SYSTEM_PROMPT" ]]         && CLAUDE_ARGS+=(--system-prompt "$SYSTEM_PROMPT")
 [[ -n "$APPEND_SYSTEM_PROMPT" ]]  && CLAUDE_ARGS+=(--append-system-prompt "$APPEND_SYSTEM_PROMPT")
 
-# [FRAMING:representation] the command typed into the minion's shell must carry
-# every arg faithfully — system prompts contain spaces and quotes. printf %q
-# shell-quotes each token so the receiving shell reparses them identically.
-# `claad` is the rad-shell function `claude --dangerously-skip-permissions "$@"`,
-# defined when the fresh window sources rad-shell.
-CMD="claad"
-for arg in "${CLAUDE_ARGS[@]}"; do
-  CMD+=" $(printf '%q' "$arg")"
-done
-
-# [LAW:one-source-of-truth] the address tmux returns here is the single
-# authoritative handle for this minion; stdout carries only it (the CLI
-# parseable/human split — diagnostics go to stderr).
-ADDRESS=$(tmux new-window -t "$SELF_SESSION:" -c "$WORKDIR" -n minion -P -F '#{session_name}:#{window_index}.#{pane_index}')
-if [[ -z "$ADDRESS" ]]; then
-  echo "hire-a-minion: tmux new-window returned no address" >&2
-  exit 1
-fi
-
-# [LAW:no-ambient-temporal-coupling] the two-step send (literal text, then a
-# separate Enter) is the proven timing contract — a combined send races the
-# shell's line reader and the Enter is dropped. The settle lets the fresh shell
-# finish sourcing rad-shell (which defines `claad`) before it reads the line.
-sleep 1
-tmux send-keys -t "$ADDRESS" -l "$CMD"
-sleep 1
-tmux send-keys -t "$ADDRESS" Enter
-
-echo "hire-a-minion: spawned minion in $ADDRESS (cwd $WORKDIR) running: $CMD" >&2
-echo "$ADDRESS"
+# [LAW:one-source-of-truth] starting claude as a tmux window's own command,
+# waiting for its prompt, and printing the address is repo-session's job; this
+# launcher only decides the session, the cwd, and claude's argv. argv reaches
+# claude token for token with no shell in the pane, so no rc, prompt theme, or
+# plugin runs there. --dangerously-skip-permissions is repo-session's to add.
+REPO_SESSION="$(cd "$(dirname "$0")" && pwd -P)/../../repo-session/bin/repo-session"
+[[ -x "$REPO_SESSION" ]] || { echo "hire-a-minion: no repo-session launcher at $REPO_SESSION" >&2; exit 1; }
+exec "$REPO_SESSION" --session "$SELF_SESSION" "$WORKDIR" -- "${CLAUDE_ARGS[@]}"

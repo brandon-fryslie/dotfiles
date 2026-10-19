@@ -86,3 +86,6 @@ config/claude.codexapi/*
 config/certs/*.pem
 config/certs/env.sh
 config/iterm2/cc-status
+
+# Scratch directory of config/claude/tests/repo-session.sh (removed on exit)
+/rs.test

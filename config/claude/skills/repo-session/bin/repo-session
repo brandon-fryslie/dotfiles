@@ -9,12 +9,15 @@ set -euo pipefail
 USAGE="repo-session — launch claude (--dangerously-skip-permissions) in a repo's tmux session
 
 Usage:
-  repo-session <repo> [-- <extra claude args>...]
+  repo-session [--session <name>] <repo> [-- <extra claude args>...]
 
   <repo>   A directory path, or a bare name resolved as ~/code/<name>.
+  --session <name>   Put the window in this tmux session instead of the one
+                     named for the directory.
 
-The tmux session is named after the directory's basename ('.' and ':' become
-'_', as tmux requires). Missing session: created detached, rooted at the repo.
+The tmux session is the --session name, or the directory's basename; in either,
+'.' and ':' become '_', as tmux requires. Missing session: created detached,
+rooted at the repo.
 Existing session: a new detached window is added to it — no existing pane is
 reused, and no attached client's view is switched.
 
@@ -25,10 +28,19 @@ exits cleanly; a claude that crashes leaves its screen in a dead pane.
 Prints the claude pane's address (session:window.pane) on stdout once claude
 shows its input prompt. Fails loudly, with the pane's screen, if claude exits or
 stops at a dialog before then, or is not up within REPO_SESSION_BOOT_TIMEOUT
-seconds (default 90)."
+seconds (default 90). A claude that exited has its window removed; one at a
+dialog, or not yet ready, is left running with its address in the message, for
+whoever reads the pane."
 
-[[ $# -ge 1 ]] || { echo "$USAGE" >&2; exit 1; }
-case "$1" in -h|--help) echo "$USAGE"; exit 0 ;; esac
+case "${1:-}" in -h|--help) echo "$USAGE"; exit 0 ;; esac
+SESSION_ARG=""
+if [[ "${1:-}" == "--session" ]]; then
+  [[ -n "${2:-}" ]] || { echo "repo-session: --session requires a name" >&2; exit 1; }
+  SESSION_ARG="$2"; shift 2
+fi
+# [LAW:no-silent-failure] an empty repo argument is refused here, where it is
+# visibly missing, not downstream where '' would resolve as the bare name ~/code/.
+[[ -n "${1:-}" ]] || { echo "$USAGE" >&2; exit 1; }
 
 REPO_ARG="$1"; shift
 EXTRA_ARGS=()
@@ -46,8 +58,10 @@ fi
 [[ -d "$REPO_ARG" ]] || { echo "repo-session: no such directory: $REPO_ARG" >&2; exit 1; }
 REPO_DIR=$(cd "$REPO_ARG" && pwd -P)
 
-BASENAME=$(basename "$REPO_DIR")
-SESSION=${BASENAME//[.:]/_}
+# [LAW:dataflow-not-control-flow] the session is one value on every path, the
+# caller's or the directory's basename, and one sanitization applies to both.
+NAME=${SESSION_ARG:-$(basename "$REPO_DIR")}
+SESSION=${NAME//[.:]/_}
 
 # [LAW:one-source-of-truth] the claude this controller runs is the claude the
 # instance runs. The window inherits the tmux server's environment, not this
@@ -83,7 +97,9 @@ echo "repo-session: $ADDRESS (cwd $REPO_DIR) running:$(printf ' %q' "${CMD[@]}")
 # with the screen rather than answering it on the user's behalf.
 TIMEOUT=${REPO_SESSION_BOOT_TIMEOUT:-90}
 DEADLINE=$((SECONDS + TIMEOUT))
-while (( SECONDS < DEADLINE )); do
+# The deadline is checked after each poll, so the last screen read decides
+# gone/dead/dialog/ready before not-ready is declared, and is the screen reported.
+while :; do
   sleep 2
   # A pane that exited 0 has already closed (remain-on-exit failed keeps only
   # failures), so the window itself can be gone here: say so, in these words.
@@ -110,8 +126,12 @@ while (( SECONDS < DEADLINE )); do
     echo "$ADDRESS"
     exit 0
   fi
+  (( SECONDS < DEADLINE )) || break
 done
 
+# Not ready is an unknown state, not a dead one: a slow boot or a dialog the
+# detector above does not know. The window stays, as it did for a dialog, so a
+# person can read or answer it; the address in this line is the handle.
 echo "repo-session: claude in $ADDRESS not ready after ${TIMEOUT}s; screen:" >&2
-tmux capture-pane -p -t "$ADDRESS" >&2
+echo "$SCREEN" >&2
 exit 1
