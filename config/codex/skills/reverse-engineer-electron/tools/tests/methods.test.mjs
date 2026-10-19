@@ -36,13 +36,13 @@ const MINIFIED_ORIGINAL = [
   '#log(msg){console.log("cart:"+msg)}async *stream(){for(const i of this.items){yield i}}',
   "[Symbol.iterator](){return this.items[Symbol.iterator]()}}",
   "const util={fmt(n){return n.toFixed(2)},plain:function(a){return a+1}};",
-  "const k=\"size\";class Bag extends Cart{constructor(o){super([]);this.o=o}",
+  "const k=\"size\";class Bag extends Cart{#h;constructor(o){super([]);this.#h=()=>o}",
   "#walk(n){return n?this.#walk(n-1):0}[k](){return this.#walk(3)}}",
   "function wrap(){return [1].map(x=>arguments[0]+x)}",
   "const proto={get constructor(){return Bag}};",
 ].join("");
 
-const METHOD_NAMES = ["constructor", "empty", "total", "#log", "stream", "fmt", "plain", "#walk", "wrap"];
+const METHOD_NAMES = ["constructor", "empty", "total", "#log", "stream", "fmt", "plain", "#walk", "wrap", "#h"];
 // Nameless but present: the reducer arrow, `[Symbol.iterator]`, `[k]`, the `arguments` arrow.
 const NAMELESS_COUNT = 4;
 
@@ -81,13 +81,36 @@ test("normalizedFunctionTokens parses a method slice standalone and bridges a st
   assert.deepEqual(tokensOf(original), tokensOf(rewrite));
 });
 
-test("normalizedFunctionTokens parses a private method that recurses through its own name", () => {
-  const code = "class A { #f(n) { return n ? this.#f(n - 1) : 0; } }";
+// Tokens of the first node of the given kind in code, normalized.
+function normalizedOf(code, type, plugins = []) {
+  const ast = parse(code, { sourceType: "module", plugins, errorRecovery: true });
   let tokens = null;
-  walkWithParent(parseModule(code), null, (node) => {
-    if (node.type === "ClassPrivateMethod") tokens = normalizedFunctionTokens(node, code, "js");
+  walkWithParent(ast, null, (node) => {
+    if (!tokens && node.type === type) tokens = normalizedFunctionTokens(node, code, "js");
   });
-  assert.ok(tokens.length > 0);
+  assert.ok(tokens, `no ${type} in ${code}`);
+  return tokens;
+}
+
+test("normalizedFunctionTokens parses a private method that recurses through its own name", () => {
+  assert.ok(normalizedOf("class A { #f(n) { return n ? this.#f(n - 1) : 0; } }", "ClassPrivateMethod").length > 0);
+});
+
+test("normalizedFunctionTokens collapses method shorthand and a function-valued property", () => {
+  assert.deepEqual(
+    normalizedOf("const o = { m(a) { return a + 1; } };", "ObjectMethod"),
+    normalizedOf("const o = { m: function (a) { return a + 1; } };", "FunctionExpression"),
+  );
+});
+
+test("normalizedFunctionTokens accepts a decorated method and a private-name computed key", () => {
+  assert.ok(normalizedOf("class A { @dec m() { return 1; } }", "ClassMethod", ["decorators"]).length > 0);
+  assert.ok(normalizedOf("class A { #k; [this.#k]() { return 1; } }", "ClassMethod").length > 0);
+});
+
+test("resolveFunctionName names a private member assignment and refuses a computed one", () => {
+  assert.ok(namedFunctions("class A { #h; constructor() { this.#h = () => 1; } }").includes("#h"));
+  assert.deepEqual(namedFunctions("o[k] = function () {};"), [null]);
 });
 
 test("prepare manifests methods, gate prepare accepts the manifest, and report resolves them", () => {
@@ -126,4 +149,27 @@ test("prepare manifests methods, gate prepare accepts the manifest, and report r
     assert.equal(r.similarity, 1, name);
     assert.equal(r.bestMatch.line, manifest.find((e) => e.name === name).line, name);
   }
+
+  const cmp = runNode("compare.mjs", [path.join(tmp, "prepared"), path.join(tmp, "demin"), "--details"], tmp);
+  assert.equal(cmp.status, 0, `compare.mjs failed:\n${cmp.stdout}\n${cmp.stderr}`);
+  for (const name of METHOD_NAMES) {
+    const re = new RegExp(`OK\\s+100%\\s+${name.replace("#", "\\#")} \\(line`);
+    assert.match(cmp.stdout, re, `compare must map ${name} at 100%`);
+  }
+
+  // substitute mangles identifiers before matching, so names do not survive to its
+  // output; what it must show is every function seen and every named one verified.
+  const prepared = fs.readFileSync(path.join(tmp, "prepared", "main.js"), "utf8");
+  writeText(path.join(tmp, "replacement.js"), prepared.replaceAll("items", "list"));
+  const sub = runNode(
+    "substitute.mjs",
+    [path.join(tmp, "prepared", "main.js"), "1", String(prepared.split("\n").length), path.join(tmp, "replacement.js"), "--dry-run"],
+    tmp,
+  );
+  assert.equal(sub.status, 0, `substitute.mjs failed:\n${sub.stdout}\n${sub.stderr}`);
+  const all = namedFunctions(MINIFIED_ORIGINAL);
+  const named = all.filter((n) => n !== null).length;
+  assert.match(sub.stdout, new RegExp(`Original:\\s+${all.length} functions \\(${named} named\\)`), sub.stdout);
+  assert.match(sub.stdout, new RegExp(`Replacement:\\s+${all.length} functions \\(${named} named\\)`), sub.stdout);
+  assert.match(sub.stdout, new RegExp(`All ${named} named function\\(s\\) pass threshold`), sub.stdout);
 });

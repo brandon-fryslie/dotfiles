@@ -1,7 +1,7 @@
 //
 // shape.mjs — the structural-shape contract shared by every tool that finds,
 // hashes, or compares functions: prepare, gate, report, compare, substitute,
-// detect-dependencies, verify-dependency-swap.
+// detect-dependencies, verify-dependency-swap, unbundle-index (walker).
 //
 // [LAW:one-source-of-truth] The manifest's shapeHash is only meaningful if every
 // tool that produces or looks up a hash derives it from the same algorithm over
@@ -72,11 +72,11 @@ export function isFunctionNode(node) {
   return isFunction(node);
 }
 
-// The name a member's key states. A computed key (`[t](){}`) states none: its
-// expression is a value, and an Identifier there is a variable, not the name.
-function keyName(owner) {
-  const key = owner.key;
-  if (!key || owner.computed) return null;
+// The name a member key or property states. A computed one (`[t](){}`,
+// `o[t] = ...`) states none: its expression is a value, and an Identifier there
+// is a variable, not the name.
+function keyName(key, computed) {
+  if (!key || computed) return null;
   if (key.type === 'PrivateName') return `#${key.id.name}`;
   return key.name || (typeof key.value === 'string' ? key.value : null);
 }
@@ -84,18 +84,19 @@ function keyName(owner) {
 export function resolveFunctionName(node, parent) {
   if (node.id?.name) return node.id.name;
   // Methods carry their own key; a function-valued property's key is on the parent.
-  if (node.key) return keyName(node);
+  if (node.key) return keyName(node.key, node.computed);
   if (!parent) return null;
   if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
   if (parent.type === 'ObjectProperty' || parent.type === 'ClassProperty' ||
       parent.type === 'ClassPrivateProperty') {
-    return keyName(parent);
+    return keyName(parent.key, parent.computed);
   }
   if (parent.type === 'AssignmentExpression' && parent.left) {
     if (parent.left.type === 'MemberExpression') {
-      const obj = parent.left.object?.name || '';
-      const prop = parent.left.property?.name || '';
-      return obj ? `${obj}.${prop}` : prop || null;
+      const prop = keyName(parent.left.property, parent.left.computed);
+      if (!prop) return null;
+      const obj = parent.left.object?.name;
+      return obj ? `${obj}.${prop}` : prop;
     }
     if (parent.left.type === 'Identifier') return parent.left.name;
   }
@@ -180,26 +181,27 @@ export function charToLineCol(lineIndex, charOffset) {
 // `extends Object` is what lets a constructor slice call `super()`.
 //
 // A class method stands in the body as itself. Every other kind is returned
-// from a sentinel static method: a method body admits `arguments` in a nested
-// arrow (a field initializer does not), and an object literal admits members a
-// class body refuses (`get constructor(){}`). The sentinel's name is how the
-// read-back tells the wrapper from the slice.
-const SENTINEL = '__slice__';
-
-function memberFor(node, src) {
-  if (isClassMethod(node) || isClassPrivateMethod(node)) return src;
-  const expr = isObjectMethod(node) ? `{ ${src} }` : src;
-  return `static ${SENTINEL}() { return (${expr}); }`;
+// from a static method: a method body admits `arguments` in a nested arrow (a
+// field initializer does not), and an object literal admits members a class
+// body refuses (`get constructor(){}`). Each form knows where its slice sits
+// in the minified member, so the read-back is positional, never by name.
+function wrapperFor(node, src) {
+  if (isClassMethod(node) || isClassPrivateMethod(node)) {
+    return { member: src, slice: (m) => m };
+  }
+  if (isObjectMethod(node)) {
+    return { member: `static f() { return ({ ${src} }); }`, slice: (m) => m.body.body[0].argument.properties[0] };
+  }
+  return { member: `static f() { return (${src}); }`, slice: (m) => m.body.body[0].argument };
 }
 
-// Private names the function's params and body reach for, minus the node's own
-// key: a `#m(){}` is already declared by the member itself, and a body that
-// recurses through `this.#m` must not redeclare it as a field.
+// Private names the slice reaches for anywhere — a computed key, a decorator, a
+// param, the body — minus the node's own key: a `#m(){}` is already declared by
+// the member itself, and a body that recurses through `this.#m` must not
+// redeclare it as a field.
 function privateNamesIn(node) {
   const names = new Set();
-  const collect = (n) => { if (n.type === 'PrivateName') names.add(n.id.name); };
-  for (const param of node.params) walk(param, collect);
-  walk(node.body, collect);
+  walk(node, (n) => { if (n.type === 'PrivateName') names.add(n.id.name); });
   if (node.key?.type === 'PrivateName') names.delete(node.key.id.name);
   return [...names];
 }
@@ -209,8 +211,8 @@ function privateNamesIn(node) {
 // fallback so degradation is loud at the boundary. [LAW:no-silent-failure]
 export function normalizedFunctionTokens(node, code, loader) {
   const fields = privateNamesIn(node).map((name) => `#${name};`).join(' ');
-  const member = memberFor(node, code.slice(node.start, node.end));
-  const wrapped = `export default class extends Object { ${fields} ${member} }`;
+  const wrapper = wrapperFor(node, code.slice(node.start, node.end));
+  const wrapped = `export default class extends Object { ${fields} ${wrapper.member} }`;
   const minified = transformSync(wrapped, {
     loader,
     minify: true,
@@ -221,19 +223,26 @@ export function normalizedFunctionTokens(node, code, loader) {
     format: 'esm',
   }).code;
 
+  // esbuild emits decorators unchanged at target esnext; the read-back must
+  // accept what the callers' parsers accepted.
   const ast = parse(minified, {
     sourceType: 'module',
-    plugins: [],
+    plugins: ['decorators'],
     errorRecovery: true,
     allowReturnOutsideFunction: true,
   });
 
-  let fnNode = null;
-  walk(ast, (n) => {
-    if (!fnNode && isFunctionNode(n) && n.key?.name !== SENTINEL) fnNode = n;
-  });
-  if (!fnNode) {
+  // The wrapper is ours, so the slice's position in it is known: the one
+  // function-bearing member of the sole top-level class (esbuild names the
+  // class and exports it in a separate statement), then the form's own path.
+  const cls = ast.program.body.find((n) => n.type === 'ClassDeclaration');
+  const member = cls?.body.body.find(isFunctionNode);
+  const fnNode = member && wrapper.slice(member);
+  if (!fnNode || !isFunctionNode(fnNode)) {
     throw new Error('no function node survived normalization');
   }
-  return functionShapeTokens(fnNode);
+  // The slice's tokens are its params and body. The member key and the kind of
+  // function are the wrapper's concern: a deminifier may turn `m: function(a){}`
+  // into `m(a){}` without changing what the function does.
+  return [...fnNode.params, fnNode.body].flatMap(functionShapeTokens);
 }
