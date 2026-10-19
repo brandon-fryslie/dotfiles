@@ -29,12 +29,16 @@ What the script does, so you don't redo any of it by hand:
   No session yet → it creates one, detached, rooted at the repo. Session exists →
   it adds a new detached window. It never types into an existing pane and never
   switches what an attached user is looking at.
-- Launches `claude --dangerously-skip-permissions` in the new pane.
+- Runs `claude --dangerously-skip-permissions` as the pane's own process, with
+  `SHELL=bash`. No interactive shell sits in front of it, so none of the user's
+  rc files, prompt theme, or shell plugins run in that pane, and the pane closes
+  when Claude exits.
 - Waits until Claude's input prompt is up, then prints **one line on stdout: the
   pane address** (`session:window.pane`). Keep it — every later step goes through it.
 - Exit 2 with the screen on stderr if Claude stops at a dialog (folder trust,
   bypass-mode acceptance). That is the user's decision; tell them, don't answer it.
-  Exit 1 with the screen if it isn't up within 90s (`REPO_SESSION_BOOT_TIMEOUT`).
+  Exit 1 with the screen if Claude exits before it is up, or isn't up within 90s
+  (`REPO_SESSION_BOOT_TIMEOUT`).
 
 One instance per line of work. For follow-up work in the same repo, reuse the
 address you already hold — check it with `$TALK idle "$ADDR"` — rather than

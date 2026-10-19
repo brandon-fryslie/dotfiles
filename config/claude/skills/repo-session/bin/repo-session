@@ -18,9 +18,14 @@ The tmux session is named after the directory's basename ('.' and ':' become
 Existing session: a new detached window is added to it — no existing pane is
 reused, and no attached client's view is switched.
 
+claude is the pane's own process: no interactive shell runs in front of it, so
+no rc file, prompt theme, or shell plugin runs in that pane, and the pane closes
+when claude exits. Claude's own subprocess shell is bash (SHELL=bash).
+
 Prints the claude pane's address (session:window.pane) on stdout once claude
-shows its input prompt. Fails loudly, with the pane's screen, if claude does not
-come up within REPO_SESSION_BOOT_TIMEOUT seconds (default 90) or stops at a dialog."
+shows its input prompt. Fails loudly, with the pane's screen, if claude exits or
+stops at a dialog before then, or is not up within REPO_SESSION_BOOT_TIMEOUT
+seconds (default 90)."
 
 [[ $# -ge 1 ]] || { echo "$USAGE" >&2; exit 1; }
 case "$1" in -h|--help) echo "$USAGE"; exit 0 ;; esac
@@ -44,48 +49,59 @@ REPO_DIR=$(cd "$REPO_ARG" && pwd -P)
 BASENAME=$(basename "$REPO_DIR")
 SESSION=${BASENAME//[.:]/_}
 
-ADDR_FMT='#{session_name}:#{window_index}.#{pane_index}'
-# [LAW:no-ambient-temporal-coupling] -d on both paths: the user is usually
-# attached to these sessions, and a non-detached new-window switches their screen.
-if tmux has-session -t "=$SESSION" 2>/dev/null; then
-  ADDRESS=$(tmux new-window -d -t "=$SESSION:" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT")
-else
-  ADDRESS=$(tmux new-session -d -s "$SESSION" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT")
-fi
-[[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no address" >&2; exit 1; }
+# [LAW:one-source-of-truth] the claude this controller runs is the claude the
+# instance runs. tmux starts the window command from a non-interactive shell
+# whose PATH is not this one's (it resolves a different `claude`), so the binary
+# is resolved here and passed by absolute path.
+CLAUDE_BIN=$(command -v claude) || { echo "repo-session: no 'claude' on PATH" >&2; exit 1; }
 
-# printf %q so the receiving shell reparses every token exactly.
-CMD="claude --dangerously-skip-permissions"
+# printf %q so the shell tmux hands the command to reparses every token exactly.
+# SHELL is set in the command, not with new-window -e: tmux writes its own
+# default-shell into SHELL after -e, so only the command line reaches claude.
+CMD="SHELL=bash exec $(printf '%q' "$CLAUDE_BIN") --dangerously-skip-permissions"
 for arg in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
   CMD+=" $(printf '%q' "$arg")"
 done
 
-# Two-step send (literal text, then a separate Enter): a combined send races the
-# reader and drops the Enter. The first sleep lets the new shell finish its rc.
-sleep 1
-tmux send-keys -t "$ADDRESS" -l "$CMD"
-sleep 1
-tmux send-keys -t "$ADDRESS" Enter
+ADDR_FMT='#{session_name}:#{window_index}.#{pane_index}'
+# [LAW:no-ambient-temporal-coupling] -d on both paths: the user is usually
+# attached to these sessions, and a non-detached new-window switches their screen.
+# claude is the window command, so there is no shell to finish its rc and nothing
+# to type into: the pane is claude from its first instant.
+if tmux has-session -t "=$SESSION" 2>/dev/null; then
+  ADDRESS=$(tmux new-window -d -t "=$SESSION:" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT" "$CMD")
+else
+  ADDRESS=$(tmux new-session -d -s "$SESSION" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT" "$CMD")
+fi
+[[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no address" >&2; exit 1; }
 echo "repo-session: $ADDRESS (cwd $REPO_DIR) running: $CMD" >&2
 
 # [LAW:no-silent-failure] the address is only worth printing once claude can
-# take a message. A dialog at boot means a human decision is pending: report it
-# with the screen rather than answering it on the user's behalf.
+# take a message. Until then the pane is kept after exit so a boot failure
+# leaves its screen to report; once claude is up the pane goes back to closing
+# with claude, which is the pane's whole lifetime. A dialog at boot means a
+# human decision is pending: report it with the screen rather than answering
+# it on the user's behalf.
+tmux set-option -w -t "$ADDRESS" remain-on-exit on
 TIMEOUT=${REPO_SESSION_BOOT_TIMEOUT:-90}
 DEADLINE=$((SECONDS + TIMEOUT))
 while (( SECONDS < DEADLINE )); do
   sleep 2
   SCREEN=$(tmux capture-pane -p -t "$ADDRESS")
+  if [[ $(tmux display-message -p -t "$ADDRESS" '#{pane_dead}') == 1 ]]; then
+    echo "repo-session: claude in $ADDRESS exited before it was ready; screen:" >&2
+    echo "$SCREEN" >&2
+    tmux kill-window -t "$ADDRESS"
+    exit 1
+  fi
   if grep -qiE 'trust (the files in )?this folder|Bypass Permissions mode|Yes, I accept' <<<"$SCREEN"; then
     echo "repo-session: claude in $ADDRESS stopped at a dialog that needs the user:" >&2
     echo "$SCREEN" >&2
     exit 2
   fi
-  # Ready = the shell has handed the pane to claude (the p10k shell prompt is a
-  # '❯' too), claude's input prompt is drawn, and nothing is spinning.
-  FG=$(tmux display-message -p -t "$ADDRESS" '#{pane_current_command}')
-  case "$FG" in zsh|bash|sh|fish|-zsh|-bash) continue ;; esac
+  # Ready = claude's input prompt is drawn and nothing is spinning.
   if grep -q '❯' <<<"$SCREEN" && ! grep -q 'ing…' <<<"$SCREEN"; then
+    tmux set-option -w -t "$ADDRESS" remain-on-exit off
     echo "$ADDRESS"
     exit 0
   fi
