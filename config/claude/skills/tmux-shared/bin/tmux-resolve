@@ -59,10 +59,8 @@ case "$TARGET" in
     # display-message -t on one exits 0 with every field empty — the silent
     # fallback this part exists to prevent [LAW:no-silent-failure].
     [[ "$TARGET" =~ ^%[0-9]+$ ]] || die "pane id must be %N, got '$TARGET'"
-    FOUND="$(tmux list-panes -t "$TARGET" -f "#{==:#{pane_id},$TARGET}" -F '#{pane_id}' 2>&1)" \
-      || die "no pane $TARGET ($FOUND)"
-    [ -n "$FOUND" ] || die "no pane $TARGET"
-    echo "$FOUND"
+    tmux list-panes -t "$TARGET" -f "#{==:#{pane_id},$TARGET}" -F '#{pane_id}' \
+      || die "no pane $TARGET"
     exit 0
     ;;
   .*)

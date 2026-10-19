@@ -43,15 +43,15 @@ target and its running command, then read the matching references/<harness>.md b
 # bad or ambiguous target loudly [LAW:no-silent-failure]. Every tmux -t below
 # takes that id, so the settle between text and Enter cannot land the Enter in a
 # pane that moved into the index [LAW:no-ambient-temporal-coupling].
-RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
-resolve_target() { "$RESOLVE" "$1"; }
+SHARED="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin"
+resolve_target() { "$SHARED/tmux-resolve" "$1"; }
 
 CMD="${1:-}"
 
 case "$CMD" in
 
   list)
-    tmux list-panes -a -F "#{pane_id}  #{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    "$SHARED/tmux-panes"
     ;;
 
   whoami)
@@ -71,11 +71,9 @@ case "$CMD" in
     # asking nothing: the pane's identity (cmd=/title= name the harness) and its
     # live screen (idle vs generating, and which screen is up). The agent reads
     # this, decides, then sends — so SKILL.md need not script the gather by hand.
-    # The id leads the line: it is the handle to record, where the address
-    # beside it is where the pane sits right now. list-panes with the exact-id
-    # filter errors if the pane went away since resolving; display-message -t
-    # would print an empty line and exit 0 [LAW:no-silent-failure].
-    tmux list-panes -t "$TARGET" -f "#{==:#{pane_id},$TARGET}" -F "#{pane_id}  #{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    # The same line `list` prints, for this one pane: the id leads it as the
+    # handle to record, the address beside it is where the pane sits right now.
+    "$SHARED/tmux-panes" "$TARGET"
     echo "---"
     tmux capture-pane -t "$TARGET" -p -S -"$LINES"
     ;;

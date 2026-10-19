@@ -38,7 +38,7 @@ rm -rf "$repo" && mkdir "$repo"
 
 fail() { echo "FAIL - $*" >&2; exit 1; }
 # The pane id repo-session announces on stderr as it creates the window.
-announced() { sed -n 's/^repo-session: \(%[0-9]*\) in .*/\1/p' "$1"; }
+announced() { sed -n 's/^repo-session: \(%[0-9]*\) at .*/\1/p' "$1"; }
 # Whether session $1 holds pane $2, asked of tmux rather than of the stderr line.
 in_session() { tmux list-panes -s -t "=$1" -F '#{pane_id}' | grep -qx "$2"; }
 # Where pane $1 sits right now. list-panes errors on an id no pane has;
@@ -78,15 +78,20 @@ tmux capture-pane -p -t "$addr" | grep -q '❯' || fail "ready arm returned but 
 echo "ok   - --session $named: window landed in $named_clean; ready arm printed the pane id once the prompt was up"
 
 # The handle outlives window renumbering: a window inserted before claude's
-# and then closed shifts claude's window index (renumber-windows on); the pane
-# id still names the pane with claude's prompt on it, and the resolver maps
-# both the id and whatever address the pane has at the moment to that id.
+# shifts claude's window index, and closing it shifts the index back under
+# renumber-windows, which the test sets on its own session rather than relying
+# on the server's config; the pane id names the pane with claude's prompt on
+# it throughout, and the resolver maps both the id and whatever address the
+# pane has at the moment to that id. The inserted window runs a fixed command,
+# so its lifetime is the test's and not a login shell's.
+# set-option takes no "=" exact-match prefix on a session; "name:" is exact.
+tmux set-option -t "$named_clean:" renumber-windows on
 [[ "$("$resolve" "$addr")" == "$addr" ]] || fail "tmux-resolve did not return $addr for itself"
 before=$(where "$addr")
 [[ "$("$resolve" "$before")" == "$addr" ]] || fail "tmux-resolve did not map $before to $addr"
-tmux new-window -d -b -t "=$named_clean:{start}"
+tmux new-window -d -b -t "=$named_clean:{start}" 'sleep 100000'
 shifted=$(where "$addr")
-[[ "$shifted" != "$before" ]] || fail "inserting a window before $addr left its address at $before; is renumber-windows on?"
+[[ "$shifted" != "$before" ]] || fail "inserting a window before $addr left its address at $before"
 [[ "$("$resolve" "$addr")" == "$addr" ]] || fail "tmux-resolve did not return $addr after a window was inserted before it"
 [[ "$("$resolve" "$shifted")" == "$addr" ]] || fail "tmux-resolve did not map the shifted $shifted to $addr"
 if out=$("$resolve" "$before" 2>&1); then
@@ -94,6 +99,6 @@ if out=$("$resolve" "$before" 2>&1); then
 fi
 tmux kill-window -t "=$named_clean:{start}"
 after=$(where "$addr")
-[[ "$after" == "$before" ]] || fail "closing the inserted window left $addr at $after, not back at $before"
+[[ "$after" == "$before" ]] || fail "closing the inserted window left $addr at $after, not back at $before; renumber-windows did not apply"
 tmux capture-pane -p -t "$addr" | grep -q '❯' || fail "after renumbering, $addr no longer shows claude's prompt"
 echo "ok   - $addr stayed claude's pane while its address went $before -> $shifted -> $after"

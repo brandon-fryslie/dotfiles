@@ -16,7 +16,7 @@ TMUXCMD=~/.claude/skills/tmux-command/bin/tmux-command
 ## Subcommands
 
 ```bash
-tmux-command list                          # discover panes: address, running cmd, title
+tmux-command list                          # discover panes: pane id, address, running cmd, title
 tmux-command whoami                        # your own tmux address
 tmux-command context <target> [N]          # gather before acting: the pane's id line + N screen lines (default 200)
 tmux-command send  <target> <command...>   # type a literal command line, then submit it

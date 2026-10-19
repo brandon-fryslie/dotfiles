@@ -24,8 +24,8 @@ target: a pane id (%N, as repo-session and hire-a-minion print — it survives w
 # pane through window renumbering. `:self` is the resolver's own form, so
 # "what's my id" (whoami / the From: header a minion replies to) and "where am
 # I sending" go through the same gate — no second self-derivation to drift.
-RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
-resolve_target() { "$RESOLVE" "$1"; }
+SHARED="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin"
+resolve_target() { "$SHARED/tmux-resolve" "$1"; }
 
 # [LAW:one-source-of-truth] The sender line — model, context size, working
 # directory — has one definition, in tmux-shared beside the resolver. This skill
@@ -40,7 +40,7 @@ CMD="${1:-}"
 case "$CMD" in
 
   list)
-    tmux list-panes -a -F "#{pane_id}  #{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    "$SHARED/tmux-panes"
     ;;
 
   whoami)

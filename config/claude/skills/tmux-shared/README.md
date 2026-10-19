@@ -17,6 +17,12 @@ both (rather than tmux silently retargeting the active pane).
 
 Run `bin/tmux-resolve` with no argument for the grammar.
 
+## bin/tmux-panes
+
+The one definition of the pane line the drivers show: id, address right now, running
+command, title. `tmux-talk list`, `tmux-command list`, and `tmux-command context` all
+print it, so its shape changes in one place.
+
 ## bin/tmux-sender-info
 
 The single definition of the sender line — `<model> · <N>k tokens of context ·

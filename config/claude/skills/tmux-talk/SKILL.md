@@ -39,7 +39,7 @@ A target is a pane id, a `session:window.pane` address, or a shorthand; the shar
 
 Every target resolves through `tmux-shared/bin/tmux-resolve` first, so a bad, unknown, or ambiguous target fails loudly rather than tmux silently retargeting the active pane.
 
-Run `tmux-talk list` to see all available panes with their addresses and running commands. Verify the target shows `cmd=claude` or `cmd=node`, not `zsh`/`bash`.
+Run `tmux-talk list` to see every pane with its id, its address right now, and its running command; the id is the handle to record. Verify the target shows `cmd=claude` or `cmd=node`, not `zsh`/`bash`.
 
 ## Message Envelope
 
