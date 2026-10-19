@@ -25,6 +25,7 @@ import { parse } from '@babel/parser';
 import { isFunction, isClassMethod, isClassPrivateMethod, isObjectMethod } from '@babel/types';
 import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
+import fs from 'fs';
 import path from 'path';
 
 // [LAW:one-source-of-truth] The parse that feeds every tool. gate once compared its
@@ -63,6 +64,33 @@ const DECLARATION_FILE = /\.d\.[mc]?ts$/;
 // which parses as ts but declares no bodies.
 export function isSourceFile(filePath) {
   return !DECLARATION_FILE.test(filePath) && path.extname(filePath) in LOADER_BY_EXTENSION;
+}
+
+// [LAW:one-source-of-truth] The walk that feeds every tool. Five copies drifted
+// once (ticket 67o: gate skipped only .git while prepare skipped node_modules, so
+// gate prepare demanded files prepare never wrote). The exclude set is data the
+// caller passes [LAW:dataflow-not-control-flow]; the walk and its order are the
+// same for every caller. Readdir failures propagate [LAW:no-silent-failure] — a
+// silently shortened inventory is a gate that passes for the wrong reason.
+export const SOURCE_TREE_EXCLUDES = new Set(['node_modules', '.git']);
+
+// Sorted posix-relative paths of every regular file under rootDir, not descending
+// into a directory whose name is in excludes.
+export function listFiles(rootDir, excludes) {
+  const out = [];
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const abs = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!excludes.has(entry.name)) stack.push(abs);
+      } else if (entry.isFile()) {
+        out.push(path.relative(rootDir, abs).split(path.sep).join('/'));
+      }
+    }
+  }
+  return out.sort();
 }
 
 export function loaderFor(filePath) {

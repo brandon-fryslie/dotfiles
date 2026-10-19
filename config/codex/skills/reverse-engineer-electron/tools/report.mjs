@@ -30,6 +30,7 @@ import {
   parseFile,
   loaderFor,
   isSourceFile,
+  listFiles,
 } from './shape.mjs';
 
 // --- CLI ---
@@ -149,26 +150,10 @@ const DEMINIFIED_EXCLUDES = new Set(['node_modules', '.git', 'dist', 'prepared']
 
 function discoverFiles(dir) {
   const absDir = path.resolve(dir);
-  const results = [];
-
-  function scan(d) {
-    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory()) {
-        if (DEMINIFIED_EXCLUDES.has(entry.name)) continue;
-        scan(full);
-      } else if (isSourceFile(entry.name)) {
-        results.push(full);
-      }
-    }
-  }
-
-  scan(absDir);
-  results.sort();
-  return results.map(f => ({
-    absPath: f,
-    relPath: path.relative(absDir, f),
-    content: fs.readFileSync(f, 'utf8'),
+  return listFiles(absDir, DEMINIFIED_EXCLUDES).filter(isSourceFile).map(rel => ({
+    absPath: path.join(absDir, rel),
+    relPath: rel,
+    content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
   }));
 }
 

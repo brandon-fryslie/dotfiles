@@ -26,7 +26,7 @@ import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, isSourceFile } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, isSourceFile, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const EXIT = {
   PASS: 0,
@@ -92,35 +92,13 @@ function sha256File(filePath) {
   return hash.digest("hex");
 }
 
-function listFiles(rootDir) {
-  const out = [];
-  const stack = [rootDir];
-  while (stack.length > 0) {
-    const current = stack.pop();
-    let entries = [];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      const abs = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === ".git") continue;
-        stack.push(abs);
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      out.push(path.relative(rootDir, abs).split(path.sep).join("/"));
-    }
-  }
-  out.sort();
-  return out;
-}
+// The extract gate verifies an extracted dir against the asar's full contents,
+// so it excludes nothing; the prepare and remove-deps gates walk the same tree
+// prepare walked, so they exclude what prepare excludes.
+const NO_EXCLUDES = new Set();
 
 function listSourceFiles(rootDir) {
-  return listFiles(rootDir).filter(isSourceFile);
+  return listFiles(rootDir, SOURCE_TREE_EXCLUDES).filter(isSourceFile);
 }
 
 function mapFileHashes(rootDir, relFiles) {
@@ -220,8 +198,8 @@ function runExtractGate(opts) {
   try {
     runAsarExtract(upstreamAsar, tmpRoot);
 
-    const expectedFiles = listFiles(tmpRoot);
-    const actualFiles = listFiles(extractedDir);
+    const expectedFiles = listFiles(tmpRoot, NO_EXCLUDES);
+    const actualFiles = listFiles(extractedDir, NO_EXCLUDES);
 
     const missingFiles = setDiff(expectedFiles, actualFiles);
     const extraFiles = setDiff(actualFiles, expectedFiles);
