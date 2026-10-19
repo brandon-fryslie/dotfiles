@@ -28,8 +28,9 @@ exits cleanly; a claude that crashes leaves its screen in a dead pane.
 Prints the claude pane's address (session:window.pane) on stdout once claude
 shows its input prompt. Fails loudly, with the pane's screen, if claude exits or
 stops at a dialog before then, or is not up within REPO_SESSION_BOOT_TIMEOUT
-seconds (default 90). Exit 2 for a dialog, and the window stays for the user;
-exit 1 otherwise, and the window is removed."
+seconds (default 90). A claude that exited has its window removed; one at a
+dialog, or not yet ready, is left running with its address in the message, for
+whoever reads the pane."
 
 case "${1:-}" in -h|--help) echo "$USAGE"; exit 0 ;; esac
 SESSION_ARG=""
@@ -37,7 +38,9 @@ if [[ "${1:-}" == "--session" ]]; then
   [[ -n "${2:-}" ]] || { echo "repo-session: --session requires a name" >&2; exit 1; }
   SESSION_ARG="$2"; shift 2
 fi
-[[ $# -ge 1 ]] || { echo "$USAGE" >&2; exit 1; }
+# [LAW:no-silent-failure] an empty repo argument is refused here, where it is
+# visibly missing, not downstream where '' would resolve as the bare name ~/code/.
+[[ -n "${1:-}" ]] || { echo "$USAGE" >&2; exit 1; }
 
 REPO_ARG="$1"; shift
 EXTRA_ARGS=()
@@ -123,10 +126,9 @@ while (( SECONDS < DEADLINE )); do
   fi
 done
 
-# [LAW:no-silent-failure] exit 1 leaves nothing behind, as the dead-pane arm
-# does: the caller gets no address, so a window left here would be an orphan it
-# has no handle to. A boot that needs longer is REPO_SESSION_BOOT_TIMEOUT's to allow.
+# Not ready is an unknown state, not a dead one: a slow boot or a dialog the
+# detector above does not know. The window stays, as it did for a dialog, so a
+# person can read or answer it; the address in this line is the handle.
 echo "repo-session: claude in $ADDRESS not ready after ${TIMEOUT}s; screen:" >&2
 tmux capture-pane -p -t "$ADDRESS" >&2
-tmux kill-window -t "$ADDRESS"
 exit 1

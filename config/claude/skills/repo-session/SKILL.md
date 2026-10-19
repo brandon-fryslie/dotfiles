@@ -39,8 +39,9 @@ What the script does, so you don't redo any of it by hand:
   pane address** (`session:window.pane`). Keep it — every later step goes through it.
 - Exit 2 with the screen on stderr if Claude stops at a dialog (folder trust,
   bypass-mode acceptance). That is the user's decision; tell them, don't answer it.
-  Exit 1 with the screen, and the window removed, if Claude exits before it is
-  up or isn't up within 90s (`REPO_SESSION_BOOT_TIMEOUT`).
+  Exit 1 with the screen if Claude exits before it is up (window removed) or
+  isn't up within 90s (`REPO_SESSION_BOOT_TIMEOUT`; the window stays, its
+  address in the message).
 
 One instance per line of work. For follow-up work in the same repo, reuse the
 address you already hold — check it with `$TALK idle "$ADDR"` — rather than

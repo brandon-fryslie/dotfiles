@@ -2,9 +2,9 @@
 # repo-session's contract, end to end against the live tmux server and claude:
 # the window lands in the session the caller names or the one derived from the
 # directory, with '.' and ':' sanitized in either; --session without a name is
-# refused; and the not-ready arm exits 1 with the window removed, so a failed
-# launch leaves no orphan. The tmux server is the real one: sessions are
-# created with names unique to this run and killed on exit.
+# refused; and the not-ready arm exits 1 with the window left running and its
+# address in the message. The tmux server is the real one: sessions are created
+# with names unique to this run and killed on exit.
 #
 # The scratch directory lives inside this checkout and is not a git repo of its
 # own: claude's folder-trust dialog is answered per project root, so a fresh
@@ -47,12 +47,15 @@ addr=$("$rs" --session "$named" "$repo") || fail "repo-session --session $named 
 [[ "${addr%%:*}" == "$named_clean" ]] || fail "named session: expected $named_clean, address was $addr"
 echo "ok   - --session $named: window landed in $named_clean"
 
-# Not-ready arm: exit 1 and the window removed. A zero deadline makes the loop
-# never run, so this is the arm itself, not a 90s wait.
-gone="rs-gone-$$"; sessions+=("$gone")
-if addr=$(REPO_SESSION_BOOT_TIMEOUT=0 "$rs" --session "$gone" "$repo" 2>/dev/null); then
+# Not-ready arm: exit 1, nothing on stdout, the window left running and its
+# address in the message. A zero deadline makes the loop never run, so this is
+# the arm itself, not a 90s wait.
+slow="rs-slow-$$"; sessions+=("$slow")
+if addr=$(REPO_SESSION_BOOT_TIMEOUT=0 "$rs" --session "$slow" "$repo" 2>/tmp/rs-test-$$.err); then
   fail "not-ready arm exited 0 with address $addr"
 fi
-[[ -z "$addr" ]] || fail "not-ready arm printed an address: $addr"
-! tmux has-session -t "=$gone" 2>/dev/null || fail "not-ready arm left session $gone alive"
-echo "ok   - not-ready arm exits 1 and removes the window"
+[[ -z "$addr" ]] || fail "not-ready arm printed an address on stdout: $addr"
+grep -qF "claude in $slow:1.1 not ready" "/tmp/rs-test-$$.err" || fail "not-ready arm did not name the address: $(cat /tmp/rs-test-$$.err)"
+rm -f "/tmp/rs-test-$$.err"
+tmux has-session -t "=$slow" 2>/dev/null || fail "not-ready arm removed session $slow"
+echo "ok   - not-ready arm exits 1, names the address, leaves the window"
