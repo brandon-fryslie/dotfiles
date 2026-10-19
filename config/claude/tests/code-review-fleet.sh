@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# The agent-code-review-setup contract, end to end against a throwaway fleet: a root of
+# fake repos, a fake `gh` that answers from fixture files (and applies the real jq filters
+# it is handed), and a fake `security` with no keychain items. Nothing here reaches the
+# network or the real keychain.
+#
+# What is asserted is behaviour at the seams, never the scripts' internals
+# [LAW:behavior-not-structure]: which directories are the population, what each repo's
+# report line says, that a second run is a no-op that says so, that a per-repo failure
+# names its cause and fails the pass without stopping it, that the one-repo installer
+# converges the same render and refuses a subdirectory, and that review-outcome reads
+# only the current head and the newest marker on it.
+#
+# Run: config/claude/tests/code-review-fleet.sh   (needs git and jq)
+set -euo pipefail
+
+here=$(cd "$(dirname "$0")" && pwd -P)
+skill="$here/../skills/agent-code-review-setup"
+fleet="$skill/reconverge-fleet.sh"
+install="$skill/install.sh"
+outcome="$skill/review-outcome.sh"
+
+command -v jq >/dev/null || { echo "FAIL - jq is required" >&2; exit 1; }
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+root="$work/root"; fixtures="$work/gh"; bin="$work/bin"
+mkdir -p "$root" "$fixtures" "$bin"
+export FAKE_GH="$fixtures"
+export PATH="$bin:$PATH"
+
+fail() { echo "FAIL - $*" >&2; exit 1; }
+has() { grep -qF -- "$2" <<<"$1" || fail "$3: expected to find '$2' in:"$'\n'"$1"; }
+lacks() { ! grep -qF -- "$2" <<<"$1" || fail "$3: expected NOT to find '$2' in:"$'\n'"$1"; }
+
+# --- the fake gh: every answer comes from $FAKE_GH/<owner>__<name>.<kind>; a missing
+# fixture is a failed call, which is how a gh outage is staged.
+cat >"$bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -u
+key() { printf '%s' "${1//\//__}"; }
+flag() { local want="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$want" ] && { printf '%s' "$2"; return; }; shift; done; }
+case "$1 $2" in
+  "auth status") exit 0 ;;
+  "repo view")
+    url="$(git remote get-url origin)"; n="${url#*github.com}"; n="${n#[:/]}"; printf '%s\n' "${n%.git}" ;;
+  "secret list")
+    f="$FAKE_GH/$(key "$(flag -R "$@")").secrets.$(flag --app "$@")"
+    [ -f "$f" ] || { echo "fake gh: HTTP 403 listing secrets" >&2; exit 1; }
+    cat "$f" ;;
+  "pr view")
+    f="$FAKE_GH/$(key "$(flag -R "$@")").pr.$3.head"
+    [ -f "$f" ] || { echo "fake gh: no such PR" >&2; exit 1; }
+    cat "$f" ;;
+  "api "*)
+    path="$2"; repo="${path#repos/}"; repo="${repo%%/actions/*}"; repo="${repo%%/pulls/*}"
+    case "$path" in
+      */actions/workflows) f="$FAKE_GH/$(key "$repo").workflows.json" ;;
+      */pulls/*/reviews)   n="${path##*/pulls/}"; f="$FAKE_GH/$(key "$repo").pr.${n%%/*}.reviews.json" ;;
+    esac
+    [ -f "$f" ] || { echo "fake gh: HTTP 404 $path" >&2; exit 1; }
+    shift 2; args=(); filter=""
+    while [ $# -gt 0 ]; do
+      case "$1" in --paginate) ;; --arg) args+=(--arg "$2" "$3"); shift 2 ;; --jq) filter="$2"; shift ;; esac; shift
+    done
+    jq -r "${args[@]}" "$filter" "$f" ;;
+  *) echo "fake gh: unhandled: $*" >&2; exit 1 ;;
+esac
+SH
+cat >"$bin/security" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+chmod +x "$bin/gh" "$bin/security"
+
+# --- the fleet on disk
+repo() { # name remote-path [workflow content]
+  mkdir -p "$root/$1/.github/workflows"
+  git -C "$root/$1" init -q -b trunk
+  git -C "$root/$1" remote add origin "git@github.com:$2.git"
+  git -C "$root/$1" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+  printf '%s\n' "${3-stale}" >"$root/$1/.github/workflows/code-review.yml"
+}
+secrets() { printf 'CLAUDE_CODE_OAUTH_TOKEN\nOTHER\n' >"$fixtures/$1.secrets.$2"; }
+workflows() { printf '%s\n' "$2" >"$fixtures/$1.workflows.json"; }
+active='{"workflows":[{"path":".github/workflows/code-review.yml","state":"active"}]}'
+disabled='{"workflows":[{"path":".github/workflows/code-review.yml","state":"disabled_manually"}]}'
+empty='{"workflows":[]}'
+
+repo a o/a;            secrets o__a actions; secrets o__a dependabot; workflows o__a "$active"
+repo b o/b;            secrets o__b actions; printf 'OTHER\n' >"$fixtures/o__b.secrets.dependabot"; workflows o__b "$empty"
+printf 'EXCLUDE_PATTERNS_EXTRA=foo/**\nMAX_REVIEW_ROUNDS=9\n' >"$root/b/.github/code-review.conf"
+repo c o/c;            secrets o__c actions; secrets o__c dependabot; workflows o__c "$active"
+printf 'BOGUS=1\n' >"$root/c/.github/code-review.conf"
+mkdir -p "$root/d/.github/workflows"; echo stale >"$root/d/.github/workflows/code-review.yml"   # not a repo
+mkdir -p "$root/e"; git -C "$root/e" init -q -b trunk                                              # no workflow
+repo s promptctl/copirate-code-review-agent; secrets promptctl__copirate-code-review-agent actions
+secrets promptctl__copirate-code-review-agent dependabot; workflows promptctl__copirate-code-review-agent "$disabled"
+repo w o/w;            secrets o__w actions; secrets o__w dependabot                               # no workflows fixture
+
+# --- run 1: first convergence
+set +e; out="$("$fleet" "$root" 2>"$work/err")"; rc=$?; set -e
+[ "$rc" -eq 1 ] || fail "run 1: expected exit 1 (two repos fail), got $rc"
+has "$out" "a                                updated  branch=trunk  workflow=active  secrets=ok" "run 1 a"
+has "$out" "b                                updated  branch=trunk  workflow=unregistered  secrets=missing CLAUDE_CODE_OAUTH_TOKEN(dependabot)" "run 1 b"
+has "$out" "c                                failed: ERROR: .github/code-review.conf:1: unknown key 'BOGUS'" "run 1 c"
+has "$out" "s                                updated  branch=trunk  workflow=disabled_manually  secrets=ok" "run 1 s"
+has "$out" "w                                failed: ERROR: could not list workflows on o/w." "run 1 w"
+! grep -qE '^d ' <<<"$out" || fail "run 1: a non-repo directory is not in the population"
+! grep -qE '^e ' <<<"$out" || fail "run 1: a repo without the file is not in the population"
+has "$out" "5 repos: 0 unchanged, 3 updated, 2 failed" "run 1 summary"
+has "$(cat "$work/err")" "    → .github/code-review.conf adds exclude pattern(s): foo/**" "run 1: render notes sit under their repo"
+rendered_b="$(cat "$root/b/.github/workflows/code-review.yml")"
+has "$rendered_b" 'EXCLUDE_PATTERNS: ".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml,foo/**"' "b render: conf extra appended to the baseline"
+has "$rendered_b" 'MAX_REVIEW_ROUNDS: "9"' "b render: conf rounds"
+has "$rendered_b" 'uses: promptctl/copirate-code-review-agent@v1' "b render: consumer action ref"
+has "$(cat "$root/s/.github/workflows/code-review.yml")" 'uses: ./' "s render: the action's own repo reviews with its PR's code"
+has "$(cat "$root/a/.github/workflows/code-review.yml")" 'MAX_REVIEW_ROUNDS: "5"' "a render: fleet default rounds"
+lacks "$(cat "$root/a/.github/workflows/code-review.yml")" '__' "a render: no marker left unrendered"
+[ "$(cat "$root/d/.github/workflows/code-review.yml")" = stale ] || fail "run 1: wrote into a non-repo directory"
+[ "$(cat "$root/w/.github/workflows/code-review.yml")" != stale ] || fail "run 1: w's file should be written before its listing failed"
+echo "ok   - run 1: population, per-repo lines, render, failures named, exit 1"
+
+# --- run 2: the two failures fixed, everything else a no-op
+rm "$root/c/.github/code-review.conf"; workflows o__w "$active"
+out="$("$fleet" "$root" 2>/dev/null)"
+has "$out" "c                                updated  branch=trunk" "run 2 c"
+has "$out" "5 repos: 4 unchanged, 1 updated, 0 failed" "run 2 summary"
+echo "ok   - run 2: fixed repos converge, the rest unchanged, exit 0"
+
+# --- run 3: converged fleet is a no-op that says so
+out="$("$fleet" "$root" 2>/dev/null)"
+has "$out" "5 repos: 5 unchanged, 0 updated, 0 failed" "run 3 summary"
+echo "ok   - run 3: re-running a converged fleet reports 0 updated"
+
+# --- the one-repo installer renders the same file and reads the same stores
+out="$(cd "$root/a" && "$install" 2>"$work/err")" || fail "install.sh in a: exited $?: $(cat "$work/err")"
+has "$out" ".github/workflows/code-review.yml is up to date (uses promptctl/copirate-code-review-agent@v1)" "install a: same render as the fleet"
+has "$(cat "$work/err")" "! secret CLAUDE_CODE_OAUTH_TOKEN exists on o/a but keychain item" "install a: no keychain, secret present in both stores -> warn"
+if (cd "$root/b" && "$install" >/dev/null 2>"$work/err"); then fail "install.sh in b: expected exit 1 (dependabot store lacks the secret)"; fi
+has "$(cat "$work/err")" "secret CLAUDE_CODE_OAUTH_TOKEN is not set on o/b (dependabot)" "install b: names the store that lacks it"
+if (cd "$root/a/.github" && "$install" >/dev/null 2>"$work/err"); then fail "install.sh from a subdirectory: expected refusal"; fi
+has "$(cat "$work/err")" "not at the root of a git repository" "install from subdirectory: refused"
+echo "ok   - install.sh: same render, both stores, root only"
+
+# --- review-outcome reads the current head's newest marker, never an older head's
+echo HEAD1 >"$fixtures/o__a.pr.1.head"
+cat >"$fixtures/o__a.pr.1.reviews.json" <<'JSON'
+[ {"id": 10, "commit_id": "OLD",   "body": "round on an old head\n<!-- copirate-code-review-agent -->"},
+  {"id": 30, "commit_id": "HEAD1", "body": "spent, posted nothing <!-- copirate-code-review-agent:unfinished -->"},
+  {"id": 20, "commit_id": "HEAD1", "body": "a round\n<!-- copirate-code-review-agent -->\n"} ]
+JSON
+echo HEAD2 >"$fixtures/o__a.pr.2.head"; printf '[{"id": 1, "commit_id": "OLD", "body": "x <!-- copirate-code-review-agent -->"}]\n' >"$fixtures/o__a.pr.2.reviews.json"
+echo HEAD3 >"$fixtures/o__a.pr.3.head"; printf '[{"id": 1, "commit_id": "HEAD3", "body": "cap <!-- copirate-code-review-agent:not-reviewed:round-cap -->"}]\n' >"$fixtures/o__a.pr.3.reviews.json"
+echo HEAD4 >"$fixtures/o__a.pr.4.head"; printf '[{"id": 1, "commit_id": "HEAD4", "body": "ok\\n<!-- copirate-code-review-agent -->"}, {"id": 2, "commit_id": "HEAD4", "state": "APPROVED"}]\n' >"$fixtures/o__a.pr.4.reviews.json"
+expect() { # pr expected-output expected-rc
+  local got rc; set +e; got="$("$outcome" o/a "$1")"; rc=$?; set -e
+  [ "$got" = "$2" ] && [ "$rc" -eq "$3" ] || fail "review-outcome PR $1: expected '$2' rc=$3, got '$got' rc=$rc"
+}
+expect 1 unfinished 1               # newest by id on the current head, not list order, not the old head's round
+expect 2 none 1                     # the only marker belongs to a previous head
+expect 3 not-reviewed:round-cap 1
+expect 4 reviewed 0                 # a bodiless human approval on the same head is not an artifact
+echo "ok   - review-outcome: head-bound, newest-by-id, four outcomes, exit code"
+
+echo "PASS - agent-code-review-setup"

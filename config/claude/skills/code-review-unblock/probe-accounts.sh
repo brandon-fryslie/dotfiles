@@ -25,7 +25,7 @@ ITEM_PREFIX="CLAUDE_CODE_OAUTH_TOKEN_"
 # The installer's SECRETS table is the one map of which account the fleet is
 # configured to use; this reads it rather than restating it, so the two can
 # never disagree. [LAW:one-source-of-truth]
-INSTALLER="$HOME/.claude/skills/agent-code-review-setup/install.sh"
+INSTALLER="$HOME/.claude/skills/agent-code-review-setup/template.sh"
 
 for binary in security claude; do
   command -v "$binary" >/dev/null 2>&1 || {
@@ -57,7 +57,7 @@ mapfile -t accounts < <(
   exit 1
 }
 
-printf 'configured in install.sh: %s\n\n' "$configured"
+printf 'configured in template.sh: %s\n\n' "$configured"
 
 available=0
 for account in "${accounts[@]}"; do
@@ -96,7 +96,7 @@ for account in "${accounts[@]}"; do
   fi
 done
 
-printf '\n(* = the account install.sh currently names)\n'
+printf '\n(* = the account template.sh currently names)\n'
 
 # [LAW:no-silent-failure] "Every account is out of quota" is a real state with a
 # real consequence — it is the one case the caller cannot resolve by rotating —
