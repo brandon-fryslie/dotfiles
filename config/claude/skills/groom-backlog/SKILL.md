@@ -192,9 +192,9 @@ which question it settles. The completeness pass owns that.
    **Never `delete` autonomously.** If something looks like it should be deleted rather
    than closed, leave it and list it under "needs your call" in the report.
 
-3. **Completeness.** Grow the graph until it stops lying by omission. Three shapes, and
-   only these three — each one is a place where `lit ready` or an epic's checkpoint is
-   currently untrue:
+3. **Completeness.** Grow the graph until it stops lying by omission. Three common
+   shapes — each one is a place where `lit ready` or an epic's checkpoint is currently
+   untrue:
 
    - **A block with no exit.** A `needs-design` / `needs-info` label, or a dependency on
      a decision, with no ticket whose closing removes it. Either the blocker is gone and
@@ -224,24 +224,13 @@ which question it settles. The completeness pass owns that.
    --title "..." --description "..."` and rank them into place. Read the tickets it
    produced, not its summary of them.
 
-   What completeness is **not** — this is the boundary that drifts, so hold it hard:
+   Example: a bug ticket carries `needs-design` and nothing in the backlog removes it.
+   Elsewhere sits "Decide once what this fork does with feature-gated dead code." If
+   that ticket is the decision, add a `blocks` edge from it to the bug. If it isn't,
+   create the decision ticket.
 
-   - WRONG: "The loop will need logging eventually — I'll add a ticket for it."
-     Nothing in the graph is false without that ticket. That is invention; it belongs to
-     `fill-backlog`, not here.
-   - WRONG: "This ticket is big — I'll split it into three for tidiness." Size is the
-     detail pass's concern, and the fold pass will merge the three back.
-   - WRONG: "The spike would take five minutes — I'll just answer the question in the
-     description." That is writing the solution. Grooming writes the ticket that will.
-   - RIGHT: a bug ticket carries `needs-design` and nothing in the backlog removes it;
-     elsewhere sits "Decide once what this fork does with feature-gated dead code" →
-     either that *is* the decision and gets a `blocks` edge to the bug, or it isn't and
-     the decision ticket is created. One of the two makes the label honest.
-
-   The proverb you will reach for is this document's own: *"every addition is
-   pollution."* Grant it its ground — inside a ticket, it is exactly right, and pass 6
-   enforces it. But a ticket the graph needs in order to be true is not an addition to
-   anything; its absence is the pollution, and creating it is subtraction of a lie.
+   "Every addition is pollution" (above) is about text inside a ticket, and pass 6
+   enforces it. It is not a reason to skip creating a ticket.
 
 4. **Fold.** Prune to minimum viable completeness. The fold pass has **one operation**:
    move a ticket's acceptance criteria and constraints, at full precision, into a
@@ -311,8 +300,7 @@ End with a terse audit so the user can review or undo:
 
 - **Reranked:** each move as `#id: rank A → B` with a one-line why.
 - **Closed:** each `#id (resolution)` — recoverable via `lit open`.
-- **Created:** each new ticket as `#id — <title>`, which of the three completeness shapes
-  it fills (block with no exit / epic with no path / near-term unknown), and what it
+- **Created:** each new ticket as `#id — <title>`, what gap it fills, and what it
   informs or unblocks. A created ticket the user disagrees with is a `lit close` away.
 - **Folded:** each `#id → #target`, with the one-line answer to "what would be lost" that
   came back as "nothing but a boundary." Then the reading: folded N of M grown, and
