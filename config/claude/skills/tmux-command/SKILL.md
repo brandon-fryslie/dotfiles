@@ -24,7 +24,7 @@ tmux-command keys  <target> <key...>       # send raw keys (Enter Down Up Escape
 tmux-command read-screen <target> [N]      # capture N lines (default 200) — re-check / verify the effect
 ```
 
-`target` is tmux's `session:window.pane`, or a shorthand the shared resolver expands (same grammar in `/tmux-talk`):
+`target` is a pane id, a `session:window.pane` address, or a shorthand; the shared resolver turns each into the pane id and every tmux call uses that, so a target survives window renumbering (same grammar in `/tmux-talk`):
 
 | form | means |
 | --- | --- |

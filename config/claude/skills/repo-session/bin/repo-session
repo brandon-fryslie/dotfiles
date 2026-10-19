@@ -96,10 +96,10 @@ else
   ADDRESS=$(tmux new-session -d -s "$SESSION" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT" "${CMD[@]}" \; "${REMAIN[@]}")
 fi
 [[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no pane id" >&2; exit 1; }
-# The address beside the id is for a person finding the window on screen; it is
-# right as of now and is not the handle.
-WHERE=$(tmux display-message -p -t "$ADDRESS" '#{session_name}:#{window_index}.#{pane_index}')
-echo "repo-session: $ADDRESS at $WHERE (cwd $REPO_DIR) running:$(printf ' %q' "${CMD[@]}")" >&2
+# The session beside the id is for a person finding the window on screen. Its
+# index is not printed: it moves, and display-message on a pane that already
+# exited would print an empty one and exit 0 [LAW:no-silent-failure].
+echo "repo-session: $ADDRESS in $SESSION (cwd $REPO_DIR) running:$(printf ' %q' "${CMD[@]}")" >&2
 
 # [LAW:no-silent-failure] the address is only worth printing once claude can
 # take a message. A dialog at boot means a human decision is pending: report it

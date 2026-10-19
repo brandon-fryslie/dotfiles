@@ -8,7 +8,9 @@ exactly once instead of being copied into each skill.
 ## bin/tmux-resolve
 
 The single definition of tmux target addressing. Turns a pane id, a full, or a shorthand
-address into a canonical, verified `session:window.pane`, or rejects it loudly.
+address into the pane's id (`%N`), verified to exist, or rejects it loudly. The id is
+what the drivers hold: tmux never reassigns it, where a `session:window.pane` address
+renumbers when an earlier window closes.
 One enforcer means the two skills cannot drift — a target that resolves in one
 resolves identically in the other, and a bad name that errors in one errors in
 both (rather than tmux silently retargeting the active pane).

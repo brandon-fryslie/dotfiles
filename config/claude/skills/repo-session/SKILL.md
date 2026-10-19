@@ -40,8 +40,8 @@ What the script does, so you don't redo any of it by hand:
   pane's identity, not its position: tmux never reassigns it, whereas a
   `session:window.pane` address renumbers when an earlier window in the
   session closes (`renumber-windows on`), so an address held across hours
-  can quietly point at a different instance. The address the pane has right
-  now is in the stderr line, for finding the window on screen only.
+  can quietly point at a different instance. The stderr line names the session
+  the window landed in, for finding it on screen.
 - Exit 2 with the screen on stderr if Claude stops at a dialog (folder trust,
   bypass-mode acceptance). That is the user's decision; tell them, don't answer it.
   Exit 1 with the screen if Claude exits before it is up (window removed) or

@@ -25,7 +25,7 @@ tmux-talk idle   <target>             # exit 0 if idle, 1 if not — use in cond
 
 ## Target Addressing
 
-tmux uses `session:window.pane`, or a shorthand the shared resolver expands (same grammar in `/tmux-command`):
+A target is a pane id, a `session:window.pane` address, or a shorthand; the shared resolver turns each into the pane id and every tmux call uses that, so a target survives window renumbering (same grammar in `/tmux-command`):
 
 | form | means |
 | --- | --- |
@@ -35,7 +35,7 @@ tmux uses `session:window.pane`, or a shorthand the shared resolver expands (sam
 | `dotfiles:orca` | window **named** `orca` (looked up; ambiguous/unknown names error) |
 | `:2.1` / `:2` | same session |
 | `.2` | same session **and** window, pane 2 |
-| `:self` | your own pane — what `whoami` and the `From:` header report |
+| `:self` | your own pane — `whoami` and the `From:` header report its id |
 
 Every target resolves through `tmux-shared/bin/tmux-resolve` first, so a bad, unknown, or ambiguous target fails loudly rather than tmux silently retargeting the active pane.
 

@@ -5,7 +5,7 @@ USAGE="tmux-talk — thin wrappers over tmux for agent-to-agent communication
 
 Subcommands:
   list                           List all tmux panes with pane id, session:window.pane address and running command
-  whoami                         Print this pane's tmux address (session:window.pane)
+  whoami                         Print this pane's id (%N)
   sender                         Print this pane's sender line (model, context size, cwd)
   send   <target> <message...>   Send a message to a pane, wrapped with From:/Sender:/To-reply: envelope
   read-screen <target> [lines]   Capture pane content (default: 200 lines of scrollback)
@@ -18,10 +18,12 @@ target: a pane id (%N, as repo-session and hire-a-minion print — it survives w
   tmux-shared/bin/tmux-resolve."
 
 # [LAW:single-enforcer] Addressing has one definition, shared with tmux-command:
-# the resolver turns any full or shorthand target into a canonical, verified
-# session:window.pane, or rejects it loudly [LAW:no-silent-failure]. `:self` is
-# the resolver's own form, so "what's my address" (whoami / the From: header) and
-# "where am I sending" go through the same gate — no second self-derivation to drift.
+# the resolver turns any pane id, full, or shorthand target into the pane's id
+# (%N, verified to exist), or rejects it loudly [LAW:no-silent-failure]. Every
+# tmux -t below takes that id, so paste-then-Enter and the wait loop follow the
+# pane through window renumbering. `:self` is the resolver's own form, so
+# "what's my id" (whoami / the From: header a minion replies to) and "where am
+# I sending" go through the same gate — no second self-derivation to drift.
 RESOLVE="$(cd "$(dirname "$0")" && pwd)/../../tmux-shared/bin/tmux-resolve"
 resolve_target() { "$RESOLVE" "$1"; }
 
