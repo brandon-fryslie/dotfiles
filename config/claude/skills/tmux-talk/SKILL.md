@@ -29,6 +29,7 @@ tmux uses `session:window.pane`, or a shorthand the shared resolver expands (sam
 
 | form | means |
 | --- | --- |
+| `%41` | pane id — what repo-session and hire-a-minion print; survives window renumbering |
 | `dotfiles:2.1` | full address |
 | `dotfiles:2` | window 2, pane defaults to 1 |
 | `dotfiles:orca` | window **named** `orca` (looked up; ambiguous/unknown names error) |

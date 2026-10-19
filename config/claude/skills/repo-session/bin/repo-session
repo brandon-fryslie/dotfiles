@@ -25,12 +25,14 @@ claude is the pane's own process: no shell runs in front of it, so no rc file,
 prompt theme, or shell plugin runs in that pane. The pane closes when claude
 exits cleanly; a claude that crashes leaves its screen in a dead pane.
 
-Prints the claude pane's address (session:window.pane) on stdout once claude
-shows its input prompt. Fails loudly, with the pane's screen, if claude exits or
-stops at a dialog before then, or is not up within REPO_SESSION_BOOT_TIMEOUT
-seconds (default 90). A claude that exited has its window removed; one at a
-dialog, or not yet ready, is left running with its address in the message, for
-whoever reads the pane."
+Prints the claude pane's id (%N) on stdout once claude shows its input prompt.
+The id is the handle: it names that pane for as long as it exists, where a
+session:window.pane address renumbers when an earlier window closes
+(renumber-windows on). tmux-talk, tmux-command, and every tmux -t take it.
+Fails loudly, with the pane's screen, if claude exits or stops at a dialog
+before then, or is not up within REPO_SESSION_BOOT_TIMEOUT seconds (default
+90). A claude that exited has its window removed; one at a dialog, or not yet
+ready, is left running with its id in the message, for whoever reads the pane."
 
 case "${1:-}" in -h|--help) echo "$USAGE"; exit 0 ;; esac
 SESSION_ARG=""
@@ -74,7 +76,11 @@ CLAUDE_BIN=$(command -v claude) || { echo "repo-session: no 'claude' on PATH" >&
 # env.CLAUDE_CODE_SHELL), not this launcher's.
 CMD=("$CLAUDE_BIN" --dangerously-skip-permissions ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
 
-ADDR_FMT='#{session_name}:#{window_index}.#{pane_index}'
+# [LAW:types-are-the-program] the handle is the pane id, never the window
+# index: config/tmux/tmux.conf sets renumber-windows on, so when one of several
+# claude windows closes every later index moves and a session:window.pane held
+# by the controller lands in a different claude. %N is never reassigned.
+ADDR_FMT='#{pane_id}'
 # [LAW:no-ambient-temporal-coupling] -d on both paths: the user is usually
 # attached to these sessions, and a non-detached new-window switches their screen.
 # remain-on-exit failed is set in the same tmux request that creates the window,
@@ -89,8 +95,11 @@ if tmux has-session -t "=$SESSION" 2>/dev/null; then
 else
   ADDRESS=$(tmux new-session -d -s "$SESSION" -c "$REPO_DIR" -n claude -P -F "$ADDR_FMT" "${CMD[@]}" \; "${REMAIN[@]}")
 fi
-[[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no address" >&2; exit 1; }
-echo "repo-session: $ADDRESS (cwd $REPO_DIR) running:$(printf ' %q' "${CMD[@]}")" >&2
+[[ -n "$ADDRESS" ]] || { echo "repo-session: tmux returned no pane id" >&2; exit 1; }
+# The address beside the id is for a person finding the window on screen; it is
+# right as of now and is not the handle.
+WHERE=$(tmux display-message -p -t "$ADDRESS" '#{session_name}:#{window_index}.#{pane_index}')
+echo "repo-session: $ADDRESS at $WHERE (cwd $REPO_DIR) running:$(printf ' %q' "${CMD[@]}")" >&2
 
 # [LAW:no-silent-failure] the address is only worth printing once claude can
 # take a message. A dialog at boot means a human decision is pending: report it
@@ -131,7 +140,7 @@ done
 
 # Not ready is an unknown state, not a dead one: a slow boot or a dialog the
 # detector above does not know. The window stays, as it did for a dialog, so a
-# person can read or answer it; the address in this line is the handle.
+# person can read or answer it; the pane id in this line is the handle.
 echo "repo-session: claude in $ADDRESS not ready after ${TIMEOUT}s; screen:" >&2
 echo "$SCREEN" >&2
 exit 1

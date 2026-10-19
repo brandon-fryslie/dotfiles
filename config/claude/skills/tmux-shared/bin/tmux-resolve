@@ -18,6 +18,11 @@ set -euo pipefail
 #   :win               + pane => 1          :2  /  :orca
 #   .pane              same window          .2   => S0:W0.2
 #   :self              own pane             => S0:W0.P0
+#   %N                 pane id              %41 => wherever that pane is now
+# A pane id is the handle repo-session and hire-a-minion print: tmux never
+# reassigns it, where window indices renumber as earlier windows close
+# (renumber-windows on), so it is resolved to the address the pane has at this
+# moment, right before the one tmux command that uses it.
 # Rejected, loudly: a bare token (no ':' and no leading '.'), an empty win/pane,
 # a window NAME carrying a pane suffix (names may contain '.', so pane suffixes
 # are recognized only on numeric window indices), an unknown or ambiguous window
@@ -44,6 +49,17 @@ case "$TARGET" in
     # `echo` printed ":." and exited 0 when $TMUX_PANE was unset — the exact
     # silent fallback this part exists to prevent [LAW:no-silent-failure].
     self_field '#{session_name}:#{window_index}.#{pane_index}'
+    exit 0
+    ;;
+  %*)
+    # list-panes with an exact-id filter: it errors on an id no pane has, where
+    # display-message -t on one exits 0 with every field empty — the silent
+    # fallback this part exists to prevent [LAW:no-silent-failure].
+    [[ "$TARGET" =~ ^%[0-9]+$ ]] || die "pane id must be %N, got '$TARGET'"
+    FOUND="$(tmux list-panes -t "$TARGET" -f "#{==:#{pane_id},$TARGET}" -F '#{session_name}:#{window_index}.#{pane_index}' 2>&1)" \
+      || die "no pane $TARGET ($FOUND)"
+    [ -n "$FOUND" ] || die "no pane $TARGET"
+    echo "$FOUND"
     exit 0
     ;;
   .*)

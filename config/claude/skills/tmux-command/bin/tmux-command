@@ -22,15 +22,17 @@ set -euo pipefail
 USAGE="tmux-command — inject built-in slash commands / keystrokes into another agent harness's pane
 
 Subcommands:
-  list                           List all tmux panes with session:window.pane address and running command
+  list                           List all tmux panes with pane id, session:window.pane address and running command
   whoami                         Print this pane's tmux address (session:window.pane)
   context <target> [lines]       Gather before acting: the target's id line (cmd/title) + its current screen
   send  <target> <command...>    Type a literal command line into the pane, then submit it (no envelope)
   keys  <target> <key...>        Send raw tmux key names (Enter, Down, Up, Escape, BSpace, …) — drive pickers
   read-screen <target> [lines]   Capture pane content (default: 200 lines) — re-check / verify a command's effect
 
-target: session:window.pane, or shorthand — :win.pane / :win / .pane (same session/window),
-  :self (own pane), and window-by-name (dotfiles:orca). See tmux-shared/bin/tmux-resolve.
+target: a pane id (%N, as repo-session and hire-a-minion print — it survives window
+  renumbering), session:window.pane, or shorthand — :win.pane / :win / .pane (same
+  session/window), :self (own pane), and window-by-name (dotfiles:orca). See
+  tmux-shared/bin/tmux-resolve.
 
 The command set differs per harness (claude code, codex, opencode). Run 'list' to find the
 target and its running command, then read the matching references/<harness>.md before sending."
@@ -48,7 +50,7 @@ CMD="${1:-}"
 case "$CMD" in
 
   list)
-    tmux list-panes -a -F "#{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
+    tmux list-panes -a -F "#{pane_id}  #{session_name}:#{window_index}.#{pane_index}  cmd=#{pane_current_command}  title=#{pane_title}"
     ;;
 
   whoami)
