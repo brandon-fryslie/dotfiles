@@ -29,9 +29,9 @@ What the script does, so you don't redo any of it by hand:
   No session yet → it creates one, detached, rooted at the repo. Session exists →
   it adds a new detached window. It never types into an existing pane and never
   switches what an attached user is looking at.
-- Runs `claude --dangerously-skip-permissions` as the pane's own process, with
-  `SHELL=bash`. No shell sits in front of it, so none of the user's rc files,
-  prompt theme, or shell plugins run in that pane. The pane closes when Claude
+- Runs `claude --dangerously-skip-permissions` as the pane's own process. No
+  shell sits in front of it, so none of the user's rc files, prompt theme, or
+  shell plugins run in that pane. The pane closes when Claude
   exits cleanly; a Claude that crashes leaves its screen in a dead pane, so a
   failure hours in can still be read.
 - Waits until Claude's input prompt is up, then prints **one line on stdout: the

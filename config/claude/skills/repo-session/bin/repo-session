@@ -20,8 +20,7 @@ reused, and no attached client's view is switched.
 
 claude is the pane's own process: no shell runs in front of it, so no rc file,
 prompt theme, or shell plugin runs in that pane. The pane closes when claude
-exits cleanly; a claude that crashes leaves its screen in a dead pane. Claude's
-own subprocess shell is bash (SHELL=bash).
+exits cleanly; a claude that crashes leaves its screen in a dead pane.
 
 Prints the claude pane's address (session:window.pane) on stdout once claude
 shows its input prompt. Fails loudly, with the pane's screen, if claude exits or
@@ -56,9 +55,10 @@ SESSION=${BASENAME//[.:]/_}
 CLAUDE_BIN=$(command -v claude) || { echo "repo-session: no 'claude' on PATH" >&2; exit 1; }
 
 # A multi-argument window command is exec'd by tmux as-is, with no shell: argv
-# reaches claude token for token, and nothing sources a rc. env carries SHELL
-# because tmux writes its default-shell into SHELL after new-window -e.
-CMD=(/usr/bin/env SHELL=bash "$CLAUDE_BIN" --dangerously-skip-permissions ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
+# reaches claude token for token, and nothing sources a rc. Claude's own
+# subprocess shell is the managed settings' decision (settings.managed.json
+# env.CLAUDE_CODE_SHELL), not this launcher's.
+CMD=("$CLAUDE_BIN" --dangerously-skip-permissions ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
 
 ADDR_FMT='#{session_name}:#{window_index}.#{pane_index}'
 # [LAW:no-ambient-temporal-coupling] -d on both paths: the user is usually
