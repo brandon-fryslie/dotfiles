@@ -189,6 +189,13 @@ if (cd "$work/cap" && source "$skill/template.sh" && DEFAULT_MAX_REVIEW_ROUNDS='
 has "$(cat "$work/err")" "ERROR: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), but the fleet default is ''." "cap: an empty default is refused and blamed on the default, not a conf the repo lacks"
 echo "ok   - cap parser: a non-count is refused at render, blamed on its real origin"
 
+# --- a repo's free-text value is rendered last, so a marker-shaped glob is just a glob
+printf 'EXCLUDE_PATTERNS_EXTRA=x/__MAX_REVIEW_ROUNDS__/**\n' >"$work/cap/.github/code-review.conf"
+rendered_cap="$(cd "$work/cap" && source "$skill/template.sh" && render_workflow o/cap 2>/dev/null)" || fail "render with a marker-shaped glob: exited $?"
+has "$rendered_cap" 'yarn.lock,pnpm-lock.yaml,x/__MAX_REVIEW_ROUNDS__/**"' "marker glob: kept literally in EXCLUDE_PATTERNS"
+has "$rendered_cap" 'MAX_REVIEW_ROUNDS: "5"' "marker glob: the real marker still rendered"
+echo "ok   - render order: a marker-shaped glob in a repo's value captures no later marker"
+
 # --- the one-repo installer renders the same file and reads the same stores
 out="$(cd "$root/a" && "$install" 2>"$work/err")" || fail "install.sh in a: exited $?: $(cat "$work/err")"
 has "$out" ".github/workflows/code-review.yml is up to date (uses promptctl/copirate-code-review-agent@v1)" "install a: same render as the fleet"

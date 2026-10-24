@@ -492,13 +492,16 @@ render_workflow() {
   # [LAW:one-type-per-behavior] A marker|value LIST: a further rendered value is one more
   # entry here and no new code. Each marker is checked before it is replaced — a template
   # that lost one would otherwise ship a literal __ACTION_REF__ into a consuming repo's
-  # workflow [LAW:no-silent-failure].
+  # workflow [LAW:no-silent-failure]. Each sed rescans everything rendered before it, so
+  # __EXCLUDE_PATTERNS__ — the one value carrying a repo's free text, where a `__` is a
+  # legitimate glob — goes LAST: no later marker can be found inside it.
   local rendered="" pair marker value
   rendered="$(workflow_template)" || die "could not read the workflow template."
   for pair in "__ACTION_REF__|${action_ref}" \
               "__REPO_CONFIG_PATH__|${REPO_CONFIG_PATH}" "__CONFIG_KEYS__|${CONFIG_KEYS}" \
-              "__EXCLUDE_PATTERNS_ORIGIN__|${excludes_origin}" "__EXCLUDE_PATTERNS__|${excludes}" \
-              "__MAX_REVIEW_ROUNDS_ORIGIN__|${rounds_origin}" "__MAX_REVIEW_ROUNDS__|${max_review_rounds}"; do
+              "__EXCLUDE_PATTERNS_ORIGIN__|${excludes_origin}" \
+              "__MAX_REVIEW_ROUNDS_ORIGIN__|${rounds_origin}" "__MAX_REVIEW_ROUNDS__|${max_review_rounds}" \
+              "__EXCLUDE_PATTERNS__|${excludes}"; do
     marker="${pair%%|*}"
     value="${pair#*|}"
     grep -q "$marker" <<<"$rendered" || die "workflow template lost its ${marker} marker."
