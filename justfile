@@ -71,10 +71,6 @@ validate:
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
 
-# Assert what Code Root.app's opener asks VS Code to open (fake CLI, throwaway repos)
-test-code-root:
-    ./config/code-root/test-open-at-root.sh
-
 # Assert the code-review installer, fleet pass and review-outcome reader against a throwaway fleet (no network)
 test-code-review-fleet:
     ./config/claude/tests/code-review-fleet.sh
