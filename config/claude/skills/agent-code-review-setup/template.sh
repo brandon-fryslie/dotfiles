@@ -267,14 +267,14 @@ read_repo_config() {
   printf '%s' "$found"
 }
 
-# The cap as a count: echoes the given non-negative integer or dies naming the file and the
-# value — the workflow input is a count, and a count that is not a number would be a YAML
-# string the action rejects at run time, one round of billing later than here.
+# The cap as a count: echoes the given non-negative integer or dies naming the value and
+# its origin — the workflow input is a count, and a count that is not a number would be a
+# YAML string the action rejects at run time, one round of billing later than here.
 # [LAW:parse-dont-validate]
 parse_max_review_rounds() {
-  local rounds="$1"
+  local rounds="$1" origin="$2"
   case "$rounds" in
-    *[!0-9]*) die "$REPO_CONFIG_PATH: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), got '$rounds'." ;;
+    ''|*[!0-9]*) die "MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), but ${origin} is '${rounds}'." ;;
   esac
   printf '%s' "$rounds"
 }
@@ -302,6 +302,9 @@ cat <<'YAML'
 # reconverges it on every run and overwrites local edits silently, so editing
 # here appears to work and is undone the next time anyone installs.
 # [LAW:one-source-of-truth]
+#
+# To change a value for this repo only: declare it in __REPO_CONFIG_PATH__
+# (keys: __CONFIG_KEYS__), then re-run the installer.
 name: AI Code Review
 
 # pull_request (unprivileged), NOT pull_request_target: this job checks out the
@@ -467,22 +470,23 @@ YAML
 # from it — a repo with no declaration is never told its value came from a file it lacks.
 render_workflow() {
   local repo="$1"
-  local action_ref extra_excludes excludes excludes_origin declared_rounds max_review_rounds rounds_origin
+  local action_ref extra_excludes excludes excludes_origin declared_rounds rounds rounds_origin max_review_rounds
   action_ref="$(action_ref_for "$repo")"
   extra_excludes="$(read_repo_config EXCLUDE_PATTERNS_EXTRA)" || return 1
-  excludes="${BASELINE_EXCLUDES}${extra_excludes:+,${extra_excludes}}"
-  excludes_origin="the universal baseline${extra_excludes:+ joined with $(declared_origin EXCLUDE_PATTERNS_EXTRA)}"
+  excludes="$BASELINE_EXCLUDES" excludes_origin="the universal baseline"
   if [ -n "$extra_excludes" ]; then
+    excludes="$excludes,$extra_excludes"
+    excludes_origin="$excludes_origin joined with $(declared_origin EXCLUDE_PATTERNS_EXTRA)"
     echo "→ ${REPO_CONFIG_PATH} adds exclude pattern(s): ${extra_excludes}" >&2
   fi
   declared_rounds="$(read_repo_config MAX_REVIEW_ROUNDS)" || return 1
-  max_review_rounds="$(parse_max_review_rounds "${declared_rounds:-$DEFAULT_MAX_REVIEW_ROUNDS}")" || return 1
+  rounds="$DEFAULT_MAX_REVIEW_ROUNDS" rounds_origin="the fleet default"
   if [ -n "$declared_rounds" ]; then
+    rounds="$declared_rounds"
     rounds_origin="$(declared_origin MAX_REVIEW_ROUNDS)"
-    echo "→ ${REPO_CONFIG_PATH} sets MAX_REVIEW_ROUNDS: ${max_review_rounds}" >&2
-  else
-    rounds_origin="the fleet default"
+    echo "→ ${REPO_CONFIG_PATH} sets MAX_REVIEW_ROUNDS: ${declared_rounds}" >&2
   fi
+  max_review_rounds="$(parse_max_review_rounds "$rounds" "$rounds_origin")" || return 1
 
   # Insert the rendered values without escaping every GH expression in the heredoc.
   # [LAW:one-type-per-behavior] A marker|value LIST: a further rendered value is one more
@@ -492,6 +496,7 @@ render_workflow() {
   local rendered="" pair marker value
   rendered="$(workflow_template)" || die "could not read the workflow template."
   for pair in "__ACTION_REF__|${action_ref}" \
+              "__REPO_CONFIG_PATH__|${REPO_CONFIG_PATH}" "__CONFIG_KEYS__|${CONFIG_KEYS}" \
               "__EXCLUDE_PATTERNS_ORIGIN__|${excludes_origin}" "__EXCLUDE_PATTERNS__|${excludes}" \
               "__MAX_REVIEW_ROUNDS_ORIGIN__|${rounds_origin}" "__MAX_REVIEW_ROUNDS__|${max_review_rounds}"; do
     marker="${pair%%|*}"

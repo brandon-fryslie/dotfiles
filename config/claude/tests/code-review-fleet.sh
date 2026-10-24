@@ -147,7 +147,8 @@ has "$rendered_b" 'uses: promptctl/copirate-code-review-agent@v1' "b render: con
 has "$(cat "$root/s/.github/workflows/code-review.yml")" 'uses: ./' "s render: the action's own repo reviews with its PR's code"
 has "$(cat "$root/a/.github/workflows/code-review.yml")" 'MAX_REVIEW_ROUNDS: "5"' "a render: fleet default rounds"
 lacks "$(cat "$root/a/.github/workflows/code-review.yml")" '__' "a render: no marker left unrendered"
-lacks "$(cat "$root/a/.github/workflows/code-review.yml")" 'code-review.conf' "a render: no comment names a conf the repo lacks"
+lacks "$(cat "$root/a/.github/workflows/code-review.yml")" 'from .github/code-review.conf' "a render: no comment says a value came from a conf the repo lacks"
+has "$(cat "$root/a/.github/workflows/code-review.yml")" "# To change a value for this repo only: declare it in .github/code-review.conf"$'\n'"# (keys: EXCLUDE_PATTERNS_EXTRA MAX_REVIEW_ROUNDS), then re-run the installer." "a render: the header says where a per-repo value is declared"
 has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the universal baseline — see' "a render: excludes origin is the baseline"
 has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the fleet default — see' "a render: rounds origin is the fleet default"
 has "$rendered_b" "# RENDERED, not literal. The value is the universal baseline joined with this repo's EXCLUDE_PATTERNS_EXTRA from .github/code-review.conf — see" "b render: excludes origin names the conf"
@@ -168,7 +169,8 @@ has "$out" "c                                updated  branch=trunk" "run 2 c"
 has "$out" "q                                updated  branch=trunk" "run 2 q"
 has "$out" "w                                updated  branch=trunk" "run 2 w: the repo that failed last time is written now, and says so"
 has "$out" "7 repos: 4 unchanged, 3 updated, 0 failed" "run 2 summary"
-has "$(cat "$work/err")" "    → .github/code-review.conf sets MAX_REVIEW_ROUNDS: 5" "run 2 q: a declared value equal to the default is still noted as declared"
+[ "$(grep -F 'sets MAX_REVIEW_ROUNDS' "$work/err")" = "    → .github/code-review.conf sets MAX_REVIEW_ROUNDS: 9"$'\n'"    → .github/code-review.conf sets MAX_REVIEW_ROUNDS: 5" ] \
+  || fail "run 2: exactly the repos that declare MAX_REVIEW_ROUNDS (b, then q declaring the default) note it; got:"$'\n'"$(cat "$work/err")"
 has "$(cat "$root/q/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the universal baseline — see' "q render: a conf without EXCLUDE_PATTERNS_EXTRA leaves the excludes origin the baseline"
 has "$(cat "$root/q/.github/workflows/code-review.yml")" "# RENDERED, not literal. The value is this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf — see" "q render: rounds origin names the conf"
 echo "ok   - run 2: fixed repos converge, the rest unchanged, exit 0"
@@ -177,6 +179,15 @@ echo "ok   - run 2: fixed repos converge, the rest unchanged, exit 0"
 out="$("$fleet" "$root" 2>/dev/null)"
 has "$out" "7 repos: 7 unchanged, 0 updated, 0 failed" "run 3 summary"
 echo "ok   - run 3: re-running a converged fleet reports 0 updated"
+
+# --- the cap's parser refuses a non-count, naming where the value came from
+mkdir -p "$work/cap/.github"; printf 'MAX_REVIEW_ROUNDS=five\n' >"$work/cap/.github/code-review.conf"
+if (cd "$work/cap" && source "$skill/template.sh" && render_workflow o/cap) >/dev/null 2>"$work/err"; then fail "render with MAX_REVIEW_ROUNDS=five: expected failure"; fi
+has "$(cat "$work/err")" "ERROR: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), but this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf is 'five'." "cap: a declared non-count blames the conf"
+rm "$work/cap/.github/code-review.conf"
+if (cd "$work/cap" && source "$skill/template.sh" && DEFAULT_MAX_REVIEW_ROUNDS='' render_workflow o/cap) >/dev/null 2>"$work/err"; then fail "render with an empty fleet default: expected failure"; fi
+has "$(cat "$work/err")" "ERROR: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), but the fleet default is ''." "cap: an empty default is refused and blamed on the default, not a conf the repo lacks"
+echo "ok   - cap parser: a non-count is refused at render, blamed on its real origin"
 
 # --- the one-repo installer renders the same file and reads the same stores
 out="$(cd "$root/a" && "$install" 2>"$work/err")" || fail "install.sh in a: exited $?: $(cat "$work/err")"
