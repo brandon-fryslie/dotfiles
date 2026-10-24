@@ -121,6 +121,19 @@ BASELINE_EXCLUDES="${WORKFLOW_PATH},dist/**,**/dist/**,build/**,**/build/**,*.lo
 # repo declaring 0 has chosen that.
 DEFAULT_MAX_REVIEW_ROUNDS="5"
 
+# The cap crosses into the workflow as a count, and a value that is not one would be a
+# YAML string the action rejects at run time, one round of billing later than here. ONE
+# check, run at each place a cap enters: the default here, once, at source time like the
+# SECRETS table; a repo's declaration in read_repo_config, naming its file:line.
+# [LAW:single-enforcer]
+require_round_count() {
+  local what="$1" value="$2"
+  case "$value" in
+    ''|*[!0-9]*) die "$what must be a non-negative integer (0 = unlimited), got '$value'." ;;
+  esac
+}
+require_round_count "template.sh: DEFAULT_MAX_REVIEW_ROUNDS" "$DEFAULT_MAX_REVIEW_ROUNDS"
+
 # --- The per-repo half of the workflow's configuration ------------------------
 #
 # WHY a file in the target repo, and not a repo->patterns table here: "which files are
@@ -215,8 +228,9 @@ action_ref_for() {
 # operator's next act is to open that line. [LAW:no-silent-failure]
 #
 # [LAW:parse-dont-validate] The value leaves here already checked — non-empty, a known key,
-# declared once, and free of the metacharacters that would corrupt the render — so the
-# render site takes a string it can substitute without inspecting it again.
+# declared once, a count where the key is one, and free of the metacharacters that would
+# corrupt the render — so the render site takes a string it can substitute without
+# inspecting it again.
 read_repo_config() {
   local want="$1"
   [ -f "$REPO_CONFIG_PATH" ] || return 0
@@ -260,23 +274,12 @@ read_repo_config() {
     case "$value" in
       *'|'*|*'&'*|*'\'*|*'"'*) die "$REPO_CONFIG_PATH:$lineno: '$key' may not contain | & \\ or \"." ;;
     esac
+    if [ "$key" = MAX_REVIEW_ROUNDS ]; then require_round_count "$REPO_CONFIG_PATH:$lineno: MAX_REVIEW_ROUNDS" "$value"; fi
 
     if [ "$key" = "$want" ]; then found="$value"; fi
   done < "$REPO_CONFIG_PATH"
 
   printf '%s' "$found"
-}
-
-# The cap as a count: echoes the given non-negative integer or dies naming the value and
-# its origin — the workflow input is a count, and a count that is not a number would be a
-# YAML string the action rejects at run time, one round of billing later than here.
-# [LAW:parse-dont-validate]
-parse_max_review_rounds() {
-  local rounds="$1" origin="$2"
-  case "$rounds" in
-    ''|*[!0-9]*) die "MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), but ${origin} is '${rounds}'." ;;
-  esac
-  printf '%s' "$rounds"
 }
 
 # How a rendered comment names a value the repo declared — one phrase for every key, so
@@ -470,7 +473,7 @@ YAML
 # from it — a repo with no declaration is never told its value came from a file it lacks.
 render_workflow() {
   local repo="$1"
-  local action_ref extra_excludes excludes excludes_origin declared_rounds rounds rounds_origin max_review_rounds
+  local action_ref extra_excludes excludes excludes_origin declared_rounds max_review_rounds rounds_origin
   action_ref="$(action_ref_for "$repo")"
   extra_excludes="$(read_repo_config EXCLUDE_PATTERNS_EXTRA)" || return 1
   excludes="$BASELINE_EXCLUDES" excludes_origin="the universal baseline"
@@ -480,13 +483,12 @@ render_workflow() {
     echo "→ ${REPO_CONFIG_PATH} adds exclude pattern(s): ${extra_excludes}" >&2
   fi
   declared_rounds="$(read_repo_config MAX_REVIEW_ROUNDS)" || return 1
-  rounds="$DEFAULT_MAX_REVIEW_ROUNDS" rounds_origin="the fleet default"
+  max_review_rounds="$DEFAULT_MAX_REVIEW_ROUNDS" rounds_origin="the fleet default"
   if [ -n "$declared_rounds" ]; then
-    rounds="$declared_rounds"
+    max_review_rounds="$declared_rounds"
     rounds_origin="$(declared_origin MAX_REVIEW_ROUNDS)"
-    echo "→ ${REPO_CONFIG_PATH} sets MAX_REVIEW_ROUNDS: ${declared_rounds}" >&2
+    echo "→ ${REPO_CONFIG_PATH} sets MAX_REVIEW_ROUNDS: ${max_review_rounds}" >&2
   fi
-  max_review_rounds="$(parse_max_review_rounds "$rounds" "$rounds_origin")" || return 1
 
   # Insert the rendered values without escaping every GH expression in the heredoc.
   # [LAW:one-type-per-behavior] A marker|value LIST: a further rendered value is one more

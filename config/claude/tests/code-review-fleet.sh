@@ -31,8 +31,10 @@ export FAKE_GH="$fixtures"
 export PATH="$bin:$PATH"
 
 fail() { echo "FAIL - $*" >&2; exit 1; }
-has() { grep -qF -- "$2" <<<"$1" || fail "$3: expected to find '$2' in:"$'\n'"$1"; }
-lacks() { ! grep -qF -- "$2" <<<"$1" || fail "$3: expected NOT to find '$2' in:"$'\n'"$1"; }
+# A plain substring test, so a needle spanning lines must match as one block — grep -F
+# would read each of its lines as a separate pattern and pass on any one of them.
+has() { [[ "$1" == *"$2"* ]] || fail "$3: expected to find '$2' in:"$'\n'"$1"; }
+lacks() { [[ "$1" != *"$2"* ]] || fail "$3: expected NOT to find '$2' in:"$'\n'"$1"; }
 
 # --- the fake gh: every answer comes from $FAKE_GH/<owner>__<name>.<kind>; a missing
 # fixture is a failed call, which is how a gh outage is staged.
@@ -180,14 +182,16 @@ out="$("$fleet" "$root" 2>/dev/null)"
 has "$out" "7 repos: 7 unchanged, 0 updated, 0 failed" "run 3 summary"
 echo "ok   - run 3: re-running a converged fleet reports 0 updated"
 
-# --- the cap's parser refuses a non-count, naming where the value came from
-mkdir -p "$work/cap/.github"; printf 'MAX_REVIEW_ROUNDS=five\n' >"$work/cap/.github/code-review.conf"
+# --- a cap that is not a count is refused where it enters, naming where that is
+mkdir -p "$work/cap/.github" "$work/tpl"; printf 'MAX_REVIEW_ROUNDS=five\n' >"$work/cap/.github/code-review.conf"
 if (cd "$work/cap" && source "$skill/template.sh" && render_workflow o/cap) >/dev/null 2>"$work/err"; then fail "render with MAX_REVIEW_ROUNDS=five: expected failure"; fi
-has "$(cat "$work/err")" "ERROR: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), but this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf is 'five'." "cap: a declared non-count blames the conf"
-rm "$work/cap/.github/code-review.conf"
-if (cd "$work/cap" && source "$skill/template.sh" && DEFAULT_MAX_REVIEW_ROUNDS='' render_workflow o/cap) >/dev/null 2>"$work/err"; then fail "render with an empty fleet default: expected failure"; fi
-has "$(cat "$work/err")" "ERROR: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), but the fleet default is ''." "cap: an empty default is refused and blamed on the default, not a conf the repo lacks"
-echo "ok   - cap parser: a non-count is refused at render, blamed on its real origin"
+has "$(cat "$work/err")" "ERROR: .github/code-review.conf:1: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), got 'five'." "cap: a declared non-count names the conf's file:line"
+lacks "$(cat "$work/err")" "sets MAX_REVIEW_ROUNDS" "cap: a refused value is never noted as set"
+sed 's/^DEFAULT_MAX_REVIEW_ROUNDS="5"$/DEFAULT_MAX_REVIEW_ROUNDS=""/' "$skill/template.sh" >"$work/tpl/template.sh"
+has "$(cat "$work/tpl/template.sh")" 'DEFAULT_MAX_REVIEW_ROUNDS=""' "cap: the broken-default fixture was written"
+if (source "$work/tpl/template.sh") >/dev/null 2>"$work/err"; then fail "sourcing a template with an empty default: expected failure"; fi
+has "$(cat "$work/err")" "ERROR: template.sh: DEFAULT_MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), got ''." "cap: a template whose default is not a count refuses to load"
+echo "ok   - cap: a non-count is refused where it enters — the conf at file:line, the default at load"
 
 # --- a repo's free-text value is rendered last, so a marker-shaped glob is just a glob
 printf 'EXCLUDE_PATTERNS_EXTRA=x/__MAX_REVIEW_ROUNDS__/**\n' >"$work/cap/.github/code-review.conf"
