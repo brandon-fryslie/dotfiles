@@ -31,8 +31,10 @@ export FAKE_GH="$fixtures"
 export PATH="$bin:$PATH"
 
 fail() { echo "FAIL - $*" >&2; exit 1; }
-has() { grep -qF -- "$2" <<<"$1" || fail "$3: expected to find '$2' in:"$'\n'"$1"; }
-lacks() { ! grep -qF -- "$2" <<<"$1" || fail "$3: expected NOT to find '$2' in:"$'\n'"$1"; }
+# A plain substring test, so a needle spanning lines must match as one block — grep -F
+# would read each of its lines as a separate pattern and pass on any one of them.
+has() { [[ "$1" == *"$2"* ]] || fail "$3: expected to find '$2' in:"$'\n'"$1"; }
+lacks() { [[ "$1" != *"$2"* ]] || fail "$3: expected NOT to find '$2' in:"$'\n'"$1"; }
 
 # --- the fake gh: every answer comes from $FAKE_GH/<owner>__<name>.<kind>; a missing
 # fixture is a failed call, which is how a gh outage is staged.
@@ -147,6 +149,12 @@ has "$rendered_b" 'uses: promptctl/copirate-code-review-agent@v1' "b render: con
 has "$(cat "$root/s/.github/workflows/code-review.yml")" 'uses: ./' "s render: the action's own repo reviews with its PR's code"
 has "$(cat "$root/a/.github/workflows/code-review.yml")" 'MAX_REVIEW_ROUNDS: "5"' "a render: fleet default rounds"
 lacks "$(cat "$root/a/.github/workflows/code-review.yml")" '__' "a render: no marker left unrendered"
+lacks "$(cat "$root/a/.github/workflows/code-review.yml")" 'from .github/code-review.conf' "a render: no comment says a value came from a conf the repo lacks"
+has "$(cat "$root/a/.github/workflows/code-review.yml")" "# To change a value for this repo only: declare it in .github/code-review.conf"$'\n'"# (keys: EXCLUDE_PATTERNS_EXTRA MAX_REVIEW_ROUNDS), then re-run the installer." "a render: the header says where a per-repo value is declared"
+has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the universal baseline — see' "a render: excludes origin is the baseline"
+has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the fleet default — see' "a render: rounds origin is the fleet default"
+has "$rendered_b" "# RENDERED, not literal. The value is the universal baseline joined with this repo's EXCLUDE_PATTERNS_EXTRA from .github/code-review.conf — see" "b render: excludes origin names the conf"
+has "$rendered_b" "# RENDERED, not literal. The value is this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf — see" "b render: rounds origin names the conf"
 [ "$(cat "$root/d/.github/workflows/code-review.yml")" = stale ] || fail "run 1: wrote into a non-repo directory"
 [ "$(cat "$root/w/.github/workflows/code-review.yml")" = "$stale" ] || fail "run 1: a repo whose listing failed must not have been written"
 has "$(cat "$work/err")" "    fake gh: HTTP 404 repos/o/w/actions/workflows" "run 1: a failed repo's full stderr sits under its line"
@@ -156,18 +164,41 @@ has "$(cat "$work/err")" "ERROR: no repo under $work/no-fleet carries an install
 echo "ok   - run 1: population, per-repo lines, render, failures named, empty root refused, exit 1"
 
 # --- run 2: the two failures fixed, everything else a no-op
-rm "$root/c/.github/code-review.conf" "$root/q/.github/code-review.conf"; workflows o__w "$active"
-out="$("$fleet" "$root" 2>/dev/null)"
+rm "$root/c/.github/code-review.conf"; workflows o__w "$active"
+printf 'MAX_REVIEW_ROUNDS=5\n' >"$root/q/.github/code-review.conf"                                 # declares one key, and declares the default
+out="$("$fleet" "$root" 2>"$work/err")"
 has "$out" "c                                updated  branch=trunk" "run 2 c"
 has "$out" "q                                updated  branch=trunk" "run 2 q"
 has "$out" "w                                updated  branch=trunk" "run 2 w: the repo that failed last time is written now, and says so"
 has "$out" "7 repos: 4 unchanged, 3 updated, 0 failed" "run 2 summary"
+[ "$(grep -F 'sets MAX_REVIEW_ROUNDS' "$work/err")" = "    → .github/code-review.conf sets MAX_REVIEW_ROUNDS: 9"$'\n'"    → .github/code-review.conf sets MAX_REVIEW_ROUNDS: 5" ] \
+  || fail "run 2: exactly the repos that declare MAX_REVIEW_ROUNDS (b, then q declaring the default) note it; got:"$'\n'"$(cat "$work/err")"
+has "$(cat "$root/q/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the universal baseline — see' "q render: a conf without EXCLUDE_PATTERNS_EXTRA leaves the excludes origin the baseline"
+has "$(cat "$root/q/.github/workflows/code-review.yml")" "# RENDERED, not literal. The value is this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf — see" "q render: rounds origin names the conf"
 echo "ok   - run 2: fixed repos converge, the rest unchanged, exit 0"
 
 # --- run 3: converged fleet is a no-op that says so
 out="$("$fleet" "$root" 2>/dev/null)"
 has "$out" "7 repos: 7 unchanged, 0 updated, 0 failed" "run 3 summary"
 echo "ok   - run 3: re-running a converged fleet reports 0 updated"
+
+# --- a cap that is not a count is refused where it enters, naming where that is
+mkdir -p "$work/cap/.github" "$work/tpl"; printf 'MAX_REVIEW_ROUNDS=five\n' >"$work/cap/.github/code-review.conf"
+if (cd "$work/cap" && source "$skill/template.sh" && render_workflow o/cap) >/dev/null 2>"$work/err"; then fail "render with MAX_REVIEW_ROUNDS=five: expected failure"; fi
+has "$(cat "$work/err")" "ERROR: .github/code-review.conf:1: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), got 'five'." "cap: a declared non-count names the conf's file:line"
+lacks "$(cat "$work/err")" "sets MAX_REVIEW_ROUNDS" "cap: a refused value is never noted as set"
+sed 's/^DEFAULT_MAX_REVIEW_ROUNDS="5"$/DEFAULT_MAX_REVIEW_ROUNDS=""/' "$skill/template.sh" >"$work/tpl/template.sh"
+has "$(cat "$work/tpl/template.sh")" 'DEFAULT_MAX_REVIEW_ROUNDS=""' "cap: the broken-default fixture was written"
+if (source "$work/tpl/template.sh") >/dev/null 2>"$work/err"; then fail "sourcing a template with an empty default: expected failure"; fi
+has "$(cat "$work/err")" "ERROR: template.sh: DEFAULT_MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), got ''." "cap: a template whose default is not a count refuses to load"
+echo "ok   - cap: a non-count is refused where it enters — the conf at file:line, the default at load"
+
+# --- a repo's free-text value is rendered last, so a marker-shaped glob is just a glob
+printf 'EXCLUDE_PATTERNS_EXTRA=x/__MAX_REVIEW_ROUNDS__/**\n' >"$work/cap/.github/code-review.conf"
+rendered_cap="$(cd "$work/cap" && source "$skill/template.sh" && render_workflow o/cap 2>/dev/null)" || fail "render with a marker-shaped glob: exited $?"
+has "$rendered_cap" 'yarn.lock,pnpm-lock.yaml,x/__MAX_REVIEW_ROUNDS__/**"' "marker glob: kept literally in EXCLUDE_PATTERNS"
+has "$rendered_cap" 'MAX_REVIEW_ROUNDS: "5"' "marker glob: the real marker still rendered"
+echo "ok   - render order: a marker-shaped glob in a repo's value captures no later marker"
 
 # --- the one-repo installer renders the same file and reads the same stores
 out="$(cd "$root/a" && "$install" 2>"$work/err")" || fail "install.sh in a: exited $?: $(cat "$work/err")"

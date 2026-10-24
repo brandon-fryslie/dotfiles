@@ -11,6 +11,9 @@
 # reconverges it on every run and overwrites local edits silently, so editing
 # here appears to work and is undone the next time anyone installs.
 # [LAW:one-source-of-truth]
+#
+# To change a value for this repo only: declare it in .github/code-review.conf
+# (keys: EXCLUDE_PATTERNS_EXTRA MAX_REVIEW_ROUNDS), then re-run the installer.
 name: AI Code Review
 
 # pull_request (unprivileged), NOT pull_request_target: this job checks out the
@@ -120,15 +123,13 @@ jobs:
           # it — there is no barer default, and stripping it silently degrades every
           # go.mod dependency-bump review.
           DEPENDENCY_DIFF: "true"
-          # RENDERED, not literal. The value is the universal baseline joined with
-          # whatever this repo declared in .github/code-review.conf, composed in one
-          # place — see BASELINE_EXCLUDES at the top of template.sh, where the rationale
-          # for each baseline pattern lives beside the patterns themselves, and
-          # read_repo_config, which parses the per-repo half. [LAW:one-source-of-truth]
+          # RENDERED, not literal. The value is the universal baseline — see
+          # BASELINE_EXCLUDES at the top of template.sh, where the rationale for each
+          # baseline pattern lives beside the patterns themselves. [LAW:one-source-of-truth]
           EXCLUDE_PATTERNS: ".github/workflows/code-review.yml,dist/**,**/dist/**,build/**,**/build/**,*.lock,package-lock.json,yarn.lock,pnpm-lock.yaml"
-          # RENDERED, not literal. This repo's MAX_REVIEW_ROUNDS from .github/code-review.conf,
-          # else the fleet default — see DEFAULT_MAX_REVIEW_ROUNDS in template.sh for what a
-          # spent cap does and why the number is a per-repo declaration.
+          # RENDERED, not literal. The value is the fleet default — see
+          # DEFAULT_MAX_REVIEW_ROUNDS in template.sh for what a spent cap does and why
+          # the number is a per-repo declaration.
           MAX_REVIEW_ROUNDS: "5"
 
       # The transcript is the only artifact that can explain a review that failed,
