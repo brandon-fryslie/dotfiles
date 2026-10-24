@@ -4,20 +4,26 @@
 # Open each file in VS Code on the git work tree that contains it, so a
 # double-click in Finder lands in the repo's window instead of a bare editor.
 # A file outside any repo opens on its own. Code Root.app (built by
-# scripts/setup-code-root.sh) runs this with the files Finder hands it; a
-# non-zero exit becomes an error dialog there. [LAW:no-silent-failure]
+# scripts/setup-code-root.sh) runs this with the files Finder hands it.
+#
+# Every file opens; the root only picks the window. A git failure other than
+# "not a repository" still opens the file alone, then exits non-zero, which
+# Code Root.app shows as an error dialog. [LAW:no-silent-failure]
 set -euo pipefail
 
 cli="$1"
 shift
 
+status=0
 for file in "$@"; do
-  if root=$(git -C "$(dirname "$file")" rev-parse --show-toplevel 2>&1); then
-    "$cli" "$root" "$file"
-  elif [[ "$root" == *"not a git repository"* ]]; then
-    "$cli" "$file"
-  else
-    echo "open-at-root: git failed for $file: $root" >&2
-    exit 1
-  fi
+  # git reports the root of the real file, and VS Code counts a file as inside
+  # that root only under the same resolved path.
+  file="$(realpath "$file")"
+  # LC_ALL=C keeps git's message in the English the match below reads.
+  root=$(LC_ALL=C git -C "$(dirname "$file")" rev-parse --show-toplevel 2>&1) || {
+    [[ "$root" == *"not a git repository"* ]] || { echo "open-at-root: git failed for $file: $root" >&2; status=1; }
+    root=""
+  }
+  "$cli" ${root:+"$root"} "$file" # [LAW:dataflow-not-control-flow]
 done
+exit "$status"

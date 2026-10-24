@@ -49,7 +49,12 @@ func setDefault(app: URL, extensions: [String]) {
     if actual != target { errors.append(".\(ext) (\(type.identifier)) opens with \(actual)") }
   }
   if !errors.isEmpty { fail("not the default for:\n  " + errors.joined(separator: "\n  ")) }
-  print("\(app.lastPathComponent) opens \(types.count) extensions: " + extensions.map { ".\($0)" }.joined(separator: " "))
+  // A default belongs to the content type, so report every extension whose type was claimed, not just the ones
+  // asked for. A tag alone isn't enough: com.microsoft.typescript carries "ts", but .ts resolves to MPEG-2 video.
+  let claimedTypes = Set(types.map { $0.1 })
+  let claimed = Set(types.flatMap { $0.1.tags[.filenameExtension] ?? [] })
+    .filter { UTType(filenameExtension: $0).map(claimedTypes.contains) ?? false }.sorted()
+  print("\(app.lastPathComponent) opens \(claimed.count) extensions: " + claimed.map { ".\($0)" }.joined(separator: " "))
 }
 
 let args = Array(CommandLine.arguments.dropFirst())

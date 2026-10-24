@@ -8,14 +8,16 @@
 # from. [LAW:one-source-of-truth]
 #
 # The app must live under ~/Applications: LaunchServices ignores a default
-# handler under /tmp. VS Code's CLI path is baked in at build time, so if VS
-# Code moves, re-run the install.
+# handler under /tmp. The app runs open-at-root in place, like every linked
+# dotfile, so edits to it are live. It bakes in that path and VS Code's CLI
+# path, so if either moves, re-run the install.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../config/code-root" && pwd)"
 APP="$HOME/Applications/Code Root.app"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 launchservices() { swift "$SRC/launchservices.swift" "$@"; }
+applescript_string() { sed 's/[\\"]/\\&/g' <<<"$1"; }
 
 cli="$(launchservices app-path com.microsoft.VSCode)/Contents/Resources/app/bin/code"
 [[ -x "$cli" ]] || { echo "ERROR: VS Code CLI not found at $cli" >&2; exit 1; }
@@ -30,11 +32,9 @@ on open theItems
 	repeat with f in theItems
 		set args to args & " " & quoted form of POSIX path of f
 	end repeat
-	do shell script quoted form of (POSIX path of (path to me) & "Contents/Resources/open-at-root") & " " & quoted form of "$(sed 's/[\\"]/\\&/g' <<<"$cli")" & args
+	do shell script quoted form of "$(applescript_string "$SRC/open-at-root")" & " " & quoted form of "$(applescript_string "$cli")" & args
 end open
 EOF
-cp "$SRC/open-at-root" "$APP/Contents/Resources/open-at-root"
-chmod +x "$APP/Contents/Resources/open-at-root"
 
 plist="$APP/Contents/Info.plist"
 plutil -replace CFBundleIdentifier -string com.bmf.code-root "$plist"

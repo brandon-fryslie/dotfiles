@@ -2,6 +2,10 @@
 # file's git root). One per line; scripts/setup-code-root.sh reads this file
 # for both the app's document claims and the LaunchServices defaults.
 #
+# A default belongs to a content type, not an extension, so an extension that
+# shares a type with one listed here goes along with it (.pm with .pl, .phtml
+# with .php). The install prints the full set it claimed.
+#
 # Left alone on purpose:
 #   plist        often binary, which VS Code can't display; Xcode can
 #   html, htm    the double-click intent is viewing it in the browser
