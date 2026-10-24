@@ -12,6 +12,9 @@
 #   ts           macOS types .ts as an MPEG-2 transport stream, so claiming it
 #                would also claim video files
 #   txt csv tsv log   text and data, not code
+#
+# Out of reach: LaunchServices matches the extension, and Makefile, Dockerfile,
+# .gitignore and .env have none.
 
 # Docs and config
 md
@@ -85,15 +88,12 @@ sql
 proto
 
 # Build, infra, VCS
-make
 mk
 cmake
 gradle
-dockerfile
 nix
 tf
 hcl
 lock
-gitignore
 diff
 patch

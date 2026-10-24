@@ -54,6 +54,10 @@ expect "file reached through a symlinked directory opens by its real path" 0 \
   "$repo|$repo/docs/a b.md|" "$scratch/linked-docs/a b.md"
 expect "symlinked file outside any repo opens its target at the target's root" 0 \
   "$repo|$repo/top.py|" "$scratch/loose/top-link.py"
+expect "file inside a .git directory opens alone, with no error" 0 \
+  "$repo/.git/description|" "$repo/.git/description"
+expect "a vanished file fails, and the files after it still open" 1 \
+  "$scratch/loose/x.json|" "$scratch/loose/gone.md" "$scratch/loose/x.json"
 expect "git failure other than 'not a repository' still opens the file, then exits non-zero" 1 \
   "$scratch/broken/f.md|" "$scratch/broken/f.md"
 if [[ "$(cat "$scratch/stderr")" == *"git failed for $scratch/broken/f.md"* ]]; then

@@ -32,7 +32,13 @@ on open theItems
 	repeat with f in theItems
 		set args to args & " " & quoted form of POSIX path of f
 	end repeat
-	do shell script quoted form of "$(applescript_string "$SRC/open-at-root")" & " " & quoted form of "$(applescript_string "$cli")" & args
+	try
+		do shell script quoted form of "$(applescript_string "$SRC/open-at-root")" & " " & quoted form of "$(applescript_string "$cli")" & args
+	on error errorText
+		-- With no Dock icon the app never comes forward on its own, and an alert left behind other windows goes unseen.
+		activate
+		display alert "Code Root" message errorText as critical
+	end try
 end open
 EOF
 
@@ -40,10 +46,9 @@ plist="$APP/Contents/Info.plist"
 plutil -replace CFBundleIdentifier -string com.bmf.code-root "$plist"
 # No Dock icon: the droplet only lives for the instant it takes to call VS Code.
 plutil -replace LSUIElement -bool true "$plist"
-plutil -replace CFBundleDocumentTypes -json "$(printf '%s\n' "${extensions[@]}" | python3 -c '
-import json, sys
-print(json.dumps([{"CFBundleTypeRole": "Editor", "LSHandlerRank": "Alternate",
-                   "CFBundleTypeExtensions": sys.stdin.read().split()}]))')" "$plist"
+claims="$(printf '"%s",' "${extensions[@]}")"
+plutil -replace CFBundleDocumentTypes -json \
+  "[{\"CFBundleTypeRole\": \"Editor\", \"LSHandlerRank\": \"Alternate\", \"CFBundleTypeExtensions\": [${claims%,}]}]" "$plist"
 # Editing Info.plist breaks the signature osacompile applied; an applet with a
 # broken seal won't launch.
 codesign --force --sign - "$APP"
