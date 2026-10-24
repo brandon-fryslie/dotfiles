@@ -1,0 +1,95 @@
+# Coding-file extensions that Finder opens with Code Root.app (VS Code at the
+# file's git root). One per line; scripts/setup-code-root.sh reads this file
+# for both the app's document claims and the LaunchServices defaults.
+#
+# Left alone on purpose:
+#   plist        often binary, which VS Code can't display; Xcode can
+#   html, htm    the double-click intent is viewing it in the browser
+#   ts           macOS types .ts as an MPEG-2 transport stream, so claiming it
+#                would also claim video files
+#   txt csv tsv log   text and data, not code
+
+# Docs and config
+md
+markdown
+rst
+tex
+adoc
+json
+yaml
+yml
+toml
+xml
+ini
+cfg
+conf
+env
+
+# Shell and scripting
+sh
+bash
+zsh
+fish
+py
+rb
+pl
+php
+lua
+r
+jl
+
+# C family and Apple
+c
+h
+cc
+cpp
+cxx
+hpp
+hh
+m
+mm
+swift
+s
+asm
+
+# Web
+js
+mjs
+cjs
+jsx
+tsx
+css
+scss
+vue
+svelte
+graphql
+
+# Other languages
+go
+rs
+java
+kt
+kts
+scala
+clj
+dart
+ex
+exs
+erl
+hs
+sql
+proto
+
+# Build, infra, VCS
+make
+mk
+cmake
+gradle
+dockerfile
+nix
+tf
+hcl
+lock
+gitignore
+diff
+patch

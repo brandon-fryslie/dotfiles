@@ -63,6 +63,14 @@
       stdout: true
       stderr: true
 
+    # Finder opens coding files with Code Root.app, which opens VS Code on the
+    # file's git root. The extension list is config/code-root/extensions.
+    -
+      command: ./scripts/setup-code-root.sh
+      description: Make coding files open in VS Code at their git root
+      stdout: true
+      stderr: true
+
     # SSL_CERT_FILE and REQUESTS_CA_BUNDLE *replace* the trust store (unlike
     # NODE_EXTRA_CA_CERTS, which adds to it), so they must point at a bundle that
     # is complete on its own: this machine's keychain roots plus the Proxyman CA.
