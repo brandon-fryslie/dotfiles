@@ -147,6 +147,11 @@ has "$rendered_b" 'uses: promptctl/copirate-code-review-agent@v1' "b render: con
 has "$(cat "$root/s/.github/workflows/code-review.yml")" 'uses: ./' "s render: the action's own repo reviews with its PR's code"
 has "$(cat "$root/a/.github/workflows/code-review.yml")" 'MAX_REVIEW_ROUNDS: "5"' "a render: fleet default rounds"
 lacks "$(cat "$root/a/.github/workflows/code-review.yml")" '__' "a render: no marker left unrendered"
+lacks "$(cat "$root/a/.github/workflows/code-review.yml")" 'code-review.conf' "a render: no comment names a conf the repo lacks"
+has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the universal baseline — see' "a render: excludes origin is the baseline"
+has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the fleet default — see' "a render: rounds origin is the fleet default"
+has "$rendered_b" "# RENDERED, not literal. The value is the universal baseline joined with this repo's EXCLUDE_PATTERNS_EXTRA from .github/code-review.conf — see" "b render: excludes origin names the conf"
+has "$rendered_b" "# RENDERED, not literal. The value is this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf — see" "b render: rounds origin names the conf"
 [ "$(cat "$root/d/.github/workflows/code-review.yml")" = stale ] || fail "run 1: wrote into a non-repo directory"
 [ "$(cat "$root/w/.github/workflows/code-review.yml")" = "$stale" ] || fail "run 1: a repo whose listing failed must not have been written"
 has "$(cat "$work/err")" "    fake gh: HTTP 404 repos/o/w/actions/workflows" "run 1: a failed repo's full stderr sits under its line"
@@ -156,12 +161,16 @@ has "$(cat "$work/err")" "ERROR: no repo under $work/no-fleet carries an install
 echo "ok   - run 1: population, per-repo lines, render, failures named, empty root refused, exit 1"
 
 # --- run 2: the two failures fixed, everything else a no-op
-rm "$root/c/.github/code-review.conf" "$root/q/.github/code-review.conf"; workflows o__w "$active"
-out="$("$fleet" "$root" 2>/dev/null)"
+rm "$root/c/.github/code-review.conf"; workflows o__w "$active"
+printf 'MAX_REVIEW_ROUNDS=5\n' >"$root/q/.github/code-review.conf"                                 # declares one key, and declares the default
+out="$("$fleet" "$root" 2>"$work/err")"
 has "$out" "c                                updated  branch=trunk" "run 2 c"
 has "$out" "q                                updated  branch=trunk" "run 2 q"
 has "$out" "w                                updated  branch=trunk" "run 2 w: the repo that failed last time is written now, and says so"
 has "$out" "7 repos: 4 unchanged, 3 updated, 0 failed" "run 2 summary"
+has "$(cat "$work/err")" "    → .github/code-review.conf sets MAX_REVIEW_ROUNDS: 5" "run 2 q: a declared value equal to the default is still noted as declared"
+has "$(cat "$root/q/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the universal baseline — see' "q render: a conf without EXCLUDE_PATTERNS_EXTRA leaves the excludes origin the baseline"
+has "$(cat "$root/q/.github/workflows/code-review.yml")" "# RENDERED, not literal. The value is this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf — see" "q render: rounds origin names the conf"
 echo "ok   - run 2: fixed repos converge, the rest unchanged, exit 0"
 
 # --- run 3: converged fleet is a no-op that says so

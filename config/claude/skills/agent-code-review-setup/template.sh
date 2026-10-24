@@ -267,21 +267,25 @@ read_repo_config() {
   printf '%s' "$found"
 }
 
-# The cap this repo runs under: its own declaration, else the fleet default. Echoes a
-# non-negative integer or dies naming the file and the value — the workflow input is a
-# count, and a count that is not a number would be a YAML string the action rejects at
-# run time, one round of billing later than here. [LAW:parse-dont-validate]
-read_max_review_rounds() {
-  local declared
-  declared="$(read_repo_config MAX_REVIEW_ROUNDS)" || return 1
-  local rounds="${declared:-$DEFAULT_MAX_REVIEW_ROUNDS}"
+# The cap as a count: echoes the given non-negative integer or dies naming the file and the
+# value — the workflow input is a count, and a count that is not a number would be a YAML
+# string the action rejects at run time, one round of billing later than here.
+# [LAW:parse-dont-validate]
+parse_max_review_rounds() {
+  local rounds="$1"
   case "$rounds" in
     *[!0-9]*) die "$REPO_CONFIG_PATH: MAX_REVIEW_ROUNDS must be a non-negative integer (0 = unlimited), got '$rounds'." ;;
   esac
   printf '%s' "$rounds"
 }
 
-# The template, verbatim, with its three markers unrendered. Quoted heredoc: GitHub
+# How a rendered comment names a value the repo declared — one phrase for every key, so
+# no two comments can describe the conf file differently.
+declared_origin() {
+  printf "this repo's %s from %s" "$1" "$REPO_CONFIG_PATH"
+}
+
+# The template, verbatim, with its markers unrendered. Quoted heredoc: GitHub
 # Actions \${{ ... }} expressions pass through literally.
 workflow_template() {
 cat <<'YAML'
@@ -407,15 +411,13 @@ jobs:
           # it — there is no barer default, and stripping it silently degrades every
           # go.mod dependency-bump review.
           DEPENDENCY_DIFF: "true"
-          # RENDERED, not literal. The value is the universal baseline joined with
-          # whatever this repo declared in .github/code-review.conf, composed in one
-          # place — see BASELINE_EXCLUDES at the top of template.sh, where the rationale
-          # for each baseline pattern lives beside the patterns themselves, and
-          # read_repo_config, which parses the per-repo half. [LAW:one-source-of-truth]
+          # RENDERED, not literal. The value is __EXCLUDE_PATTERNS_ORIGIN__ — see
+          # BASELINE_EXCLUDES at the top of template.sh, where the rationale for each
+          # baseline pattern lives beside the patterns themselves. [LAW:one-source-of-truth]
           EXCLUDE_PATTERNS: "__EXCLUDE_PATTERNS__"
-          # RENDERED, not literal. This repo's MAX_REVIEW_ROUNDS from .github/code-review.conf,
-          # else the fleet default — see DEFAULT_MAX_REVIEW_ROUNDS in template.sh for what a
-          # spent cap does and why the number is a per-repo declaration.
+          # RENDERED, not literal. The value is __MAX_REVIEW_ROUNDS_ORIGIN__ — see
+          # DEFAULT_MAX_REVIEW_ROUNDS in template.sh for what a spent cap does and why
+          # the number is a per-repo declaration.
           MAX_REVIEW_ROUNDS: "__MAX_REVIEW_ROUNDS__"
 
       # The transcript is the only artifact that can explain a review that failed,
@@ -459,18 +461,27 @@ YAML
 # with this repo's declaration, so the rendered value has one origin and the two halves
 # stay separately owned — the baseline by this file, the addition by the repo it governs.
 # An absent or silent config file yields the baseline unchanged. [LAW:one-source-of-truth]
+#
+# Each value's ORIGIN is rendered into the comment above it, derived from the same read
+# that produced the value, so the comment names the conf file exactly when the value came
+# from it — a repo with no declaration is never told its value came from a file it lacks.
 render_workflow() {
   local repo="$1"
-  local action_ref extra_excludes excludes max_review_rounds
+  local action_ref extra_excludes excludes excludes_origin declared_rounds max_review_rounds rounds_origin
   action_ref="$(action_ref_for "$repo")"
   extra_excludes="$(read_repo_config EXCLUDE_PATTERNS_EXTRA)" || return 1
   excludes="${BASELINE_EXCLUDES}${extra_excludes:+,${extra_excludes}}"
+  excludes_origin="the universal baseline${extra_excludes:+ joined with $(declared_origin EXCLUDE_PATTERNS_EXTRA)}"
   if [ -n "$extra_excludes" ]; then
     echo "→ ${REPO_CONFIG_PATH} adds exclude pattern(s): ${extra_excludes}" >&2
   fi
-  max_review_rounds="$(read_max_review_rounds)" || return 1
-  if [ "$max_review_rounds" != "$DEFAULT_MAX_REVIEW_ROUNDS" ]; then
+  declared_rounds="$(read_repo_config MAX_REVIEW_ROUNDS)" || return 1
+  max_review_rounds="$(parse_max_review_rounds "${declared_rounds:-$DEFAULT_MAX_REVIEW_ROUNDS}")" || return 1
+  if [ -n "$declared_rounds" ]; then
+    rounds_origin="$(declared_origin MAX_REVIEW_ROUNDS)"
     echo "→ ${REPO_CONFIG_PATH} sets MAX_REVIEW_ROUNDS: ${max_review_rounds}" >&2
+  else
+    rounds_origin="the fleet default"
   fi
 
   # Insert the rendered values without escaping every GH expression in the heredoc.
@@ -480,7 +491,9 @@ render_workflow() {
   # workflow [LAW:no-silent-failure].
   local rendered="" pair marker value
   rendered="$(workflow_template)" || die "could not read the workflow template."
-  for pair in "__ACTION_REF__|${action_ref}" "__EXCLUDE_PATTERNS__|${excludes}" "__MAX_REVIEW_ROUNDS__|${max_review_rounds}"; do
+  for pair in "__ACTION_REF__|${action_ref}" \
+              "__EXCLUDE_PATTERNS_ORIGIN__|${excludes_origin}" "__EXCLUDE_PATTERNS__|${excludes}" \
+              "__MAX_REVIEW_ROUNDS_ORIGIN__|${rounds_origin}" "__MAX_REVIEW_ROUNDS__|${max_review_rounds}"; do
     marker="${pair%%|*}"
     value="${pair#*|}"
     grep -q "$marker" <<<"$rendered" || die "workflow template lost its ${marker} marker."
