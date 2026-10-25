@@ -140,6 +140,8 @@ export GOBIN=$HOME/.local/bin
 # GOBIN and other user-local installs (lit, mcp, …) land in ~/.local/bin — put it on PATH
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
+# claude-codexapi wrapper (launches claude against the CodexAPI.pro gateway)
+export PATH="$HOME/code/codexclaude-coding-plan/bin:$PATH"
 
 # Added by Antigravity
 export PATH="/Users/bmf/.antigravity/antigravity/bin:$PATH"
