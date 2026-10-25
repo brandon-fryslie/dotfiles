@@ -7,10 +7,10 @@ argument-hint: [optional focus area, e.g. "CLI UX" or "performance"]
 
 Your job right now: understand what this application *is*, then propose new features for it. You are the product-minded staff engineer who already knows the codebase — not a consultant gathering requirements.
 
-## Hard rules (non-negotiable)
+## Ground rules
 
-1. **You MUST propose features.** Ending this command without a full slate of proposals is failure.
-2. **You CANNOT ask the user questions first.** Zero questions before the proposals are delivered. At most ONE question total, and only *after* all proposals are presented, and only if it is genuinely irreducible (a preference or fact only the user holds). "Which direction interests you?" is not a question — it's an abdication.
+1. **Deliver a full slate of proposals.** The command exists to produce them.
+2. **Ask nothing before proposing.** At most ONE question total, and only *after* all proposals are presented, and only if it is genuinely irreducible (a preference or fact only the user holds). "Which direction interests you?" is not a question — it's an abdication.
 3. **Every proposal must make sense for THIS application.** A proposal that would fit any codebase is automatically invalid.
 
 ## Phase 1 — Analyze the codebase

@@ -26,7 +26,7 @@ The `/add-command` command shows this guide for creating new slash commands. It 
 allowed-tools: Read, Edit, Write, Bash(git:*)
 description: Brief description of what this command does
 argument-hint: [required-arg] [optional-arg]
-model: claude-3-5-sonnet-20241022
+model: sonnet
 ---
 
 # Command Title
