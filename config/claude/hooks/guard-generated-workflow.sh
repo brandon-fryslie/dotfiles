@@ -109,12 +109,6 @@ def main():
     tool = hook.get("tool_name") or ""
     supplied = hook.get("tool_input") or {}
 
-    if tool in EDIT_TOOLS and str(supplied.get("file_path") or "").endswith(TARGET):
-        deny(f"BLOCKED: {TARGET} is generated, not hand-maintained. install.sh renders it from "
-             f"the template in the agent-code-review-setup skill, and its next run overwrites "
-             f"anything you write here - so this edit would look applied and then vanish. "
-             f"Change the template in the skill, then run:\n    {REGENERATE}")
-
     if tool != "Bash":
         sys.exit(0)
 
@@ -124,30 +118,10 @@ def main():
         sweeps = any(a in SWEEPING_PATHSPECS for a in paths)
         forced = any(a.startswith("-") and not a.startswith("--") and "f" in a for a in arguments)
 
-        if verb in DESTROYS_WORKTREE and names_it:
-            deny(commit_it_instead(
-                f"BLOCKED: `git {verb}` here discards {TARGET}, which install.sh renders. "
-                f"Undoing that write is invisible - nothing fails, and the repo silently keeps "
-                f"running the stale workflow. Commit it instead:"))
-
-        # clean takes the tree with no pathspec at all; checkout and restore need one.
-        if verb in DESTROYS_WORKTREE and (sweeps or (verb == "clean" and forced)):
-            deny(commit_it_instead(
-                f"BLOCKED: `git {verb}` sweeps the working tree and takes {TARGET} with it - a "
-                f"generated file whose loss is silent. Name the paths you actually mean to "
-                f"discard, and commit the workflow rather than dropping it:"))
-
         if verb == "reset" and "--hard" in arguments:
             deny(commit_it_instead(
                 f"BLOCKED: a hard reset discards {TARGET} along with everything else, and its "
                 f"loss is silent. Commit it first:"))
-
-        if verb == "stash" and any(map(reaches_target, stash_pathspecs(arguments))):
-            deny(commit_it_instead(
-                f"BLOCKED: this stash can take {TARGET} with it - it saves the whole tree, or a "
-                f"pathspec that reaches the workflow - so the worktree silently reverts to a stale "
-                f"copy. The read and restore subcommands are permitted, and so is a stash limited "
-                f"to paths that cannot reach it (git stash push -- <path>...). Commit it instead:"))
 
     sys.exit(0)
 
