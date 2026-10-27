@@ -145,8 +145,9 @@ scout prompt contains:
 - The output contract — each proposal carries:
   - **Title** — names the outcome, not the activity.
   - **What to build** — concrete enough to start tomorrow.
-  - **Why** — the user impact or debt retired, with `file:line` evidence wherever
-    the codebase supplied it.
+  - **Why** — the user impact or debt retired, with the files that show it wherever
+    the codebase supplied them — a file name and nothing finer: no line numbers, no
+    function names, because the ticket outlives the code it points into.
   - **Epic/issue sketch** — the epic plus 2–6 one-line child issues. Power-feature
     epics start with the research issue.
   - **Priority argument** — one line on where it belongs in the slate and why.
@@ -235,7 +236,7 @@ serves them first.
 
 **SELF-CONTAINED**, one more time, because this is the moment it protects: **every
 ticket is a letter to a stranger.** The session that pulls it has never heard of this
-conversation. Each description carries the what, the why, the `file:line` evidence,
+conversation. Each description carries the what, the why, the evidence by file name,
 and acceptance criteria on the issues — everything the stranger needs and nothing
 that points back here.
 

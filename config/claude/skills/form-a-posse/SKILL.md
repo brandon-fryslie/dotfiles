@@ -13,7 +13,7 @@ remediation shape. Choosing the shape is implementation judgment, done here afte
 ## Input
 
 An existing law-remediation ticket derived from `sheriff-is-in-town` findings. It should contain:
-file:line, `[LAW:<token>]`, how the law is broken, blast radius, and the desired end state. If no
+the file, `[LAW:<token>]`, how the law is broken, blast radius, and the desired end state. If no
 ticket or finding exists, run sheriff and stop with ticket-ready findings; do not invent the work.
 [LAW:verifiable-goals]
 
