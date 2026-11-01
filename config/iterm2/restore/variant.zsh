@@ -1,1 +1,0 @@
-variant-session.zsh

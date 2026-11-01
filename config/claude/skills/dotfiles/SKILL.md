@@ -67,7 +67,6 @@ Shell and terminal:
 | `~/.config/tmux-powerline` | `config/tmux-powerline/` |
 | `~/.config/kitty` | `config/kitty/` |
 | `~/.config/zellij` | `config/zellij/` |
-| `~/.config/iterm2` | `config/iterm2/` (home profile) |
 
 Editors and tools:
 
