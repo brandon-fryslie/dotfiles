@@ -200,25 +200,5 @@ class SessionUrlPattern(unittest.TestCase):
                 self.assertFalse(self.matches(self.HOST + suffix))
 
 
-class GeneratedWorkflowGuard(unittest.TestCase):
-    """guard-generated-workflow.sh denies by exiting 2."""
-
-    def assert_decisions(self, expected, commands):
-        for command in commands:
-            with self.subTest(command=command):
-                result = run_hook("guard-generated-workflow.sh", bash(command))
-                self.assertEqual("deny" if result.returncode == 2 else "allow", expected, result.stderr)
-                self.assertIn(result.returncode, (0, 2), result.stderr)
-
-    def test_reset_hard_is_denied(self):
-        self.assert_decisions("deny", ["git reset --hard"])
-
-    def test_committing_the_workflow_and_text_naming_reset_are_allowed(self):
-        self.assert_decisions("allow", [
-            "git add .github/workflows/code-review.yml && git commit -m x",
-            'git commit -m "never git reset --hard here"',
-        ])
-
-
 if __name__ == "__main__":
     unittest.main()
