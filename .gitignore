@@ -51,8 +51,10 @@ config/claude/skills/pm-compass
 # Claude Code's synced-skill cache, written through the ~/.claude/skills symlink
 config/claude/skills/synced/
 
-# Local-only convenience symlink into ~/Library/Application Support/iTerm2
+# iTerm2 uses ~/.config/iterm2 at runtime (sockets too), and that path is a leftover
+# symlink to config/iterm2 on this machine, so iTerm2's own links land here
 config/iterm2/AppSupport
+config/iterm2/cc-status
 
 # Python build artifacts
 __pycache__/
@@ -85,7 +87,6 @@ config/claude.codexapi/*
 # tracked -- the trust store is machine state, not configuration.
 config/certs/*.pem
 config/certs/env.sh
-config/iterm2/cc-status
 
 # Scratch directory of config/claude/tests/repo-session.sh (removed on exit)
 /rs.test
