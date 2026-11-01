@@ -48,7 +48,7 @@ bash ~/.claude/skills/agent-code-review-setup/install.sh
 
 That is the only invocation. If a key is stored under a different keychain item name, change the item in the `SECRETS` table in `template.sh` — do not reach for an environment variable, and do not add one back.
 
-The script does **not** commit. After it succeeds, commit and push the workflow per the user's git workflow (branch + PR — never directly to the default branch). The workflow takes effect once it lands on the default branch.
+The script does **not** commit. After it succeeds, commit and push the workflow per the user's git workflow (branch + PR — never directly to the default branch). The workflow takes effect once it lands on the default branch. An uncommitted render must not be discarded to keep a branch focused: nothing errors, and the repo keeps running the stale workflow. On 2026-09-08 that cost close to a thousand transcripts across many repos.
 
 ## Reconverging the fleet
 

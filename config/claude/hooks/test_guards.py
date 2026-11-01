@@ -46,6 +46,10 @@ class SessionUrlGuard(unittest.TestCase):
             "sed -i '' 's/a/b/' f && sed -n 82,85p f && npx vitest run && git add f && git commit -q -m \"fix: thing\"",
         ])
 
+    def test_option_values_and_operands_are_read_as_git_reads_them(self):
+        self.assert_decisions("deny", ["git commit --message=x -n"])
+        self.assert_decisions("allow", ["git commit -m x -- -n"])
+
     def test_text_that_only_describes_a_bypass_is_not_a_bypass(self):
         self.assert_decisions("allow", [
             'lit new --description "REPRO: sed -n 1p README.md && git commit -m x"',
