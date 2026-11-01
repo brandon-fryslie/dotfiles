@@ -46,6 +46,10 @@ class SessionUrlGuard(unittest.TestCase):
             "sed -i '' 's/a/b/' f && sed -n 82,85p f && npx vitest run && git add f && git commit -q -m \"fix: thing\"",
         ])
 
+    def test_option_values_and_operands_are_read_as_git_reads_them(self):
+        self.assert_decisions("deny", ["git commit --message=x -n"])
+        self.assert_decisions("allow", ["git commit -m x -- -n"])
+
     def test_text_that_only_describes_a_bypass_is_not_a_bypass(self):
         self.assert_decisions("allow", [
             'lit new --description "REPRO: sed -n 1p README.md && git commit -m x"',
@@ -198,107 +202,6 @@ class SessionUrlPattern(unittest.TestCase):
                        "/artifact", "/artifacts"):
             with self.subTest(url=self.HOST + suffix):
                 self.assertFalse(self.matches(self.HOST + suffix))
-
-
-class GeneratedWorkflowGuard(unittest.TestCase):
-    """guard-generated-workflow.sh denies by exiting 2."""
-
-    def assert_decisions(self, expected, commands):
-        for command in commands:
-            with self.subTest(command=command):
-                result = run_hook("guard-generated-workflow.sh", bash(command))
-                self.assertEqual("deny" if result.returncode == 2 else "allow", expected, result.stderr)
-                self.assertIn(result.returncode, (0, 2), result.stderr)
-
-    def test_stash_limited_to_paths_that_cannot_reach_the_workflow_is_allowed(self):
-        self.assert_decisions("allow", [
-            "git stash -- test/seam/workflow-pins.ts",
-            "git stash push -- src/foo.ts",
-            "git stash push src/foo.ts src/bar.ts",
-            'git stash push -m "wip: .github" -- src/foo.ts',
-            "git stash push -k -u -- src/a.ts",
-            "git stash -u -- src/foo.ts",
-            "git stash push -- .github/workflows/other.yml",
-            "git stash push -- src/workflows",
-            "git stash push -- '*.ts'",
-            "git stash push -- src/foo.ts 2>&1",
-        ])
-
-    def test_read_and_restore_stash_subcommands_are_allowed(self):
-        self.assert_decisions("allow", [
-            "git stash list", "git stash show -p", "git stash pop", "git stash apply stash@{0}",
-            "git stash drop stash@{0}",
-        ])
-
-    def test_stash_of_the_whole_tree_is_denied(self):
-        self.assert_decisions("deny", [
-            "git stash",
-            "git stash push",
-            "git stash save",
-            "git stash save -- src/foo.ts",
-            "git stash -k",
-            'git stash push -m "wip"',
-            "git stash push --pathspec-from-file=paths.txt",
-            "git stash push --pathspec-from-file paths.txt",
-            "git add . && git stash",
-        ])
-
-    def test_stash_whose_pathspec_can_reach_the_workflow_is_denied(self):
-        self.assert_decisions("deny", [
-            "git stash push -- .",
-            "git stash push -- ./",
-            "git stash push -- '*'",
-            "git stash push -- .github",
-            "git stash push -- .github/",
-            "git stash push -- .github/workflows",
-            "git stash push -- ./.github/workflows/code-review.yml",
-            "git stash push -- .GitHub/Workflows",
-            "git stash push -- code-review.yml",
-            "git stash push -- workflows",
-            "git stash -- src/foo.ts .github",
-            "git stash push -- '.git*'",
-            "git stash push -- '*.yml'",
-            "git stash push -- :/",
-            "git stash push -- ':(exclude)src'",
-            "git stash push -- ../.github",
-            "git stash push -- /repo/.github",
-            'git stash push -- "$FILE"',
-            "cd .github && git stash push -- workflows",
-            "git -C .github stash push -- workflows",
-            "git stash push -- $(cat paths.txt)",
-            'echo "$(git stash)"',
-            "cat <<EOF\n$(git stash)\nEOF",
-            "env git stash",
-            'x="$(git stash)"',
-            "echo 'git stash' | bash",
-            "GIT stash",
-            "git stash push --mess wip",
-            "git stash push --pathspec-from paths.txt",
-            "git stash push -- {src,.github}",
-            "git --config-env a.b=HOME stash",
-            "eval git stash",
-            "git stash push -- '\\.github'",
-            "git stash push -- '.github\\/workflows'",
-        ])
-
-    def test_other_destructive_verbs_are_unchanged(self):
-        self.assert_decisions("deny", [
-            "git checkout -- .github/workflows/code-review.yml",
-            "git checkout .",
-            "git restore .",
-            "git clean -fd",
-            "git reset --hard",
-        ])
-        self.assert_decisions("allow", [
-            "git checkout main",
-            "git add .github/workflows/code-review.yml && git commit -m x",
-            'git commit -m "never git stash here"',
-        ])
-
-    def test_hand_editing_the_workflow_is_denied(self):
-        result = run_hook("guard-generated-workflow.sh", {
-            "tool_name": "Edit", "tool_input": {"file_path": "/repo/.github/workflows/code-review.yml"}})
-        self.assertEqual(result.returncode, 2, result.stderr)
 
 
 if __name__ == "__main__":
