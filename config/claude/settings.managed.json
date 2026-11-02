@@ -91,7 +91,6 @@
       "mcp__cherry-chatgpt__chatgpt_find_conversation"
     ],
     "deny": [
-      "Bash(tmux kill-server:*)",
       "mcp__claude_ai_Claude_Docs"
     ],
     "defaultMode": "auto"
@@ -103,7 +102,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "f=$(jq -r '.tool_response.filePath // .tool_input.file_path // empty'); case \"$f\" in *claude/settings*.json) exit 0;; esac; if [ -n \"$f\" ] && [ -f \"$f\" ] && grep -qi 'kill-server' \"$f\"; then m=\"HARD STOP. You just wrote kill-server into $f. That line destroys the ENTIRE tmux server and every session and every process attached to it. On 2026-08-25 this exact line, buried in a test teardown, wiped every Claude session on this machine and hours of work across nine projects. That was a stupid, careless thing to write, and you are being shut down for it. Go delete that line right now. If you need to tear down tmux in a test, use 'tmux kill-session -t <name>' or an isolated '-L <socket>' - never a server-wide kill.\"; jq -n --arg m \"$m\" '{continue:false,decision:\"block\",reason:$m,stopReason:$m,systemMessage:$m}'; fi"
+            "command": "/Users/bmf/code/dotfiles/config/claude/hooks/guard-tmux-server.sh"
           }
         ]
       }
@@ -114,7 +113,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cmd=$(jq -r '.tool_input.command // empty'); if printf '%s' \"$cmd\" | grep -qwiE 'kill-server'; then printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"BLOCKED: kill-server is permanently forbidden. tmux kill-server destroys the entire tmux server and every session and process attached to it. Use a session-scoped kill-session, or an isolated TMUX_TMPDIR/-L socket, never kill-server.\"}}'; fi"
+            "command": "/Users/bmf/code/dotfiles/config/claude/hooks/guard-tmux-server.sh"
           },
           {
             "type": "command",

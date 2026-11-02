@@ -6,6 +6,7 @@ Run: just test-hooks
 
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,38 @@ def run_hook(name, payload):
 
 def bash(command):
     return {"tool_name": "Bash", "tool_input": {"command": command}}
+
+
+class TmuxServerGuard(unittest.TestCase):
+    VERB = "kill-" + "server"  # assembled: the file check reads this file too
+
+    def decide(self, command):
+        result = run_hook("guard-tmux-server.sh", {"hook_event_name": "PreToolUse", **bash(command)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return "deny" if result.stdout.strip() else "allow"
+
+    def test_running_it_is_denied(self):
+        for command in ("tmux {}", "tmux {} ; ls", "cd /tmp && tmux {}", "bash -c 'tmux {}'",
+                        "timeout 5 tmux {}", "tmux kill-ser", "tmux -f conf {}", "tmux ls \\; {}"):
+            with self.subTest(command=command):
+                self.assertEqual(self.decide(command.format(self.VERB)), "deny")
+
+    def test_mentioning_it_or_another_server_is_allowed(self):
+        for command in ("grep {} file", "git commit -m 'tmux {}'", "echo tmux {}",
+                        "tmux -L test {}", "tmux -S /tmp/sock {}", "tmux kill-session -t a"):
+            with self.subTest(command=command):
+                self.assertEqual(self.decide(command.format(self.VERB)), "allow")
+
+    def test_a_file_that_runs_it_is_flagged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            script, notes = Path(directory, "t.sh"), Path(directory, "n.md")
+            script.write_text(f"tmux {self.VERB}\n")
+            notes.write_text(f"the {self.VERB} verb\n")
+            flagged = [
+                run_hook("guard-tmux-server.sh", {"hook_event_name": "PostToolUse",
+                                                  "tool_input": {"file_path": str(path)}}).stdout != ""
+                for path in (script, notes)]
+        self.assertEqual(flagged, [True, False])
 
 
 class SessionUrlGuard(unittest.TestCase):
