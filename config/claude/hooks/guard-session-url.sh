@@ -28,7 +28,25 @@ SESSION_URL_PATTERN = Path(__file__).resolve().parents[2] / "git" / "hooks" / "c
 
 GIT_PUBLISHES = frozenset(("commit", "tag"))
 HOOKS_PATH = "core.hookspath"  # casefolded, as bash_command reports config keys
-GH_PUBLISHES = frozenset((noun, verb) for noun in ("pr", "issue", "release", "gist") for verb in ("create", "edit"))
+# What each gh command group does that puts text a reader can fetch: its body, comment, review or
+# closing note. `gh api` is decided apart, by its method.
+GH_VERBS_THAT_PUBLISH = {
+    "pr": ("create", "edit", "comment", "review", "merge", "close", "reopen"),
+    "issue": ("create", "edit", "comment", "close", "reopen"),
+    "release": ("create", "edit"),
+    "gist": ("create", "edit"),
+    "repo": ("create", "edit"),  # --description
+    "label": ("create", "edit"),  # --description
+    "workflow": ("run",),  # -f inputs, shown on the run
+}
+GH_PUBLISHES = frozenset((noun, verb) for noun, verbs in GH_VERBS_THAT_PUBLISH.items() for verb in verbs)
+# `gh api` sends GET unless it is given a method, or fields/a body - which make it POST.
+GH_API_TAKES_VALUE = frozenset((
+    "-X", "--method", "-f", "--raw-field", "-F", "--field", "--input", "-H", "--header", "-q", "--jq",
+    "-t", "--template", "--hostname", "--cache", "-p", "--preview", "-R", "--repo"))
+GH_API_METHOD = frozenset(("-X", "--method"))
+GH_API_BODY = frozenset(("-f", "--raw-field", "-F", "--field", "--input"))
+READ_METHODS = frozenset(("GET", "HEAD"))
 
 # Options of `git commit` that consume a value, so a value is never read as a flag: -mnew is
 # a message, and -uno is untracked-files=no.
@@ -58,10 +76,22 @@ def skips_hooks(invocation):
     return False
 
 
+def api_writes(arguments):
+    options = split_options(arguments, GH_API_TAKES_VALUE)
+    methods = [value for flag, value in options.values if flag in GH_API_METHOD]
+    if methods:
+        return methods[-1].upper() not in READ_METHODS
+    return any(flag in GH_API_BODY for flag in options.flags)
+
+
 def publishes(words):
+    if program(words) != "gh":
+        return False
     # gh takes -R/--repo before its subcommand: `gh -R o/r pr create`.
     subcommand = split_options(words[1:], frozenset(("-R", "--repo"))).operands
-    return program(words) == "gh" and tuple(subcommand[:2]) in GH_PUBLISHES
+    if subcommand[:1] == ["api"]:
+        return api_writes(words[1:])
+    return tuple(subcommand[:2]) in GH_PUBLISHES
 
 
 def carries_session_url(command):

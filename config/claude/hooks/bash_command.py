@@ -68,6 +68,7 @@ class GitInvocation(NamedTuple):
 class Options(NamedTuple):
     flags: list  # every option as written, clusters expanded (-qn -> -q, -n), values dropped
     operands: list  # every non-option word, and everything after --
+    values: list  # (flag, value) for each option that took one: -XPOST and --method=POST both give ("-X"/"--method", "POST"); "" when the command ends on the flag
 
 
 class _Reader:
@@ -320,26 +321,26 @@ def split_options(arguments, takes_value, takes_attached_value=frozenset()) -> O
     takes_value: options whose value is the rest of a short cluster, the `=` part of a long
     option, or else the next word (-m, --message). takes_attached_value: short options whose
     optional value can only be attached, so `-uno` is -u with the value "no", not -u -n -o."""
-    flags, operands = [], []
+    flags, operands, values = [], [], []
     words = iter(arguments)
     for word in words:
         if word == "--":
             operands.extend(words)
         elif word.startswith("--"):
-            name = word.split("=", 1)[0]
+            name, equals, attached = word.partition("=")
             flags.append(name)
-            if name in takes_value and "=" not in word:
-                next(words, None)
+            if name in takes_value:
+                values.append((name, attached if equals else next(words, "")))
         elif word.startswith("-") and word != "-":
             for position, letter in enumerate(word[1:], start=2):
                 flag = "-" + letter
                 flags.append(flag)
                 if flag in takes_attached_value:
+                    values.append((flag, word[position:]))
                     break
                 if flag in takes_value:
-                    if position == len(word):
-                        next(words, None)
+                    values.append((flag, word[position:] if position < len(word) else next(words, "")))
                     break
         else:
             operands.append(word)
-    return Options(flags, operands)
+    return Options(flags, operands, values)
