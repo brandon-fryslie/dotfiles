@@ -6,7 +6,9 @@ Run: just test-hooks
 
 import json
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -31,23 +33,58 @@ def git_config_value_options():
     return options
 
 
+def gh_help(*words):
+    return subprocess.run(["gh", *words, "--help"], capture_output=True, text=True).stdout
+
+
+def gh_commands():
+    """Every command gh has, as the words that run it, read from gh's own help."""
+    found = []
+    for noun in re.findall(r"^  ([a-z-]+):", gh_help(), re.MULTILINE):
+        verbs = re.findall(r"^  ([a-z-]+):", gh_help(noun), re.MULTILINE)
+        found += [(noun, verb) for verb in verbs] or [(noun,)]
+    return found
+
+
+def gh_aliases(words):
+    """The other words that run the same command: `gh pr new` for `gh pr create`."""
+    block = re.search(r"^ALIASES\n((?:  .*\n)+)", gh_help(*words), re.MULTILINE)
+    return [tuple(line.split()[1:]) for line in block.group(1).splitlines()] if block else []
+
+
 def run_hook(name, payload):
     return subprocess.run([str(HOOKS / name)], input=json.dumps(payload), capture_output=True, text=True)
 
 
-def bash(command):
-    return {"tool_name": "Bash", "tool_input": {"command": command}}
+def bash(command, cwd="/"):
+    return {"tool_name": "Bash", "cwd": cwd, "tool_input": {"command": command}}
 
 
 class SessionUrlGuard(unittest.TestCase):
     """guard-session-url.sh denies by printing a deny decision and exiting 0."""
 
-    def decide(self, command):
-        result = run_hook("guard-session-url.sh", bash(command))
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.directory = Path(directory.name)
+        # Files a publishing command can take its text from.
+        self.leaky = self.write("leaky.md", f"see {SESSION_URL}\n")
+        self.clean = self.write("clean.md", "a body with no link\n")
+        (self.directory / "alias.md").symlink_to(self.clean)
+
+    def write(self, name, text):
+        path = self.directory / name
+        path.write_text(text)
+        return str(path)
+
+    def ruling(self, command, cwd="/"):
+        result = run_hook("guard-session-url.sh", bash(command, cwd))
         self.assertEqual(result.returncode, 0, result.stderr)
-        if not result.stdout.strip():
-            return "allow"
-        return json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"]
+        return json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else None
+
+    def decide(self, command, cwd="/"):
+        ruling = self.ruling(command, cwd)
+        return "allow" if ruling is None else ruling["permissionDecision"]
 
     def assert_decisions(self, expected, commands):
         for command in commands:
@@ -381,6 +418,273 @@ class SessionUrlGuard(unittest.TestCase):
             f"gh repo view o/r --json description | grep {SESSION_URL}",
             f"gh label list --search {SESSION_URL}",
         ])
+
+    def publishing_from(self, path):
+        """Every way a publishing command takes its text from the file at `path`."""
+        return [
+            f"gh pr create --title t --body-file {path}",
+            f"gh pr create --title t --body-file={path}",
+            f"gh pr create -F {path}",
+            f"gh pr create -F{path}",
+            f"gh pr create -f -F {path}",  # -f is --fill here, a flag; in gh api it takes a value
+            f"gh -R o/r pr create -F {path}",
+            f"gh pr new --body-file {path}",  # gh's alias of create
+            f"gh issue new -F {path}",
+            f"gh release new v1 --notes-file {path}",
+            f"gh pr revert 3 --body-file {path}",
+            f"gh agent-task create --from-file {path}",
+            f"gh discussion create --title t -F {path}",
+            f"gh discussion comment 1 --body-file {path}",
+            f"gh discussion edit 1 -F {path}",
+            f"gh pr edit 3 --body-file {path}",
+            f"gh pr comment 3 -F {path}",
+            f"gh pr review 3 --comment -F {path}",
+            f"gh pr merge 3 --squash --body-file {path}",
+            f"gh issue create --title t --body-file {path}",
+            f"gh issue edit 3 -F {path}",
+            f"gh issue comment 3 --body-file {path}",
+            f"gh release create v1 --notes-file {path}",
+            f"gh release edit v1 -F {path}",
+            f"git tag -a v1 -F {path}",
+            f"git tag -a v1 --file {path}",
+            f"git tag -a v1 --file={path}",
+            f"git tag -a v1 --fil {path}",  # git takes any unambiguous abbreviation of --file
+            f"git tag -sF {path} v1",
+            f"gh api repos/o/r/issues --input {path}",
+            f"gh api repos/o/r/issues -X PATCH --input={path}",
+            f"gh api repos/o/r/issues -F body=@{path}",
+            f"gh api repos/o/r/issues --field body=@{path}",
+            f"gh api repos/o/r/issues -f title=t -F body=@{path}",
+            f"gh workflow run ci.yml -F note=@{path}",
+            f"gh api repos/o/r/issues -f body=$(cat {path})",
+            f'gh issue comment 3 --body "$(cat {path})"',
+            f'gh pr create --body "$(cat -- {path})"',
+            f'git tag -a v1 -m "$(cat {path})"',
+            f'gh issue comment 3 --body "$(echo "$(cat {path})")"',
+            f"env GH_TOKEN=x gh pr create -F {path}",
+            f"bash -c 'gh pr create -F {path}'",
+            f"cd /tmp && gh pr create -F {path}",
+        ]
+
+    def test_publishing_a_session_url_from_a_file_is_denied(self):
+        self.assert_decisions("deny", self.publishing_from(self.leaky))
+
+    def test_publishing_from_a_file_without_a_session_url_is_allowed(self):
+        self.assert_decisions("allow", self.publishing_from(self.clean))
+
+    def test_a_commit_message_file_is_the_commit_msg_hooks_to_read(self):
+        # config/git/hooks/commit-msg scans the final message however it was supplied, so the guard
+        # reads a commit's inline text only; a second enforcer for the files would drift from it.
+        self.assert_decisions("allow", [f"git commit -F {self.leaky}", f"git commit --file {self.leaky}"])
+
+    def test_a_relative_path_is_read_from_the_working_directory_of_the_call(self):
+        self.assertEqual(self.decide("gh pr create -F leaky.md", cwd=str(self.directory)), "deny")
+        self.assertEqual(self.decide("gh pr create -F clean.md", cwd=str(self.directory)), "allow")
+        self.assertEqual(self.decide("git tag -a v1 -F ./leaky.md", cwd=str(self.directory)), "deny")
+
+    def test_a_relative_path_after_a_directory_change_is_denied_not_guessed(self):
+        # leaky.md and clean.md exist in the call's directory; after the change the name means another file.
+        for command in ("cd sub && gh pr create -F clean.md", "(cd sub; gh pr create -F clean.md)",
+                        "pushd sub && gh pr create -F clean.md", "git -C sub tag -a v1 -F clean.md",
+                        "builtin cd sub && gh pr create -F clean.md", "command cd sub && gh pr create -F clean.md",
+                        "chdir sub && gh pr create -F clean.md",  # zsh's cd
+                        "env -C sub gh pr create -F clean.md", "env --chdir=sub gh pr create -F clean.md"):
+            with self.subTest(command=command):
+                ruling = self.ruling(command, cwd=str(self.directory))
+                self.assertEqual(ruling["permissionDecision"], "deny")
+                self.assertIn("not known", ruling["permissionDecisionReason"])
+        self.assertEqual(self.decide(f"cd sub && gh pr create -F {self.leaky}", cwd=str(self.directory)), "deny")
+        self.assertEqual(self.decide(f"cd sub && gh pr create -F {self.clean}", cwd=str(self.directory)), "allow")
+
+    def test_a_call_with_no_working_directory_reads_absolute_paths_and_denies_relative_ones(self):
+        def decision(command):
+            payload = {"tool_name": "Bash", "tool_input": {"command": command}}
+            result = run_hook("guard-session-url.sh", payload)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else None
+
+        self.assertIsNone(decision(f"gh pr create -F {self.clean}"))
+        self.assertEqual(decision(f"gh pr create -F {self.leaky}")["permissionDecision"], "deny")
+        self.assertIn("not known", decision("gh pr create -F clean.md")["permissionDecisionReason"])
+
+    def test_a_file_is_scanned_for_the_command_that_reads_it_only(self):
+        self.assert_decisions("allow", [
+            f"cat {self.leaky}",
+            f"cat {self.leaky} && gh pr list",
+            f"grep -n x {self.leaky} && git commit -m x",
+            f"gh pr create --title t --body x -- {self.leaky}",
+            f"gh api repos/o/r/issues -f body=@{self.leaky}",  # a raw field is text, never a file
+            f"git log -F --grep x -- {self.leaky}",
+            f"gh pr view 3 --json body > {self.leaky}",
+            f'git commit -m "$(date)"',  # a commit's text is the commit-msg hook's
+        ])
+
+    def test_a_substitution_is_read_only_when_it_is_text_in_the_command_or_a_named_file(self):
+        self.assert_decisions("allow", [
+            f'gh issue comment 3 --body "$(cat <<\'EOF\'\nfix\nEOF\n)"',
+            'gh issue comment 3 --body "$(echo hello)"',
+            "gh issue comment 3 --body \"$(printf '%s' hello)\"",
+            f"gh issue comment 3 --body \"$(cat {self.clean} <<< more)\"",
+            f"gh pr create -F - <<EOF\n$(cat {self.clean})\nEOF",
+            f"gh pr create -F - <<'EOF'\n$(cat {self.leaky})\nEOF",  # quoted: the text is literal, nothing runs
+        ])
+        for command, runs in (
+                ("gh api repos/o/r/issues -f body=$(git rev-parse HEAD)", "git"),
+                (f'gh pr create --title "$(date +%F)" --body-file {self.clean}', "date"),
+                (f'gh issue comment 3 --body "$(cat {self.clean} | tr a b)"', "tr"),
+                ('git tag -a v1 -m "$(date)"', "date"),
+                ("gh pr create -F - <<EOF\n$(date)\nEOF", "date"),
+                ('echo "$(date)" | gh pr create -F -', "date"),
+                ('gh pr create --body "$(cat <<EOF\n$(date)\nEOF\n)"', "date"),
+        ):
+            with self.subTest(command=command):
+                ruling = self.ruling(command)
+                self.assertEqual(ruling["permissionDecision"], "deny")
+                self.assertIn(f"{runs} computes its text", ruling["permissionDecisionReason"])
+
+    def test_a_file_read_through_a_substitution_in_carried_text_is_scanned(self):
+        self.assert_decisions("deny", [
+            f"gh pr create -F - <<EOF\n$(cat {self.leaky})\nEOF",
+            f'gh pr create --body "$(cat <<EOF\n$(cat {self.leaky})\nEOF\n)"',
+            f'echo "$(cat {self.leaky})" | gh pr create -F -',
+            f"printf '%s' \"$(cat {self.leaky})\" | gh pr create --body-file -",
+            f'gh pr create --body-file - <<< "$(cat {self.leaky})"',
+            f'gh issue comment 3 --body "$(cat {self.leaky} {self.clean})"',
+        ])
+
+    def test_text_fed_through_standard_input_is_read_where_the_command_carries_it(self):
+        self.assert_decisions("allow", [
+            "gh pr create -F - <<'EOF'\na body\nEOF",
+            "git tag -a v1 -F - <<'EOF'\na note\nEOF",
+            "git tag -a v1 -F- <<'EOF'\na note\nEOF",
+            "gh api repos/o/r/issues --input - <<'EOF'\n{\"body\": \"x\"}\nEOF",
+            "gh pr create --body-file - <<< 'a body'",
+            "echo a body | gh pr create -F -",
+            "printf '%s' note | git tag -a v1 -F -",
+        ])
+        self.assert_decisions("deny", [
+            f"gh pr create -F - <<'EOF'\n{SESSION_URL}\nEOF",
+            f"echo {SESSION_URL} | gh pr create --body-file -",
+        ])
+
+    def test_a_file_standard_input_is_redirected_from_is_a_source_and_every_redirection_is_read(self):
+        # bash lets the last redirection win, so the file is read whatever else feeds the command.
+        self.assert_decisions("allow", [
+            f"gh pr create -F - < {self.clean}",
+            f"git tag -a v1 -F - < {self.clean}",
+            f"gh api repos/o/r/issues --input - < {self.clean}",
+            f'gh issue comment 3 --body "$(<{self.clean})"',
+            f'gh issue comment 3 --body "$(cat < {self.clean})"',
+        ])
+        self.assert_decisions("deny", [
+            f"gh pr create -F - < {self.leaky}",
+            f"echo x | gh pr create -F - < {self.leaky}",
+            f"gh pr create -F - <<< clean < {self.leaky}",
+            f"gh pr create -F - < {self.leaky} <<< clean",
+            f"gh api repos/o/r/issues --input - < {self.leaky}",
+            f'gh issue comment 3 --body "$(<{self.leaky})"',
+            f'gh issue comment 3 --body "$(cat < {self.leaky})"',
+        ])
+
+    def test_standard_input_redirected_from_a_descriptor_is_denied_because_its_file_is_not_named(self):
+        for command in (f"exec 3<{self.leaky}; echo clean | gh pr create -F - <&3",
+                        f"exec 3<{self.leaky}; gh pr create -F - <<< clean <&3",
+                        f"exec 3<{self.leaky}; gh pr create -F - <&3"):
+            with self.subTest(command=command):
+                ruling = self.ruling(command)
+                self.assertEqual(ruling["permissionDecision"], "deny")
+                self.assertIn("another file descriptor", ruling["permissionDecisionReason"])
+        self.assertEqual(self.decide("gh pr create -F - <<< clean 2>&1"), "allow")
+
+    def test_a_file_the_same_call_also_names_is_not_what_the_guard_read(self):
+        # A copy, redirect or tee can rewrite the file between the guard's read and the publication.
+        directory = str(self.directory)
+        for command in (
+                f"cp {self.leaky} {self.clean} && gh pr create -F {self.clean}",
+                f"cat {self.leaky} > {self.clean} && gh pr create -F {self.clean}",
+                f"echo hi > {self.clean}; gh pr create -F {self.clean}",
+                f"tee {self.clean} <<< hi; gh pr create -F {self.clean}",
+                f"cat {self.clean} && gh pr create -F {self.clean}",
+                f"cp leaky.md clean.md && gh pr create -F ./clean.md",
+                f"cp {self.leaky} {self.clean} && gh issue comment 3 --body \"$(cat {self.clean})\"",
+                f"cp {self.leaky} {self.clean} && gh pr create -F - < {self.clean}",
+                f"cp {self.leaky} {self.clean} && nohup gh pr create -F {self.clean}",
+                f"dd if={self.leaky} of={self.clean} && gh pr create -F {self.clean}",
+                f"cp {self.leaky} {self.directory}/alias.md && gh pr create -F {self.clean}",
+        ):
+            with self.subTest(command=command):
+                ruling = self.ruling(command, cwd=directory)
+                self.assertEqual(ruling["permissionDecision"], "deny")
+                self.assertIn("names it too", ruling["permissionDecisionReason"])
+        self.assert_decisions("allow", [
+            f"echo hi > {self.directory}/other.md; gh pr create -F {self.clean}",
+            f"env GH_TOKEN=x gh pr create -F {self.clean}",
+            f"gh pr create -F {self.clean} 2>&1",
+            f'gh issue comment 3 --body "$(cat {self.clean})" && echo done',
+        ])
+
+    def test_text_the_command_does_not_carry_is_denied_with_the_reason_and_the_remedy(self):
+        for command, why in (
+                ("gh pr create -F -", "standard input"),
+                (f"cat {self.clean} | gh pr create --body-file -", "standard input"),
+                ("./gen-body | git tag -a v1 -F -", "standard input"),
+                ("echo x | tee out | gh pr create -F -", "standard input"),
+                ("gh api repos/o/r/issues -F body=@-", "standard input"),
+                (f"gh pr create -F /dev/stdin < {self.clean}", "not a regular file"),
+                ("gh pr create -F <(echo hi)", "an empty path"),
+                (f"gh issue comment 3 --body \"$(cat {self.clean} -)\"", "outside the command"),
+        ):
+            with self.subTest(command=command):
+                ruling = self.ruling(command)
+                self.assertEqual(ruling["permissionDecision"], "deny")
+                self.assertIn("cannot read", ruling["permissionDecisionReason"])
+                self.assertIn(why, ruling["permissionDecisionReason"])
+                self.assertIn("literal path", ruling["permissionDecisionReason"])
+
+    def test_a_file_the_guard_cannot_read_is_denied_with_its_path_and_why(self):
+        missing = str(self.directory / "missing.md")
+        for command, why in (
+                (f"gh pr create -F {missing}", "No such file"),
+                (f"git tag -a v1 -F {missing}", "No such file"),
+                (f"gh issue comment 3 --body \"$(cat {missing})\"", "No such file"),
+                (f"gh pr create -F {self.directory}", "not a regular file"),
+                ("gh pr create -F $NOTE", "built by the shell"),
+                ('gh pr create -F "$(mktemp)"', "mktemp computes its text"),
+                (f"gh pr create -F {self.directory}/*.md", "built by the shell"),
+                ("gh pr create -F ~someone/body.md", "built by the shell"),
+                ("gh pr create -F note-{a,b}.md", "built by the shell"),
+                ("gh api repos/o/r/issues -F body=@$NOTE", "built by the shell"),
+        ):
+            with self.subTest(command=command):
+                ruling = self.ruling(command)
+                self.assertEqual(ruling["permissionDecision"], "deny")
+                self.assertIn(why, ruling["permissionDecisionReason"])
+                self.assertIn("cannot read", ruling["permissionDecisionReason"])
+
+    def test_every_option_gh_and_git_tag_name_a_file_with_is_read_as_one(self):
+        # A command or option the guard does not know is a file it never reads, so both come from
+        # the tools' own help, not from the guard's lists. Excepted, as not the text of a message:
+        # --attach is media, --template starts the interactive prompt, `release download -O` writes
+        # a file, and `secret set` and `variable set` store a value.
+        if shutil.which("gh") is None:
+            self.skipTest("gh is not installed")
+        not_text = {"--attach", "--template", "-T"}
+        not_published = {("release", "download"), ("secret", "set"), ("variable", "set"), ("reference",)}
+        # An option names a file by its type (`--input file`) or by what its help says it reads.
+        by_type = re.compile(r"^\s+(?:(-\w), )?(--[\w-]+) file\s", re.MULTILINE)
+        by_description = re.compile(r"^\s+(?:(-\w), )?(--[\w-]+) \w+\s+Read .*\bfile\b", re.MULTILINE)
+        for words in gh_commands():
+            usage = "" if words in not_published else gh_help(*words)
+            options = set(by_type.findall(usage)) | set(by_description.findall(usage))
+            for option in (o for pair in options for o in pair if o and o not in not_text):
+                for invoked in (words, *gh_aliases(words)):
+                    with self.subTest(command=" ".join(("gh", *invoked)), option=option):
+                        self.assertEqual(self.decide(f"gh {' '.join(invoked)} x {option} {self.leaky}"), "deny")
+        usage = subprocess.run(["git", "tag", "-h"], capture_output=True, text=True).stdout
+        for short, long in re.findall(r"^\s+(?:(-\w), )?--(?:\[no-\])?([\w-]+) <file>", usage, re.MULTILINE):
+            for option in filter(None, (short, "--" + long)):
+                with self.subTest(command="git tag", option=option):
+                    self.assertEqual(self.decide(f"git tag -a v1 {option} {self.leaky}"), "deny")
 
 
 class SessionUrlPattern(unittest.TestCase):
