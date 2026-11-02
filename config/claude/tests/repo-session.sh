@@ -51,7 +51,10 @@ cleanup() {
   rm -rf "$repo"
 }
 trap cleanup EXIT
-rm -rf "$repo" && mkdir "$repo"
+# What a killed earlier run left behind (the fixed names) is cleared first, so the
+# worktree asserted below is this run's.
+cleanup
+mkdir "$repo"
 
 fail() { echo "FAIL - $*" >&2; exit 1; }
 # The pane id repo-session announces on stderr as it creates the window.
@@ -70,6 +73,9 @@ echo "ok   - --session without a name is refused"
 # --worktree after the '--' is refused rather than sent to claude beside ours.
 if err=$("$rs" --worktree 2>&1 >/dev/null); then fail "--worktree with no name exited 0"; fi
 grep -qF -- "--worktree requires a name" <<<"$err" || fail "--worktree with no name: unexpected message: $err"
+# claude's -w takes an optional name, so a dash-led "name" would be read as the next flag.
+if err=$("$rs" --worktree --model sonnet "$repo" 2>&1 >/dev/null); then fail "--worktree followed by a flag exited 0"; fi
+grep -qF -- "--worktree requires a name" <<<"$err" || fail "--worktree followed by a flag: unexpected message: $err"
 for dup in --worktree -w; do
   if err=$("$rs" "$repo" -- "$dup" other 2>&1 >/dev/null); then fail "$dup after -- exited 0"; fi
   grep -qF -- "not after --" <<<"$err" || fail "$dup after --: unexpected message: $err"
@@ -102,7 +108,7 @@ addr=$("$rs" --session "$named" --worktree "$wtname" "$repo" 2>"$repo/err") || f
 in_session "$named_clean" "$addr" || fail "named session: expected $addr in $named_clean, it is at $(where "$addr")"
 [[ "$addr" == "$(announced "$repo/err")" ]] || fail "stdout pane id $addr differs from the announced $(announced "$repo/err")"
 tmux capture-pane -p -t "$addr" | grep -q '❯' || fail "ready arm returned but no prompt on $addr's screen"
-[[ -n "$(wt_path)" ]] || fail "--worktree $wtname made no worktree"
+[[ -n "$(wt_path)" ]] || fail "--worktree $wtname made no worktree on branch worktree-$wtname"
 echo "ok   - --session $named: window landed in $named_clean; ready arm printed the pane id once the prompt was up"
 
 # The handle outlives window renumbering: a window inserted before claude's

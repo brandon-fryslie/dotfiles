@@ -46,7 +46,7 @@ while :; do
   case "${1:-}" in
     --session)  [[ -n "${2:-}" ]] || { echo "repo-session: --session requires a name" >&2; exit 1; }
                 SESSION_ARG="$2"; shift 2 ;;
-    --worktree) [[ -n "${2:-}" ]] || { echo "repo-session: --worktree requires a name" >&2; exit 1; }
+    --worktree) [[ -n "${2:-}" && "$2" != -* ]] || { echo "repo-session: --worktree requires a name (not starting with '-')" >&2; exit 1; }
                 WORKTREE_ARG="$2"; shift 2 ;;
     *) break ;;
   esac
