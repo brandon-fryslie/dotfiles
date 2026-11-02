@@ -1,6 +1,6 @@
 ---
 name: repo-session
-description: Start a Claude instance in another repo and delegate work to it over tmux. Creates (or adds a window to) the tmux session named after the repo's directory, launches `claude --dangerously-skip-permissions` there, waits until it takes input, and prints its pane id; you then brief it with /tmux-talk, wait, and verify what it produced. Use when the user says "start a session in <repo>", "spin up claude in ~/code/<repo>", "launch claude in <repo>", "delegate this to <repo>", "have an agent in <repo> do X", or when work you have found belongs to a repo other than the one you are in (file the ticket there, then hand it to an instance started here).
+description: Start a Claude instance in another repo and delegate work to it over tmux. Creates (or adds a window to) the tmux session named after the repo's directory, launches `claude --worktree --dangerously-skip-permissions` there (the instance works in its own new git worktree), waits until it takes input, and prints its pane id; you then brief it verbatim with /tmux-command, look again ~10s later to confirm it is actually working, wait, and verify what it produced. Use when the user says "start a session in <repo>", "spin up claude in ~/code/<repo>", "launch claude in <repo>", "delegate this to <repo>", "have an agent in <repo> do X", or when work you have found belongs to a repo other than the one you are in (file the ticket there, then hand it to an instance started here).
 ---
 
 # repo-session
@@ -22,6 +22,7 @@ ADDR=$("$RS" gh-pages-multiplexer)               # bare name → ~/code/<name>
 ADDR=$("$RS" ~/code/some/path)                    # or any directory
 ADDR=$("$RS" home-infra -- --model sonnet)        # extra claude args after --
 ADDR=$("$RS" --session "$MINE" ~/code/x)          # into a session you name
+ADDR=$("$RS" --worktree my-name ~/code/x)         # name the worktree (default: claude picks)
 ```
 
 What the script does, so you don't redo any of it by hand:
@@ -30,7 +31,11 @@ What the script does, so you don't redo any of it by hand:
   (`.`/`:` become `_` in either, as tmux requires). No session yet → it creates one, detached, rooted at the repo. Session exists →
   it adds a new detached window. It never types into an existing pane and never
   switches what an attached user is looking at.
-- Runs `claude --dangerously-skip-permissions` as the pane's own process. No
+- Runs `claude --worktree [name] --dangerously-skip-permissions` as the pane's own
+  process. `--worktree` gives the instance a git worktree of the repo (new,
+  unless you name an existing one with `--worktree <name>`), so
+  the directory must be a git repository and the work lands on a branch in that
+  worktree, not in the repo's own checkout. No
   shell sits in front of it, so none of the user's rc files, prompt theme, or
   shell plugins run in that pane. The pane closes when Claude
   exits cleanly; a Claude that crashes leaves its screen in a dead pane, so a
@@ -60,11 +65,17 @@ this conversation, the user's words, the ticket you're thinking of, or why the
 work matters. Your brief is a note slid under a door: whatever isn't on the note
 does not exist on the other side.
 
+The brief is whatever text you pass, delivered verbatim: `tmux-command send`
+types exactly those bytes into the pane and presses Enter — no envelope, nothing
+added. Multi-line text, quotes, backticks, `$` and a leading `/` arrive as
+written.
+
 ```bash
-$TALK send "$ADDR" "<brief>"
+$CMD send "$ADDR" "<brief>"
+$CMD send "$ADDR" "$(cat brief.md)"     # a brief kept in a file, delivered as is
 ```
 
-A brief carries:
+Everything below is optional — what a brief can carry, when the work calls for it:
 
 - **The task and its ticket** — the lit id if one exists in that repo (file it
   there first if it should exist and doesn't).
@@ -72,13 +83,19 @@ A brief carries:
 - **What done looks like**, checkably: the test that passes, the PR merged, the
   file that exists with this content.
 - **What it must not do**, if anything is out of bounds.
-- **How to report back**: the envelope already tells it how to reply to you;
-  say what you want in the reply (PR number, ticket id, the one fact you need).
+- **How to report back.** A verbatim brief has no reply route; if you want a
+  message back, put your pane id (`$TALK whoami`) in the brief and say what the
+  reply should hold (PR number, ticket id, the one fact you need). Sending with
+  `$TALK send` instead wraps the brief in an envelope (`From:` / `Sender:` /
+  `To reply:`) that carries the route, at the cost of the brief no longer being
+  the only text it reads.
 
-You will be mid-task, the delegated piece will feel small, and you'll think
-*"it's in the repo, it'll work out what I mean."* That is the moment the note
-goes under the door half-written. It will work out *something*, at full
-skip-permissions speed, and you'll be reviewing the wrong change.
+A half-written note is the failure to avoid: mid-task, the delegated piece feels
+small and you think *"it's in the repo, it'll work out what I mean."* It will
+work out *something*, at full skip-permissions speed, and you'll be reviewing
+the wrong change.
+
+Illustration of a brief that carries several of the optional parts:
 
 - WRONG: `Fix the push retry bug.`
 - RIGHT: `Ticket pages-deploy-012 in this repo. The push retry ignores a failed
@@ -87,16 +104,35 @@ skip-permissions speed, and you'll be reviewing the wrong change.
   deploys where both land, passing; PR merged; a release tagged. Reply with the
   PR number and the release tag.`
 
-Long-running work: if the brief is big, write it to a file and send the path.
+## Ten seconds later: is it working?
+
+Boot readiness only proves Claude can take input. Whether it takes the work is
+a separate fact, and the failures are silent: the pane just sits there. About 10
+seconds after sending the brief, look: `$CMD read-screen "$ADDR" 40`.
+
+- **Working** — a spinner line (a verb ending in `…`) or tool output moving; or
+  it already finished and shows its answer.
+- **Stuck on a decision that is the user's** — an approval or permission prompt,
+  a numbered-choice dialog, a login, an update or trust prompt, anything that
+  waits for a human before it will go on. Tell the user, naming the pane id and
+  what the screen asks; don't answer it for them.
+- **Brief typed but not submitted** — the text sits in the input box. Press
+  Enter (`$CMD keys "$ADDR" Enter`).
+- **Idle, brief nowhere on screen** — it was lost, or it already finished and
+  scrolled the brief out of view. Read further back (`read-screen "$ADDR" 300`)
+  before sending it again; a re-sent brief is done twice.
+
+After fixing any of these, look again the same way.
 
 ## While it works
 
 - **Don't type into a busy pane.** Keystrokes sent mid-generation queue and get
   misread. `$TALK wait "$ADDR" <seconds>` before every send.
 - **Look, don't assume.** `$TALK read-screen "$ADDR" 200` to see where it is.
-- **Steer or stop.** A correction goes through `$TALK send`. To interrupt:
-  `$CMD keys "$ADDR" Escape`. Slash commands (`/compact`, `/clear`, `/model`)
-  go through `$CMD send`, never `$TALK` — the envelope hides them from the CLI.
+- **Steer or stop.** A correction goes through `$CMD send`, like the brief. To
+  interrupt: `$CMD keys "$ADDR" Escape`. Slash commands (`/compact`, `/clear`,
+  `/model`) go through `$CMD send`, never `$TALK` — the envelope hides them from
+  the CLI.
 - **Its context may reset on its own.** Instances follow the user's git workflow,
   which hands off to a fresh context mid-PR (message-in-a-bottle). The pane and
   its id survive; the new context resumes from its own message. Don't re-brief
@@ -105,8 +141,9 @@ Long-running work: if the brief is big, write it to a file and send the path.
 ## When it says it's done
 
 It isn't done because it said so. Open the artifact yourself: the diff, the PR,
-the ticket state, the test output (`gh pr view`, `git -C <repo> log`,
-`lit show <id>` from that repo). Check it against the user's requirements, not
+the ticket state, the test output (`gh pr view`, `git -C <repo> worktree list`
+to find the instance's worktree and `git log` there, `lit show <id>` from that
+repo). Check it against the user's requirements, not
 against its summary. Instances report success on work that misses the point —
 the reply is a pointer to the evidence, never the evidence.
 
