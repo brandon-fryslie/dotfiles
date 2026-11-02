@@ -99,11 +99,15 @@ MSG
 # code stand.
 chain_to_local_hook() {
   local name="$1"; shift
-  local local_hook
+  local common
   # --git-path honours core.hooksPath, which now points at THIS directory --
   # using it here would re-enter this hook forever. Address the hooks directory
   # directly, in the COMMON dir: a linked worktree's own git dir holds no hooks/.
-  local_hook="$(git rev-parse --path-format=absolute --git-common-dir)/hooks/$name"
-  [ -x "$local_hook" ] || return 0
-  "$local_hook" "$@"
+  # A failed lookup is not "no local hook": say so rather than skip the repo's own hook.
+  common="$(git_common_dir_abs)" || {
+    echo "chain_to_local_hook: cannot locate the git common dir; the repo's own $name hook was not run" >&2
+    return 1
+  }
+  [ -x "$common/hooks/$name" ] || return 0
+  "$common/hooks/$name" "$@"
 }

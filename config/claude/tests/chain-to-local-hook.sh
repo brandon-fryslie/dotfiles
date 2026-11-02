@@ -3,9 +3,9 @@
 # core.hooksPath displaced. A repo's hooks live in its git COMMON dir, shared by every
 # worktree; a linked worktree's own git dir holds none.
 #
-# Asserted is what a commit does [LAW:behavior-not-structure]: a repo-local pre-commit
-# that rejects refuses the commit from the main checkout AND from a linked worktree, and
-# one that accepts lets it through from both.
+# Asserted is what a commit does [LAW:behavior-not-structure]: a repo-local pre-commit or
+# commit-msg that rejects refuses the commit from the main checkout AND from a linked
+# worktree, one that accepts lets it through from both, and having none is not an error.
 #
 # Run: config/claude/tests/chain-to-local-hook.sh   (needs git)
 set -euo pipefail
@@ -20,16 +20,19 @@ export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER
 
 fail() { echo "FAIL - $*" >&2; cat "$work/last.log" >&2 2>/dev/null; exit 1; }
 
-# local_hook <verdict>: install the repo's own pre-commit; it exits 1 (reject) or 0 (accept).
-# It names itself on stderr so a refusal can be told from any other failure.
+# local_hook <name> <verdict>: install the repo's own hook; it exits 1 (reject) or 0 (accept).
+# It names itself and its argument count on stderr, so a refusal can be told from any
+# other failure and argument passthrough can be seen.
 local_hook() {
-  printf '#!/bin/sh\necho "LOCAL-HOOK-RAN" >&2\nexit %s\n' "$1" > "$repo/.git/hooks/pre-commit"
-  chmod +x "$repo/.git/hooks/pre-commit"
+  printf '#!/bin/sh\necho "LOCAL-HOOK-RAN %s argc=$#" >&2\nexit %s\n' "$1" "$2" > "$repo/.git/hooks/$1"
+  chmod +x "$repo/.git/hooks/$1"
 }
 
 # commit_in <dir>: commit a fresh file there.
+n=0
 commit_in() {
-  ( cd "$1" && date +%s%N > "f.$RANDOM" && git add -A && git commit -q -m c ) >"$work/last.log" 2>&1
+  n=$((n + 1))
+  ( cd "$1" && echo "$n" > "f.$n" && git add -A && git commit -q -m c ) >"$work/last.log" 2>&1
 }
 
 repo="$work/repo"
@@ -40,13 +43,23 @@ git -C "$repo" worktree add -q "$work/wt" -b wt
 
 for where in "$repo" "$work/wt"; do
   label=main; [ "$where" = "$work/wt" ] && label=worktree
-  local_hook 1
-  if commit_in "$where" || ! grep -q LOCAL-HOOK-RAN "$work/last.log"; then
-    fail "$label: the repo's own rejecting pre-commit did not refuse the commit"
-  fi
-  local_hook 0
-  commit_in "$where" || fail "$label: the repo's own accepting pre-commit blocked the commit"
-  grep -q LOCAL-HOOK-RAN "$work/last.log" || fail "$label: the repo's own pre-commit never ran"
+  # pre-commit is handed no arguments; commit-msg is handed the message file, which must
+  # reach the repo's own hook.
+  for hook in pre-commit commit-msg; do
+    want_argc=0; [ "$hook" = commit-msg ] && want_argc=1
+    rm -f "$repo/.git/hooks/pre-commit" "$repo/.git/hooks/commit-msg"
+    local_hook "$hook" 1
+    if commit_in "$where" || ! grep -q "LOCAL-HOOK-RAN $hook argc=$want_argc" "$work/last.log"; then
+      fail "$label: the repo's own rejecting $hook did not refuse the commit"
+    fi
+    local_hook "$hook" 0
+    commit_in "$where" || fail "$label: the repo's own accepting $hook blocked the commit"
+    grep -q "LOCAL-HOOK-RAN $hook argc=$want_argc" "$work/last.log" \
+      || fail "$label: the repo's own $hook did not run with $want_argc argument(s)"
+  done
+  # No repo-local hook at all: nothing to chain to is not an error.
+  rm -f "$repo/.git/hooks/pre-commit" "$repo/.git/hooks/commit-msg"
+  commit_in "$where" || fail "$label: a commit with no repo-local hooks was blocked"
 done
 
 echo "PASS - chain_to_local_hook reaches the repo's own hooks from a worktree"
