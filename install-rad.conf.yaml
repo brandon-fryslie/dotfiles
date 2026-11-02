@@ -7,7 +7,8 @@
 - defaults:
     link:
       relink: true
-      force: true
+      force: false
+      backup: true
 
 - link:
     ~/.zgenom/sources/brandon-fryslie/rad-shell/___: ~/code/brandon-fryslie_rad-shell

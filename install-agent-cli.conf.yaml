@@ -1,7 +1,8 @@
 - defaults:
     link:
       relink: true
-      force: true
+      force: false
+      backup: true
 
 - create:
     - ~/.claude
@@ -57,5 +58,3 @@
     ~/.agents/skills:
       path: config/agents/skills/*
       glob: true
-      relink: true
-      force: true
