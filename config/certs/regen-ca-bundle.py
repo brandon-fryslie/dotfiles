@@ -154,7 +154,7 @@ def select_anchors(pems, inspect, trusts):
     return anchors, dropped
 
 
-def read_source(name, path):
+def read_source(path):
     if not path.exists():
         die(f"missing source: {path}")
     if path.suffix == ".pem":
@@ -175,7 +175,7 @@ def collect():
     out, dropped, stats, seen = [], [], {}, set()
     sources = [(kc.name, kc) for kc in KEYCHAINS] + [("proxyman-ca.pem", PROXYMAN_CA)]
     for name, path in sources:
-        found = read_source(name, path)
+        found = read_source(path)
         # A cert present in several sources is judged once, at its first source.
         fresh = [p for p in dict.fromkeys(found) if p not in seen]
         seen.update(fresh)

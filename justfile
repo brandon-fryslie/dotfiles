@@ -75,7 +75,7 @@ test-install-backup:
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
 
-# Test which certs regen-ca-bundle.py admits to the CA bundle (fake trust probes, no keychain)
+# Test which certs regen-ca-bundle.py admits to the CA bundle (macOS: runs the real openssl and security verify-cert on generated certs)
 test-certs:
     python3 -m unittest discover -s config/certs -p 'test_*.py'
 
