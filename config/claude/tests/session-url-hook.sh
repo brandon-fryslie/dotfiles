@@ -26,10 +26,17 @@ url='https://claude.ai/code/session_01ABCDEF'
 # commits <dir> <path>: stage <path> carrying the pattern in <dir> and commit it.
 # The staged copy carries the URL; the working file is put back before the commit, so
 # editing the pattern file or lib.sh does not change the regex or code the hook runs.
+# A failed commit leaves its path staged; unstage it so the next call is judged alone.
 commits() {
   ( cd "$1" && mkdir -p "$(dirname "$2")" && touch "$2" && cp "$2" "$work/orig" \
     && echo "# see $url" >> "$2" && git add "$2" && cp "$work/orig" "$2" \
-    && git commit -q -m "add $2" ) >"$work/last.log" 2>&1
+    && { git commit -q -m "add $2" || { git reset -q; exit 1; }; } ) >"$work/last.log" 2>&1
+}
+
+# refused <dir> <path>: the commit failed AND the hook's refusal is why -- any other
+# failure (identity, a crashing hook) must not read as a correct refusal.
+refused() {
+  ! commits "$@" && grep -q 'COMMIT REFUSED' "$work/last.log"
 }
 
 guard="$work/guard"
@@ -52,11 +59,11 @@ for where in "$guard" "$work/wt"; do
     || fail "$label: the pattern file carrying the pattern was refused"
   commits "$where" config/claude/hooks/guard-session-url.sh \
     || fail "$label: guard-session-url.sh carrying the pattern was refused"
-  if commits "$where" notes.md; then fail "$label: an unrelated file carrying the pattern was committed"; fi
+  if ! refused "$where" notes.md; then fail "$label: an unrelated file carrying the pattern was not refused by the hook"; fi
 done
 
 for p in config/git/hooks/claude-session-url.pattern config/claude/hooks/guard-session-url.sh; do
-  if commits "$work/other" "$p"; then fail "unrelated repo: like-named $p was exempted"; fi
+  if ! refused "$work/other" "$p"; then fail "unrelated repo: like-named $p was not refused by the hook"; fi
 done
 
 echo "PASS - session-URL pre-commit exemption"
