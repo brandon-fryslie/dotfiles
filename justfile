@@ -93,7 +93,7 @@ test-global-hooks-path:
 
 # Report whether git here (or in <dir>) runs the session-URL hooks; exits 1 and names the value in effect when it does not
 check-hooks-path dir=".":
-    ./bin/check-hooks-path {{dir}}
+    ./bin/check-hooks-path "{{dir}}"
 
 # Assert the code-review installer, fleet pass and review-outcome reader against a throwaway fleet (no network)
 test-code-review-fleet:

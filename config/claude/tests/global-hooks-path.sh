@@ -55,9 +55,17 @@ if "$check" >"$work/last.log" 2>&1; then fail "the reporter accepted a repo-loca
 grep -q "$work/elsewhere" "$work/last.log" || fail "the reporter did not name the value in effect"
 git config --local --unset core.hooksPath
 
+# Asked about a repo from outside it, the answer is that repo's, not the caller's.
+( cd "$work" && "$check" "$work/repo" ) >"$work/last.log" 2>&1 || fail "the reporter flagged the installed config when asked from outside the repo"
+
+# An install that sets nothing: the hooks directory exists, the config that points at it does not.
 rm "$HOME/.config/git"
-mkdir "$HOME/.config/git"
+mkdir -p "$HOME/.config/git/hooks"
 if "$check" >"$work/last.log" 2>&1; then fail "the reporter accepted an unset hooksPath"; fi
 grep -q "unset" "$work/last.log" || fail "the reporter did not say hooksPath is unset"
+
+rmdir "$HOME/.config/git/hooks" "$HOME/.config/git"
+if "$check" >"$work/last.log" 2>&1; then fail "the reporter accepted a machine with no hooks installed"; fi
+grep -q "no session-URL hooks installed" "$work/last.log" || fail "the reporter did not say nothing is installed"
 
 echo "ok"

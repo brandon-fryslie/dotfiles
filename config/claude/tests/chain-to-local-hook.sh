@@ -66,11 +66,13 @@ done
 # Every hook git can run reaches the repo's own, not just the two this directory scans for.
 # The names are githooks(5); a hook missing from this directory is a repo hook silently displaced.
 rm -f "$repo/.git/hooks/pre-commit" "$repo/.git/hooks/commit-msg"
-for hook in applypatch-msg pre-applypatch post-applypatch pre-merge-commit prepare-commit-msg \
-  post-commit pre-rebase post-checkout post-merge pre-push pre-receive update proc-receive \
-  post-receive post-update reference-transaction push-to-checkout pre-auto-gc post-rewrite \
-  sendemail-validate fsmonitor-watchman p4-changelist p4-prepare-changelist \
-  p4-post-changelist p4-pre-submit post-index-change; do
+forwarded=" applypatch-msg pre-applypatch post-applypatch pre-merge-commit prepare-commit-msg
+  post-commit pre-rebase post-checkout post-merge pre-push pre-receive update proc-receive
+  post-receive post-update reference-transaction push-to-checkout pre-auto-gc post-rewrite
+  sendemail-validate fsmonitor-watchman p4-changelist p4-prepare-changelist
+  p4-post-changelist p4-pre-submit post-index-change "
+forwarded=$(echo $forwarded)
+for hook in $forwarded; do
   printf '#!/bin/sh\necho "LOCAL-HOOK-RAN %s argc=$# stdin=$(cat)" >&2\nexit 7\n' "$hook" > "$repo/.git/hooks/$hook"
   chmod +x "$repo/.git/hooks/$hook"
   [ -x "$real_hooks/$hook" ] || fail "no forwarder for the $hook hook: the repo's own would stop running"
@@ -80,6 +82,17 @@ for hook in applypatch-msg pre-applypatch post-applypatch pre-merge-commit prepa
   grep -q "LOCAL-HOOK-RAN $hook argc=2 stdin=payload" "$work/last.log" \
     || fail "$hook: arguments and stdin did not reach the repo's own hook"
   rm -f "$repo/.git/hooks/$hook"
+done
+
+# The reverse drift: a hook in the directory the list above does not know is untested.
+for f in "$real_hooks"/*; do
+  case "${f##*/}" in
+    lib.sh|claude-session-url.pattern|forward-to-local-hook|pre-commit|commit-msg) continue ;;
+  esac
+  case " $forwarded " in
+    *" ${f##*/} "*) ;;
+    *) fail "${f##*/} is in the hooks directory but not in the forwarded-hook list" ;;
+  esac
 done
 
 # And through git itself: a repo-local pre-push that rejects stops a real push.
