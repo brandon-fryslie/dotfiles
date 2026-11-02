@@ -35,6 +35,9 @@ GH_VERBS_THAT_PUBLISH = {
     "issue": ("create", "edit", "comment", "close", "reopen"),
     "release": ("create", "edit"),
     "gist": ("create", "edit"),
+    "repo": ("create", "edit"),  # --description
+    "label": ("create", "edit"),  # --description
+    "workflow": ("run",),  # -f inputs, shown on the run
 }
 GH_PUBLISHES = frozenset((noun, verb) for noun, verbs in GH_VERBS_THAT_PUBLISH.items() for verb in verbs)
 # `gh api` sends GET unless it is given a method, or fields/a body - which make it POST.

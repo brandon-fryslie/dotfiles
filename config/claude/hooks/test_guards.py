@@ -216,6 +216,15 @@ class SessionUrlGuard(unittest.TestCase):
             f"gh -R o/r pr comment 3 -b '{SESSION_URL}'",
         ])
 
+    def test_publishing_a_session_url_as_a_description_or_workflow_input_is_denied(self):
+        self.assert_decisions("deny", [
+            f"gh repo edit --description {SESSION_URL}",
+            f"gh repo create o/r -d {SESSION_URL}",
+            f"gh label create bug --description {SESSION_URL}",
+            f"gh label edit bug --description {SESSION_URL}",
+            f"gh workflow run ci.yml -f note={SESSION_URL}",
+        ])
+
     def test_a_gh_api_call_that_writes_is_a_publication(self):
         self.assert_decisions("deny", [
             f"gh api repos/o/r/issues -f body={SESSION_URL}",
@@ -249,6 +258,8 @@ class SessionUrlGuard(unittest.TestCase):
             f"gh api -X POST repos/o/r/issues -f body=x -X GET -f q={SESSION_URL}",
             f"gh api repos/o/r/issues -H 'X-Note: {SESSION_URL}'",
             f"gh pr list --search {SESSION_URL}",
+            f"gh repo view o/r --json description | grep {SESSION_URL}",
+            f"gh label list --search {SESSION_URL}",
         ])
 
 
