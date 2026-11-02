@@ -68,8 +68,9 @@ CONFIG_WRITE_MODES = frozenset(("--add", "--replace-all", "--unset", "--unset-al
 CONFIG_SECTION_EDITS = frozenset(("--remove-section", "--rename-section"))
 CONFIG_READ_MODES = frozenset((
     "-l", "--list", "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool"))
-# Complete against `git config -h`: an option missing here has its value read as the key.
-CONFIG_TAKES_VALUE = frozenset(("-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value"))
+# An option missing here has its value read as the key; test_guards.py checks this against git's help.
+CONFIG_TAKES_VALUE = frozenset((
+    "-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value", "--url"))
 # git 2.46 subcommands, each the mode its legacy flag names. Only the first word is one (a flag
 # before it makes the call legacy), and a key always has a dot, so no key is ever read as one.
 CONFIG_SUBCOMMAND_MODES = {

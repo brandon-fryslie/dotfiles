@@ -5,6 +5,7 @@ Run: just test-hooks
 """
 
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -12,6 +13,22 @@ from pathlib import Path
 HOOKS = Path(__file__).resolve().parent
 # Assembled, never written whole: the git pre-commit hook refuses a file carrying the literal.
 SESSION_URL = "https://claude" + ".ai/code/session_01ABCDEF"
+
+
+GIT_CONFIG_SUBCOMMANDS = ("get", "list", "set", "unset", "rename-section", "remove-section", "edit")
+# `-f, --[no-]file <file>`: an option git's own help documents with a value.
+VALUE_OPTION = re.compile(r"^\s+(?:(-\w), )?--(?:\[no-\])?([\w-]+) <", re.MULTILINE)
+
+
+def git_config_value_options():
+    """Every option `git config <subcommand> -h` documents with a value, short and long. Empty
+    before git 2.46, which has no subcommands to ask."""
+    options = set()
+    for subcommand in GIT_CONFIG_SUBCOMMANDS:
+        usage = subprocess.run(["git", "config", subcommand, "-h"], capture_output=True, text=True).stdout
+        for short, long in VALUE_OPTION.findall(usage):
+            options.update(filter(None, (short, "--" + long)))
+    return options
 
 
 def run_hook(name, payload):
@@ -182,6 +199,14 @@ class SessionUrlGuard(unittest.TestCase):
             "git config --global --unset core.hooksPath && git commit -m x",
             "bash -c 'git config --global --unset core.hooksPath'",
         ])
+
+    def test_every_option_git_config_takes_a_value_for_is_read_as_one(self):
+        # An option the guard does not know takes the next word as the key, and the real key
+        # after it is never looked at: so a new git option is a bypass until the guard learns it.
+        options = git_config_value_options()
+        if not options:
+            self.skipTest("git predates `git config <subcommand>` (2.46)")
+        self.assert_decisions("deny", [f"git config set {option} v core.hooksPath x" for option in sorted(options)])
 
     def test_reading_core_hooks_path_or_configuring_other_keys_is_not_a_bypass(self):
         self.assert_decisions("allow", [
