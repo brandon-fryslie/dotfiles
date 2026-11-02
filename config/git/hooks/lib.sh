@@ -35,14 +35,28 @@ session_url_pattern() {
 # widen the exemption, and a repo that merely has a like-named path gets none of
 # it. [LAW:one-source-of-truth] HOOKS_DIR is the single anchor -- the Claude
 # PreToolUse guard is located relative to it, not named a second time.
+#
+# HOOKS_DIR sits in one checkout (the main one, for a global core.hooksPath), but a
+# commit may be made from any worktree of that repo, whose toplevel is a different
+# directory. So the question is not "is this path under my toplevel" but "is the repo
+# I am committing in the repo the guard lives in": two checkouts of one repo share a
+# git common dir, a clone or an unrelated repo does not. The exempt paths are the
+# guard repo's repo-relative ones, applied to whichever checkout is committing.
+git_common_dir_abs() {
+  ( cd "$(git rev-parse --git-common-dir)" && pwd -P )
+}
+
 guard_own_pathspecs() {
-  local root guard_root f real
-  root="$(git rev-parse --show-toplevel)" || return 0
+  local repo_top config_root f real
   real="$(cd "$HOOKS_DIR" && pwd -P)"
-  guard_root="$(cd "$real/../.." && pwd -P)"
-  for f in "$real"/* "$guard_root/claude/hooks/guard-session-url.sh"; do
+  # GIT_DIR / GIT_WORK_TREE describe the repo being committed in; they must not
+  # redirect the question about the repo the guard lives in.
+  repo_top="$(cd "$real" && unset GIT_DIR GIT_WORK_TREE && git rev-parse --show-toplevel)" || return 0
+  [ "$(cd "$real" && unset GIT_DIR GIT_WORK_TREE && git_common_dir_abs)" = "$(git_common_dir_abs)" ] || return 0
+  config_root="$(cd "$real/../.." && pwd -P)"
+  for f in "$real"/* "$config_root/claude/hooks/guard-session-url.sh"; do
     [ -e "$f" ] || continue
-    case "$f" in "$root"/*) printf ':(exclude)%s\n' "${f#"$root"/}" ;; esac
+    case "$f" in "$repo_top"/*) printf ':(exclude)%s\n' "${f#"$repo_top"/}" ;; esac
   done
 }
 
