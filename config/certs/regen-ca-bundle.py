@@ -91,8 +91,11 @@ def inspect_cert(pem):
     return "CA:TRUE" in r.stdout, names["subject"] == names["issuer"]
 
 
-# verify-cert prints this on stderr whenever the evaluator reached a verdict.
-VERDICT_RE = re.compile(r"^Cert Verify Result: \S+", re.M)
+# verify-cert prints one of these on stderr whenever the evaluator reached a
+# verdict. An explicit Deny trust entry gets the second form, not the first.
+# Only Deny is listed: any other shape is not known to be a verdict.
+VERDICT_RE = re.compile(
+    r"^(?:Cert Verify Result: \S+|SecTrustEvaluate result: kSecTrustResultDeny)$", re.M)
 
 
 def macos_trusts(pem):

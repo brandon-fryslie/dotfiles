@@ -8,6 +8,7 @@ import importlib.util
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
@@ -49,6 +50,28 @@ class SelectAnchors(unittest.TestCase):
 
     def test_order_is_preserved(self):
         self.assertEqual(select(["untrusted-root", "root", "leaf"])[0], ["root"])
+
+
+def verify_cert_says(returncode, stderr):
+    return mock.patch.object(regen, "run", return_value=subprocess.CompletedProcess(
+        [], returncode, stdout="", stderr=stderr))
+
+
+class MacosTrustsVerdicts(unittest.TestCase):
+    """The stderr shapes `security verify-cert` prints, captured from a live run."""
+
+    def test_explicit_deny_entry_is_untrusted_not_an_error(self):
+        with verify_cert_says(1, "SecTrustEvaluate result: kSecTrustResultDeny\n"):
+            self.assertFalse(regen.macos_trusts("pem"))
+
+    def test_no_trust_is_untrusted(self):
+        with verify_cert_says(1, "Cert Verify Result: CSSMERR_TP_NOT_TRUSTED\n"):
+            self.assertFalse(regen.macos_trusts("pem"))
+
+    def test_an_unrecognised_failure_is_an_error_not_a_verdict(self):
+        with verify_cert_says(1, "SecTrustEvaluate result: kSecTrustResultFatalTrustFailure\n"):
+            with self.assertRaises(SystemExit):
+                regen.macos_trusts("pem")
 
 
 def openssl(*args):
