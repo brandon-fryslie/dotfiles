@@ -1,5 +1,5 @@
 {
-  "cleanupPeriodDays": 99999,
+  "cleanupPeriodDays": 9999,
   "env": {
     "CLAUDE_CODE_SHELL": "/opt/homebrew/bin/bash",
     "DISABLE_AUTOUPDATER": "1",
