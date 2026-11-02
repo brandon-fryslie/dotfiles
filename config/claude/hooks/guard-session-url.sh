@@ -27,6 +27,7 @@ from bash_command import commands, git_invocations, program, split_options
 SESSION_URL_PATTERN = Path(__file__).resolve().parents[2] / "git" / "hooks" / "claude-session-url.pattern"
 
 GIT_PUBLISHES = frozenset(("commit", "tag"))
+HOOKS_PATH = "core.hookspath"  # casefolded, as bash_command reports config keys
 GH_PUBLISHES = frozenset((noun, verb) for noun in ("pr", "issue", "release", "gist") for verb in ("create", "edit"))
 
 # Options of `git commit` that consume a value, so a value is never read as a flag: -mnew is
@@ -44,6 +45,10 @@ def names_no_verify(flag):
 
 
 def skips_hooks(invocation):
+    # Pointing core.hooksPath anywhere else displaces the hooks as completely as --no-verify, and
+    # on any verb that runs them, so the verb is not asked; the value is not either.
+    if HOOKS_PATH in invocation.config_keys:
+        return True
     # -n means --no-verify on commit, but --dry-run on push; only --no-verify is a bypass there.
     if invocation.verb == "commit":
         flags = split_options(invocation.arguments, COMMIT_TAKES_VALUE, COMMIT_TAKES_ATTACHED_VALUE).flags
@@ -84,7 +89,7 @@ def main():
     command = str((hook.get("tool_input") or {}).get("command") or "")
     invocations = list(git_invocations(command))
 
-    if (any(i.verb in GIT_PUBLISHES for i in invocations) or any(map(publishes, commands(command)))) \
+    if (any(i.verb in GIT_PUBLISHES for i in invocations) or any(publishes(c.words) for c in commands(command))) \
             and carries_session_url(command):
         deny("BLOCKED: this command would publish a Claude session URL (a claude.ai link to a "
              "conversation). That link resolves to the entire private conversation for anyone "
@@ -94,9 +99,10 @@ def main():
              "shortened link, no id prefix, no 'session available on request'.")
 
     if any(map(skips_hooks, invocations)):
-        deny("BLOCKED: --no-verify skips the commit-msg hook that refuses Claude session URLs. That "
+        deny("BLOCKED: --no-verify, or a core.hooksPath override (git -c, --config-env, GIT_CONFIG_*), "
+             "skips the commit-msg hook that refuses Claude session URLs. That "
              "hook is the mechanical backstop for a leak that reached public repos ~1,700 times. Run "
-             "the command without --no-verify; if the hook fires, remove the session link rather "
+             "the command without the bypass; if the hook fires, remove the session link rather "
              "than bypassing the check.")
 
     sys.exit(0)

@@ -129,6 +129,47 @@ class SessionUrlGuard(unittest.TestCase):
             "find . -maxdepth 0 -exec git commit -n -m x \\;",
         ])
 
+    def test_redirecting_core_hooks_path_is_a_bypass(self):
+        self.assert_decisions("deny", [
+            "git -c core.hooksPath=/dev/null commit -m x",
+            "git -c core.hooksPath=/dev/null push",
+            "git -C repo -c user.name=x -c core.hooksPath=/dev/null commit -m x",
+            "git -c CORE.HOOKSPATH=/dev/null commit -m x",
+            "git -c core.hooksPath commit -m x",
+            "git -c core.hooksPath=/dev/null merge topic",
+            "git --config-env=core.hooksPath=HOOKS commit -m x",
+            "git --config-env core.hooksPath=HOOKS commit -m x",
+            "GIT_CONFIG_PARAMETERS=\"'core.hooksPath=/dev/null'\" git commit -m x",
+            "GIT_CONFIG_PARAMETERS=\"'user.name=x' 'core.hooksPath'='/dev/null'\" git commit -m x",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git commit -m x",
+            "env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git push",
+            "sudo env FOO=1 GIT_CONFIG_KEY_3=core.hooksPath git commit -m x",
+            "git add . && git -c core.hooksPath=/dev/null commit -m x",
+            "bash -c 'git -c core.hooksPath=/dev/null commit -m x'",
+        ])
+
+    def test_the_environment_of_a_shell_reaches_the_commands_it_runs(self):
+        self.assert_decisions("deny", [
+            "GIT_CONFIG_KEY_0=core.hooksPath bash -c 'git commit -m x'",
+            "GIT_CONFIG_KEY_0=core.hooksPath eval 'git commit -m x'",
+            "GIT_CONFIG_KEY_0=core.hooksPath sh <<'EOF'\ngit commit -m x\nEOF",
+            "env GIT_CONFIG_KEY_0=core.hooksPath sh -c 'git push'",
+        ])
+
+    def test_other_config_overrides_and_environment_are_not_a_bypass(self):
+        self.assert_decisions("allow", [
+            "git -c user.name=x commit -m y",
+            "git -c user.name=x -c core.editor=true commit -m y",
+            "git --config-env=user.name=NAME commit -m y",
+            "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.name GIT_CONFIG_VALUE_0=x git commit -m y",
+            "GIT_CONFIG_PARAMETERS=\"'user.name=x'\" git commit -m y",
+            "FOO=core.hooksPath git commit -m y",
+            "git commit -m y core.hooksPath",
+            "GIT_CONFIG_KEY_0=core.hooksPath true && git commit -m y",
+            "git config core.hooksPath",
+            'lit comment add k "denied: git -c core.hooksPath=/dev/null commit -m x"',
+        ])
+
     def test_a_pipe_into_a_non_shell_is_data_and_or_is_not_a_pipe(self):
         self.assert_decisions("allow", [
             "echo 'git commit -n -m x' | grep commit",
