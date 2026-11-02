@@ -118,10 +118,6 @@
           {
             "type": "command",
             "command": "/Users/bmf/code/dotfiles/config/claude/hooks/guard-session-url.sh"
-          },
-          {
-            "type": "command",
-            "command": "/Users/bmf/code/dotfiles/config/claude/hooks/hyphenate-handoff.py"
           }
         ]
       }

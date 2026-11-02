@@ -55,18 +55,6 @@ class TmuxServerGuard(unittest.TestCase):
         self.assertEqual(flagged, [True, False])
 
 
-class HyphenateHandoff(unittest.TestCase):
-    def rewritten(self, command):
-        result = run_hook("hyphenate-handoff.py", bash(command))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return json.loads(result.stdout)["hookSpecificOutput"]["updatedInput"]["command"] if result.stdout else command
-
-    def test_banned_words_are_spelled_out_in_a_handoff_only(self):
-        self.assertEqual(self.rewritten("finalize-session 'Bash and git, /usr/bin/zsh, digit, shell'"),
-                         "finalize-session 'B-a-s-h and g-i-t, /usr/bin/z-s-h, digit, shell'")
-        self.assertEqual(self.rewritten("echo git"), "echo git")
-
-
 class SessionUrlGuard(unittest.TestCase):
     """guard-session-url.sh denies by printing a deny decision and exiting 0."""
 
