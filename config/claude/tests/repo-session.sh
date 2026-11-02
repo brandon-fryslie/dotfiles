@@ -11,7 +11,9 @@
 # launch boots the real claude to its prompt; the other launches a stand-in
 # claude, first on PATH, that never draws a prompt, so the not-ready arm is
 # reached on every run rather than only when the real claude boots slower than
-# the first poll, and the window still shows where it landed.
+# the first poll, and the window still shows where it landed. Both launches are
+# checked for --worktree on claude's command line, the real one with a name, and
+# the worktree it makes is removed on exit.
 #
 # The scratch directory is a fixed path inside this checkout and not a git repo
 # of its own: claude registers a project per root it is started in, so a fresh
@@ -30,8 +32,19 @@ panes="$here/../skills/tmux-shared/bin/tmux-panes"
 repo="$(cd "$here/../../.." && pwd -P)/rs.test"
 
 sessions=()
+# The real-claude launch below runs with --worktree, which makes a worktree of
+# this checkout, under the main checkout's .claude/worktrees even when the test
+# runs from another worktree; the test names it so it can remove exactly that
+# one. claude holds a lock on it while running, hence the sessions die first.
+wtname="rs-test-$$"
+wtpath="$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")/.claude/worktrees/$wtname"
 cleanup() {
   for s in ${sessions[@]+"${sessions[@]}"}; do tmux kill-session -t "=$s" 2>/dev/null || true; done
+  if [[ -d "$wtpath" ]]; then
+    git -C "$here" worktree unlock "$wtpath" 2>/dev/null || true
+    git -C "$here" worktree remove --force "$wtpath" || echo "cleanup: could not remove worktree $wtpath" >&2
+    git -C "$here" branch -D "worktree-$wtname" >/dev/null || echo "cleanup: could not delete branch worktree-$wtname" >&2
+  fi
   rm -rf "$repo"
 }
 trap cleanup EXIT
@@ -50,6 +63,16 @@ if err=$("$rs" --session 2>&1 >/dev/null); then fail "--session with no name exi
 grep -qF -- "--session requires a name" <<<"$err" || fail "--session with no name: unexpected message: $err"
 echo "ok   - --session without a name is refused"
 
+# --worktree needs a name when given, and the flag has one home: a second
+# --worktree after the '--' is refused rather than sent to claude beside ours.
+if err=$("$rs" --worktree 2>&1 >/dev/null); then fail "--worktree with no name exited 0"; fi
+grep -qF -- "--worktree requires a name" <<<"$err" || fail "--worktree with no name: unexpected message: $err"
+for dup in --worktree -w; do
+  if err=$("$rs" "$repo" -- "$dup" other 2>&1 >/dev/null); then fail "$dup after -- exited 0"; fi
+  grep -qF -- "not after --" <<<"$err" || fail "$dup after --: unexpected message: $err"
+done
+echo "ok   - --worktree without a name, and --worktree/-w after --, are refused"
+
 # Derived session, sanitized; and the not-ready arm, reached through a claude
 # that never gets ready. repo-session runs the claude on PATH, so a stand-in
 # first on PATH is the launcher's own seam, not a hook inside it.
@@ -66,15 +89,18 @@ addr=$(announced "$repo/err")
 in_session "$derived" "$addr" || fail "derived session: expected $addr in $derived, it is at $(where "$addr")"
 grep -qF "claude in $addr not ready" "$repo/err" || fail "not-ready arm did not name $addr: $(cat "$repo/err")"
 tmux display-message -p -t "$addr" '#{pane_start_command}' | grep -q claude || fail "not-ready arm did not leave $addr running claude"
+tmux display-message -p -t "$addr" '#{pane_start_command}' | grep -qF -- "--worktree --dangerously-skip-permissions" || fail "claude was not started with --worktree: $(tmux display-message -p -t "$addr" '#{pane_start_command}')"
 echo "ok   - no --session: window landed in $derived; not-ready arm exits 1, names the pane id, leaves the window"
 
 # Named session, sanitized the same way; and the ready arm, booted to the prompt.
 named="rs:test.$$"; named_clean=${named//[.:]/_}; sessions+=("$named_clean")
-addr=$("$rs" --session "$named" "$repo" 2>"$repo/err") || fail "repo-session --session $named exited $?: $(cat "$repo/err")"
+addr=$("$rs" --session "$named" --worktree "$wtname" "$repo" 2>"$repo/err") || fail "repo-session --session $named exited $?: $(cat "$repo/err")"
 [[ "$addr" == %* ]] || fail "stdout handle is not a pane id: '$addr'"
 in_session "$named_clean" "$addr" || fail "named session: expected $addr in $named_clean, it is at $(where "$addr")"
 [[ "$addr" == "$(announced "$repo/err")" ]] || fail "stdout pane id $addr differs from the announced $(announced "$repo/err")"
 tmux capture-pane -p -t "$addr" | grep -q '❯' || fail "ready arm returned but no prompt on $addr's screen"
+tmux display-message -p -t "$addr" '#{pane_start_command}' | grep -qF -- "--worktree $wtname --dangerously-skip-permissions" || fail "claude was not started with --worktree $wtname: $(tmux display-message -p -t "$addr" '#{pane_start_command}')"
+[[ -d "$wtpath" ]] || fail "--worktree $wtname made no worktree at $wtpath"
 echo "ok   - --session $named: window landed in $named_clean; ready arm printed the pane id once the prompt was up"
 
 # The handle outlives window renumbering: a window inserted before claude's

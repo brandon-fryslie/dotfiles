@@ -6,20 +6,25 @@ set -euo pipefail
 # for input, and print its pane id. Briefing it and reading its work is the
 # controller's job through /tmux-talk and /tmux-command — not fused here.
 
-USAGE="repo-session — launch claude (--dangerously-skip-permissions) in a repo's tmux session
+USAGE="repo-session — launch claude (--worktree --dangerously-skip-permissions) in a repo's tmux session
 
 Usage:
-  repo-session [--session <name>] <repo> [-- <extra claude args>...]
+  repo-session [--session <name>] [--worktree <name>] <repo> [-- <extra claude args>...]
 
   <repo>   A directory path, or a bare name resolved as ~/code/<name>.
   --session <name>   Put the window in this tmux session instead of the one
                      named for the directory.
+  --worktree <name>  Name the worktree claude works in (to reuse one, e.g. when
+                     resuming). Without it claude names a new one itself.
 
 The tmux session is the --session name, or the directory's basename; in either,
 '.' and ':' become '_', as tmux requires. Missing session: created detached,
 rooted at the repo.
 Existing session: a new detached window is added to it — no existing pane is
 reused, and no attached client's view is switched.
+
+claude runs with --worktree: it works in a new git worktree of the repo, so <repo>
+must be a git repository.
 
 claude is the pane's own process: no shell runs in front of it, so no rc file,
 prompt theme, or shell plugin runs in that pane. The pane closes when claude
@@ -36,10 +41,16 @@ ready, is left running with its id in the message, for whoever reads the pane."
 
 case "${1:-}" in -h|--help) echo "$USAGE"; exit 0 ;; esac
 SESSION_ARG=""
-if [[ "${1:-}" == "--session" ]]; then
-  [[ -n "${2:-}" ]] || { echo "repo-session: --session requires a name" >&2; exit 1; }
-  SESSION_ARG="$2"; shift 2
-fi
+WORKTREE_ARG=""   # empty => claude names the worktree itself
+while :; do
+  case "${1:-}" in
+    --session)  [[ -n "${2:-}" ]] || { echo "repo-session: --session requires a name" >&2; exit 1; }
+                SESSION_ARG="$2"; shift 2 ;;
+    --worktree) [[ -n "${2:-}" ]] || { echo "repo-session: --worktree requires a name" >&2; exit 1; }
+                WORKTREE_ARG="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
 # [LAW:no-silent-failure] an empty repo argument is refused here, where it is
 # visibly missing, not downstream where '' would resolve as the bare name ~/code/.
 [[ -n "${1:-}" ]] || { echo "$USAGE" >&2; exit 1; }
@@ -51,6 +62,11 @@ if [[ $# -gt 0 ]]; then
   shift
   EXTRA_ARGS=("$@")
 fi
+# [LAW:no-silent-failure] a second --worktree after '--' would reach claude beside
+# the one this script adds, and claude's choice between them is not ours to rely on.
+for a in ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; do
+  case "$a" in --worktree|--worktree=*|-w) echo "repo-session: pass the worktree as --worktree <name> before <repo>, not after -- ($a)" >&2; exit 1 ;; esac
+done
 
 # [LAW:no-silent-failure] a bare name means ~/code/<name>; anything else is a path.
 # Either way it must exist — never create a repo directory by accident.
@@ -74,7 +90,15 @@ CLAUDE_BIN=$(command -v claude) || { echo "repo-session: no 'claude' on PATH" >&
 # reaches claude token for token, and nothing sources a rc. Claude's own
 # subprocess shell is the managed settings' decision (settings.managed.json
 # env.CLAUDE_CODE_SHELL), not this launcher's.
-CMD=("$CLAUDE_BIN" --dangerously-skip-permissions ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
+#
+# [LAW:no-mode-explosion] Every instance works in a git worktree (--worktree):
+# no switch to turn it off, so the instance never edits the repo's own checkout.
+# The only variability is the name, a value: set, it follows the flag; unset, it
+# expands to nothing. -w takes an optional [name] and would swallow a following
+# token that does not start with '-', so another flag always follows it here.
+# [LAW:single-enforcer] The flag lives here only: a caller wanting a name passes
+# --worktree <name> to this script, never --worktree after the '--'.
+CMD=("$CLAUDE_BIN" --worktree ${WORKTREE_ARG:+"$WORKTREE_ARG"} --dangerously-skip-permissions ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"})
 
 # [LAW:types-are-the-program] the handle is the pane id, never the window
 # index: config/tmux/tmux.conf sets renumber-windows on, so when one of several

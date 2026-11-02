@@ -91,13 +91,12 @@ SELF_SESSION=$(tmux display-message -p -t "$TMUX_PANE" '#{session_name}')
 WORKDIR=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_current_path}')
 
 # [LAW:dataflow-not-control-flow] the worktree is not a mode toggled on/off — it
-# is unconditional; the only variability is the VALUE (auto vs named). Optional
+# is unconditional, and repo-session adds the flag; the only variability is the
+# VALUE (auto vs named), handed to repo-session as --worktree <name>. Optional
 # overrides are appended as values when present, never as an empty default that
 # would lie about meaning. Note: --tmux is intentionally NOT passed — it would
 # spawn a SEPARATE tmux session, but we own window placement ourselves.
-CLAUDE_ARGS=(--worktree)
-[[ -n "$WORKTREE_NAME" ]]          && CLAUDE_ARGS+=("$WORKTREE_NAME")
-CLAUDE_ARGS+=(--model "$MODEL")
+CLAUDE_ARGS=(--model "$MODEL")
 [[ -n "$RESUME_ID" ]]             && CLAUDE_ARGS+=(--resume "$RESUME_ID")
 [[ -n "$SYSTEM_PROMPT" ]]         && CLAUDE_ARGS+=(--system-prompt "$SYSTEM_PROMPT")
 [[ -n "$APPEND_SYSTEM_PROMPT" ]]  && CLAUDE_ARGS+=(--append-system-prompt "$APPEND_SYSTEM_PROMPT")
@@ -106,7 +105,7 @@ CLAUDE_ARGS+=(--model "$MODEL")
 # waiting for its prompt, and printing the pane id is repo-session's job; this
 # launcher only decides the session, the cwd, and claude's argv. argv reaches
 # claude token for token with no shell in the pane, so no rc, prompt theme, or
-# plugin runs there. --dangerously-skip-permissions is repo-session's to add.
+# plugin runs there. --worktree and --dangerously-skip-permissions are repo-session's to add.
 REPO_SESSION="$(cd "$(dirname "$0")" && pwd -P)/../../repo-session/bin/repo-session"
 [[ -x "$REPO_SESSION" ]] || { echo "hire-a-minion: no repo-session launcher at $REPO_SESSION" >&2; exit 1; }
-exec "$REPO_SESSION" --session "$SELF_SESSION" "$WORKDIR" -- "${CLAUDE_ARGS[@]}"
+exec "$REPO_SESSION" --session "$SELF_SESSION" ${WORKTREE_NAME:+--worktree "$WORKTREE_NAME"} "$WORKDIR" -- "${CLAUDE_ARGS[@]}"
