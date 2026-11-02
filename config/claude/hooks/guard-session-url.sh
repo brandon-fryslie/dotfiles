@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from bash_command import Command, commands, git_invocations, program, split_options
+from bash_command import Command, commands, git_global_options, git_invocations, program, split_options
 
 # [LAW:one-source-of-truth] the git hooks' definition of a session URL, read where it lives;
 # grep reads it, because it is written as grep's pattern.
@@ -68,22 +68,29 @@ READ_METHODS = frozenset(("GET", "HEAD"))
 GH_REPO_OPTIONS = frozenset(("-R", "--repo"))
 
 # How an option names a file whose text the command publishes: its value is the path, or is
-# `key=@path` (gh api's field syntax, where @- is standard input).
-PATH, FIELD = "path", "field"
+# `key=@path` (gh api's field syntax, where @- is standard input), or the flag itself says the
+# text is on standard input.
+PATH, FIELD, STDIN = "path", "field", "stdin"
 # Per publishing command: the other options that consume a value (so a value is never read as a flag),
 # and the options that name a file. A file option missing here is a read the guard never makes, so
 # test_guards.py checks the table against every gh command's own help. Not listed, on purpose: gh's
-# --attach (media, not text) and pr create --template (starting text for the interactive prompt).
+# --attach (media, not text), release assets (any file, binaries included) and pr create --template
+# (starting text for the interactive prompt).
 TEXT_FILE_OPTIONS = {
     ("git", "tag"): (frozenset(("-m", "-u", "--message", "--local-user", "--cleanup")), {"-F": PATH, "--file": PATH}),
     ("gh", "api"): (GH_API_TAKES_VALUE, {"--input": PATH, "-F": FIELD, "--field": FIELD}),
-    ("gh", "workflow", "run"): (GH_API_TAKES_VALUE, {"-F": FIELD, "--field": FIELD}),
+    ("gh", "workflow", "run"): (GH_API_TAKES_VALUE, {"-F": FIELD, "--field": FIELD, "--json": STDIN}),
+    **{("gh", "gist", verb): (frozenset(("-d", "--desc", "-f", "--filename", "-r", "--remove")), {"-a": PATH, "--add": PATH})
+       for verb in GH_VERBS_THAT_PUBLISH["gist"]},
     ("gh", "agent-task", "create"): (GH_REPO_OPTIONS, {"-F": PATH, "--from-file": PATH}),
     # every publishing pr, issue, release and discussion verb that takes a body or notes
     **{("gh", noun, verb): (GH_REPO_OPTIONS, {"-F": PATH, "--body-file": PATH, "--notes-file": PATH})
        for noun, verb in GH_PUBLISHES
        if noun in ("pr", "issue", "release", "discussion") and verb not in ("close", "reopen")},
 }
+# The commands whose operands are files, each with how many operands come before the first file:
+# `gh gist create FILE...` and `gh gist edit ID [FILE]`, where FILE replaces the gist's text.
+FILE_OPERANDS = {("gh", "gist", verb): 1 if verb == "edit" else 0 for verb in GH_VERBS_THAT_PUBLISH["gist"]}
 
 # Options of `git commit` that consume a value, so a value is never read as a flag: -mnew is
 # a message, and -uno is untracked-files=no.
@@ -200,13 +207,16 @@ class Publication(NamedTuple):
 def text_files(key, arguments):
     """The path words of the files the publishing command `key` takes its text from."""
     takes_value, files = TEXT_FILE_OPTIONS.get(key, (frozenset(), {}))
-    paths = []
-    for flag, value in split_options(arguments, takes_value | files.keys()).values:
+    options = split_options(arguments, takes_value | {flag for flag, kind in files.items() if kind != STDIN})
+    paths = ["-" for flag in options.flags if files.get(flag) == STDIN]
+    for flag, value in options.values:
         field = value.partition("=")[2]
         if files.get(flag) == PATH:
             paths.append(value)
         elif files.get(flag) == FIELD and field.startswith("@"):
             paths.append(field[1:])
+    if key in FILE_OPERANDS:  # the operands begin with the command's own words: `gist create`
+        paths += options.operands[len(key) - 1 + FILE_OPERANDS[key]:]
     return paths
 
 
@@ -264,13 +274,15 @@ BUILT_BY_SHELL = re.compile(r"[$`*?\[{]|^~[^/]")
 TEXT_PRODUCERS = frozenset(("echo", "printf"))
 # bash_command does not follow a change of directory, so a relative path after one is not known.
 DIRECTORY_CHANGES = frozenset(("cd", "chdir", "pushd", "popd"))  # chdir is zsh's cd
-DIRECTORY_OPTIONS = {"git": ("-C",), "env": ("-C", "--chdir")}  # run the next command elsewhere
+ENV_DIRECTORY_OPTIONS = ("-C", "--chdir")  # env runs its command elsewhere
 
 
 def moves_directory(command):
     name = program(command.words)
-    return name in DIRECTORY_CHANGES or any(
-        word.partition("=")[0] in DIRECTORY_OPTIONS.get(name, ()) for word in command.words[1:])
+    if name == "git":  # git's -C, not the -C of `git commit -C HEAD`
+        return any(option == "-C" for option, _ in git_global_options(command.words)[0])
+    return name in DIRECTORY_CHANGES or (name == "env" and any(
+        word.partition("=")[0] in ENV_DIRECTORY_OPTIONS for word in command.words[1:]))
 
 
 def working_directory(script_commands, cwd):
@@ -288,12 +300,20 @@ def reads_descriptor(command):
     return any(operator == "<&" for operator, _ in command.redirects)
 
 
+def writes_text_it_carries(command):
+    """Whether what the command writes is text in the command: an echo or printf's arguments, or a
+    `cat` of nothing but its own heredoc or here-string."""
+    operands = split_options(command.words[1:], frozenset()).operands
+    return program(command.words) in TEXT_PRODUCERS or (
+        program(command.words) == "cat" and bool(command.stdin) and set(operands) <= {"-"})
+
+
 def stdin_carriers(command):
     """The commands whose own text becomes this command's standard input: itself, when a heredoc or
-    here-string feeds it, and an echo or printf piped into it. The whole-command scan reads them."""
+    here-string feeds it, and an echo, printf or `cat <<EOF` piped into it. The whole-command scan reads them."""
     upstream = command.upstream
     return [*([command] if command.stdin else []),
-            *([upstream] if upstream is not None and program(upstream.words) in TEXT_PRODUCERS else [])]
+            *([upstream] if upstream is not None and writes_text_it_carries(upstream) else [])]
 
 
 def substituted_files(substituted):
@@ -366,10 +386,11 @@ def named_by(command, path, cwd):
     for word in words:
         for candidate in (word, word.partition("=")[2]):  # `dd of=file`
             try:
-                if os.path.realpath(locate(candidate, cwd)) == os.path.realpath(path):
+                # The filesystem's own identity: macOS volumes ignore case, so BODY.md is body.md.
+                if os.path.samefile(locate(candidate, cwd), path):
                     return True
-            except Unreadable:
-                continue  # a word that is no knowable path names no file
+            except (Unreadable, OSError):
+                continue  # a word that is no knowable path, or names no existing file, names no file
     return False
 
 

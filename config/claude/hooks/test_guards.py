@@ -456,6 +456,16 @@ class SessionUrlGuard(unittest.TestCase):
             f"gh api repos/o/r/issues --field body=@{path}",
             f"gh api repos/o/r/issues -f title=t -F body=@{path}",
             f"gh workflow run ci.yml -F note=@{path}",
+            f"gh workflow run ci.yml --json < {path}",  # gh reads the inputs as JSON from standard input
+            f"gh gist create {path}",
+            f"gh gist new -d note -p {path}",
+            f"gh gist create -f name.md - < {path}",
+            f"gh gist edit abc123 -f hello.py {path}",  # the operand after the id replaces the gist's file
+            f"gh gist edit abc123 --add {path}",
+            f"gh pr create --title t <&- -F {path}",  # closing a descriptor takes no operand
+            f"gh pr create --title t >&- --body-file {path}",
+            f"gh pr create --title t 2>&- -F {path}",
+            f"cat <<'EOF' | gh pr create -F {path}\nbody\nEOF",  # an upstream cat is not what -F reads
             f"gh api repos/o/r/issues -f body=$(cat {path})",
             f'gh issue comment 3 --body "$(cat {path})"',
             f'gh pr create --body "$(cat -- {path})"',
@@ -495,6 +505,15 @@ class SessionUrlGuard(unittest.TestCase):
                 self.assertIn("not known", ruling["permissionDecisionReason"])
         self.assertEqual(self.decide(f"cd sub && gh pr create -F {self.leaky}", cwd=str(self.directory)), "deny")
         self.assertEqual(self.decide(f"cd sub && gh pr create -F {self.clean}", cwd=str(self.directory)), "allow")
+
+    def test_every_operand_of_a_gist_create_is_a_file(self):
+        self.assert_decisions("deny", [f"gh gist create {self.clean} {self.leaky}", f"gh gist create {self.leaky} {self.clean}"])
+        self.assert_decisions("allow", [f"gh gist create {self.clean} {self.clean}", "gh gist list --public"])
+
+    def test_c_after_the_subcommand_is_not_a_change_of_directory(self):
+        # `git commit -C HEAD` reuses a message; only the -C git gives before its subcommand moves it.
+        self.assertEqual(self.decide("git commit -C HEAD && gh pr create -F clean.md", cwd=str(self.directory)), "allow")
+        self.assertEqual(self.decide("git -c a=b -C sub status && gh pr create -F clean.md", cwd=str(self.directory)), "deny")
 
     def test_a_call_with_no_working_directory_reads_absolute_paths_and_denies_relative_ones(self):
         def decision(command):
@@ -561,10 +580,14 @@ class SessionUrlGuard(unittest.TestCase):
             "gh pr create --body-file - <<< 'a body'",
             "echo a body | gh pr create -F -",
             "printf '%s' note | git tag -a v1 -F -",
+            "cat <<'EOF' | gh pr create -F -\na body\nEOF",
+            "cat - <<< 'a body' | gh pr create -F -",
         ])
         self.assert_decisions("deny", [
             f"gh pr create -F - <<'EOF'\n{SESSION_URL}\nEOF",
             f"echo {SESSION_URL} | gh pr create --body-file -",
+            f"cat <<'EOF' | gh pr create -F -\n{SESSION_URL}\nEOF",
+            f"cat <<EOF | gh pr create -F -\n$(cat {self.leaky})\nEOF",
         ])
 
     def test_a_file_standard_input_is_redirected_from_is_a_source_and_every_redirection_is_read(self):
@@ -616,6 +639,12 @@ class SessionUrlGuard(unittest.TestCase):
                 ruling = self.ruling(command, cwd=directory)
                 self.assertEqual(ruling["permissionDecision"], "deny")
                 self.assertIn("names it too", ruling["permissionDecisionReason"])
+        # The same file under another spelling of its name, on a volume that ignores case.
+        shouted = Path(str(self.clean).upper())
+        if shouted.exists() and shouted.samefile(self.clean):
+            ruling = self.ruling(f"echo hi > {shouted}; gh pr create -F {self.clean}", cwd=directory)
+            self.assertEqual(ruling["permissionDecision"], "deny")
+            self.assertIn("names it too", ruling["permissionDecisionReason"])
         self.assert_decisions("allow", [
             f"echo hi > {self.directory}/other.md; gh pr create -F {self.clean}",
             f"env GH_TOKEN=x gh pr create -F {self.clean}",

@@ -201,12 +201,13 @@ class _Reader:
         if self.word is not None and not self.quoted and "".join(self.word).isdigit():
             self.word = None
         self.end_word()
-        self.redirected = True
         end = self.at
         while end < len(self.script) and self.script[end] in "<>&|-":
             end += 1
-        self.redirection = self.script[self.at:end]
-        self.at = end
+        operator, self.at = self.script[self.at:end], end
+        # `<&-` and `>&-` close a descriptor and take no operand: the next word is the command's own.
+        if not operator.endswith("&-"):
+            self.redirected, self.redirection = True, operator
 
     def end_word(self):
         if self.word is None:
@@ -324,6 +325,18 @@ def environment_relocations(environment):
     return [name for name in names if name in GIT_CONFIG_RELOCATING_VARIABLES]
 
 
+def git_global_options(words):
+    """The options a git command gives before its subcommand, as (option, value) pairs, and the
+    index of the subcommand. `git commit -C HEAD` has none: that -C is commit's, not git's."""
+    options, index = [], 1
+    while index < len(words) and words[index].startswith("-"):
+        option, _, attached = words[index].partition("=")
+        separate = words[index] in GIT_GLOBAL_OPTIONS_WITH_VALUE
+        options.append((option, words[index + 1] if separate and index + 1 < len(words) else attached))
+        index += 2 if separate else 1
+    return options, index
+
+
 def git_invocations(script) -> Iterator[GitInvocation]:
     """Every git call the script runs: its subcommand, that subcommand's own arguments, the
     config keys it overrides for itself, and the variables that move the config it reads."""
@@ -331,14 +344,9 @@ def git_invocations(script) -> Iterator[GitInvocation]:
         words = command.words
         if program(words) != "git":
             continue
-        keys = environment_config_keys(command.environment)
-        index = 1
-        while index < len(words) and words[index].startswith("-"):
-            option, _, attached = words[index].partition("=")
-            separate = words[index] in GIT_GLOBAL_OPTIONS_WITH_VALUE
-            if option in GIT_CONFIG_OPTIONS:
-                keys.append(config_key(words[index + 1] if separate and index + 1 < len(words) else attached))
-            index += 2 if separate else 1
+        options, index = git_global_options(words)
+        keys = environment_config_keys(command.environment) + [
+            config_key(value) for option, value in options if option in GIT_CONFIG_OPTIONS]
         if index < len(words):
             yield GitInvocation(words[index], words[index + 1:], keys, environment_relocations(command.environment), command)
 
