@@ -68,7 +68,7 @@ class GitInvocation(NamedTuple):
 class Options(NamedTuple):
     flags: list  # every option as written, clusters expanded (-qn -> -q, -n), values dropped
     operands: list  # every non-option word, and everything after --
-    values: list  # (flag, value) for each option that took one: -XPOST and --method=POST both give ("-X"/"--method", "POST")
+    values: list  # (flag, value) for each option that took one: -XPOST and --method=POST both give ("-X"/"--method", "POST"); "" when the command ends on the flag
 
 
 class _Reader:
@@ -330,7 +330,7 @@ def split_options(arguments, takes_value, takes_attached_value=frozenset()) -> O
             name, equals, attached = word.partition("=")
             flags.append(name)
             if name in takes_value:
-                values.append((name, attached if equals else next(words, None)))
+                values.append((name, attached if equals else next(words, "")))
         elif word.startswith("-") and word != "-":
             for position, letter in enumerate(word[1:], start=2):
                 flag = "-" + letter
@@ -339,7 +339,7 @@ def split_options(arguments, takes_value, takes_attached_value=frozenset()) -> O
                     values.append((flag, word[position:]))
                     break
                 if flag in takes_value:
-                    values.append((flag, word[position:] if position < len(word) else next(words, None)))
+                    values.append((flag, word[position:] if position < len(word) else next(words, "")))
                     break
         else:
             operands.append(word)

@@ -80,7 +80,7 @@ def api_writes(arguments):
     options = split_options(arguments, GH_API_TAKES_VALUE)
     methods = [value for flag, value in options.values if flag in GH_API_METHOD]
     if methods:
-        return (methods[-1] or "").upper() not in READ_METHODS
+        return methods[-1].upper() not in READ_METHODS
     return any(flag in GH_API_BODY for flag in options.flags)
 
 

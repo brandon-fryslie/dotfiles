@@ -241,6 +241,8 @@ class SessionUrlGuard(unittest.TestCase):
             f"gh api -X GET repos/o/r/issues -f q=1 && gh api repos/o/r/issues -f body={SESSION_URL}",
             f"gh -R o/r api repos/o/r/issues -f body={SESSION_URL}",
             f"gh api -H 'Accept: x' -X DELETE repos/o/r/issues/comments/1 -f note={SESSION_URL}",
+            f"gh api repos/o/r/issues?q={SESSION_URL} -X",  # a method flag with no value is not a read
+            f"gh api repos/o/r/issues?q={SESSION_URL} --method=",
         ])
 
     def test_reading_and_auditing_session_urls_is_allowed(self):
