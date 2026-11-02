@@ -83,6 +83,10 @@ test-certs:
 test-session-url-hook:
     ./config/claude/tests/session-url-hook.sh
 
+# Assert the git hooks chain to the repo's own .git/hooks pre-commit from the main checkout and a linked worktree
+test-chain-to-local-hook:
+    ./config/claude/tests/chain-to-local-hook.sh
+
 # Assert the code-review installer, fleet pass and review-outcome reader against a throwaway fleet (no network)
 test-code-review-fleet:
     ./config/claude/tests/code-review-fleet.sh
