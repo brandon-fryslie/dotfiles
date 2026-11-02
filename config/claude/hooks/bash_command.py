@@ -18,6 +18,7 @@ cannot mean one thing to one guard and something else to the next.
 
 import os
 import re
+import shlex
 from typing import Iterator, NamedTuple
 
 # A shell handed a script runs it: `bash -c '<script>'`, or a heredoc fed to `bash`.
@@ -31,6 +32,10 @@ RESERVED = frozenset(("!", "{", "}", "if", "then", "else", "elif", "do", "while"
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 GIT_GLOBAL_OPTIONS_WITH_VALUE = frozenset((
     "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--attr-source"))
+# The global options whose value is `<config key>=...`: -c sets the value, --config-env names
+# the environment variable holding it. Only the key matters to a reader of what is overridden.
+GIT_CONFIG_OPTIONS = frozenset(("-c", "--config-env"))
+GIT_CONFIG_KEY_VARIABLE = re.compile(r"GIT_CONFIG_KEY_[0-9]+")
 DOUBLE_QUOTE_ESCAPES = ('"', "\\", "$", "`")
 
 
@@ -38,6 +43,7 @@ class Command(NamedTuple):
     words: list  # the command word first, then its arguments
     stdin: list  # heredoc bodies and here-strings the command reads
     upstream: "Command | None"  # the command piped into this one
+    environment: list  # the VAR=value assignments in force for it: its own, its wrappers', its shell's
 
 
 def program(words):
@@ -56,6 +62,7 @@ def piped_input(command):
 class GitInvocation(NamedTuple):
     verb: str
     arguments: list
+    config_keys: list  # casefolded keys this call overrides for itself, whether set by -c, --config-env or the environment
 
 
 class Options(NamedTuple):
@@ -205,13 +212,15 @@ class _Reader:
     def end_command(self, piped=False):
         self.end_word()
         self.redirection = None
-        words = self.words
+        words, environment = self.words, []
         while words and (words[0] in RESERVED or ASSIGNMENT.match(words[0])):
+            if ASSIGNMENT.match(words[0]):
+                environment.append(words[0])
             words = words[1:]
         # A pipe continues across a line break (`a |` newline `b`), so only a command that
         # actually ended moves the pipeline on.
         if words:
-            command = Command(words, self.stdin, self.upstream)
+            command = Command(words, self.stdin, self.upstream, environment)
             self.commands.append(command)
             self.upstream = command if piped else None
         self.words, self.stdin = [], []
@@ -232,42 +241,77 @@ class _Reader:
                 _Reader(stdin[-1], 0, self.commands).read_expanding(None)
 
 
-def commands(script) -> Iterator[list]:
-    """Every simple command the script runs, as its words - including the command a wrapper
-    runs and the commands of any script handed to a shell."""
+def commands(script, environment=()) -> Iterator[Command]:
+    """Every simple command the script runs - including the command a wrapper runs and the
+    commands of any script handed to a shell. `environment` is what the shell running the script
+    already has set; a script a shell runs inherits the assignments its command carried."""
     for command in _Reader(script, 0, []).read():
         words = command.words
-        runs = [words]
+        inherited = [*environment, *command.environment]
+        runs = [command._replace(environment=inherited)]
         # Which argument starts a wrapper's command depends on that wrapper's own options, so
-        # every word that could start one is read as a command.
+        # every word that could start one is read as a command. The assignments before it are
+        # the wrapper's (`env A=1 git ...`) and are in force for it.
         if program(words) in WRAPPERS:
-            runs += [words[start:] for start in range(1, len(words))
+            runs += [command._replace(words=words[start:], environment=[
+                         *inherited, *(word for word in words[1:start] if ASSIGNMENT.match(word))])
+                     for start in range(1, len(words))
                      if not words[start].startswith("-") and not ASSIGNMENT.match(words[start])]
         for run in runs:
             yield run
-            if program(run) == "eval":
-                yield from commands(" ".join(run[1:]))
-            if program(run) not in SHELLS:
+            if program(run.words) == "eval":
+                yield from commands(" ".join(run.words[1:]), run.environment)
+            if program(run.words) not in SHELLS:
                 continue
-            arguments = run[1:]
+            arguments = run.words[1:]
             runs_operands = any(a.startswith("-") and not a.startswith("--") and "c" in a for a in arguments)
             # With -c, every operand is read as a script: over-reading an option's value costs
             # nothing, and under-reading the script would let its commands through.
             scripts = [a for a in arguments if not a.startswith("-")] if runs_operands else []
             for script_text in scripts + piped_input(command):
-                yield from commands(script_text)
+                yield from commands(script_text, run.environment)
+
+
+def config_key(setting):
+    """The key of a `key=value` git config setting; git compares keys without regard to case."""
+    return setting.split("=", 1)[0].casefold()
+
+
+def environment_config_keys(environment):
+    """The config keys git reads out of an environment: GIT_CONFIG_PARAMETERS (the quoted
+    `key=value` entries `git -c` hands to its children) and GIT_CONFIG_KEY_<n>. GIT_CONFIG_COUNT
+    is not consulted: a key past the count reads as set, which can only over-read."""
+    keys = []
+    for assignment in environment:
+        name, _, value = assignment.partition("=")
+        if name == "GIT_CONFIG_PARAMETERS":
+            try:
+                entries = shlex.split(value)
+            except ValueError:
+                entries = value.split()
+            keys += map(config_key, entries)
+        elif GIT_CONFIG_KEY_VARIABLE.fullmatch(name):
+            keys.append(config_key(value))
+    return keys
 
 
 def git_invocations(script) -> Iterator[GitInvocation]:
-    """Every git call the script runs, as its subcommand and that subcommand's own arguments."""
-    for words in commands(script):
+    """Every git call the script runs: its subcommand, that subcommand's own arguments, and the
+    config keys it overrides for itself."""
+    for command in commands(script):
+        words = command.words
         if program(words) != "git":
             continue
+        keys = environment_config_keys(command.environment)
         index = 1
         while index < len(words) and words[index].startswith("-"):
-            index += 2 if words[index] in GIT_GLOBAL_OPTIONS_WITH_VALUE else 1
+            option, _, attached = words[index].partition("=")
+            separate = words[index] in GIT_GLOBAL_OPTIONS_WITH_VALUE
+            if option in GIT_CONFIG_OPTIONS:
+                keys.append(config_key(words[index + 1] if separate and index + 1 < len(words) else attached))
+            index += 2 if separate else 1
         if index < len(words):
-            yield GitInvocation(words[index], words[index + 1:])
+            yield GitInvocation(words[index], words[index + 1:], keys)
 
 
 def split_options(arguments, takes_value, takes_attached_value=frozenset()) -> Options:
