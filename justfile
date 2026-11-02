@@ -71,6 +71,10 @@ validate:
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
 
+# Assert the git pre-commit session-URL scan exempts the guard's own files in the main checkout and a worktree, and nowhere else
+test-session-url-hook:
+    ./config/claude/tests/session-url-hook.sh
+
 # Assert the code-review installer, fleet pass and review-outcome reader against a throwaway fleet (no network)
 test-code-review-fleet:
     ./config/claude/tests/code-review-fleet.sh
