@@ -67,6 +67,10 @@ status:
 validate:
     ./bin/validate
 
+# Assert an install backs up a real file or directory at a managed path instead of deleting it (throwaway HOME, real dotbot)
+test-install-backup:
+    ./tests/install-backup.sh
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'

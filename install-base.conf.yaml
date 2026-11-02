@@ -1,7 +1,11 @@
 - defaults:
     link:
       relink: true
-      force: true
+      # A real file or directory at a managed path is moved aside to
+      # <path>.dotbot-backup.<timestamp> (dotbot logs the path), never deleted.
+      # [LAW:no-silent-failure]
+      force: false
+      backup: true
     clean:
       force: true
 
@@ -35,10 +39,12 @@
       path: config/shellenv.global
       force: false
       relink: false
+      backup: false
     ~/.bash_profile:
       path: config/shellenv.global
       force: false
       relink: false
+      backup: false
     ~/.local/bin/claude-cleanup:
       path: bin/claude-cleanup
       create: true

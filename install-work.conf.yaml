@@ -1,7 +1,8 @@
 - defaults:
     link:
       relink: true
-      force: true
+      force: false
+      backup: true
 
 - link:
     # Work profile overrides (these take precedence over global)

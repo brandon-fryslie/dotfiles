@@ -1,7 +1,8 @@
 - defaults:
     link:
       relink: true
-      force: true
+      force: false
+      backup: true
 
 - create:
     - ~/.codex
