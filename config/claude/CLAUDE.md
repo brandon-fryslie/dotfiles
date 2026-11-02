@@ -68,3 +68,11 @@ Every line you leave for a future session is paid for twice — once as you writ
 Removing something entirely is a valid solution and often the best one, above all in guidance for an LLM, where every line steers the reader and less is better. Every choice has three options — rule for X, rule against X, or say nothing about X — and "leave it open" always means the third: delete every line about X and add nothing in its place, not "TBD", "out of scope", or "intentionally left open". Define only what Brandon asked to have defined, because you rarely know whether to go left or right until you reach the fork: a guardrail that holds whatever turns up can be set ahead, and a choice that depends on facts nobody has yet cannot. You'll know you left X out, but a deliberate absence must look exactly like an accidental one, so the decision lives in your reasoning or your reply to Brandon, never in the artifact. Don't invent open questions or edge cases to look thorough, since each one creates a topic that then demands a ruling.
 </leave-it-open>
 </operations>
+
+<brandon-rules>
+## Brandon's rules, as he stated them
+- Never block work on a human who is available. Ask once, in the moment, and keep working on everything that does not depend on the answer.
+- Write software as a professional engineer. Test as /laws:testing describes.
+- There is no rule against playing audio to measure. Do not treat it as forbidden.
+- Do not make a live daemon run a prerequisite for code, grooming, or ticket work. Put the live check on its own ticket, with its evidence pointer, and let the chain proceed.
+</brandon-rules>
