@@ -7,7 +7,8 @@
 # directory and the file are moved to a reported backup with their contents intact and
 # the managed paths become links; the bash startup file is left alone and the install
 # fails. A second run over the installed state succeeds and backs up nothing more.
-# Separately, every install-*.conf.yaml that links must default to backup and none may declare `force: true`.
+# Separately, every install-*.conf.yaml that links must default to backup and none may set
+# `force: true` on a link (`clean` only removes dead symlinks, so its force is left alone).
 #
 # Run: tests/install-backup.sh   (needs uv; dotbot and PyYAML come from `uvx --from dotbot`)
 set -euo pipefail
