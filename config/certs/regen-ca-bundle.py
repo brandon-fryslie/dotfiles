@@ -86,7 +86,13 @@ def inspect_cert(pem):
         return None
     names = {k: v for k, _, v in (l.partition("=") for l in r.stdout.splitlines()
                                   if l.startswith(("subject=", "issuer=")))}
-    return "CA:TRUE" in r.stdout, names.get("subject") == names.get("issuer")
+    if "subject" not in names or "issuer" not in names:
+        return None  # absent names must not compare equal and read as self-issued
+    return "CA:TRUE" in r.stdout, names["subject"] == names["issuer"]
+
+
+# verify-cert prints this on stderr whenever the evaluator reached a verdict.
+VERDICT_RE = re.compile(r"^Cert Verify Result: \S+", re.M)
 
 
 def macos_trusts(pem):
@@ -97,11 +103,22 @@ def macos_trusts(pem):
     roots, admin and user trust settings, and explicit Deny entries, so a cert
     that merely sits in a keychain (no trust setting) or was distrusted fails.
     [LAW:one-source-of-truth]
+
+    A non-zero exit alone does not mean "untrusted": it is also what an
+    unreadable file or a failed keychain access returns. Only a printed verdict
+    is an answer; anything else dies rather than dropping the cert unseen.
+    [LAW:no-silent-failure]
     """
     with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
         fh.write(pem)
         fh.flush()
-        return run(["security", "verify-cert", "-c", fh.name, "-p", "basic", "-q"]).returncode == 0
+        r = run(["security", "verify-cert", "-c", fh.name, "-p", "basic"])
+    if r.returncode == 0:
+        return True
+    if VERDICT_RE.search(r.stderr):
+        return False
+    die(f"security verify-cert could not evaluate a certificate: "
+        f"{r.stderr.strip() or r.stdout.strip() or 'no output'}")
 
 
 def subject(pem):
@@ -115,15 +132,19 @@ def select_anchors(pems, inspect, trusts):
     An anchor is a self-issued CA that macOS trusts. Intermediates are excluded
     even though macOS accepts them: they verify only because a root above them is
     trusted, and that root is in the bundle itself. `dropped` is [(pem, why)] for
-    CA certs left out, so the run can show what it refused. Non-CA certs (leaf
-    identities) are not candidates and are not reported.
+    CA certs left out, plus any cert openssl cannot read, so the run shows what
+    it refused. Non-CA certs (leaf identities) are not candidates and are not
+    reported.
     """
     anchors, dropped = [], []
     for pem in pems:
         parsed = inspect(pem)
-        if parsed is None or not parsed[0]:
+        if parsed is None:
+            dropped.append((pem, "unreadable by openssl"))
             continue
-        _, self_issued = parsed
+        is_ca, self_issued = parsed
+        if not is_ca:
+            continue
         if not self_issued:
             dropped.append((pem, "intermediate"))
         elif not trusts(pem):
