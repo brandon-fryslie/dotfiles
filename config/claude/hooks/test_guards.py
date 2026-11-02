@@ -5,6 +5,7 @@ Run: just test-hooks
 """
 
 import json
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -12,6 +13,22 @@ from pathlib import Path
 HOOKS = Path(__file__).resolve().parent
 # Assembled, never written whole: the git pre-commit hook refuses a file carrying the literal.
 SESSION_URL = "https://claude" + ".ai/code/session_01ABCDEF"
+
+
+GIT_CONFIG_SUBCOMMANDS = ("get", "list", "set", "unset", "rename-section", "remove-section", "edit")
+# `-f, --[no-]file <file>`: an option git's own help documents with a value.
+VALUE_OPTION = re.compile(r"^\s+(?:(-\w), )?--(?:\[no-\])?([\w-]+) <", re.MULTILINE)
+
+
+def git_config_value_options():
+    """Every option `git config <subcommand> -h` documents with a value, short and long. Empty
+    before git 2.46, which has no subcommands to ask."""
+    options = set()
+    for subcommand in GIT_CONFIG_SUBCOMMANDS:
+        usage = subprocess.run(["git", "config", subcommand, "-h"], capture_output=True, text=True).stdout
+        for short, long in VALUE_OPTION.findall(usage):
+            options.update(filter(None, (short, "--" + long)))
+    return options
 
 
 def run_hook(name, payload):
@@ -146,6 +163,79 @@ class SessionUrlGuard(unittest.TestCase):
             "sudo env FOO=1 GIT_CONFIG_KEY_3=core.hooksPath git commit -m x",
             "git add . && git -c core.hooksPath=/dev/null commit -m x",
             "bash -c 'git -c core.hooksPath=/dev/null commit -m x'",
+        ])
+
+    def test_writing_or_unsetting_core_hooks_path_in_git_config_is_a_bypass(self):
+        self.assert_decisions("deny", [
+            "git config core.hooksPath /dev/null",
+            "git config --global core.hooksPath /dev/null",
+            "git config --local --add core.hooksPath x",
+            "git config --replace-all core.hooksPath x",
+            "git config --global --unset core.hooksPath",
+            "git config --unset-all core.hooksPath",
+            "git config --unset core.hooksPath 'regex'",
+            "git config CORE.HOOKSPATH /dev/null",
+            "git -C repo config core.hooksPath /dev/null",
+            "git config --unset-a core.hooksPath",
+            "git config --repl core.hooksPath x",
+            "git config --file=.git/config core.hooksPath x",
+            "git config -f .git/config core.hooksPath x",
+            "git config --type=path core.hooksPath ~/hooks",
+            "git config set core.hooksPath x",
+            "git config unset --global core.hooksPath",
+            "git config --remove-section core",
+            "git config --rename-section core other",
+            "git config --rename-section evil core",
+            "git config --rename-section evil CORE",
+            "git config remove-section core",
+            "git config remove-section --global core",
+            "git config rename-section core other",
+            "git config rename-section evil core",
+            "git config unset --value x core.hooksPath",
+            "git config set --value x core.hooksPath y",
+            "git config set -- core.hooksPath x",
+            "git config -t path core.hooksPath ~/hooks",
+            "git config --type path core.hooksPath ~/hooks",
+            "git config --global --unset core.hooksPath && git commit -m x",
+            "bash -c 'git config --global --unset core.hooksPath'",
+        ])
+
+    def test_every_option_git_config_takes_a_value_for_is_read_as_one(self):
+        # An option the guard does not know takes the next word as the key, and the real key
+        # after it is never looked at: so a new git option is a bypass until the guard learns it.
+        options = git_config_value_options()
+        if not options:
+            self.skipTest("git predates `git config <subcommand>` (2.46)")
+        self.assert_decisions("deny", [f"git config set {option} v core.hooksPath x" for option in sorted(options)])
+
+    def test_reading_core_hooks_path_or_configuring_other_keys_is_not_a_bypass(self):
+        self.assert_decisions("allow", [
+            "git config core.hooksPath",
+            "git config --get core.hooksPath",
+            "git config --global --get core.hooksPath",
+            "git config --get-all core.hooksPath",
+            "git config --get core.hooksPath '^x'",
+            "git config --show-origin --get core.hooksPath",
+            "git config --type=path core.hooksPath",
+            "git config --default x --get core.hooksPath",
+            "git config --get-regexp hooks",
+            "git config get core.hooksPath",
+            "git config get --value x core.hooksPath",
+            "git config -t path core.hooksPath",
+            "git config -t path --get core.hooksPath",
+            "git config list",
+            "git config --list",
+            "git config -l",
+            "git config user.name x",
+            "git config --global core.editor vim",
+            "git config --unset user.name",
+            "git config --remove-section user",
+            "git config --rename-section user other",
+            "git config --rename-section other user",
+            "git config remove-section user",
+            "git config rename-section other user",
+            "echo 'git config core.hooksPath /dev/null' | grep config",
+            'lit comment add k "git config --global --unset core.hooksPath"',
         ])
 
     def test_the_environment_of_a_shell_reaches_the_commands_it_runs(self):
