@@ -35,7 +35,8 @@ commit_in() {
   ( cd "$1" && echo "$n" > "f.$n" && git add -A && git commit -q -m c ) >"$work/last.log" 2>&1
 }
 
-repo="$work/repo"
+# A space in the path, as under "/Library/Application Support": the hook path must stay quoted.
+repo="$work/the repo"
 git init -q "$repo"
 git -C "$repo" config core.hooksPath "$real_hooks"
 git -C "$repo" commit -q --allow-empty -m init
@@ -61,5 +62,13 @@ for where in "$repo" "$work/wt"; do
   rm -f "$repo/.git/hooks/pre-commit" "$repo/.git/hooks/commit-msg"
   commit_in "$where" || fail "$label: a commit with no repo-local hooks was blocked"
 done
+
+# Outside any repo the common dir cannot be located; that must be an error that says so,
+# not a quiet "no local hook".
+mkdir "$work/not-a-repo"
+if out=$(cd "$work/not-a-repo" && . "$real_hooks/lib.sh" && chain_to_local_hook pre-commit 2>&1); then
+  fail "chain_to_local_hook succeeded where the git common dir cannot be found"
+fi
+case "$out" in *"cannot locate"*) ;; *) fail "the failed lookup was not reported: $out" ;; esac
 
 echo "PASS - chain_to_local_hook reaches the repo's own hooks from a worktree"
