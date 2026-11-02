@@ -62,11 +62,53 @@ def names_no_verify(flag):
     return flag.startswith("--no-v") and "--no-verify".startswith(flag)
 
 
+# `git config` modes. The key is the first operand whatever the mode, with the exception of the
+# section edits, whose first operand is a section; a bare `<key> <value>` is a write.
+CONFIG_WRITE_MODES = frozenset(("--add", "--replace-all", "--unset", "--unset-all"))
+CONFIG_SECTION_EDITS = frozenset(("--remove-section", "--rename-section"))
+CONFIG_READ_MODES = frozenset((
+    "-l", "--list", "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool"))
+CONFIG_TAKES_VALUE = frozenset(("-f", "--file", "--blob", "--type", "--default", "--comment"))
+# Every long option of `git config`, which is what an abbreviation is resolved against.
+CONFIG_LONG_OPTIONS = (CONFIG_WRITE_MODES | CONFIG_SECTION_EDITS | CONFIG_READ_MODES | CONFIG_TAKES_VALUE | frozenset((
+    "--global", "--system", "--local", "--worktree", "--fixed-value", "--bool", "--int", "--bool-or-int",
+    "--path", "--expiry-date", "--null", "--name-only", "--includes", "--no-includes", "--show-origin",
+    "--show-scope", "--edit", "--no-type")))
+
+
+def spell_out(arguments):
+    """git accepts any unambiguous abbreviation of a long option: --unset-a is --unset-all."""
+    spelled = []
+    for word in arguments:
+        name, equals, value = word.partition("=")
+        matches = [option for option in CONFIG_LONG_OPTIONS if name.startswith("--") and option.startswith(name)]
+        spelled.append(matches[0] + equals + value if len(matches) == 1 and name not in matches else word)
+    return spelled
+
+
+def config_writes_hooks_path(arguments):
+    """A `git config` call that sets, adds to or unsets core.hooksPath, or that removes or renames
+    the core section it lives in. Reads (`git config core.hooksPath`, --get, --list) are not one."""
+    options = split_options(spell_out(arguments), CONFIG_TAKES_VALUE)
+    flags, operands = set(options.flags), options.operands
+    if flags & CONFIG_SECTION_EDITS:
+        return [operand.casefold() for operand in operands[:1]] == ["core"]
+    if operands[:1] in (["set"], ["unset"]):  # git 2.46: `git config set|unset <key> ...`
+        writes, operands = True, operands[1:]
+    else:
+        writes = bool(flags & CONFIG_WRITE_MODES) or (len(operands) >= 2 and not flags & CONFIG_READ_MODES)
+    return writes and [operand.casefold() for operand in operands[:1]] == [HOOKS_PATH]
+
+
 def skips_hooks(invocation):
     # Pointing core.hooksPath anywhere else displaces the hooks as completely as --no-verify, and
     # on any verb that runs them, so the verb is not asked; the value is not either.
     if HOOKS_PATH in invocation.config_keys:
         return True
+    # The persistent form of the same override: it displaces the hooks for every later commit, and
+    # with --global in every repo.
+    if invocation.verb == "config":
+        return config_writes_hooks_path(invocation.arguments)
     # -n means --no-verify on commit, but --dry-run on push; only --no-verify is a bypass there.
     if invocation.verb == "commit":
         flags = split_options(invocation.arguments, COMMIT_TAKES_VALUE, COMMIT_TAKES_ATTACHED_VALUE).flags
@@ -129,8 +171,8 @@ def main():
              "shortened link, no id prefix, no 'session available on request'.")
 
     if any(map(skips_hooks, invocations)):
-        deny("BLOCKED: --no-verify, or a core.hooksPath override (git -c, --config-env, GIT_CONFIG_*), "
-             "skips the commit-msg hook that refuses Claude session URLs. That "
+        deny("BLOCKED: --no-verify, or a core.hooksPath override (git -c, --config-env, GIT_CONFIG_*, "
+             "git config writing or unsetting it), skips the commit-msg hook that refuses Claude session URLs. That "
              "hook is the mechanical backstop for a leak that reached public repos ~1,700 times. Run "
              "the command without the bypass; if the hook fires, remove the session link rather "
              "than bypassing the check.")

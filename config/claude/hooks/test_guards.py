@@ -148,6 +148,52 @@ class SessionUrlGuard(unittest.TestCase):
             "bash -c 'git -c core.hooksPath=/dev/null commit -m x'",
         ])
 
+    def test_writing_or_unsetting_core_hooks_path_in_git_config_is_a_bypass(self):
+        self.assert_decisions("deny", [
+            "git config core.hooksPath /dev/null",
+            "git config --global core.hooksPath /dev/null",
+            "git config --local --add core.hooksPath x",
+            "git config --replace-all core.hooksPath x",
+            "git config --global --unset core.hooksPath",
+            "git config --unset-all core.hooksPath",
+            "git config --unset core.hooksPath 'regex'",
+            "git config CORE.HOOKSPATH /dev/null",
+            "git -C repo config core.hooksPath /dev/null",
+            "git config --unset-a core.hooksPath",
+            "git config --repl core.hooksPath x",
+            "git config --file=.git/config core.hooksPath x",
+            "git config -f .git/config core.hooksPath x",
+            "git config --type=path core.hooksPath ~/hooks",
+            "git config set core.hooksPath x",
+            "git config unset --global core.hooksPath",
+            "git config --remove-section core",
+            "git config --rename-section core other",
+            "git config --global --unset core.hooksPath && git commit -m x",
+            "bash -c 'git config --global --unset core.hooksPath'",
+        ])
+
+    def test_reading_core_hooks_path_or_configuring_other_keys_is_not_a_bypass(self):
+        self.assert_decisions("allow", [
+            "git config core.hooksPath",
+            "git config --get core.hooksPath",
+            "git config --global --get core.hooksPath",
+            "git config --get-all core.hooksPath",
+            "git config --get core.hooksPath '^x'",
+            "git config --show-origin --get core.hooksPath",
+            "git config --type=path core.hooksPath",
+            "git config --default x --get core.hooksPath",
+            "git config --get-regexp hooks",
+            "git config get core.hooksPath",
+            "git config --list",
+            "git config -l",
+            "git config user.name x",
+            "git config --global core.editor vim",
+            "git config --unset user.name",
+            "git config --remove-section user",
+            "echo 'git config core.hooksPath /dev/null' | grep config",
+            'lit comment add k "git config --global --unset core.hooksPath"',
+        ])
+
     def test_the_environment_of_a_shell_reaches_the_commands_it_runs(self):
         self.assert_decisions("deny", [
             "GIT_CONFIG_KEY_0=core.hooksPath bash -c 'git commit -m x'",
