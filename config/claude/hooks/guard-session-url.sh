@@ -106,22 +106,42 @@ def config_writes_hooks_path(arguments):
     return bool(writes) and operands[:1] == [HOOKS_PATH]
 
 
-def skips_hooks(invocation):
+SKIPS_HOOKS = (
+    "BLOCKED: --no-verify, or a core.hooksPath override (git -c, --config-env, GIT_CONFIG_*, "
+    "git config writing or unsetting it), skips the commit-msg hook that refuses Claude session URLs. That "
+    "hook is the mechanical backstop for a leak that reached public repos ~1,700 times. Run "
+    "the command without the bypass; if the hook fires, remove the session link rather "
+    "than bypassing the check.")
+
+
+def relocates_config(variables):
+    return (f"BLOCKED: {', '.join(variables)} is set for a git call. core.hooksPath is installed in the "
+            "user-level git config, which git finds through that variable, so setting it points git at a "
+            "config without the hooks that refuse Claude session URLs. Run the git command without it.")
+
+
+def hooks_skipped(invocation):
+    """The reason text of the rule this git call breaks, or None when it breaks none."""
     # Pointing core.hooksPath anywhere else displaces the hooks as completely as --no-verify, and
     # on any verb that runs them, so the verb is not asked; the value is not either.
     if HOOKS_PATH in invocation.config_keys:
-        return True
+        return SKIPS_HOOKS
+    # Moving the config that holds core.hooksPath displaces it just the same, and is decided the
+    # same way: any verb or alias can run the hooks, so the verb is not asked.
+    if invocation.relocated_by:
+        return relocates_config(invocation.relocated_by)
     # The persistent form of the same override: it displaces the hooks for every later commit, and
     # with --global in every repo.
     if invocation.verb == "config":
-        return config_writes_hooks_path(invocation.arguments)
+        return SKIPS_HOOKS if config_writes_hooks_path(invocation.arguments) else None
     # -n means --no-verify on commit, but --dry-run on push; only --no-verify is a bypass there.
     if invocation.verb == "commit":
         flags = split_options(invocation.arguments, COMMIT_TAKES_VALUE, COMMIT_TAKES_ATTACHED_VALUE).flags
-        return any(flag == "-n" or names_no_verify(flag) for flag in flags)
+        return SKIPS_HOOKS if any(flag == "-n" or names_no_verify(flag) for flag in flags) else None
     if invocation.verb == "push":
-        return any(names_no_verify(flag) for flag in split_options(invocation.arguments, frozenset()).flags)
-    return False
+        flags = split_options(invocation.arguments, frozenset()).flags
+        return SKIPS_HOOKS if any(names_no_verify(flag) for flag in flags) else None
+    return None
 
 
 def api_writes(arguments):
@@ -176,12 +196,9 @@ def main():
              "Write the commit, PR or issue without the session line. Nothing replaces it: no "
              "shortened link, no id prefix, no 'session available on request'.")
 
-    if any(map(skips_hooks, invocations)):
-        deny("BLOCKED: --no-verify, or a core.hooksPath override (git -c, --config-env, GIT_CONFIG_*, "
-             "git config writing or unsetting it), skips the commit-msg hook that refuses Claude session URLs. That "
-             "hook is the mechanical backstop for a leak that reached public repos ~1,700 times. Run "
-             "the command without the bypass; if the hook fires, remove the session link rather "
-             "than bypassing the check.")
+    for reason in map(hooks_skipped, invocations):
+        if reason:
+            deny(reason)
 
     sys.exit(0)
 

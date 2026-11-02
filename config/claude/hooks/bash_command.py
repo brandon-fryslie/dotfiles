@@ -36,6 +36,10 @@ GIT_GLOBAL_OPTIONS_WITH_VALUE = frozenset((
 # the environment variable holding it. Only the key matters to a reader of what is overridden.
 GIT_CONFIG_OPTIONS = frozenset(("-c", "--config-env"))
 GIT_CONFIG_KEY_VARIABLE = re.compile(r"GIT_CONFIG_KEY_[0-9]+")
+# The variables that move the user-level config git reads. core.hooksPath is installed there, so
+# pointing git at another file or home displaces the hooks as `-c core.hooksPath=` does. The system
+# file ranks below it, so GIT_CONFIG_SYSTEM and GIT_CONFIG_NOSYSTEM cannot, and are left out.
+GIT_CONFIG_RELOCATING_VARIABLES = frozenset(("GIT_CONFIG_GLOBAL", "HOME", "XDG_CONFIG_HOME"))
 DOUBLE_QUOTE_ESCAPES = ('"', "\\", "$", "`")
 
 
@@ -63,6 +67,7 @@ class GitInvocation(NamedTuple):
     verb: str
     arguments: list
     config_keys: list  # casefolded keys this call overrides for itself, whether set by -c, --config-env or the environment
+    relocated_by: list  # the variables in its environment that move the user-level config git reads
 
 
 class Options(NamedTuple):
@@ -296,9 +301,16 @@ def environment_config_keys(environment):
     return keys
 
 
+def environment_relocations(environment):
+    """The variables of an environment that move the user-level git config. Their value is not
+    read: what a file holds is not visible from the command's text."""
+    names = (assignment.partition("=")[0] for assignment in environment)
+    return [name for name in names if name in GIT_CONFIG_RELOCATING_VARIABLES]
+
+
 def git_invocations(script) -> Iterator[GitInvocation]:
-    """Every git call the script runs: its subcommand, that subcommand's own arguments, and the
-    config keys it overrides for itself."""
+    """Every git call the script runs: its subcommand, that subcommand's own arguments, the
+    config keys it overrides for itself, and the variables that move the config it reads."""
     for command in commands(script):
         words = command.words
         if program(words) != "git":
@@ -312,7 +324,7 @@ def git_invocations(script) -> Iterator[GitInvocation]:
                 keys.append(config_key(words[index + 1] if separate and index + 1 < len(words) else attached))
             index += 2 if separate else 1
         if index < len(words):
-            yield GitInvocation(words[index], words[index + 1:], keys)
+            yield GitInvocation(words[index], words[index + 1:], keys, environment_relocations(command.environment))
 
 
 def split_options(arguments, takes_value, takes_attached_value=frozenset()) -> Options:

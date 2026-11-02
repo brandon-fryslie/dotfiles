@@ -260,6 +260,34 @@ class SessionUrlGuard(unittest.TestCase):
             'lit comment add k "denied: git -c core.hooksPath=/dev/null commit -m x"',
         ])
 
+    def test_moving_the_user_level_git_config_is_a_bypass_and_says_which_variable(self):
+        # core.hooksPath lives in ~/.config/git/config; these point git somewhere without it.
+        for variable, command in {
+            "GIT_CONFIG_GLOBAL": "GIT_CONFIG_GLOBAL=/tmp/x git commit -m x",
+            "HOME": "HOME=/tmp git push",
+            "XDG_CONFIG_HOME": "XDG_CONFIG_HOME=/tmp git commit -m x",
+        }.items():
+            with self.subTest(command=command):
+                result = run_hook("guard-session-url.sh", bash(command))
+                reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertIn(variable, reason)
+        self.assert_decisions("deny", [
+            "HOME=/tmp git merge topic",  # the verb is not asked
+            "HOME=/tmp git log",
+            "env HOME=/tmp git commit -m x",
+            "HOME=/tmp bash -c 'git commit -m x'",
+            "GIT_CONFIG_NOSYSTEM=1 HOME=/tmp git commit -m x",
+        ])
+
+    def test_other_environment_and_other_commands_do_not_move_the_user_level_git_config(self):
+        self.assert_decisions("allow", [
+            "GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null git commit -m x",
+            "HOME=/tmp ls",
+            "HOME=/tmp true && git commit -m x",
+            "FOO=HOME git commit -m x",
+            "git commit -m x HOME=/tmp",
+        ])
+
     def test_a_pipe_into_a_non_shell_is_data_and_or_is_not_a_pipe(self):
         self.assert_decisions("allow", [
             "echo 'git commit -n -m x' | grep commit",
