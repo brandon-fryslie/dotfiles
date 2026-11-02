@@ -44,7 +44,8 @@ def tmux_commands(operands):
         expects_command = word.endswith(";")
 
 
-def stops_shared_server(words):
+def stops_shared_server(command):
+    words = command.words
     if program(words) != "tmux":
         return False
     options = split_options(words[1:], GLOBAL_OPTIONS_WITH_VALUE)
