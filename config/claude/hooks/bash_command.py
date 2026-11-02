@@ -304,8 +304,8 @@ def environment_config_keys(environment):
 def environment_relocations(environment):
     """The variables of an environment that move the user-level git config. Their value is not
     read: what a file holds is not visible from the command's text."""
-    return [assignment.partition("=")[0] for assignment in environment
-            if assignment.partition("=")[0] in GIT_CONFIG_RELOCATING_VARIABLES]
+    names = (assignment.partition("=")[0] for assignment in environment)
+    return [name for name in names if name in GIT_CONFIG_RELOCATING_VARIABLES]
 
 
 def git_invocations(script) -> Iterator[GitInvocation]:
