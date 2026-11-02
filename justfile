@@ -75,6 +75,10 @@ test-install-backup:
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
 
+# Test which certs regen-ca-bundle.py admits to the CA bundle (macOS: runs the real openssl and security verify-cert on generated certs)
+test-certs:
+    python3 -m unittest discover -s config/certs -p 'test_*.py'
+
 # Assert the git pre-commit session-URL scan exempts the guard's own files in the main checkout and a worktree, and nowhere else
 test-session-url-hook:
     ./config/claude/tests/session-url-hook.sh
