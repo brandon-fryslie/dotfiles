@@ -3,3 +3,10 @@
 # Fetches stay on HTTPS so anonymous clones work before a key is set up.
 [url "git@github.com:"]
 	pushInsteadOf = https://github.com/
+
+# The session-URL backstop in hooks/ runs only where git is pointed at it. Set here so every
+# install has it; it displaces each repo's own .git/hooks, and every hook in hooks/ hands on to
+# the repo's own. A repo that sets its own core.hooksPath (husky, lefthook) overrides this and
+# gets no backstop; `just check-hooks-path <dir>` reports that.
+[core]
+	hooksPath = ~/.config/git/hooks

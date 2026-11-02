@@ -87,6 +87,14 @@ test-session-url-hook:
 test-chain-to-local-hook:
     ./config/claude/tests/chain-to-local-hook.sh
 
+# Assert the installed global git config points git at the session-URL hooks, so a session-URL commit message is refused in a plain repo
+test-global-hooks-path:
+    ./config/claude/tests/global-hooks-path.sh
+
+# Report whether git here (or in <dir>) runs the session-URL hooks; exits 1 and names the value in effect when it does not
+check-hooks-path dir=".":
+    ./bin/check-hooks-path "{{dir}}"
+
 # Assert the code-review installer, fleet pass and review-outcome reader against a throwaway fleet (no network)
 test-code-review-fleet:
     ./config/claude/tests/code-review-fleet.sh

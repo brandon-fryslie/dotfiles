@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Report whether git, run from <dir> (default: here), is pointed at the installed session-URL
+# hooks. Exit 0 when it is; exit 1 and say what git is using instead when it is not.
+#
+# The effective value is asked of git itself, so a repo-local core.hooksPath (husky, lefthook)
+# or a value another global file sets is seen exactly as a commit would see it.
+# "Installed" is ~/.config/git/hooks, what install-base.conf.yaml links into the main checkout;
+# asking the installation rather than this script's own tree keeps the answer the same from
+# any worktree or clone. Both sides are compared by real path.
+#
+# Run: bin/check-hooks-path [dir]
+set -euo pipefail
+
+dir="${1:-.}"
+
+want=$(cd "$HOME/.config/git/hooks" 2>/dev/null && pwd -P) || {
+  echo "no session-URL hooks installed: $HOME/.config/git/hooks does not exist (run just install)" >&2
+  exit 1
+}
+
+got=$(git -C "$dir" config --type=path --show-origin --get core.hooksPath 2>/dev/null) || {
+  echo "core.hooksPath is unset: the session-URL hooks do not run in $dir (want $want)" >&2
+  exit 1
+}
+origin=${got%%$'\t'*}
+value=${got#*$'\t'}
+
+# A relative core.hooksPath is relative to where git runs hooks: the work tree root.
+root=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || root="$dir"
+if [ "$(cd "$root" && cd "$value" 2>/dev/null && pwd -P)" = "$want" ]; then
+  exit 0
+fi
+echo "core.hooksPath is $value ($origin): the session-URL hooks do not run in $dir (want $want)" >&2
+exit 1

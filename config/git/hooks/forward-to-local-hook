@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Stand-in for every hook git can run that this directory has no logic for. A global
+# core.hooksPath displaces the repo's whole .git/hooks, so without one of these a repo's own
+# pre-push (git-lfs), post-checkout, prepare-commit-msg, ... would silently stop running.
+# Each hook name here is a symlink to this file; the name git invoked is the hook to hand on.
+# stdin and arguments reach the repo's hook untouched (pre-push reads its refs from stdin).
+set -euo pipefail
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+name="$(basename "$0")"
+
+# git runs reference-transaction while `git init` / `git clone` are still creating the
+# repository, before it can be discovered. A repository that does not exist yet has no hooks
+# of its own to hand on to, so for this hook alone an unlocatable repo is not a failure.
+if [ "$name" = reference-transaction ] && ! git_common_dir_abs >/dev/null 2>&1; then
+  exit 0
+fi
+
+chain_to_local_hook "$name" "$@"
