@@ -26,7 +26,7 @@ SHELLS = frozenset(("bash", "sh", "zsh", "dash", "ksh", "source", "."))
 # Commands that run a command named among their own arguments.
 WRAPPERS = frozenset((
     "env", "command", "exec", "nohup", "nice", "timeout", "xargs", "sudo", "time", "watch", "coproc",
-    "function", "find"))  # `function f { git ...; }` and `find -exec git ...`: the command follows
+    "function", "find", "builtin"))  # `function f { git ...; }` and `find -exec git ...`: the command follows
 # Words that open a command position without being the command.
 RESERVED = frozenset(("!", "{", "}", "if", "then", "else", "elif", "do", "while", "until"))
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
@@ -48,6 +48,8 @@ class Command(NamedTuple):
     stdin: list  # heredoc bodies and here-strings the command reads
     upstream: "Command | None"  # the command piped into this one
     environment: list  # the VAR=value assignments in force for it: its own, its wrappers', its shell's
+    substituted: list  # the commands run by the substitutions in its words and in its heredoc bodies
+    redirects: list  # (operator, file word) for each redirection to a file: `<` reads it, `>` and `>>` write it
 
 
 def program(words):
@@ -68,6 +70,7 @@ class GitInvocation(NamedTuple):
     arguments: list
     config_keys: list  # casefolded keys this call overrides for itself, whether set by -c, --config-env or the environment
     relocated_by: list  # the variables in its environment that move the user-level config git reads
+    command: Command  # the command that ran it, with the stdin and substitutions it was given
 
 
 class Options(NamedTuple):
@@ -85,12 +88,13 @@ class _Reader:
         self.script = script
         self.at = at
         self.commands = commands
-        self.words, self.stdin = [], []
+        self.words, self.stdin, self.substituted, self.redirects = [], [], [], []
+        self.redirected = False  # whether the command being read has a redirection
         self.upstream = None  # the last command, while a pipe connects it to the next
         self.word = None  # characters of the word being read; None between words
         self.quoted = False  # whether any of the word being read was quoted
         self.redirection = None  # the operator whose operand the next word is
-        self.heredocs = []  # (delimiter, strip_tabs, expands, stdin) read after the next newline
+        self.heredocs = []  # (delimiter, strip_tabs, expands, stdin, substituted) read after the next newline
         self.depth = 0  # open parentheses, so a substitution ends only at its own `)`
 
     def read(self, closer=None):
@@ -181,11 +185,14 @@ class _Reader:
         self.at = at + 1
 
     def read_substitution(self):
-        """$(...) or `...`: its commands run, so a nested reader collects them. The word keeps
-        the raw text, so a value built from command output still reads as shell-expanded."""
+        """$(...) or `...`: its commands run, so a nested reader collects them - for the script,
+        and for the command whose word they substitute into. The word keeps the raw text, so a
+        value built from command output still reads as shell-expanded."""
         start, backtick = self.at, self.script[self.at] == "`"
-        inner = _Reader(self.script, start + (1 if backtick else 2), self.commands)
+        inner = _Reader(self.script, start + (1 if backtick else 2), [])
         inner.read("`" if backtick else ")")
+        self.commands.extend(inner.commands)
+        self.substituted.extend(inner.commands)
         self.take(self.script[start:inner.at])
         self.at = inner.at
 
@@ -197,8 +204,10 @@ class _Reader:
         end = self.at
         while end < len(self.script) and self.script[end] in "<>&|-":
             end += 1
-        self.redirection = self.script[self.at:end]
-        self.at = end
+        operator, self.at = self.script[self.at:end], end
+        # `<&-` and `>&-` close a descriptor and take no operand: the next word is the command's own.
+        if not operator.endswith("&-"):
+            self.redirected, self.redirection = True, operator
 
     def end_word(self):
         if self.word is None:
@@ -212,8 +221,11 @@ class _Reader:
             self.stdin.append(text)
         elif operator.startswith("<<"):
             # A quoted delimiter makes the body literal; an unquoted one leaves its substitutions live.
-            self.heredocs.append((text, operator.endswith("-"), not quoted, self.stdin))
-        # Any other redirection's operand is a file name: data, not an argument.
+            self.heredocs.append((text, operator.endswith("-"), not quoted, self.stdin, self.substituted))
+        elif operator == "<&" or not operator.endswith("&") or not text.isdigit():
+            # `>&2` duplicates an output descriptor; `>&file` writes the file, as `>file 2>&1` does
+            self.redirects.append((operator, text))
+        # A file name is data, not an argument: it joins no command's words.
 
     def end_command(self, piped=False):
         self.end_word()
@@ -223,17 +235,21 @@ class _Reader:
             if ASSIGNMENT.match(words[0]):
                 environment.append(words[0])
             words = words[1:]
+        # A redirection with no command runs `cat` in bash's substitutions: `$(<note)` is
+        # `$(cat note)`, and the file is in its redirects.
+        if not words and self.redirected:
+            words = ["cat"]
         # A pipe continues across a line break (`a |` newline `b`), so only a command that
         # actually ended moves the pipeline on.
         if words:
-            command = Command(words, self.stdin, self.upstream, environment)
+            command = Command(words, self.stdin, self.upstream, environment, self.substituted, self.redirects)
             self.commands.append(command)
             self.upstream = command if piped else None
-        self.words, self.stdin = [], []
+        self.words, self.stdin, self.substituted, self.redirects, self.redirected = [], [], [], [], False
 
     def read_heredoc_bodies(self):
         script, heredocs, self.heredocs = self.script, self.heredocs, []
-        for delimiter, strip_tabs, expands, stdin in heredocs:
+        for delimiter, strip_tabs, expands, stdin, substituted in heredocs:
             lines = script[self.at:].split("\n")
             ends = [(line.lstrip("\t") if strip_tabs else line) == delimiter for line in lines]
             # No delimiter line means this was not the heredoc it looked like - `(( x <<= 1 ))`
@@ -244,7 +260,9 @@ class _Reader:
             self.at += sum(len(line) + 1 for line in lines[:end + 1])
             stdin.append("\n".join(lines[:end]))
             if expands:
-                _Reader(stdin[-1], 0, self.commands).read_expanding(None)
+                body = _Reader(stdin[-1], 0, self.commands)
+                body.read_expanding(None)
+                substituted.extend(body.substituted)
 
 
 def commands(script, environment=()) -> Iterator[Command]:
@@ -308,6 +326,18 @@ def environment_relocations(environment):
     return [name for name in names if name in GIT_CONFIG_RELOCATING_VARIABLES]
 
 
+def git_global_options(words):
+    """The options a git command gives before its subcommand, as (option, value) pairs, and the
+    index of the subcommand. `git commit -C HEAD` has none: that -C is commit's, not git's."""
+    options, index = [], 1
+    while index < len(words) and words[index].startswith("-"):
+        option, _, attached = words[index].partition("=")
+        separate = words[index] in GIT_GLOBAL_OPTIONS_WITH_VALUE
+        options.append((option, words[index + 1] if separate and index + 1 < len(words) else attached))
+        index += 2 if separate else 1
+    return options, index
+
+
 def git_invocations(script) -> Iterator[GitInvocation]:
     """Every git call the script runs: its subcommand, that subcommand's own arguments, the
     config keys it overrides for itself, and the variables that move the config it reads."""
@@ -315,16 +345,11 @@ def git_invocations(script) -> Iterator[GitInvocation]:
         words = command.words
         if program(words) != "git":
             continue
-        keys = environment_config_keys(command.environment)
-        index = 1
-        while index < len(words) and words[index].startswith("-"):
-            option, _, attached = words[index].partition("=")
-            separate = words[index] in GIT_GLOBAL_OPTIONS_WITH_VALUE
-            if option in GIT_CONFIG_OPTIONS:
-                keys.append(config_key(words[index + 1] if separate and index + 1 < len(words) else attached))
-            index += 2 if separate else 1
+        options, index = git_global_options(words)
+        keys = environment_config_keys(command.environment) + [
+            config_key(value) for option, value in options if option in GIT_CONFIG_OPTIONS]
         if index < len(words):
-            yield GitInvocation(words[index], words[index + 1:], keys, environment_relocations(command.environment))
+            yield GitInvocation(words[index], words[index + 1:], keys, environment_relocations(command.environment), command)
 
 
 def split_options(arguments, takes_value, takes_attached_value=frozenset()) -> Options:
