@@ -204,11 +204,51 @@ class SessionUrlGuard(unittest.TestCase):
             f"gh -R o/r pr create --body '{SESSION_URL}'",
         ])
 
+    def test_publishing_a_session_url_through_gh_comments_and_reviews_is_denied(self):
+        self.assert_decisions("deny", [
+            f"gh pr comment 3 --body {SESSION_URL}",
+            f"gh issue comment 3 --body {SESSION_URL}",
+            f"gh pr review 3 --comment --body {SESSION_URL}",
+            f"gh pr review 3 --request-changes -b {SESSION_URL}",
+            f"gh pr merge 3 --squash --body {SESSION_URL}",
+            f"gh issue close 3 --comment {SESSION_URL}",
+            f"gh pr reopen 3 -c {SESSION_URL}",
+            f"gh -R o/r pr comment 3 -b '{SESSION_URL}'",
+        ])
+
+    def test_a_gh_api_call_that_writes_is_a_publication(self):
+        self.assert_decisions("deny", [
+            f"gh api repos/o/r/issues -f body={SESSION_URL}",
+            f"gh api repos/o/r/issues -fbody={SESSION_URL}",
+            f"gh api repos/o/r/issues --raw-field body={SESSION_URL}",
+            f"gh api repos/o/r/issues -F body={SESSION_URL}",
+            f"gh api repos/o/r/issues --field=body={SESSION_URL}",
+            f"gh api repos/o/r/issues/3/comments -f body='{SESSION_URL}'",
+            f"gh api repos/o/r/issues -X POST -f body={SESSION_URL}",
+            f"gh api repos/o/r/issues/3 -XPATCH -f body={SESSION_URL}",
+            f"gh api --method=PUT repos/o/r/contents/f -f content={SESSION_URL}",
+            f"gh api -X post repos/o/r/issues -f body={SESSION_URL}",
+            f"gh api repos/o/r/issues --input - <<'EOF'\n{{\"body\": \"{SESSION_URL}\"}}\nEOF",
+            f"gh api -X GET repos/o/r/issues -f q=1 && gh api repos/o/r/issues -f body={SESSION_URL}",
+            f"gh -R o/r api repos/o/r/issues -f body={SESSION_URL}",
+            f"gh api -H 'Accept: x' -X DELETE repos/o/r/issues/comments/1 -f note={SESSION_URL}",
+        ])
+
     def test_reading_and_auditing_session_urls_is_allowed(self):
         self.assert_decisions("allow", [
             f'grep -rn "{SESSION_URL}" .',
             f"git log --grep {SESSION_URL}",
             f'gh pr view 3 --json body | grep "{SESSION_URL}"',
+            f"gh pr view 3 --comments | grep {SESSION_URL}",
+            f"gh api repos/o/r/issues | grep {SESSION_URL}",
+            f"gh api repos/o/r/issues?q={SESSION_URL}",
+            f"gh api -X GET search/issues -f q={SESSION_URL}",
+            f"gh api --method get search/issues -f q={SESSION_URL}",
+            f"gh api -XGET search/code -F q={SESSION_URL}",
+            f"gh api --method=HEAD repos/o/r/issues -f q={SESSION_URL}",
+            f"gh api -X POST repos/o/r/issues -f body=x -X GET -f q={SESSION_URL}",
+            f"gh api repos/o/r/issues -H 'X-Note: {SESSION_URL}'",
+            f"gh pr list --search {SESSION_URL}",
         ])
 
 
