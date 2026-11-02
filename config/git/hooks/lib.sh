@@ -101,8 +101,9 @@ chain_to_local_hook() {
   local name="$1"; shift
   local local_hook
   # --git-path honours core.hooksPath, which now points at THIS directory --
-  # using it here would re-enter this hook forever. Address .git/hooks directly.
-  local_hook="$(git rev-parse --absolute-git-dir)/hooks/$name"
+  # using it here would re-enter this hook forever. Address the hooks directory
+  # directly, in the COMMON dir: a linked worktree's own git dir holds no hooks/.
+  local_hook="$(git rev-parse --path-format=absolute --git-common-dir)/hooks/$name"
   [ -x "$local_hook" ] || return 0
   "$local_hook" "$@"
 }
