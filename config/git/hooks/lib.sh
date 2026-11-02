@@ -43,16 +43,22 @@ session_url_pattern() {
 # git common dir, a clone or an unrelated repo does not. The exempt paths are the
 # guard repo's repo-relative ones, applied to whichever checkout is committing.
 git_common_dir_abs() {
-  ( cd "$(git rev-parse --git-common-dir)" && pwd -P )
+  local dir
+  dir="$(git rev-parse --git-common-dir)" || return 1
+  ( cd "$dir" && pwd -P )
 }
 
 guard_own_pathspecs() {
-  local repo_top config_root f real
+  local repo_top config_root f real guard_common here_common
   real="$(cd "$HOOKS_DIR" && pwd -P)"
   # GIT_DIR / GIT_WORK_TREE describe the repo being committed in; they must not
   # redirect the question about the repo the guard lives in.
   repo_top="$(cd "$real" && unset GIT_DIR GIT_WORK_TREE && git rev-parse --show-toplevel)" || return 0
-  [ "$(cd "$real" && unset GIT_DIR GIT_WORK_TREE && git_common_dir_abs)" = "$(git_common_dir_abs)" ] || return 0
+  # A lookup that fails yields no identity, and no identity proves nothing: two empty
+  # answers must not compare equal and grant the exemption.
+  guard_common="$(cd "$real" && unset GIT_DIR GIT_WORK_TREE && git_common_dir_abs)" || return 0
+  here_common="$(git_common_dir_abs)" || return 0
+  [ -n "$guard_common" ] && [ "$guard_common" = "$here_common" ] || return 0
   config_root="$(cd "$real/../.." && pwd -P)"
   for f in "$real"/* "$config_root/claude/hooks/guard-session-url.sh"; do
     [ -e "$f" ] || continue
