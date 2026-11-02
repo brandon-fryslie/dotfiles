@@ -118,7 +118,9 @@ seconds after sending the brief, look: `$CMD read-screen "$ADDR" 40`.
   what the screen asks; don't answer it for them.
 - **Brief typed but not submitted** — the text sits in the input box. Press
   Enter (`$CMD keys "$ADDR" Enter`).
-- **Idle, brief nowhere on screen** — it was lost. Send it again.
+- **Idle, brief nowhere on screen** — it was lost, or it already finished and
+  scrolled the brief out of view. Read further back (`read-screen "$ADDR" 300`)
+  before sending it again; a re-sent brief is done twice.
 
 After fixing any of these, look again the same way.
 

@@ -11,16 +11,15 @@
 # launch boots the real claude to its prompt; the other launches a stand-in
 # claude, first on PATH, that never draws a prompt, so the not-ready arm is
 # reached on every run rather than only when the real claude boots slower than
-# the first poll, and the window still shows where it landed. Both launches are
-# checked for --worktree on claude's command line, the real one with a name, and
-# the worktree it makes is removed on exit.
+# the first poll, and the window still shows where it landed. The stand-in
+# records the argv it was started with, which is checked for --worktree; the real
+# launch names its worktree, which must then exist, and is removed on exit.
 #
-# The scratch directory is a fixed path inside this checkout and not a git repo
-# of its own: claude registers a project per root it is started in, so a fresh
-# name per run would leave a new ~/.claude.json entry and transcript dir each
-# time, and a fresh /tmp directory, or a nested `git init`, would stop every
-# launch at the folder-trust dialog (exit 2). The checkout is already trusted
-# on a machine where these tests run.
+# The scratch directory and the worktree name are fixed: claude registers a
+# project per root it is started in, so a fresh name per run would leave a new
+# ~/.claude.json entry and transcript dir each time, and a fresh /tmp directory,
+# or a nested `git init`, would stop every launch at the folder-trust dialog
+# (exit 2). The checkout is already trusted on a machine where these tests run.
 #
 # Run: config/claude/tests/repo-session.sh   (needs tmux and a working claude login)
 set -euo pipefail
@@ -33,14 +32,18 @@ repo="$(cd "$here/../../.." && pwd -P)/rs.test"
 
 sessions=()
 # The real-claude launch below runs with --worktree, which makes a worktree of
-# this checkout, under the main checkout's .claude/worktrees even when the test
-# runs from another worktree; the test names it so it can remove exactly that
-# one. claude holds a lock on it while running, hence the sessions die first.
-wtname="rs-test-$$"
-wtpath="$(dirname "$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)")/.claude/worktrees/$wtname"
+# this checkout; the test names it so it can remove exactly that one. Where it
+# lands is git's to say (the branch claude makes for it), not assumed here.
+# claude holds a lock on it while running, hence the sessions die first.
+wtname="rs-test"
+wt_path() {
+  git -C "$here" worktree list --porcelain |
+    awk -v b="refs/heads/worktree-$wtname" '/^worktree /{p=substr($0,10)} $1=="branch" && $2==b {print p}'
+}
 cleanup() {
   for s in ${sessions[@]+"${sessions[@]}"}; do tmux kill-session -t "=$s" 2>/dev/null || true; done
-  if [[ -d "$wtpath" ]]; then
+  wtpath=$(wt_path)
+  if [[ -n "$wtpath" ]]; then
     git -C "$here" worktree unlock "$wtpath" 2>/dev/null || true
     git -C "$here" worktree remove --force "$wtpath" || echo "cleanup: could not remove worktree $wtpath" >&2
     git -C "$here" branch -D "worktree-$wtname" >/dev/null || echo "cleanup: could not delete branch worktree-$wtname" >&2
@@ -77,10 +80,10 @@ echo "ok   - --worktree without a name, and --worktree/-w after --, are refused"
 # that never gets ready. repo-session runs the claude on PATH, so a stand-in
 # first on PATH is the launcher's own seam, not a hook inside it.
 mkdir "$repo/bin"
-printf '#!/usr/bin/env bash\necho "stand-in claude: booting, no prompt"\nexec sleep 100000\n' >"$repo/bin/claude"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" >"$(dirname "$0")/argv"\necho "stand-in claude: booting, no prompt"\nexec sleep 100000\n' >"$repo/bin/claude"
 chmod +x "$repo/bin/claude"
 derived="rs_test"; sessions+=("$derived")
-if out=$(PATH="$repo/bin:$PATH" REPO_SESSION_BOOT_TIMEOUT=0 "$rs" "$repo" 2>"$repo/err"); then
+if out=$(PATH="$repo/bin:$PATH" REPO_SESSION_BOOT_TIMEOUT=0 "$rs" "$repo" -- --model sonnet 2>"$repo/err"); then
   fail "not-ready arm exited 0 with stdout: $out"
 fi
 [[ -z "$out" ]] || fail "not-ready arm printed on stdout: $out"
@@ -89,8 +92,8 @@ addr=$(announced "$repo/err")
 in_session "$derived" "$addr" || fail "derived session: expected $addr in $derived, it is at $(where "$addr")"
 grep -qF "claude in $addr not ready" "$repo/err" || fail "not-ready arm did not name $addr: $(cat "$repo/err")"
 tmux display-message -p -t "$addr" '#{pane_start_command}' | grep -q claude || fail "not-ready arm did not leave $addr running claude"
-tmux display-message -p -t "$addr" '#{pane_start_command}' | grep -qF -- "--worktree --dangerously-skip-permissions" || fail "claude was not started with --worktree: $(tmux display-message -p -t "$addr" '#{pane_start_command}')"
-echo "ok   - no --session: window landed in $derived; not-ready arm exits 1, names the pane id, leaves the window"
+[[ "$(cat "$repo/bin/argv")" == $'--worktree\n--dangerously-skip-permissions\n--model\nsonnet' ]] || fail "claude argv: expected --worktree first, then the extra args, got: $(cat "$repo/bin/argv")"
+echo "ok   - no --session: window landed in $derived; not-ready arm exits 1, names the pane id, leaves the window; claude got --worktree before the extra args"
 
 # Named session, sanitized the same way; and the ready arm, booted to the prompt.
 named="rs:test.$$"; named_clean=${named//[.:]/_}; sessions+=("$named_clean")
@@ -99,8 +102,7 @@ addr=$("$rs" --session "$named" --worktree "$wtname" "$repo" 2>"$repo/err") || f
 in_session "$named_clean" "$addr" || fail "named session: expected $addr in $named_clean, it is at $(where "$addr")"
 [[ "$addr" == "$(announced "$repo/err")" ]] || fail "stdout pane id $addr differs from the announced $(announced "$repo/err")"
 tmux capture-pane -p -t "$addr" | grep -q '❯' || fail "ready arm returned but no prompt on $addr's screen"
-tmux display-message -p -t "$addr" '#{pane_start_command}' | grep -qF -- "--worktree $wtname --dangerously-skip-permissions" || fail "claude was not started with --worktree $wtname: $(tmux display-message -p -t "$addr" '#{pane_start_command}')"
-[[ -d "$wtpath" ]] || fail "--worktree $wtname made no worktree at $wtpath"
+[[ -n "$(wt_path)" ]] || fail "--worktree $wtname made no worktree"
 echo "ok   - --session $named: window landed in $named_clean; ready arm printed the pane id once the prompt was up"
 
 # The handle outlives window renumbering: a window inserted before claude's
