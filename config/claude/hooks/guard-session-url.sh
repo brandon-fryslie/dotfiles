@@ -37,7 +37,7 @@ import sys
 from pathlib import Path
 from typing import NamedTuple
 
-from bash_command import Command, commands, git_global_options, git_invocations, program, split_options
+from bash_command import ASSIGNMENT, Command, commands, git_global_options, git_invocations, program, split_options
 
 # [LAW:one-source-of-truth] the git hooks' definition of a session URL, read where it lives;
 # grep reads it, because it is written as grep's pattern.
@@ -90,7 +90,8 @@ TEXT_FILE_OPTIONS = {
 }
 # The commands whose operands are files, each with how many operands come before the first file:
 # `gh gist create FILE...` and `gh gist edit ID [FILE]`, where FILE replaces the gist's text.
-FILE_OPERANDS = {("gh", "gist", verb): 1 if verb == "edit" else 0 for verb in GH_VERBS_THAT_PUBLISH["gist"]}
+# A create with no file reads standard input; an edit with none opens the editor.
+FILE_OPERANDS = {("gh", "gist", verb): (1, False) if verb == "edit" else (0, True) for verb in GH_VERBS_THAT_PUBLISH["gist"]}
 
 # Options of `git commit` that consume a value, so a value is never read as a flag: -mnew is
 # a message, and -uno is untracked-files=no.
@@ -215,8 +216,10 @@ def text_files(key, arguments):
             paths.append(value)
         elif files.get(flag) == FIELD and field.startswith("@"):
             paths.append(field[1:])
-    if key in FILE_OPERANDS:  # the operands begin with the command's own words: `gist create`
-        paths += options.operands[len(key) - 1 + FILE_OPERANDS[key]:]
+    if key in FILE_OPERANDS:
+        leading, bare_is_stdin = FILE_OPERANDS[key]
+        files = options.operands[len(key) - 1 + leading:]  # the operands begin with the command's own words: `gist create`
+        paths += files or (["-"] if bare_is_stdin else [])
     return paths
 
 
@@ -274,15 +277,26 @@ BUILT_BY_SHELL = re.compile(r"[$`*?\[{]|^~[^/]")
 TEXT_PRODUCERS = frozenset(("echo", "printf"))
 # bash_command does not follow a change of directory, so a relative path after one is not known.
 DIRECTORY_CHANGES = frozenset(("cd", "chdir", "pushd", "popd"))  # chdir is zsh's cd
-ENV_DIRECTORY_OPTIONS = ("-C", "--chdir")  # env runs its command elsewhere
+ENV_OPTIONS_WITH_VALUE = frozenset(("-u", "--unset", "-S", "--split-string"))
+# GNU env runs its command elsewhere with -C DIR, -CDIR, --chdir=DIR, or -C in a cluster (-iC DIR).
+ENV_CHANGES_DIRECTORY = re.compile(r"--chdir\b|-[^-]*C")
+
+
+def env_moves_directory(words):
+    """env's own options come before its command; after them `-C` is the command's, as in `git commit -C`."""
+    index = 1
+    while index < len(words) and words[index] != "--" and (words[index].startswith("-") or ASSIGNMENT.match(words[index])):
+        if ENV_CHANGES_DIRECTORY.match(words[index]):
+            return True
+        index += 2 if words[index] in ENV_OPTIONS_WITH_VALUE else 1
+    return False
 
 
 def moves_directory(command):
     name = program(command.words)
     if name == "git":  # git's -C, not the -C of `git commit -C HEAD`
         return any(option == "-C" for option, _ in git_global_options(command.words)[0])
-    return name in DIRECTORY_CHANGES or (name == "env" and any(
-        word.partition("=")[0] in ENV_DIRECTORY_OPTIONS for word in command.words[1:]))
+    return name in DIRECTORY_CHANGES or (name == "env" and env_moves_directory(command.words))
 
 
 def working_directory(script_commands, cwd):

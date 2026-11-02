@@ -460,6 +460,8 @@ class SessionUrlGuard(unittest.TestCase):
             f"gh gist create {path}",
             f"gh gist new -d note -p {path}",
             f"gh gist create -f name.md - < {path}",
+            f"gh gist create < {path}",  # no file operand: gh reads standard input
+            f"gh gist new -p < {path}",
             f"gh gist edit abc123 -f hello.py {path}",  # the operand after the id replaces the gist's file
             f"gh gist edit abc123 --add {path}",
             f"gh pr create --title t <&- -F {path}",  # closing a descriptor takes no operand
@@ -498,7 +500,9 @@ class SessionUrlGuard(unittest.TestCase):
                         "pushd sub && gh pr create -F clean.md", "git -C sub tag -a v1 -F clean.md",
                         "builtin cd sub && gh pr create -F clean.md", "command cd sub && gh pr create -F clean.md",
                         "chdir sub && gh pr create -F clean.md",  # zsh's cd
-                        "env -C sub gh pr create -F clean.md", "env --chdir=sub gh pr create -F clean.md"):
+                        "env -C sub gh pr create -F clean.md", "env --chdir=sub gh pr create -F clean.md",
+                        "env -Csub gh pr create -F clean.md", "env -iC sub gh pr create -F clean.md",
+                        "env A=1 -C sub gh pr create -F clean.md"):
             with self.subTest(command=command):
                 ruling = self.ruling(command, cwd=str(self.directory))
                 self.assertEqual(ruling["permissionDecision"], "deny")
@@ -513,6 +517,7 @@ class SessionUrlGuard(unittest.TestCase):
     def test_c_after_the_subcommand_is_not_a_change_of_directory(self):
         # `git commit -C HEAD` reuses a message; only the -C git gives before its subcommand moves it.
         self.assertEqual(self.decide("git commit -C HEAD && gh pr create -F clean.md", cwd=str(self.directory)), "allow")
+        self.assertEqual(self.decide("env A=1 git commit -C HEAD && gh pr create -F clean.md", cwd=str(self.directory)), "allow")
         self.assertEqual(self.decide("git -c a=b -C sub status && gh pr create -F clean.md", cwd=str(self.directory)), "deny")
 
     def test_a_call_with_no_working_directory_reads_absolute_paths_and_denies_relative_ones(self):
@@ -626,6 +631,7 @@ class SessionUrlGuard(unittest.TestCase):
                 f"cp {self.leaky} {self.clean} && gh pr create -F {self.clean}",
                 f"cat {self.leaky} > {self.clean} && gh pr create -F {self.clean}",
                 f"echo hi > {self.clean}; gh pr create -F {self.clean}",
+                f"echo hi >& {self.clean}; gh pr create -F {self.clean}",  # writes the file, and stderr with it
                 f"tee {self.clean} <<< hi; gh pr create -F {self.clean}",
                 f"cat {self.clean} && gh pr create -F {self.clean}",
                 f"cp leaky.md clean.md && gh pr create -F ./clean.md",
@@ -649,6 +655,8 @@ class SessionUrlGuard(unittest.TestCase):
             f"echo hi > {self.directory}/other.md; gh pr create -F {self.clean}",
             f"env GH_TOKEN=x gh pr create -F {self.clean}",
             f"gh pr create -F {self.clean} 2>&1",
+            f"gh pr create -F {self.clean} 2>&1 >&2",
+            "gh gist edit abc123",
             f'gh issue comment 3 --body "$(cat {self.clean})" && echo done',
         ])
 
@@ -658,6 +666,7 @@ class SessionUrlGuard(unittest.TestCase):
                 (f"cat {self.clean} | gh pr create --body-file -", "standard input"),
                 ("./gen-body | git tag -a v1 -F -", "standard input"),
                 ("echo x | tee out | gh pr create -F -", "standard input"),
+                (f"cat {self.clean} | gh gist create", "standard input"),
                 ("gh api repos/o/r/issues -F body=@-", "standard input"),
                 (f"gh pr create -F /dev/stdin < {self.clean}", "not a regular file"),
                 ("gh pr create -F <(echo hi)", "an empty path"),

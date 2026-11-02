@@ -222,7 +222,8 @@ class _Reader:
         elif operator.startswith("<<"):
             # A quoted delimiter makes the body literal; an unquoted one leaves its substitutions live.
             self.heredocs.append((text, operator.endswith("-"), not quoted, self.stdin, self.substituted))
-        elif operator == "<&" or not operator.endswith("&"):  # `>&2` duplicates an output; any other operand is a file or descriptor
+        elif operator == "<&" or not operator.endswith("&") or not text.isdigit():
+            # `>&2` duplicates an output descriptor; `>&file` writes the file, as `>file 2>&1` does
             self.redirects.append((operator, text))
         # A file name is data, not an argument: it joins no command's words.
 
