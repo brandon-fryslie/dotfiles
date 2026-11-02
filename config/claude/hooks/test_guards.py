@@ -541,6 +541,13 @@ class SessionUrlGuard(unittest.TestCase):
             f"git log -F --grep x -- {self.leaky}",
             f"gh pr view 3 --json body > {self.leaky}",
             f'git commit -m "$(date)"',  # a commit's text is the commit-msg hook's
+            # free text that begins like an option or holds a capital F is a value, not a -F
+            'gh pr create --title t --body "- Fixes the bug"',
+            'gh pr create --title "- Fixes it" -b "-F x"',
+            'gh pr comment 3 -b "- Fixes the bug"',
+            'gh issue create -t "- Fix" --body "-Fixed"',
+            'gh release create v1 -n "- First"',
+            'gh pr merge 3 --squash --subject "- Fixes" --body "- Fixes"',
         ])
 
     def test_a_substitution_is_read_only_when_it_is_text_in_the_command_or_a_named_file(self):
@@ -690,6 +697,7 @@ class SessionUrlGuard(unittest.TestCase):
                 ('gh pr create -F "$(mktemp)"', "mktemp computes its text"),
                 (f"gh pr create -F {self.directory}/*.md", "built by the shell"),
                 ("gh pr create -F ~someone/body.md", "built by the shell"),
+                ("gh pr create -F a\0b", "NUL byte"),  # exiting 1 on the error would let the command run
                 ("gh pr create -F note-{a,b}.md", "built by the shell"),
                 ("gh api repos/o/r/issues -F body=@$NOTE", "built by the shell"),
         ):

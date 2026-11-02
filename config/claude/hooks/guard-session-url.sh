@@ -66,6 +66,9 @@ GH_API_METHOD = frozenset(("-X", "--method"))
 GH_API_BODY = frozenset(("-f", "--raw-field", "-F", "--field", "--input"))
 READ_METHODS = frozenset(("GET", "HEAD"))
 GH_REPO_OPTIONS = frozenset(("-R", "--repo"))
+# The options whose value is free text, which may begin with "- " (a bullet) or hold a capital F. Read
+# as a flag cluster that would be `-F`; the other options' values are names and numbers.
+GH_TEXT_OPTIONS = frozenset(("-b", "--body", "-t", "--title", "-n", "--notes", "--subject"))
 
 # How an option names a file whose text the command publishes: its value is the path, or is
 # `key=@path` (gh api's field syntax, where @- is standard input), or the flag itself says the
@@ -84,7 +87,7 @@ TEXT_FILE_OPTIONS = {
        for verb in GH_VERBS_THAT_PUBLISH["gist"]},
     ("gh", "agent-task", "create"): (GH_REPO_OPTIONS, {"-F": PATH, "--from-file": PATH}),
     # every publishing pr, issue, release and discussion verb that takes a body or notes
-    **{("gh", noun, verb): (GH_REPO_OPTIONS, {"-F": PATH, "--body-file": PATH, "--notes-file": PATH})
+    **{("gh", noun, verb): (GH_REPO_OPTIONS | GH_TEXT_OPTIONS, {"-F": PATH, "--body-file": PATH, "--notes-file": PATH})
        for noun, verb in GH_PUBLISHES
        if noun in ("pr", "issue", "release", "discussion") and verb not in ("close", "reopen")},
 }
@@ -373,6 +376,8 @@ def locate(word, cwd):
         raise Unreadable("an empty path", "a missing value, or a process substitution")
     if BUILT_BY_SHELL.search(word):
         raise Unreadable(word, "its path is built by the shell")
+    if "\0" in word:  # no path has one, and the filesystem calls raise on it rather than fail
+        raise Unreadable(word, "it holds a NUL byte")
     path = Path(word).expanduser()
     if path.is_absolute():
         return path
