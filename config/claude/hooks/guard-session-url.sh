@@ -63,12 +63,18 @@ def names_no_verify(flag):
 
 
 # `git config` modes. The key is the first operand whatever the mode, with the exception of the
-# section edits, whose first operand is a section; a bare `<key> <value>` is a write.
+# section edits, whose operands are sections; a bare `<key> <value>` is a write.
 CONFIG_WRITE_MODES = frozenset(("--add", "--replace-all", "--unset", "--unset-all"))
 CONFIG_SECTION_EDITS = frozenset(("--remove-section", "--rename-section"))
 CONFIG_READ_MODES = frozenset((
     "-l", "--list", "--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool"))
-CONFIG_TAKES_VALUE = frozenset(("-f", "--file", "--blob", "--type", "--default", "--comment"))
+# Complete against `git config -h`: an option missing here has its value read as the key.
+CONFIG_TAKES_VALUE = frozenset(("-f", "--file", "--blob", "-t", "--type", "--default", "--comment", "--value"))
+# git 2.46 subcommands, each the mode its legacy flag names. Only the first word is one (a flag
+# before it makes the call legacy), and a key always has a dot, so no key is ever read as one.
+CONFIG_SUBCOMMAND_MODES = {
+    "get": "--get", "set": "--replace-all", "unset": "--unset",
+    "remove-section": "--remove-section", "rename-section": "--rename-section"}
 # Every long option of `git config`, which is what an abbreviation is resolved against.
 CONFIG_LONG_OPTIONS = (CONFIG_WRITE_MODES | CONFIG_SECTION_EDITS | CONFIG_READ_MODES | CONFIG_TAKES_VALUE | frozenset((
     "--global", "--system", "--local", "--worktree", "--fixed-value", "--bool", "--int", "--bool-or-int",
@@ -89,15 +95,14 @@ def spell_out(arguments):
 def config_writes_hooks_path(arguments):
     """A `git config` call that sets, adds to or unsets core.hooksPath, or that removes or renames
     the core section it lives in. Reads (`git config core.hooksPath`, --get, --list) are not one."""
-    options = split_options(spell_out(arguments), CONFIG_TAKES_VALUE)
-    flags, operands = set(options.flags), options.operands
-    if flags & CONFIG_SECTION_EDITS:
-        return [operand.casefold() for operand in operands[:1]] == ["core"]
-    if operands[:1] in (["set"], ["unset"]):  # git 2.46: `git config set|unset <key> ...`
-        writes, operands = True, operands[1:]
-    else:
-        writes = bool(flags & CONFIG_WRITE_MODES) or (len(operands) >= 2 and not flags & CONFIG_READ_MODES)
-    return writes and [operand.casefold() for operand in operands[:1]] == [HOOKS_PATH]
+    first = arguments[0] if arguments else ""
+    legacy = [CONFIG_SUBCOMMAND_MODES[first], *arguments[1:]] if first in CONFIG_SUBCOMMAND_MODES else arguments
+    options = split_options(spell_out(legacy), CONFIG_TAKES_VALUE)
+    flags, operands = set(options.flags), [operand.casefold() for operand in options.operands]
+    if flags & CONFIG_SECTION_EDITS:  # rename-section's second operand is the section renamed into
+        return "core" in operands[:2]
+    writes = flags & CONFIG_WRITE_MODES or (len(operands) >= 2 and not flags & CONFIG_READ_MODES)
+    return bool(writes) and operands[:1] == [HOOKS_PATH]
 
 
 def skips_hooks(invocation):
