@@ -11,13 +11,14 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd -P)
 real_git="$here/../../git"
+check="$here/../../../bin/check-hooks-path"
 
 work="$(mktemp -d)"; work="$(cd "$work" && pwd -P)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/home/.config"
 ln -s "$real_git" "$work/home/.config/git"
 export HOME="$work/home"
-unset GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_DIR
+unset GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_PARAMETERS GIT_DIR XDG_CONFIG_HOME
 export GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
 
@@ -36,5 +37,27 @@ if git commit -q --allow-empty -m "see https://claude.ai/code/session_01ABCDEF" 
   fail "a commit message carrying a session URL was accepted"
 fi
 grep -q 'COMMIT REFUSED' "$work/last.log" || fail "the commit failed, but not by the hook's refusal"
+
+# Every other hook now routes through this directory too; none of git's ordinary repository
+# operations may break on the way.
+git clone -q "$work/repo" "$work/clone" >"$work/last.log" 2>&1 || fail "git clone failed under the installed config"
+git worktree add -q "$work/wt" -b wt >"$work/last.log" 2>&1 || fail "git worktree add failed under the installed config"
+git init -q --bare "$work/bare.git" >"$work/last.log" 2>&1 || fail "git init --bare failed under the installed config"
+git push -q "$work/bare.git" HEAD:refs/heads/x >"$work/last.log" 2>&1 || fail "git push failed under the installed config"
+
+# The reporter says so when the effective value is not the installed one: silent when the
+# installed config sets it, loud for a repo-local override and for an unset value.
+"$check" >"$work/last.log" 2>&1 || fail "the reporter flagged the installed config"
+
+mkdir "$work/elsewhere"
+git config --local core.hooksPath "$work/elsewhere"
+if "$check" >"$work/last.log" 2>&1; then fail "the reporter accepted a repo-local hooksPath override"; fi
+grep -q "$work/elsewhere" "$work/last.log" || fail "the reporter did not name the value in effect"
+git config --local --unset core.hooksPath
+
+rm "$HOME/.config/git"
+mkdir "$HOME/.config/git"
+if "$check" >"$work/last.log" 2>&1; then fail "the reporter accepted an unset hooksPath"; fi
+grep -q "unset" "$work/last.log" || fail "the reporter did not say hooksPath is unset"
 
 echo "ok"

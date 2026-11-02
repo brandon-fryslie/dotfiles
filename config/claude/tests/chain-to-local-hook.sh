@@ -63,6 +63,34 @@ for where in "$repo" "$work/wt"; do
   commit_in "$where" || fail "$label: a commit with no repo-local hooks was blocked"
 done
 
+# Every hook git can run reaches the repo's own, not just the two this directory scans for.
+# The names are githooks(5); a hook missing from this directory is a repo hook silently displaced.
+rm -f "$repo/.git/hooks/pre-commit" "$repo/.git/hooks/commit-msg"
+for hook in applypatch-msg pre-applypatch post-applypatch pre-merge-commit prepare-commit-msg \
+  post-commit pre-rebase post-checkout post-merge pre-push pre-receive update proc-receive \
+  post-receive post-update reference-transaction push-to-checkout pre-auto-gc post-rewrite \
+  sendemail-validate fsmonitor-watchman p4-changelist p4-prepare-changelist \
+  p4-post-changelist p4-pre-submit post-index-change; do
+  printf '#!/bin/sh\necho "LOCAL-HOOK-RAN %s argc=$# stdin=$(cat)" >&2\nexit 7\n' "$hook" > "$repo/.git/hooks/$hook"
+  chmod +x "$repo/.git/hooks/$hook"
+  [ -x "$real_hooks/$hook" ] || fail "no forwarder for the $hook hook: the repo's own would stop running"
+  rc=0
+  ( cd "$repo" && echo "payload" | "$real_hooks/$hook" one two ) >"$work/last.log" 2>&1 || rc=$?
+  [ "$rc" = 7 ] || fail "$hook: the repo's own hook exit code did not stand (got $rc)"
+  grep -q "LOCAL-HOOK-RAN $hook argc=2 stdin=payload" "$work/last.log" \
+    || fail "$hook: arguments and stdin did not reach the repo's own hook"
+  rm -f "$repo/.git/hooks/$hook"
+done
+
+# And through git itself: a repo-local pre-push that rejects stops a real push.
+git init -q --bare "$work/remote.git"
+local_hook pre-push 1
+if ( cd "$repo" && git push -q "$work/remote.git" HEAD:refs/heads/x ) >"$work/last.log" 2>&1; then
+  fail "the repo's own rejecting pre-push did not stop the push"
+fi
+grep -q "LOCAL-HOOK-RAN pre-push" "$work/last.log" || fail "the push failed, but not by the repo's own pre-push"
+rm -f "$repo/.git/hooks/pre-push"
+
 # Outside any repo the common dir cannot be located; that must be an error that says so,
 # not a quiet "no local hook".
 mkdir "$work/not-a-repo"

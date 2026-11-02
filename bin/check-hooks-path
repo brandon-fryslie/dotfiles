@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Report whether git, run from <dir> (default: here), is pointed at this repo's session-URL
+# hooks. Exit 0 when it is; exit 1 and say what git is using instead when it is not.
+#
+# The effective value is asked of git itself, so a repo-local core.hooksPath (husky, lefthook)
+# or a value another global file sets is seen exactly as a commit would see it.
+# Both sides are compared by real path: the installed value is ~/.config/git/hooks, a symlink
+# into this repo's config/git/hooks.
+#
+# Run: bin/check-hooks-path [dir]
+set -euo pipefail
+
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+want=$(cd "$here/../config/git/hooks" && pwd -P)
+dir="${1:-.}"
+
+got=$(git -C "$dir" config --type=path --show-origin --get core.hooksPath 2>/dev/null) || {
+  echo "core.hooksPath is unset: the session-URL hooks do not run in $dir (want $want)" >&2
+  exit 1
+}
+origin=${got%%$'\t'*}
+value=${got#*$'\t'}
+
+if [ "$(cd "$value" 2>/dev/null && pwd -P)" = "$want" ]; then
+  exit 0
+fi
+echo "core.hooksPath is $value ($origin): the session-URL hooks do not run in $dir (want $want)" >&2
+exit 1
