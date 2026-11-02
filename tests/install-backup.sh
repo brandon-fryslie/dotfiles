@@ -7,7 +7,7 @@
 # directory and the file are moved to a reported backup with their contents intact and
 # the managed paths become links; the bash startup file is left alone and the install
 # fails. A second run over the installed state succeeds and backs up nothing more.
-# Separately, no install-*.conf.yaml may declare `force: true` for any link.
+# Separately, every install-*.conf.yaml that links must default to backup and none may declare `force: true`.
 #
 # Run: tests/install-backup.sh   (needs uv; dotbot and PyYAML come from `uvx --from dotbot`)
 set -euo pipefail
@@ -22,15 +22,21 @@ fail() { echo "FAIL - $*" >&2; [ -f "$work/dotbot.log" ] && cat "$work/dotbot.lo
 # moving uv's cache.
 py=$(uvx --from dotbot python -c 'import sys; print(sys.executable)')
 
-# No config may let dotbot delete a real path: force is never true, in a defaults block
-# or on an entry.
-"$py" -I - "$repo" <<'PY' || fail "a link declares force: true"
+# Every config that links must back up by default and none may let dotbot delete: before its
+# first link step a defaults block sets backup: true, and force is never true, in that block
+# or on an entry. install-base is the only one run below; this holds the rest to the same.
+"$py" -I - "$repo" <<'PY' || fail "a config does not back up by default, or declares force: true"
 import glob, sys, yaml
 bad = []
 for path in sorted(glob.glob(sys.argv[1] + "/install-*.conf.yaml")):
+    backup_default = False
     for step in yaml.safe_load(open(path)):
-        if "defaults" in step and step["defaults"].get("link", {}).get("force") is True:
+        link_defaults = (step.get("defaults") or {}).get("link", {})
+        if link_defaults.get("force") is True:
             bad.append(path + ": defaults.link.force")
+        backup_default = backup_default or link_defaults.get("backup") is True
+        if "link" in step and not backup_default:
+            bad.append(path + ": links without defaults.link.backup: true")
         for dest, entry in (step.get("link") or {}).items():
             if isinstance(entry, dict) and entry.get("force") is True:
                 bad.append(path + ": " + dest)
