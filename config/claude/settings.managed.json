@@ -166,7 +166,6 @@
   "spinnerTipsEnabled": false,
   "feedbackDrafts": "off",
   "promptSuggestionEnabled": false,
-  "autoMemoryEnabled": false,
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true,
   "useAutoModeDuringPlan": true,
