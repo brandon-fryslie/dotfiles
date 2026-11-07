@@ -73,6 +73,73 @@ class MacosTrustsVerdicts(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 regen.macos_trusts("pem")
 
+    def test_expired_is_untrusted(self):
+        with verify_cert_says(1, "Cert Verify Result: CSSMERR_TP_CERT_EXPIRED\n"):
+            self.assertFalse(regen.macos_trusts("pem"))
+
+    def test_an_evaluation_failure_on_the_result_line_is_an_error_not_a_verdict(self):
+        for stderr in ("Cert Verify Result: User interaction is not allowed.\n",
+                       "Cert Verify Result: CSSMERR_TP_INTERNAL_ERROR\n"):
+            with self.subTest(stderr=stderr), verify_cert_says(1, stderr):
+                with self.assertRaises(SystemExit):
+                    regen.macos_trusts("pem")
+
+
+NOT_TRUSTED = (1, "Cert Verify Result: CSSMERR_TP_NOT_TRUSTED\n")
+OK = (0, "")
+DENY = (1, "SecTrustEvaluate result: kSecTrustResultDeny\n")
+BAD_EKU = (1, "Cert Verify Result: Invalid Extended Key Usage for policy\n---\n")
+SUSPENDED = (1, "Cert Verify Result: CSSMERR_TP_CERT_SUSPENDED\n")
+
+
+def verify_cert_per_policy(answers):
+    """The run seam answering verify-cert by its -p policy; records the policies asked."""
+    asked = []
+
+    def fake(cmd, **kw):
+        if cmd[0] != "security":  # the die message's openssl subject lookup
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+        policy = cmd[cmd.index("-p") + 1]
+        asked.append(policy)
+        rc, stderr = answers[policy]
+        return subprocess.CompletedProcess(cmd, rc, stdout="", stderr=stderr)
+    return mock.patch.object(regen, "run", side_effect=fake), asked
+
+
+class MacosTrustsPolicies(unittest.TestCase):
+    """basic keeps the system roots ssl rejects; ssl honours trust and Deny scoped to SSL."""
+
+    def trusts(self, **answers):
+        patch, asked = verify_cert_per_policy(answers)
+        with patch:
+            trusted = regen.macos_trusts("pem")
+        self.assertEqual(sorted(asked), ["basic", "ssl"])
+        return trusted
+
+    def test_system_root_accepted_by_basic_only_is_trusted(self):
+        self.assertTrue(self.trusts(basic=OK, ssl=BAD_EKU))
+
+    def test_system_root_ssl_calls_suspended_is_trusted_when_basic_accepts(self):
+        # DigiCert TLS ECC P384 Root G5 and 41 other TLS roots, live on macOS 26
+        self.assertTrue(self.trusts(basic=OK, ssl=SUSPENDED))
+
+    def test_ca_trusted_only_for_ssl_is_trusted(self):
+        self.assertTrue(self.trusts(basic=NOT_TRUSTED, ssl=OK))
+
+    def test_root_denied_for_ssl_is_untrusted_though_basic_accepts_it(self):
+        self.assertFalse(self.trusts(basic=OK, ssl=DENY))
+
+    def test_denied_for_basic_is_untrusted_though_ssl_accepts_it(self):
+        self.assertFalse(self.trusts(basic=DENY, ssl=OK))
+
+    def test_refused_by_both_is_untrusted(self):
+        self.assertFalse(self.trusts(basic=NOT_TRUSTED, ssl=NOT_TRUSTED))
+
+    def test_ssl_failing_to_evaluate_is_an_error_not_a_verdict(self):
+        with self.assertRaises(SystemExit) as died:
+            self.trusts(basic=OK, ssl=(1, "something else\n"))
+        self.assertIn("-p ssl", str(died.exception.code))
+
 
 def openssl(*args):
     subprocess.run(["openssl", *args], check=True, capture_output=True)
@@ -95,7 +162,11 @@ class RealCerts(unittest.TestCase):
             openssl("x509", "-req", "-in", d / f"{name}.csr", "-CA", d / "root.pem",
                     "-CAkey", d / "root.key", "-CAcreateserial", "-out", d / f"{name}.pem",
                     "-days", "2", "-extfile", d / f"{name}.ext")
-        cls.pem = {n: (d / f"{n}.pem").read_text() for n in ("root", "intermediate", "leaf")}
+        openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", d / "nameless.key",
+                "-out", d / "nameless.pem", "-subj", "/", "-days", "2",
+                "-addext", "basicConstraints=critical,CA:TRUE")
+        cls.pem = {n: (d / f"{n}.pem").read_text()
+                   for n in ("root", "intermediate", "leaf", "nameless")}
 
     @classmethod
     def tearDownClass(cls):
@@ -109,8 +180,22 @@ class RealCerts(unittest.TestCase):
     def test_inspect_rejects_what_openssl_cannot_read(self):
         self.assertIsNone(regen.inspect_cert("not a certificate\n"))
 
+    def test_inspect_does_not_call_a_ca_with_empty_names_self_issued(self):
+        self.assertEqual(regen.inspect_cert(self.pem["nameless"]), (True, False))
+
     def test_macos_does_not_trust_a_root_nobody_trusted(self):
         self.assertFalse(regen.macos_trusts(self.pem["root"]))
+
+    def test_macos_trusts_a_system_root_the_ssl_policy_rejects(self):
+        r = subprocess.run(["security", "find-certificate", "-c", "ISRG Root X1", "-p",
+                            "/System/Library/Keychains/SystemRootCertificates.keychain"],
+                           check=True, capture_output=True, text=True)
+        with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
+            fh.write(r.stdout)
+            fh.flush()
+            self.assertEqual(regen.verify(fh.name, "basic"), regen.Verdict.ACCEPTED)
+            self.assertEqual(regen.verify(fh.name, "ssl"), regen.Verdict.NOT_TRUSTED)
+        self.assertTrue(regen.macos_trusts(r.stdout))
 
     def test_macos_failing_to_evaluate_is_an_error_not_a_verdict(self):
         with self.assertRaises(SystemExit):

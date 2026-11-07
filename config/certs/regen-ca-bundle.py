@@ -21,6 +21,7 @@ import subprocess
 import tempfile
 import time
 import sys
+from enum import Enum, auto
 from pathlib import Path
 
 CERTS = Path.home() / ".config/certs"
@@ -84,43 +85,74 @@ def inspect_cert(pem):
              "-nameopt", "RFC2253"], input=pem)
     if r.returncode != 0:
         return None
-    names = {k: v for k, _, v in (l.partition("=") for l in r.stdout.splitlines()
+    # LibreSSL prints an empty name as "subject= ", OpenSSL as "subject=".
+    names = {k: v.strip() for k, _, v in (l.partition("=") for l in r.stdout.splitlines()
                                   if l.startswith(("subject=", "issuer=")))}
     if "subject" not in names or "issuer" not in names:
         return None  # absent names must not compare equal and read as self-issued
-    return "CA:TRUE" in r.stdout, names["subject"] == names["issuer"]
+    # An empty name is no name: two of them are not the same issuer.
+    return "CA:TRUE" in r.stdout, names["subject"] != "" and names["subject"] == names["issuer"]
 
 
-# verify-cert prints one of these on stderr whenever the evaluator reached a
-# verdict. An explicit Deny trust entry gets the second form, not the first.
-# Only Deny is listed: any other shape is not known to be a verdict.
-VERDICT_RE = re.compile(
-    r"^(?:Cert Verify Result: \S+|SecTrustEvaluate result: kSecTrustResultDeny)$", re.M)
+class Verdict(Enum):
+    ACCEPTED = auto()
+    NOT_TRUSTED = auto()
+    DENIED = auto()
+
+
+# The refusals verify-cert has been seen to print on stderr, across the three
+# keychains on u2: an explicit Deny trust entry gets the first form; the second
+# lists the other refusals by name, the EKU one being the only one worded in
+# prose. Only these are verdicts. The same "Cert Verify Result:" line also
+# carries evaluation failures (CSSMERR_TP_INTERNAL_ERROR, a locked keychain),
+# and a refusal not seen yet is not known to be one; both die.
+DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
+NOT_TRUSTED_RE = re.compile(
+    r"^Cert Verify Result: (CSSMERR_TP_(NOT_TRUSTED|CERT_SUSPENDED|CERT_EXPIRED)"
+    r"|Invalid Extended Key Usage for policy)$", re.M)
+POLICIES = ("basic", "ssl")
 
 
 def macos_trusts(pem):
     """True when macOS's own evaluator accepts the cert -- the one source of truth.
 
-    `-p basic` evaluates trust without the ssl policy's leaf-only extended-key-
-    usage rule, which rejects every root. The evaluator folds in the system
-    roots, admin and user trust settings, and explicit Deny entries, so a cert
-    that merely sits in a keychain (no trust setting) or was distrusted fails.
+    Neither policy alone answers "would a TLS client trust this anchor", so
+    both are asked. `-p basic` skips the ssl policy's extended-key-usage rule,
+    which rejects ordinary system roots (ISRG Root X1: "Invalid Extended Key
+    Usage for policy"), but it ignores trust entries scoped to a policy: a CA
+    trusted only for SSL fails it, and a root set to "Never Trust" for SSL
+    passes it. `-p ssl` honours those entries: SSL-only trust is observed to
+    pass it, and an SSL-scoped Deny is assumed, not yet observed, to print the
+    Deny form. So a Deny under either policy
+    leaves the cert out, and otherwise an accept under either keeps it. The
+    evaluator folds in the system roots, admin and user trust settings, so a
+    cert that merely sits in a keychain (no trust setting) fails both.
     [LAW:one-source-of-truth]
+    """
+    with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
+        fh.write(pem)
+        fh.flush()
+        verdicts = {verify(fh.name, policy) for policy in POLICIES}
+    return Verdict.DENIED not in verdicts and Verdict.ACCEPTED in verdicts
+
+
+def verify(path, policy):
+    """verify-cert's verdict on one cert under one policy.
 
     A non-zero exit alone does not mean "untrusted": it is also what an
     unreadable file or a failed keychain access returns. Only a printed verdict
     is an answer; anything else dies rather than dropping the cert unseen.
     [LAW:no-silent-failure]
     """
-    with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
-        fh.write(pem)
-        fh.flush()
-        r = run(["security", "verify-cert", "-c", fh.name, "-p", "basic"])
+    r = run(["security", "verify-cert", "-c", path, "-p", policy])
     if r.returncode == 0:
-        return True
-    if VERDICT_RE.search(r.stderr):
-        return False
-    die(f"security verify-cert could not evaluate a certificate: "
+        return Verdict.ACCEPTED
+    if DENIED_RE.search(r.stderr):
+        return Verdict.DENIED
+    if NOT_TRUSTED_RE.search(r.stderr):
+        return Verdict.NOT_TRUSTED
+    die(f"security verify-cert -p {policy} could not evaluate "
+        f"{subject(Path(path).read_text())}: "
         f"{r.stderr.strip() or r.stdout.strip() or 'no output'}")
 
 
