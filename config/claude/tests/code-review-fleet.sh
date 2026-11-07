@@ -153,6 +153,9 @@ lacks "$(cat "$root/a/.github/workflows/code-review.yml")" 'from .github/code-re
 has "$(cat "$root/a/.github/workflows/code-review.yml")" "# To change a value for this repo only: declare it in .github/code-review.conf"$'\n'"# (keys: EXCLUDE_PATTERNS_EXTRA MAX_REVIEW_ROUNDS), then re-run the installer." "a render: the header says where a per-repo value is declared"
 has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the universal baseline — see' "a render: excludes origin is the baseline"
 has "$(cat "$root/a/.github/workflows/code-review.yml")" '# RENDERED, not literal. The value is the fleet default — see' "a render: rounds origin is the fleet default"
+# The run title is memento's contract: its action provider parses `^code-review pr=(\d+): `.
+grep -Fqx 'run-name: "code-review pr=${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"' "$root/a/.github/workflows/code-review.yml" \
+  || fail "a render: run-name lacks the exact line memento's action provider parses"
 has "$rendered_b" "# RENDERED, not literal. The value is the universal baseline joined with this repo's EXCLUDE_PATTERNS_EXTRA from .github/code-review.conf — see" "b render: excludes origin names the conf"
 has "$rendered_b" "# RENDERED, not literal. The value is this repo's MAX_REVIEW_ROUNDS from .github/code-review.conf — see" "b render: rounds origin names the conf"
 [ "$(cat "$root/d/.github/workflows/code-review.yml")" = stale ] || fail "run 1: wrote into a non-repo directory"
@@ -199,12 +202,6 @@ rendered_cap="$(cd "$work/cap" && source "$skill/template.sh" && render_workflow
 has "$rendered_cap" 'yarn.lock,pnpm-lock.yaml,x/__MAX_REVIEW_ROUNDS__/**"' "marker glob: kept literally in EXCLUDE_PATTERNS"
 has "$rendered_cap" 'MAX_REVIEW_ROUNDS: "5"' "marker glob: the real marker still rendered"
 echo "ok   - render order: a marker-shaped glob in a repo's value captures no later marker"
-
-# --- the run title is memento's contract: its action provider parses `^code-review pr=(\d+): `
-grep -Fqx 'run-name: "code-review pr=${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"' <<<"$rendered_cap" \
-  || fail "run-name: the rendered workflow lacks the exact line memento's action provider parses"
-echo "ok   - run-name: every run is titled with the PR it is for, in the prefix memento parses"
-
 # --- the one-repo installer renders the same file and reads the same stores
 out="$(cd "$root/a" && "$install" 2>"$work/err")" || fail "install.sh in a: exited $?: $(cat "$work/err")"
 has "$out" ".github/workflows/code-review.yml is up to date (uses promptctl/copirate-code-review-agent@v1)" "install a: same render as the fleet"

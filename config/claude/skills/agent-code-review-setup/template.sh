@@ -315,9 +315,10 @@ name: AI Code Review
 # once the PR closes), and the concurrency group's number never reaches the run
 # object. The `code-review pr=<number>: ` prefix is parsed by memento's
 # address-pr-reviews action provider (promptctl/memento:
-# memento/skills/address-pr-reviews/action_provider.py) to tell this PR's run from
-# another PR's run on the same commit; it must not change without changing that
-# provider. Pinned by config/claude/tests/code-review-fleet.sh.
+# memento/skills/address-pr-reviews/action_provider.py, ticket
+# promptctl-unfiled-1eb2.cv3) to tell this PR's run from another PR's run on the
+# same commit; it must not change without changing that provider. Pinned by
+# dotfiles' config/claude/tests/code-review-fleet.sh.
 run-name: "code-review pr=${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
 
 # pull_request (unprivileged), NOT pull_request_target: this job checks out the
