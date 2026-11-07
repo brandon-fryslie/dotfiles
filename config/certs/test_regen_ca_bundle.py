@@ -73,10 +73,16 @@ class MacosTrustsVerdicts(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 regen.macos_trusts("pem")
 
-    def test_a_non_trust_policy_error_on_the_result_line_is_an_error_not_a_verdict(self):
-        with verify_cert_says(1, "Cert Verify Result: User interaction is not allowed.\n"):
-            with self.assertRaises(SystemExit):
-                regen.macos_trusts("pem")
+    def test_expired_is_untrusted(self):
+        with verify_cert_says(1, "Cert Verify Result: CSSMERR_TP_CERT_EXPIRED\n"):
+            self.assertFalse(regen.macos_trusts("pem"))
+
+    def test_an_evaluation_failure_on_the_result_line_is_an_error_not_a_verdict(self):
+        for stderr in ("Cert Verify Result: User interaction is not allowed.\n",
+                       "Cert Verify Result: CSSMERR_TP_INTERNAL_ERROR\n"):
+            with self.subTest(stderr=stderr), verify_cert_says(1, stderr):
+                with self.assertRaises(SystemExit):
+                    regen.macos_trusts("pem")
 
 
 NOT_TRUSTED = (1, "Cert Verify Result: CSSMERR_TP_NOT_TRUSTED\n")
@@ -153,7 +159,11 @@ class RealCerts(unittest.TestCase):
             openssl("x509", "-req", "-in", d / f"{name}.csr", "-CA", d / "root.pem",
                     "-CAkey", d / "root.key", "-CAcreateserial", "-out", d / f"{name}.pem",
                     "-days", "2", "-extfile", d / f"{name}.ext")
-        cls.pem = {n: (d / f"{n}.pem").read_text() for n in ("root", "intermediate", "leaf")}
+        openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", d / "nameless.key",
+                "-out", d / "nameless.pem", "-subj", "/", "-days", "2",
+                "-addext", "basicConstraints=critical,CA:TRUE")
+        cls.pem = {n: (d / f"{n}.pem").read_text()
+                   for n in ("root", "intermediate", "leaf", "nameless")}
 
     @classmethod
     def tearDownClass(cls):
@@ -166,6 +176,9 @@ class RealCerts(unittest.TestCase):
 
     def test_inspect_rejects_what_openssl_cannot_read(self):
         self.assertIsNone(regen.inspect_cert("not a certificate\n"))
+
+    def test_inspect_does_not_call_a_ca_with_empty_names_self_issued(self):
+        self.assertEqual(regen.inspect_cert(self.pem["nameless"]), (True, False))
 
     def test_macos_does_not_trust_a_root_nobody_trusted(self):
         self.assertFalse(regen.macos_trusts(self.pem["root"]))

@@ -89,7 +89,8 @@ def inspect_cert(pem):
                                   if l.startswith(("subject=", "issuer=")))}
     if "subject" not in names or "issuer" not in names:
         return None  # absent names must not compare equal and read as self-issued
-    return "CA:TRUE" in r.stdout, names["subject"] == names["issuer"]
+    # An empty name is no name: two of them are not the same issuer.
+    return "CA:TRUE" in r.stdout, names["subject"] != "" and names["subject"] == names["issuer"]
 
 
 class Verdict(Enum):
@@ -100,12 +101,14 @@ class Verdict(Enum):
 
 # What verify-cert prints on stderr when the evaluator reached a refusal: an
 # explicit Deny trust entry gets the first form, any other refusal the second --
-# a trust-policy (CSSMERR_TP_*) code, or the ssl policy's EKU message, the one
-# refusal it words in prose. Only these are verdicts: a data-layer error such
-# as a locked keychain prints on the same line and is not one.
+# a trust-policy code saying the cert is untrusted or out of its validity, or
+# the ssl policy's EKU message, the one refusal it words in prose. Only these
+# are verdicts: the same line also carries evaluation failures
+# (CSSMERR_TP_INTERNAL_ERROR, a locked keychain), which are not answers.
 DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
 NOT_TRUSTED_RE = re.compile(
-    r"^Cert Verify Result: (CSSMERR_TP_\w+|Invalid Extended Key Usage for policy)$", re.M)
+    r"^Cert Verify Result: (CSSMERR_TP_(NOT_TRUSTED|CERT_(SUSPENDED|EXPIRED|REVOKED|NOT_VALID_YET))"
+    r"|Invalid Extended Key Usage for policy)$", re.M)
 POLICIES = ("basic", "ssl")
 
 
@@ -117,7 +120,8 @@ def macos_trusts(pem):
     which rejects ordinary system roots (ISRG Root X1: "Invalid Extended Key
     Usage for policy"), but it ignores trust entries scoped to a policy: a CA
     trusted only for SSL fails it, and a root set to "Never Trust" for SSL
-    passes it. `-p ssl` honours those entries. So a Deny under either policy
+    passes it. `-p ssl` honours those entries (the SSL-only trust is observed;
+    what ssl prints for an SSL-scoped Deny is not yet). So a Deny under either policy
     leaves the cert out, and otherwise an accept under either keeps it. The
     evaluator folds in the system roots, admin and user trust settings, so a
     cert that merely sits in a keychain (no trust setting) fails both.
