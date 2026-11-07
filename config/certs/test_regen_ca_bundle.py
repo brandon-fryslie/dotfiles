@@ -78,9 +78,12 @@ def verify_cert_v(value, *entries, revocation=""):
             + f"    TrustResultValue = {value};\n}}\n")
 
 
-# Shapes measured live (ticket dotfiles-unfiled-25bc.4q1), as (exit code, stderr).
+# Shapes as (exit code, stderr), measured live on u2 (macOS 26) except as
+# noted (ticket dotfiles-unfiled-25bc.4q1).
 ACCEPTED = (0, verify_cert_v(4))
 PROCEED = (0, verify_cert_v(1))
+# Not yet observed: value 3 is SecTrust.h's kSecTrustResultDeny, pending
+# ticket dotfiles-unfiled-25bc.vdj.
 DENY = (1, verify_cert_v(3, entry()))
 NOBODY_TRUSTED = (1, verify_cert_v(5, entry("AnchorTrusted")))
 APPLE_PLATFORM_ROOT = (1, verify_cert_v(
@@ -89,7 +92,17 @@ ISRG_ROOT_X1 = (1, verify_cert_v(5, entry("ServerAuthEKU")))
 DIGICERT_TLS_G5 = (1, verify_cert_v(5, entry(
     "OtherTrustValidityPeriod", "ServerAuthEKU", "SystemTrustValidityPeriod",
     "SystemTrustedCTRequired"), revocation=REVOCATION_INFO))
-EXPIRED = (1, verify_cert_v(5, entry("TemporalValidity")))
+# Visa Information Delivery Root CA on studious (macOS 15.0.1): StatusCodes
+# sits between the failed checks.
+EXPIRED = (1, verify_cert_v(5, """\
+                {
+            ServerAuthEKU = 0;
+            StatusCodes =             (
+                "-2147409654",
+                "-2147408889"
+            );
+            TemporalValidity = 0;
+        }"""))
 
 
 def verify_cert_per_policy(answers):
@@ -160,6 +173,17 @@ class MacosTrusts(unittest.TestCase):
             with self.subTest(ssl=ssl):
                 self.assertIn("-p ssl", self.dies(ssl=ssl))
 
+    def test_a_details_line_of_unknown_shape_is_an_error_not_skipped(self):
+        for line in ('            "AnchorTrusted" = 0;', "            AnchorTrusted = 1;",
+                     "              AnchorTrusted = 0;"):
+            with self.subTest(line=line):
+                hidden = "                {\n" + line + "\n            ServerAuthEKU = 0;\n        }"
+                self.assertIn("-p ssl", self.dies(ssl=(1, verify_cert_v(5, hidden))))
+
+    def test_failed_checks_contradicting_the_result_are_an_error(self):
+        self.assertIn("-p ssl", self.dies(ssl=(0, verify_cert_v(4, entry("AnchorTrusted")))))
+        self.assertIn("-p ssl", self.dies(ssl=(1, verify_cert_v(5, entry()))))
+
     def test_an_exit_code_contradicting_the_result_is_an_error(self):
         self.assertIn("-p ssl", self.dies(ssl=(1, verify_cert_v(4))))
         self.assertIn("-p ssl", self.dies(ssl=(0, verify_cert_v(5, entry("ServerAuthEKU")))))
@@ -171,9 +195,13 @@ def openssl(*args):
 
 
 def system_root(name):
-    return subprocess.run(["security", "find-certificate", "-c", name, "-p",
-                           "/System/Library/Keychains/SystemRootCertificates.keychain"],
-                          check=True, capture_output=True, text=True).stdout
+    """The root's PEM, or "" when this macOS does not ship it."""
+    r = subprocess.run(["security", "find-certificate", "-c", name, "-p",
+                        "/System/Library/Keychains/SystemRootCertificates.keychain"],
+                       capture_output=True, text=True)
+    if r.returncode != 0 and "could not be found" not in r.stderr:
+        raise RuntimeError(f"security find-certificate -c {name!r}: {r.stderr.strip()}")
+    return r.stdout
 
 
 class RealCerts(unittest.TestCase):
@@ -227,7 +255,10 @@ class RealCerts(unittest.TestCase):
         self.assertTrue(regen.macos_trusts(isrg))
 
     def test_macos_does_not_trust_an_apple_platform_root_for_tls(self):
-        self.assertFalse(regen.macos_trusts(system_root("Apple Platform RSA Root CA - G1")))
+        root = system_root("Apple Platform RSA Root CA - G1")
+        if not root:
+            self.skipTest("this macOS has no Apple Platform roots (macOS 15 does not)")
+        self.assertFalse(regen.macos_trusts(root))
 
     def test_macos_failing_to_evaluate_is_an_error_not_a_verdict(self):
         with self.assertRaises(SystemExit):

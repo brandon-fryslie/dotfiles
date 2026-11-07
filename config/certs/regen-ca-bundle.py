@@ -22,6 +22,7 @@ import tempfile
 import time
 import sys
 from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
 
 CERTS = Path.home() / ".config/certs"
@@ -101,16 +102,18 @@ class Deny:
 
 @dataclass(frozen=True)
 class Evaluated:
-    """The evaluator's named failed checks: none when it accepted the cert
-    (SecTrustResultType 1 Proceed, 4 Unspecified), some when it refused it
-    (5 RecoverableTrustFailure)."""
+    """The evaluator's named failed checks: none when it accepted the cert,
+    some when it refused it. evaluate is its only constructor and enforces both."""
     failed: frozenset
 
 
-# The SecTrustResultType values (SecTrust.h) a run may end in, by whether
-# verify-cert exits 0 for them; any other value (6 FatalTrustFailure,
-# 7 OtherError) is an evaluation that did not happen.
-ACCEPTED, REFUSED, DENY = {1, 4}, {5}, 3
+class SecTrustResultType(IntEnum):
+    """The values (SecTrust.h) a run may end in; any other (6 FatalTrustFailure,
+    7 OtherError) is an evaluation that did not happen."""
+    PROCEED = 1
+    DENY = 3
+    UNSPECIFIED = 4
+    RECOVERABLE_TRUST_FAILURE = 5
 
 # A root evaluated under ssl is checked as if it were a server's leaf, so every
 # system root fails checks only a leaf can pass. These are those checks, as seen
@@ -129,7 +132,12 @@ RESULT_VALUE_RE = re.compile(r"^    TrustResultValue = (\d+);$", re.M)
 # The failed-check dicts, one per chain cert, sliced at their top-level key so
 # RevocationInfo's nested `<name> = 0;` lines are never read as checks.
 DETAILS_RE = re.compile(r"^    TrustResultDetails = +\((.*?)^    \);$", re.M | re.S)
-FAILED_CHECK_RE = re.compile(r"^ {12}(\w+) = 0;$", re.M)
+# Every line shape the details hold, across all keychain certs under both
+# policies on u2 (macOS 26) and studious (macOS 15.0.1): a dict's braces, a
+# failed check, and the StatusCodes list. A line of any other shape could be a
+# check this parse cannot read, so it is not skipped. [LAW:parse-dont-validate]
+DETAILS_LINE_RE = re.compile(
+    r' {16}\{| {8}\},?| {12}(?P<check>\w+) = 0;| {12}StatusCodes = +\(| {16}"-?\d+",?| {12}\);|')
 POLICIES = ("basic", "ssl")
 
 
@@ -162,21 +170,26 @@ def evaluate(path, policy):
     """Parse one `verify-cert -v` run into Deny | Evaluated.
 
     -v prints the evaluator's SecTrustCopyResult on stderr; its result value
-    is the verdict, and the exit code must agree with it. A run with no result
-    block, any other value, or an exit code that contradicts the value is an
-    evaluation that did not happen (an unreadable file, a locked keychain): it
-    dies rather than dropping or keeping the cert unseen.
-    [LAW:parse-dont-validate] [LAW:no-silent-failure]
+    is the verdict, and the exit code and failed checks must agree with it.
+    Anything else -- no result block, a details line of unknown shape, another
+    value, or a disagreement -- is an evaluation that did not happen (an
+    unreadable file, a locked keychain): it dies rather than dropping or
+    keeping the cert unseen. [LAW:parse-dont-validate] [LAW:no-silent-failure]
     """
     r = run(["security", "verify-cert", "-v", "-c", path, "-p", policy])
-    value = RESULT_VALUE_RE.search(r.stderr)
-    details = DETAILS_RE.search(r.stderr)
-    if value and details:
-        value, accepted = int(value.group(1)), r.returncode == 0
-        if value == DENY and not accepted:
+    value_m = RESULT_VALUE_RE.search(r.stderr)
+    details_m = DETAILS_RE.search(r.stderr)
+    lines = [DETAILS_LINE_RE.fullmatch(l) for l in details_m.group(1).splitlines()] if details_m else []
+    if value_m and details_m and all(lines):
+        value, exited_zero = int(value_m.group(1)), r.returncode == 0
+        failed = frozenset(m["check"] for m in lines if m["check"])
+        if value == SecTrustResultType.DENY and not exited_zero:
             return Deny()
-        if value in (ACCEPTED if accepted else REFUSED):
-            return Evaluated(frozenset(FAILED_CHECK_RE.findall(details.group(1))))
+        if value in (SecTrustResultType.PROCEED, SecTrustResultType.UNSPECIFIED) \
+                and exited_zero and not failed:
+            return Evaluated(failed)
+        if value == SecTrustResultType.RECOVERABLE_TRUST_FAILURE and not exited_zero and failed:
+            return Evaluated(failed)
     die(f"security verify-cert -p {policy} could not evaluate "
         f"{subject(Path(path).read_text())}: "
         f"{r.stderr.strip() or r.stdout.strip() or 'no output'}")
