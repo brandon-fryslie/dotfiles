@@ -73,11 +73,17 @@ class MacosTrustsVerdicts(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 regen.macos_trusts("pem")
 
+    def test_a_non_trust_policy_error_on_the_result_line_is_an_error_not_a_verdict(self):
+        with verify_cert_says(1, "Cert Verify Result: User interaction is not allowed.\n"):
+            with self.assertRaises(SystemExit):
+                regen.macos_trusts("pem")
+
 
 NOT_TRUSTED = (1, "Cert Verify Result: CSSMERR_TP_NOT_TRUSTED\n")
 OK = (0, "")
 DENY = (1, "SecTrustEvaluate result: kSecTrustResultDeny\n")
 BAD_EKU = (1, "Cert Verify Result: Invalid Extended Key Usage for policy\n---\n")
+SUSPENDED = (1, "Cert Verify Result: CSSMERR_TP_CERT_SUSPENDED\n")
 
 
 def verify_cert_per_policy(answers):
@@ -104,6 +110,10 @@ class MacosTrustsPolicies(unittest.TestCase):
 
     def test_system_root_accepted_by_basic_only_is_trusted(self):
         self.assertTrue(self.trusts(basic=OK, ssl=BAD_EKU))
+
+    def test_system_root_ssl_calls_suspended_is_trusted_when_basic_accepts(self):
+        # DigiCert TLS ECC P384 Root G5 and 41 other TLS roots, live on macOS 26
+        self.assertTrue(self.trusts(basic=OK, ssl=SUSPENDED))
 
     def test_ca_trusted_only_for_ssl_is_trusted(self):
         self.assertTrue(self.trusts(basic=NOT_TRUSTED, ssl=OK))
@@ -164,6 +174,11 @@ class RealCerts(unittest.TestCase):
         r = subprocess.run(["security", "find-certificate", "-c", "ISRG Root X1", "-p",
                             "/System/Library/Keychains/SystemRootCertificates.keychain"],
                            check=True, capture_output=True, text=True)
+        with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
+            fh.write(r.stdout)
+            fh.flush()
+            self.assertEqual(regen.verify(fh.name, "basic"), regen.Verdict.ACCEPTED)
+            self.assertEqual(regen.verify(fh.name, "ssl"), regen.Verdict.NOT_TRUSTED)
         self.assertTrue(regen.macos_trusts(r.stdout))
 
     def test_macos_failing_to_evaluate_is_an_error_not_a_verdict(self):

@@ -20,8 +20,8 @@ import shlex
 import subprocess
 import tempfile
 import time
-from enum import Enum
 import sys
+from enum import Enum, auto
 from pathlib import Path
 
 CERTS = Path.home() / ".config/certs"
@@ -93,16 +93,19 @@ def inspect_cert(pem):
 
 
 class Verdict(Enum):
-    ACCEPTED = "accepted"
-    NOT_TRUSTED = "not trusted"
-    DENIED = "denied"
+    ACCEPTED = auto()
+    NOT_TRUSTED = auto()
+    DENIED = auto()
 
 
 # What verify-cert prints on stderr when the evaluator reached a refusal: an
-# explicit Deny trust entry gets the first form, any other refusal the second.
-# Only these are verdicts: any other shape is not known to be one.
+# explicit Deny trust entry gets the first form, any other refusal the second --
+# a trust-policy (CSSMERR_TP_*) code, or the ssl policy's EKU message, the one
+# refusal it words in prose. Only these are verdicts: a data-layer error such
+# as a locked keychain prints on the same line and is not one.
 DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
-NOT_TRUSTED_RE = re.compile(r"^Cert Verify Result: \S.*$", re.M)
+NOT_TRUSTED_RE = re.compile(
+    r"^Cert Verify Result: (CSSMERR_TP_\w+|Invalid Extended Key Usage for policy)$", re.M)
 POLICIES = ("basic", "ssl")
 
 
