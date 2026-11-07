@@ -1,6 +1,6 @@
 ---
 name: hindsight
-description: Go back to the commit you started from, keeping what you learned and nothing you built. Use when a review or your own reading shows the work's premise was wrong — several findings share one cause, and fixing them would mean propping up a design that belongs somewhere else. Distills the learnings into fresh tickets written as if the work never happened, supersedes the ticket you were on, grooms the rest of the lane gently, destroys the branch, PR and worktree so nothing points at the old approach, has a planner who never saw it plan the new one, then hands off to a fresh session. Triggers — "hindsight", "run hindsight on this", "is this a redesign situation", "the premise was wrong", "the findings all come from one cause", "start over from the commit I began on but keep what I learned".
+description: Go back to the commit you started from, keeping what you learned and nothing you built. Use when a review or your own reading shows the work's premise was wrong — several findings share one cause, and fixing them would mean propping up a design that belongs somewhere else. Distills the learnings into fresh tickets written as if the work never happened, supersedes the ticket you were on, grooms the rest of the lane gently, destroys the branch, PR and worktree so nothing points at the old approach, has a planner who never saw it plan the new one, then hands off to a fresh session. Also the mechanical trigger: the fourth review pass in one PR's cycle that returned findings to fix — there is no fifth review, there is this. Triggers — "hindsight", "run hindsight on this", "is this a redesign situation", "the premise was wrong", "the findings all come from one cause", "the fourth review found things again", "start over from the commit I began on but keep what I learned".
 ---
 
 # Hindsight
@@ -22,10 +22,19 @@ else. [LAW:carrying-cost] The test: write the cure for each finding, then ask wh
 the cures survive moving the premise to where it belongs. If most of them vanish, you
 are here.
 
+You do not have to see the premise. There is a count, and it needs no diagnosis: a
+review pass fails when it returns a finding you had to fix or rule on; a clean pass
+doesn't count. **The fourth failed review in one PR's cycle is the last review that PR
+gets.** What follows is this skill, not a fifth pass. The judgment test above catches a
+redesign early, when you can see the shared cause; the count catches it when you can't,
+which is often, because the author's eye is the one the paved path has already bent. At
+the fourth, the voice says *"one more low and it's clean."* Four passes that each found
+something is a PR that isn't converging, and the fifth finds the sixth.
+
 Invoking this skill is the decision. It will reopen itself around the time you are
 deleting the branch: *"it's only a few findings — patch them and move on."* The
-count was never the question. One wrong premise under seven findings is seven
-findings next review too, under different names.
+number of findings was never the question. One wrong premise under seven findings is
+seven findings next review too, under different names.
 
 ## Learnings travel as sentences; the artifact doesn't travel
 
@@ -209,6 +218,8 @@ there is to understand now.
 
 - **Redesign, not repair.** Several findings, one premise. If the cures vanish when the
   premise moves, you are here.
+- **Four failed reviews, no fifth.** A pass fails when it returns a finding you fixed or
+  ruled on. The fourth in one PR's cycle invokes this skill; no diagnosis needed.
 - **Sentences travel; the artifact doesn't.** Learnings are facts a stranger can check
   against master, plus one mechanism sentence naming no artifact.
 - **A link is the artifact.** No pointer to the old ticket, branch, PR, or session in
