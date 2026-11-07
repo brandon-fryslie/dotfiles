@@ -101,11 +101,12 @@ class Verdict(Enum):
 
 
 # The refusals verify-cert has been seen to print on stderr, across the three
-# keychains on u2, and for an SSL-scoped Deny under -p ssl on studious (macOS
-# 15.0.1): an explicit Deny trust entry gets the first form; the second lists
-# the other refusals by name, the EKU one being the only one worded in prose. Only these are verdicts. The same "Cert Verify Result:" line also
-# carries evaluation failures (CSSMERR_TP_INTERNAL_ERROR, a locked keychain),
-# and a refusal not seen yet is not known to be one; both die.
+# keychains on u2 (macOS 26), and for an SSL-scoped Deny under -p ssl on
+# studious (macOS 15.0.1 only): an explicit Deny trust entry gets the first
+# form; the second lists the other refusals by name, the EKU one being the only
+# one worded in prose. Only these are verdicts. The same "Cert Verify Result:"
+# line also carries evaluation failures (CSSMERR_TP_INTERNAL_ERROR, a locked
+# keychain), and a refusal not seen yet is not known to be one; both die.
 DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
 NOT_TRUSTED_RE = re.compile(
     r"^Cert Verify Result: (CSSMERR_TP_(NOT_TRUSTED|CERT_SUSPENDED|CERT_EXPIRED)"
