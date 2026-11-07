@@ -16,6 +16,14 @@
 # (keys: EXCLUDE_PATTERNS_EXTRA MAX_REVIEW_ROUNDS), then re-run the installer.
 name: AI Code Review
 
+# The run's title names the PR it is for — LOAD-BEARING: nothing else on a run
+# does. `pull_requests` lists every open PR whose head matches the SHA (and empties
+# once the PR closes), and the concurrency group's number never reaches the run
+# object. The `code-review pr=<number>: ` prefix is parsed by memento's
+# address-pr-reviews action provider to tell this PR's run from another PR's run
+# on the same commit; it must not change without changing that provider.
+run-name: "code-review pr=${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"
+
 # pull_request (unprivileged), NOT pull_request_target: this job checks out the
 # PR head. Under pull_request_target that checkout runs privileged, with secrets
 # in scope — the untrusted-checkout pattern CodeQL flags as high and that nothing
