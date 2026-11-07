@@ -103,7 +103,7 @@ class Deny:
 @dataclass(frozen=True)
 class Evaluated:
     """The evaluator's named failed checks: none when it accepted the cert,
-    some when it refused it. evaluate is its only constructor and enforces both."""
+    some when it refused it, as evaluate requires of the run it parses."""
     failed: frozenset
 
 
@@ -156,14 +156,16 @@ def macos_trusts(pem):
         fh.write(pem)
         fh.flush()
         results = {policy: evaluate(fh.name, policy) for policy in POLICIES}
-    if Deny() in results.values():
+    if any(isinstance(r, Deny) for r in results.values()):
         return False
     failed = results["ssl"].failed
-    unknown = failed - LEAF_SHAPE_CHECKS - REFUSING_CHECKS
+    if failed & REFUSING_CHECKS:
+        return False  # out whatever its other failed checks mean
+    unknown = failed - LEAF_SHAPE_CHECKS
     if unknown:
         die(f"security verify-cert -p ssl failed checks not known to be leaf-shape "
             f"or refusals on {subject(pem)}: {sorted(unknown)}")
-    return not failed & REFUSING_CHECKS
+    return True
 
 
 def evaluate(path, policy):

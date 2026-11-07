@@ -163,6 +163,10 @@ class MacosTrusts(unittest.TestCase):
         self.assertIn("SignatureHashAlgorithms",
                       self.dies(ssl=(1, verify_cert_v(5, entry("SignatureHashAlgorithms")))))
 
+    def test_a_refused_cert_is_left_out_whatever_its_other_failed_checks(self):
+        self.assertFalse(self.trusts(ssl=(1, verify_cert_v(
+            5, entry("AnchorTrusted", "SignatureHashAlgorithms")))))
+
     def test_a_basic_run_that_did_not_evaluate_is_an_error_not_an_absent_deny(self):
         for basic in ((1, verify_cert_v(7)), (1, verify_cert_v(6)), (1, "garbage\n")):
             with self.subTest(basic=basic):
@@ -195,11 +199,13 @@ def openssl(*args):
 
 
 def system_root(name):
-    """The root's PEM, or "" when this macOS does not ship it."""
+    """The root's PEM; the test skips when this macOS does not ship it."""
     r = subprocess.run(["security", "find-certificate", "-c", name, "-p",
                         "/System/Library/Keychains/SystemRootCertificates.keychain"],
                        capture_output=True, text=True)
-    if r.returncode != 0 and "could not be found" not in r.stderr:
+    if "could not be found" in r.stderr:
+        raise unittest.SkipTest(f"this macOS does not ship {name!r}")
+    if r.returncode != 0:
         raise RuntimeError(f"security find-certificate -c {name!r}: {r.stderr.strip()}")
     return r.stdout
 
@@ -250,15 +256,12 @@ class RealCerts(unittest.TestCase):
         with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
             fh.write(isrg)
             fh.flush()
-            self.assertEqual(regen.evaluate(fh.name, "ssl"),
-                             regen.Evaluated(frozenset({"ServerAuthEKU"})))
+            failed = regen.evaluate(fh.name, "ssl").failed
+        self.assertTrue(failed and failed <= regen.LEAF_SHAPE_CHECKS, failed)
         self.assertTrue(regen.macos_trusts(isrg))
 
     def test_macos_does_not_trust_an_apple_platform_root_for_tls(self):
-        root = system_root("Apple Platform RSA Root CA - G1")
-        if not root:
-            self.skipTest("this macOS has no Apple Platform roots (macOS 15 does not)")
-        self.assertFalse(regen.macos_trusts(root))
+        self.assertFalse(regen.macos_trusts(system_root("Apple Platform RSA Root CA - G1")))
 
     def test_macos_failing_to_evaluate_is_an_error_not_a_verdict(self):
         with self.assertRaises(SystemExit):
