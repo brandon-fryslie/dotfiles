@@ -122,10 +122,10 @@ def macos_trusts(pem):
     Usage for policy"), but it ignores trust entries scoped to a policy: a CA
     trusted only for SSL fails it, and a root set to "Never Trust" for SSL
     passes it. `-p ssl` honours those entries: SSL-only trust is observed to
-    pass it, and an SSL-scoped Deny is assumed, not yet observed, to print the
-    Deny form. So a Deny under either policy
-    leaves the cert out, and otherwise an accept under either keeps it. The
-    evaluator folds in the system roots, admin and user trust settings, so a
+    pass it, and an SSL-scoped Deny prints the Deny form under it (observed on
+    a CA that also has a basic TrustRoot entry, which basic accepts). So a Deny
+    under either policy leaves the cert out, and otherwise an accept under
+    either keeps it. The evaluator folds in the system roots, admin and user trust settings, so a
     cert that merely sits in a keychain (no trust setting) fails both.
     [LAW:one-source-of-truth]
     """
