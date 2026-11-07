@@ -101,11 +101,12 @@ class Verdict(Enum):
 
 
 # The refusals verify-cert has been seen to print on stderr, across the three
-# keychains on u2: an explicit Deny trust entry gets the first form; the second
-# lists the other refusals by name, the EKU one being the only one worded in
-# prose. Only these are verdicts. The same "Cert Verify Result:" line also
-# carries evaluation failures (CSSMERR_TP_INTERNAL_ERROR, a locked keychain),
-# and a refusal not seen yet is not known to be one; both die.
+# keychains on u2 (macOS 26), and for an SSL-scoped Deny under -p ssl on
+# studious (macOS 15.0.1 only): an explicit Deny trust entry gets the first
+# form; the second lists the other refusals by name, the EKU one being the only
+# one worded in prose. Only these are verdicts. The same "Cert Verify Result:"
+# line also carries evaluation failures (CSSMERR_TP_INTERNAL_ERROR, a locked
+# keychain), and a refusal not seen yet is not known to be one; both die.
 DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
 NOT_TRUSTED_RE = re.compile(
     r"^Cert Verify Result: (CSSMERR_TP_(NOT_TRUSTED|CERT_SUSPENDED|CERT_EXPIRED)"
@@ -122,11 +123,12 @@ def macos_trusts(pem):
     Usage for policy"), but it ignores trust entries scoped to a policy: a CA
     trusted only for SSL fails it, and a root set to "Never Trust" for SSL
     passes it. `-p ssl` honours those entries: SSL-only trust is observed to
-    pass it, and an SSL-scoped Deny is assumed, not yet observed, to print the
-    Deny form. So a Deny under either policy
-    leaves the cert out, and otherwise an accept under either keeps it. The
-    evaluator folds in the system roots, admin and user trust settings, so a
-    cert that merely sits in a keychain (no trust setting) fails both.
+    pass it, and an SSL-scoped Deny prints the Deny form under it (observed on
+    a CA that also has a basic TrustRoot entry, which basic accepts). So a
+    Deny under either policy leaves the cert out, and otherwise an accept
+    under either keeps it. The evaluator folds in the system roots, admin and
+    user trust settings, so a cert that merely sits in a keychain (no trust
+    setting) fails both.
     [LAW:one-source-of-truth]
     """
     with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
