@@ -52,44 +52,57 @@ class SelectAnchors(unittest.TestCase):
         self.assertEqual(select(["untrusted-root", "root", "leaf"])[0], ["root"])
 
 
-def verify_cert_says(returncode, stderr):
-    return mock.patch.object(regen, "run", return_value=subprocess.CompletedProcess(
-        [], returncode, stdout="", stderr=stderr))
+REVOCATION_INFO = """\
+    RevocationInfo =     (
+                {
+            valid =             {
+                checkOCSP = 0;
+                valid = 0;
+            };
+        }
+    );
+"""
 
 
-class MacosTrustsVerdicts(unittest.TestCase):
-    """The stderr shapes `security verify-cert` prints, captured from a live run."""
-
-    def test_explicit_deny_entry_is_untrusted_not_an_error(self):
-        with verify_cert_says(1, "SecTrustEvaluate result: kSecTrustResultDeny\n"):
-            self.assertFalse(regen.macos_trusts("pem"))
-
-    def test_no_trust_is_untrusted(self):
-        with verify_cert_says(1, "Cert Verify Result: CSSMERR_TP_NOT_TRUSTED\n"):
-            self.assertFalse(regen.macos_trusts("pem"))
-
-    def test_an_unrecognised_failure_is_an_error_not_a_verdict(self):
-        with verify_cert_says(1, "SecTrustEvaluate result: kSecTrustResultFatalTrustFailure\n"):
-            with self.assertRaises(SystemExit):
-                regen.macos_trusts("pem")
-
-    def test_expired_is_untrusted(self):
-        with verify_cert_says(1, "Cert Verify Result: CSSMERR_TP_CERT_EXPIRED\n"):
-            self.assertFalse(regen.macos_trusts("pem"))
-
-    def test_an_evaluation_failure_on_the_result_line_is_an_error_not_a_verdict(self):
-        for stderr in ("Cert Verify Result: User interaction is not allowed.\n",
-                       "Cert Verify Result: CSSMERR_TP_INTERNAL_ERROR\n"):
-            with self.subTest(stderr=stderr), verify_cert_says(1, stderr):
-                with self.assertRaises(SystemExit):
-                    regen.macos_trusts("pem")
+def entry(*failed):
+    checks = "".join(f"            {name} = 0;\n" for name in failed)
+    codes = '            StatusCodes =             (\n                "-2147408889"\n            );\n'
+    return "                {\n" + checks + (codes if failed else "") + "        }"
 
 
-NOT_TRUSTED = (1, "Cert Verify Result: CSSMERR_TP_NOT_TRUSTED\n")
-OK = (0, "")
-DENY = (1, "SecTrustEvaluate result: kSecTrustResultDeny\n")
-BAD_EKU = (1, "Cert Verify Result: Invalid Extended Key Usage for policy\n---\n")
-SUSPENDED = (1, "Cert Verify Result: CSSMERR_TP_CERT_SUSPENDED\n")
+def verify_cert_v(value, *entries, revocation=""):
+    """The stderr `security verify-cert -v` prints, in the shape captured on macOS 26."""
+    return ("---\nTrust evaluation results\n{\n" + revocation
+            + '    TrustEvaluationDate = "2026-11-07 09:09:07 +0000";\n'
+            + "    TrustResultDetails =     (\n" + ",\n".join(entries or (entry(),)) + "\n    );\n"
+            + f"    TrustResultValue = {value};\n}}\n")
+
+
+# Shapes as (exit code, stderr), measured live on u2 (macOS 26) except as
+# noted (ticket dotfiles-unfiled-25bc.4q1).
+ACCEPTED = (0, verify_cert_v(4))
+PROCEED = (0, verify_cert_v(1))
+# Not yet observed: value 3 is SecTrust.h's kSecTrustResultDeny, pending
+# ticket dotfiles-unfiled-25bc.vdj.
+DENY = (1, verify_cert_v(3, entry()))
+NOBODY_TRUSTED = (1, verify_cert_v(5, entry("AnchorTrusted")))
+APPLE_PLATFORM_ROOT = (1, verify_cert_v(
+    5, entry("AnchorTrusted", "OtherTrustValidityPeriod", "ServerAuthEKU")))
+ISRG_ROOT_X1 = (1, verify_cert_v(5, entry("ServerAuthEKU")))
+DIGICERT_TLS_G5 = (1, verify_cert_v(5, entry(
+    "OtherTrustValidityPeriod", "ServerAuthEKU", "SystemTrustValidityPeriod",
+    "SystemTrustedCTRequired"), revocation=REVOCATION_INFO))
+# Visa Information Delivery Root CA on studious (macOS 15.0.1): StatusCodes
+# sits between the failed checks.
+EXPIRED = (1, verify_cert_v(5, """\
+                {
+            ServerAuthEKU = 0;
+            StatusCodes =             (
+                "-2147409654",
+                "-2147408889"
+            );
+            TemporalValidity = 0;
+        }"""))
 
 
 def verify_cert_per_policy(answers):
@@ -106,43 +119,95 @@ def verify_cert_per_policy(answers):
     return mock.patch.object(regen, "run", side_effect=fake), asked
 
 
-class MacosTrustsPolicies(unittest.TestCase):
-    """basic keeps the system roots ssl rejects; ssl honours trust and Deny scoped to SSL."""
+class MacosTrusts(unittest.TestCase):
+    """ssl's anchor answer decides; a Deny under either policy leaves the cert out."""
 
-    def trusts(self, **answers):
-        patch, asked = verify_cert_per_policy(answers)
+    def trusts(self, basic=ACCEPTED, ssl=ACCEPTED):
+        patch, asked = verify_cert_per_policy({"basic": basic, "ssl": ssl})
         with patch:
             trusted = regen.macos_trusts("pem")
         self.assertEqual(sorted(asked), ["basic", "ssl"])
         return trusted
 
-    def test_system_root_accepted_by_basic_only_is_trusted(self):
-        self.assertTrue(self.trusts(basic=OK, ssl=BAD_EKU))
-
-    def test_system_root_ssl_calls_suspended_is_trusted_when_basic_accepts(self):
-        # DigiCert TLS ECC P384 Root G5 and 41 other TLS roots, live on macOS 26
-        self.assertTrue(self.trusts(basic=OK, ssl=SUSPENDED))
-
-    def test_ca_trusted_only_for_ssl_is_trusted(self):
-        self.assertTrue(self.trusts(basic=NOT_TRUSTED, ssl=OK))
-
-    def test_root_denied_for_ssl_is_untrusted_though_basic_accepts_it(self):
-        self.assertFalse(self.trusts(basic=OK, ssl=DENY))
-
-    def test_denied_for_basic_is_untrusted_though_ssl_accepts_it(self):
-        self.assertFalse(self.trusts(basic=DENY, ssl=OK))
-
-    def test_refused_by_both_is_untrusted(self):
-        self.assertFalse(self.trusts(basic=NOT_TRUSTED, ssl=NOT_TRUSTED))
-
-    def test_ssl_failing_to_evaluate_is_an_error_not_a_verdict(self):
+    def dies(self, **answers):
         with self.assertRaises(SystemExit) as died:
-            self.trusts(basic=OK, ssl=(1, "something else\n"))
-        self.assertIn("-p ssl", str(died.exception.code))
+            self.trusts(**answers)
+        return str(died.exception.code)
+
+    def test_a_root_ssl_refuses_only_as_a_server_leaf_is_trusted(self):
+        for ssl in (ISRG_ROOT_X1, DIGICERT_TLS_G5):
+            with self.subTest(ssl=ssl):
+                self.assertTrue(self.trusts(ssl=ssl))
+
+    def test_a_root_not_trusted_as_an_ssl_anchor_is_left_out_though_basic_accepts_it(self):
+        self.assertFalse(self.trusts(ssl=APPLE_PLATFORM_ROOT))
+
+    def test_anchor_refusal_on_any_chain_cert_leaves_it_out(self):
+        two_cert_chain = (1, verify_cert_v(5, entry("ServerAuthEKU"), entry("AnchorTrusted")))
+        self.assertFalse(self.trusts(ssl=two_cert_chain))
+
+    def test_ca_trusted_by_a_trust_setting_is_trusted(self):
+        self.assertTrue(self.trusts(basic=PROCEED, ssl=PROCEED))
+
+    def test_ca_nobody_trusted_is_left_out(self):
+        self.assertFalse(self.trusts(basic=NOBODY_TRUSTED, ssl=NOBODY_TRUSTED))
+
+    def test_expired_is_left_out(self):
+        self.assertFalse(self.trusts(basic=EXPIRED, ssl=EXPIRED))
+
+    def test_a_deny_under_either_policy_leaves_it_out(self):
+        self.assertFalse(self.trusts(basic=DENY, ssl=ISRG_ROOT_X1))
+        self.assertFalse(self.trusts(basic=ACCEPTED, ssl=DENY))
+
+    def test_a_failed_check_not_known_to_be_noise_is_an_error(self):
+        self.assertIn("SignatureHashAlgorithms",
+                      self.dies(ssl=(1, verify_cert_v(5, entry("SignatureHashAlgorithms")))))
+
+    def test_a_refused_cert_is_left_out_whatever_its_other_failed_checks(self):
+        self.assertFalse(self.trusts(ssl=(1, verify_cert_v(
+            5, entry("AnchorTrusted", "SignatureHashAlgorithms")))))
+
+    def test_a_basic_run_that_did_not_evaluate_is_an_error_not_an_absent_deny(self):
+        for basic in ((1, verify_cert_v(7)), (1, verify_cert_v(6)), (1, "garbage\n")):
+            with self.subTest(basic=basic):
+                self.assertIn("-p basic", self.dies(basic=basic, ssl=ISRG_ROOT_X1))
+
+    def test_an_ssl_run_that_did_not_evaluate_is_an_error(self):
+        for ssl in ((1, verify_cert_v(7)), (1, verify_cert_v(6)), (1, "")):
+            with self.subTest(ssl=ssl):
+                self.assertIn("-p ssl", self.dies(ssl=ssl))
+
+    def test_a_details_line_of_unknown_shape_is_an_error_not_skipped(self):
+        for line in ('            "AnchorTrusted" = 0;', "            AnchorTrusted = 1;",
+                     "              AnchorTrusted = 0;"):
+            with self.subTest(line=line):
+                hidden = "                {\n" + line + "\n            ServerAuthEKU = 0;\n        }"
+                self.assertIn("-p ssl", self.dies(ssl=(1, verify_cert_v(5, hidden))))
+
+    def test_failed_checks_contradicting_the_result_are_an_error(self):
+        self.assertIn("-p ssl", self.dies(ssl=(0, verify_cert_v(4, entry("AnchorTrusted")))))
+        self.assertIn("-p ssl", self.dies(ssl=(1, verify_cert_v(5, entry()))))
+
+    def test_an_exit_code_contradicting_the_result_is_an_error(self):
+        self.assertIn("-p ssl", self.dies(ssl=(1, verify_cert_v(4))))
+        self.assertIn("-p ssl", self.dies(ssl=(0, verify_cert_v(5, entry("ServerAuthEKU")))))
+        self.assertIn("-p basic", self.dies(basic=(0, verify_cert_v(3))))
 
 
 def openssl(*args):
     subprocess.run(["openssl", *args], check=True, capture_output=True)
+
+
+def system_root(name):
+    """The root's PEM; the test skips when this macOS does not ship it."""
+    r = subprocess.run(["security", "find-certificate", "-c", name, "-p",
+                        "/System/Library/Keychains/SystemRootCertificates.keychain"],
+                       capture_output=True, text=True)
+    if "could not be found" in r.stderr:
+        raise unittest.SkipTest(f"this macOS does not ship {name!r}")
+    if r.returncode != 0:
+        raise RuntimeError(f"security find-certificate -c {name!r}: {r.stderr.strip()}")
+    return r.stdout
 
 
 class RealCerts(unittest.TestCase):
@@ -186,16 +251,17 @@ class RealCerts(unittest.TestCase):
     def test_macos_does_not_trust_a_root_nobody_trusted(self):
         self.assertFalse(regen.macos_trusts(self.pem["root"]))
 
-    def test_macos_trusts_a_system_root_the_ssl_policy_rejects(self):
-        r = subprocess.run(["security", "find-certificate", "-c", "ISRG Root X1", "-p",
-                            "/System/Library/Keychains/SystemRootCertificates.keychain"],
-                           check=True, capture_output=True, text=True)
+    def test_macos_trusts_a_tls_root_ssl_refuses_only_as_a_server_leaf(self):
+        isrg = system_root("ISRG Root X1")
         with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
-            fh.write(r.stdout)
+            fh.write(isrg)
             fh.flush()
-            self.assertEqual(regen.verify(fh.name, "basic"), regen.Verdict.ACCEPTED)
-            self.assertEqual(regen.verify(fh.name, "ssl"), regen.Verdict.NOT_TRUSTED)
-        self.assertTrue(regen.macos_trusts(r.stdout))
+            failed = regen.evaluate(fh.name, "ssl").failed
+        self.assertLessEqual(failed, regen.LEAF_SHAPE_CHECKS)
+        self.assertTrue(regen.macos_trusts(isrg))
+
+    def test_macos_does_not_trust_an_apple_platform_root_for_tls(self):
+        self.assertFalse(regen.macos_trusts(system_root("Apple Platform RSA Root CA - G1")))
 
     def test_macos_failing_to_evaluate_is_an_error_not_a_verdict(self):
         with self.assertRaises(SystemExit):

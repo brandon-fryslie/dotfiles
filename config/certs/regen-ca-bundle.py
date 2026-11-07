@@ -21,7 +21,8 @@ import subprocess
 import tempfile
 import time
 import sys
-from enum import Enum, auto
+from dataclasses import dataclass
+from enum import IntEnum
 from pathlib import Path
 
 CERTS = Path.home() / ".config/certs"
@@ -94,65 +95,103 @@ def inspect_cert(pem):
     return "CA:TRUE" in r.stdout, names["subject"] != "" and names["subject"] == names["issuer"]
 
 
-class Verdict(Enum):
-    ACCEPTED = auto()
-    NOT_TRUSTED = auto()
-    DENIED = auto()
+@dataclass(frozen=True)
+class Deny:
+    """A trust entry explicitly denies the cert (SecTrustResultType 3)."""
 
 
-# The refusals verify-cert has been seen to print on stderr, across the three
-# keychains on u2 (macOS 26), and for an SSL-scoped Deny under -p ssl on
-# studious (macOS 15.0.1 only): an explicit Deny trust entry gets the first
-# form; the second lists the other refusals by name, the EKU one being the only
-# one worded in prose. Only these are verdicts. The same "Cert Verify Result:"
-# line also carries evaluation failures (CSSMERR_TP_INTERNAL_ERROR, a locked
-# keychain), and a refusal not seen yet is not known to be one; both die.
-DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
-NOT_TRUSTED_RE = re.compile(
-    r"^Cert Verify Result: (CSSMERR_TP_(NOT_TRUSTED|CERT_SUSPENDED|CERT_EXPIRED)"
-    r"|Invalid Extended Key Usage for policy)$", re.M)
+@dataclass(frozen=True)
+class Evaluated:
+    """The evaluator's named failed checks: none when it accepted the cert,
+    some when it refused it, as evaluate requires of the run it parses."""
+    failed: frozenset
+
+
+class SecTrustResultType(IntEnum):
+    """The values (SecTrust.h) a run may end in; any other (6 FatalTrustFailure,
+    7 OtherError) is an evaluation that did not happen."""
+    PROCEED = 1
+    DENY = 3
+    UNSPECIFIED = 4
+    RECOVERABLE_TRUST_FAILURE = 5
+
+# A root evaluated under ssl is checked as if it were a server's leaf, so every
+# system root fails checks only a leaf can pass. These are those checks, as seen
+# across the three keychains on u2 (macOS 26): failing only these, the root is a
+# trusted anchor that is not itself a server certificate.
+LEAF_SHAPE_CHECKS = frozenset({
+    "ServerAuthEKU", "SystemTrustedCTRequired",
+    "OtherTrustValidityPeriod", "SystemTrustValidityPeriod",
+})
+# The evaluator's refusals of the cert as an anchor: not trusted for the policy
+# (under ssl: the Apple Platform roots, TLS-retired roots, any CA nobody
+# trusted), or expired.
+REFUSING_CHECKS = frozenset({"AnchorTrusted", "TemporalValidity"})
+
+RESULT_VALUE_RE = re.compile(r"^    TrustResultValue = (\d+);$", re.M)
+# The failed-check dicts, one per chain cert, sliced at their top-level key so
+# RevocationInfo's nested `<name> = 0;` lines are never read as checks.
+DETAILS_RE = re.compile(r"^    TrustResultDetails = +\((.*?)^    \);$", re.M | re.S)
+# Every line shape the details hold, across all keychain certs under both
+# policies on u2 (macOS 26) and studious (macOS 15.0.1): a dict's braces, a
+# failed check, and the StatusCodes list. A line of any other shape could be a
+# check this parse cannot read, so it is not skipped. [LAW:parse-dont-validate]
+DETAILS_LINE_RE = re.compile(
+    r' {16}\{| {8}\},?| {12}(?P<check>\w+) = 0;| {12}StatusCodes = +\(| {16}"-?\d+",?| {12}\);|')
 POLICIES = ("basic", "ssl")
 
 
 def macos_trusts(pem):
-    """True when macOS's own evaluator accepts the cert -- the one source of truth.
+    """True when macOS's own evaluator trusts the cert as a TLS anchor.
 
-    Neither policy alone answers "would a TLS client trust this anchor", so
-    both are asked. `-p basic` skips the ssl policy's extended-key-usage rule,
-    which rejects ordinary system roots (ISRG Root X1: "Invalid Extended Key
-    Usage for policy"), but it ignores trust entries scoped to a policy: a CA
-    trusted only for SSL fails it, and a root set to "Never Trust" for SSL
-    passes it. `-p ssl` honours those entries: SSL-only trust is observed to
-    pass it, and an SSL-scoped Deny prints the Deny form under it (observed on
-    a CA that also has a basic TrustRoot entry, which basic accepts). So a
-    Deny under either policy leaves the cert out, and otherwise an accept
-    under either keeps it. The evaluator folds in the system roots, admin and
-    user trust settings, so a cert that merely sits in a keychain (no trust
-    setting) fails both.
+    The ssl result decides: the cert is trusted when it failed no checks or
+    only the leaf-shape ones, and not when it failed AnchorTrusted (the
+    evaluator's per-policy anchor answer) or expiry. basic
+    grants nothing: it is asked because a Deny scoped to the basic policy is
+    invisible to ssl, and a Deny under either policy leaves the cert out. The
+    evaluator folds in the system roots, admin and user trust settings.
     [LAW:one-source-of-truth]
     """
     with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
         fh.write(pem)
         fh.flush()
-        verdicts = {verify(fh.name, policy) for policy in POLICIES}
-    return Verdict.DENIED not in verdicts and Verdict.ACCEPTED in verdicts
+        results = {policy: evaluate(fh.name, policy) for policy in POLICIES}
+    if any(isinstance(r, Deny) for r in results.values()):
+        return False
+    failed = results["ssl"].failed
+    if failed & REFUSING_CHECKS:
+        return False  # out whatever its other failed checks mean
+    unknown = failed - LEAF_SHAPE_CHECKS
+    if unknown:
+        die(f"security verify-cert -p ssl failed checks not known to be leaf-shape "
+            f"or refusals on {subject(pem)}: {sorted(unknown)}")
+    return True
 
 
-def verify(path, policy):
-    """verify-cert's verdict on one cert under one policy.
+def evaluate(path, policy):
+    """Parse one `verify-cert -v` run into Deny | Evaluated.
 
-    A non-zero exit alone does not mean "untrusted": it is also what an
-    unreadable file or a failed keychain access returns. Only a printed verdict
-    is an answer; anything else dies rather than dropping the cert unseen.
-    [LAW:no-silent-failure]
+    -v prints the evaluator's SecTrustCopyResult on stderr; its result value
+    is the verdict, and the exit code and failed checks must agree with it.
+    Anything else -- no result block, a details line of unknown shape, another
+    value, or a disagreement -- is an evaluation that did not happen (an
+    unreadable file, a locked keychain): it dies rather than dropping or
+    keeping the cert unseen. [LAW:parse-dont-validate] [LAW:no-silent-failure]
     """
-    r = run(["security", "verify-cert", "-c", path, "-p", policy])
-    if r.returncode == 0:
-        return Verdict.ACCEPTED
-    if DENIED_RE.search(r.stderr):
-        return Verdict.DENIED
-    if NOT_TRUSTED_RE.search(r.stderr):
-        return Verdict.NOT_TRUSTED
+    r = run(["security", "verify-cert", "-v", "-c", path, "-p", policy])
+    value_m = RESULT_VALUE_RE.search(r.stderr)
+    details_m = DETAILS_RE.search(r.stderr)
+    lines = [DETAILS_LINE_RE.fullmatch(l) for l in details_m.group(1).splitlines()] if details_m else []
+    if value_m and details_m and all(lines):
+        value, exited_zero = int(value_m.group(1)), r.returncode == 0
+        failed = frozenset(m["check"] for m in lines if m["check"])
+        if value == SecTrustResultType.DENY and not exited_zero:
+            return Deny()
+        if value in (SecTrustResultType.PROCEED, SecTrustResultType.UNSPECIFIED) \
+                and exited_zero and not failed:
+            return Evaluated(failed)
+        if value == SecTrustResultType.RECOVERABLE_TRUST_FAILURE and not exited_zero and failed:
+            return Evaluated(failed)
     die(f"security verify-cert -p {policy} could not evaluate "
         f"{subject(Path(path).read_text())}: "
         f"{r.stderr.strip() or r.stdout.strip() or 'no output'}")
