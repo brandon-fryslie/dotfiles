@@ -257,7 +257,7 @@ class RealCerts(unittest.TestCase):
             fh.write(isrg)
             fh.flush()
             failed = regen.evaluate(fh.name, "ssl").failed
-        self.assertTrue(failed and failed <= regen.LEAF_SHAPE_CHECKS, failed)
+        self.assertLessEqual(failed, regen.LEAF_SHAPE_CHECKS)
         self.assertTrue(regen.macos_trusts(isrg))
 
     def test_macos_does_not_trust_an_apple_platform_root_for_tls(self):
