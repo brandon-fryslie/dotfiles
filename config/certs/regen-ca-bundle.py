@@ -20,6 +20,7 @@ import shlex
 import subprocess
 import tempfile
 import time
+from enum import Enum
 import sys
 from pathlib import Path
 
@@ -91,35 +92,56 @@ def inspect_cert(pem):
     return "CA:TRUE" in r.stdout, names["subject"] == names["issuer"]
 
 
-# verify-cert prints one of these on stderr whenever the evaluator reached a
-# verdict. An explicit Deny trust entry gets the second form, not the first.
-# Only Deny is listed: any other shape is not known to be a verdict.
-VERDICT_RE = re.compile(
-    r"^(?:Cert Verify Result: \S+|SecTrustEvaluate result: kSecTrustResultDeny)$", re.M)
+class Verdict(Enum):
+    ACCEPTED = "accepted"
+    NOT_TRUSTED = "not trusted"
+    DENIED = "denied"
+
+
+# What verify-cert prints on stderr when the evaluator reached a refusal: an
+# explicit Deny trust entry gets the first form, any other refusal the second.
+# Only these are verdicts: any other shape is not known to be one.
+DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
+NOT_TRUSTED_RE = re.compile(r"^Cert Verify Result: \S.*$", re.M)
+POLICIES = ("basic", "ssl")
 
 
 def macos_trusts(pem):
     """True when macOS's own evaluator accepts the cert -- the one source of truth.
 
-    `-p basic` evaluates trust without the ssl policy's leaf-only extended-key-
-    usage rule, which rejects every root. The evaluator folds in the system
-    roots, admin and user trust settings, and explicit Deny entries, so a cert
-    that merely sits in a keychain (no trust setting) or was distrusted fails.
+    Neither policy alone answers "would a TLS client trust this anchor", so
+    both are asked. `-p basic` skips the ssl policy's extended-key-usage rule,
+    which rejects ordinary system roots (ISRG Root X1: "Invalid Extended Key
+    Usage for policy"), but it ignores trust entries scoped to a policy: a CA
+    trusted only for SSL fails it, and a root set to "Never Trust" for SSL
+    passes it. `-p ssl` honours those entries. So a Deny under either policy
+    leaves the cert out, and otherwise an accept under either keeps it. The
+    evaluator folds in the system roots, admin and user trust settings, so a
+    cert that merely sits in a keychain (no trust setting) fails both.
     [LAW:one-source-of-truth]
+    """
+    with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
+        fh.write(pem)
+        fh.flush()
+        verdicts = {verify(fh.name, policy) for policy in POLICIES}
+    return Verdict.DENIED not in verdicts and Verdict.ACCEPTED in verdicts
+
+
+def verify(path, policy):
+    """verify-cert's verdict on one cert under one policy.
 
     A non-zero exit alone does not mean "untrusted": it is also what an
     unreadable file or a failed keychain access returns. Only a printed verdict
     is an answer; anything else dies rather than dropping the cert unseen.
     [LAW:no-silent-failure]
     """
-    with tempfile.NamedTemporaryFile("w", suffix=".pem") as fh:
-        fh.write(pem)
-        fh.flush()
-        r = run(["security", "verify-cert", "-c", fh.name, "-p", "basic"])
+    r = run(["security", "verify-cert", "-c", path, "-p", policy])
     if r.returncode == 0:
-        return True
-    if VERDICT_RE.search(r.stderr):
-        return False
+        return Verdict.ACCEPTED
+    if DENIED_RE.search(r.stderr):
+        return Verdict.DENIED
+    if NOT_TRUSTED_RE.search(r.stderr):
+        return Verdict.NOT_TRUSTED
     die(f"security verify-cert could not evaluate a certificate: "
         f"{r.stderr.strip() or r.stdout.strip() or 'no output'}")
 
