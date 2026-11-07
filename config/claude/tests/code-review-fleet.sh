@@ -200,6 +200,11 @@ has "$rendered_cap" 'yarn.lock,pnpm-lock.yaml,x/__MAX_REVIEW_ROUNDS__/**"' "mark
 has "$rendered_cap" 'MAX_REVIEW_ROUNDS: "5"' "marker glob: the real marker still rendered"
 echo "ok   - render order: a marker-shaped glob in a repo's value captures no later marker"
 
+# --- the run title is memento's contract: its action provider parses `^code-review pr=(\d+): `
+grep -Fqx 'run-name: "code-review pr=${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}"' <<<"$rendered_cap" \
+  || fail "run-name: the rendered workflow lacks the exact line memento's action provider parses"
+echo "ok   - run-name: every run is titled with the PR it is for, in the prefix memento parses"
+
 # --- the one-repo installer renders the same file and reads the same stores
 out="$(cd "$root/a" && "$install" 2>"$work/err")" || fail "install.sh in a: exited $?: $(cat "$work/err")"
 has "$out" ".github/workflows/code-review.yml is up to date (uses promptctl/copirate-code-review-agent@v1)" "install a: same render as the fleet"
