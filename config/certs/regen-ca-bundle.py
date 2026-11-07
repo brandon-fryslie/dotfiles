@@ -85,7 +85,8 @@ def inspect_cert(pem):
              "-nameopt", "RFC2253"], input=pem)
     if r.returncode != 0:
         return None
-    names = {k: v for k, _, v in (l.partition("=") for l in r.stdout.splitlines()
+    # LibreSSL prints an empty name as "subject= ", OpenSSL as "subject=".
+    names = {k: v.strip() for k, _, v in (l.partition("=") for l in r.stdout.splitlines()
                                   if l.startswith(("subject=", "issuer=")))}
     if "subject" not in names or "issuer" not in names:
         return None  # absent names must not compare equal and read as self-issued
@@ -99,15 +100,15 @@ class Verdict(Enum):
     DENIED = auto()
 
 
-# What verify-cert prints on stderr when the evaluator reached a refusal: an
-# explicit Deny trust entry gets the first form, any other refusal the second --
-# a trust-policy code saying the cert is untrusted or out of its validity, or
-# the ssl policy's EKU message, the one refusal it words in prose. Only these
-# are verdicts: the same line also carries evaluation failures
-# (CSSMERR_TP_INTERNAL_ERROR, a locked keychain), which are not answers.
+# The refusals verify-cert has been seen to print on stderr, across the three
+# keychains on u2: an explicit Deny trust entry gets the first form; the second
+# lists the other refusals by name, the EKU one being the only one worded in
+# prose. Only these are verdicts. The same "Cert Verify Result:" line also
+# carries evaluation failures (CSSMERR_TP_INTERNAL_ERROR, a locked keychain),
+# and a refusal not seen yet is not known to be one; both die.
 DENIED_RE = re.compile(r"^SecTrustEvaluate result: kSecTrustResultDeny$", re.M)
 NOT_TRUSTED_RE = re.compile(
-    r"^Cert Verify Result: (CSSMERR_TP_(NOT_TRUSTED|CERT_(SUSPENDED|EXPIRED|REVOKED|NOT_VALID_YET))"
+    r"^Cert Verify Result: (CSSMERR_TP_(NOT_TRUSTED|CERT_SUSPENDED|CERT_EXPIRED)"
     r"|Invalid Extended Key Usage for policy)$", re.M)
 POLICIES = ("basic", "ssl")
 
@@ -120,8 +121,9 @@ def macos_trusts(pem):
     which rejects ordinary system roots (ISRG Root X1: "Invalid Extended Key
     Usage for policy"), but it ignores trust entries scoped to a policy: a CA
     trusted only for SSL fails it, and a root set to "Never Trust" for SSL
-    passes it. `-p ssl` honours those entries (the SSL-only trust is observed;
-    what ssl prints for an SSL-scoped Deny is not yet). So a Deny under either policy
+    passes it. `-p ssl` honours those entries: SSL-only trust is observed to
+    pass it, and an SSL-scoped Deny is assumed, not yet observed, to print the
+    Deny form. So a Deny under either policy
     leaves the cert out, and otherwise an accept under either keeps it. The
     evaluator folds in the system roots, admin and user trust settings, so a
     cert that merely sits in a keychain (no trust setting) fails both.
@@ -149,7 +151,8 @@ def verify(path, policy):
         return Verdict.DENIED
     if NOT_TRUSTED_RE.search(r.stderr):
         return Verdict.NOT_TRUSTED
-    die(f"security verify-cert could not evaluate a certificate: "
+    die(f"security verify-cert -p {policy} could not evaluate "
+        f"{subject(Path(path).read_text())}: "
         f"{r.stderr.strip() or r.stdout.strip() or 'no output'}")
 
 

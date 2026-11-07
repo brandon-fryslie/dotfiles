@@ -97,6 +97,8 @@ def verify_cert_per_policy(answers):
     asked = []
 
     def fake(cmd, **kw):
+        if cmd[0] != "security":  # the die message's openssl subject lookup
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
         policy = cmd[cmd.index("-p") + 1]
         asked.append(policy)
         rc, stderr = answers[policy]
@@ -134,8 +136,9 @@ class MacosTrustsPolicies(unittest.TestCase):
         self.assertFalse(self.trusts(basic=NOT_TRUSTED, ssl=NOT_TRUSTED))
 
     def test_ssl_failing_to_evaluate_is_an_error_not_a_verdict(self):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(SystemExit) as died:
             self.trusts(basic=OK, ssl=(1, "something else\n"))
+        self.assertIn("-p ssl", str(died.exception.code))
 
 
 def openssl(*args):
