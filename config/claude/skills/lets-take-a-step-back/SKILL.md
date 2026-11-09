@@ -1,6 +1,6 @@
 ---
 name: lets-take-a-step-back
-description: Stop when the work is bogged down, back up to the last known good state, find the decision that caused the trouble, and restart from there with a plan that carries the lesson. Use when complexity surprises you — a fix that needs another fix, a workaround or special case for code you wrote earlier, a step far harder than the plan expected, a rabbit hole with no clear strategy out. Unexpected complexity is the signal, and "I'm nearly there, one more fix" is the thought that keeps you in the hole. Also the mechanical trigger: the fourth review pass in one PR's cycle that returned findings to fix. Nothing is deleted: the abandoned branch stays where it is, and the new work starts on a fresh branch from the last known good commit. Triggers — "let's take a step back", "take a step back", "this is getting too complicated", "why is this so hard", "we're in a rabbit hole", "this isn't converging", "the fourth review found things again".
+description: Stop when the work is bogged down, go back to the commit where the ticket started, find the decision that caused the trouble, and restart from there with a plan that carries the lesson. Handed a wider scope than one ticket (several tickets, a range of days), it investigates first and decides which tickets restart before reverting anything. Use when complexity surprises you — a fix that needs another fix, a workaround or special case for code you wrote earlier, a step far harder than the plan expected, a rabbit hole with no clear strategy out. Unexpected complexity is the signal, and "I'm nearly there, one more fix" is the thought that keeps you in the hole. Also the mechanical trigger: the fourth review pass in one PR's cycle that returned findings to fix. Nothing is deleted: the abandoned branch stays where it is. Triggers — "let's take a step back", "take a step back", "this is getting too complicated", "why is this so hard", "we're in a rabbit hole", "this isn't converging", "the fourth review found things again".
 ---
 
 # Let's take a step back
@@ -13,8 +13,9 @@ around code written an hour ago. Unexpected complexity is the most reliable sign
 a decision upstream was wrong. Pressing on stacks more on top of it, and every later
 step pays interest on it. [LAW:carrying-cost]
 
-This skill stops the work, walks back to solid ground, finds the root cause, learns
-from it, and restarts from there.
+This skill stops the work, goes back to where the ticket started, finds the root
+cause, and restarts from there with the lesson. Handed a wider scope than one ticket, it
+investigates first and decides which tickets restart.
 
 ## When to run it
 
@@ -45,12 +46,31 @@ Two arguments will be offered for pressing on:
   work is spent either way. The only live question is what the remaining work will
   cost on the current design compared with a sound one.
 
-## 1. Go back to the start of the implementation
+## 1. Go back to the start of the ticket
 
-Go back to the commit where the implementation started: the point where the branch
-diverged from its base (`git merge-base <base> HEAD`, with `<base>` the branch the PR
-targets). Every change after that commit is discarded. Nothing is judged commit by
-commit, and nothing is kept but the lesson from step 2.
+When the trouble is in the ticket you are working, which is the usual case, go back to
+the commit where that ticket started: the point where its branch diverged from its base
+(`git merge-base <base> HEAD`, with `<base>` the branch the PR targets). Every change
+after that commit is discarded. Nothing is judged commit by commit, and nothing is kept
+but the lesson from step 2.
+
+When you are handed a wider scope (several tickets, a range of commits, the last few
+days), you are investigating, and the scope is where to look, not where to go back to.
+The pull is to read "the last four days are a mess" as "go back four days": that throws
+out every sound change in the window along with the wrong ones, before anything was
+assessed. Find the root causes first (step 2), each with the ticket that made it and the
+commit where that ticket started. Then decide, for each, what restarts:
+
+- **Accidental complexity from a decision:** the ticket that made it restarts at its
+  start.
+- **A goal not worth reaching:** the ticket is dropped, not restarted. That is
+  Brandon's call.
+- **Work built on a restarted or dropped ticket** goes with it. It is not restarted on
+  its own, because it would be rebuilt on a foundation that is changing or gone.
+- **Essential complexity:** nothing restarts.
+
+Nothing is reverted, reset or discarded before that verdict. Each ticket that restarts
+then goes back to its own start, as above.
 
 ## 2. Find the root cause
 
@@ -79,30 +99,30 @@ alone: the abandoned code doesn't need to go anywhere.
 
 ## 3. Plan for the lowest total complexity
 
-Write a new plan, starting from the last known good commit, with the root cause
-statement in it. Judge the plan by its total complexity over the whole effort: the
-area under the complexity curve, not its height at any one moment. A plan that is cheap
-today and forces a workaround at every later step loses to one that costs more up
-front and stays flat. For each decision in the plan, ask again how hard it will be to
-change later, and prefer the one that stays cheap to change.
+Write a new plan, starting from the commit where the restarted ticket started, with the
+root cause statement in it. Judge the plan by its total complexity over the whole
+effort: the area under the complexity curve, not its height at any one moment. A plan
+that is cheap today and forces a workaround at every later step loses to one that costs
+more up front and stays flat. For each decision in the plan, ask again how hard it will
+be to change later, and prefer the one that stays cheap to change.
 
 State the lesson in the plan itself, so whoever implements it sees why the obvious
 route is closed. In a lit repo, the plan goes on the ticket:
 `lit update <id> --plan-file <file>`.
 
-## 4. Restart from the last known good commit
+## 4. Restart from where the ticket started
 
 Commit anything uncommitted onto the current branch first. `git switch` carries
-uncommitted changes along, which would bring the abandoned work with you. Then branch from the
-good commit and implement the plan there:
+uncommitted changes along, which would bring the abandoned work with you. Then branch
+from the commit where the ticket started and implement the plan there:
 
 ```
-git switch -c <new-branch> <last-known-good-commit>
+git switch -c <new-branch> <ticket-start-commit>
 ```
 
-The abandoned branch stays where it is, and there is nothing to clean up. If the wrong
-decision has already been merged, branch from the current base instead, and make
-reversing that decision the plan's first step.
+The abandoned branch stays where it is, and there is nothing to clean up. If the
+ticket has already been merged, branch from the current base instead, and make
+reversing that ticket, and the work built on it, the plan's first step.
 
 Build from the plan, not from the abandoned branch. The thought will come mid-way
 through: *"That function on the old branch was fine. I'll copy it over."* Code copied
@@ -113,14 +133,17 @@ and if it comes out the same, good. Reading the old diff for ideas pulls the sam
 
 - **Unexpected complexity means a wrong decision upstream.** "One more fix" is the
   trigger, not the way out.
+- **One ticket: go back to where it started.** Discard every change after that commit
+  and keep only the lesson.
+- **A wider scope is where to look, not where to go back to.** Investigate first, then
+  decide which tickets restart; what was built on them goes with them; a goal not worth
+  reaching is Brandon's call to drop.
 - **Essential or accidental:** would it exist in any correct solution, or only in this
   one?
-- **Go back to where the implementation started.** Discard every change after that
-  commit and keep only the lesson.
 - **Ask how hard each decision is to reverse.** Two-way doors are usually right;
   one-way doors are usually where things went wrong.
 - **Write the root cause as a statement a stranger can check.** "Be more careful" is
   not a lesson.
 - **Plan for the lowest total complexity,** the area under the curve.
-- **Restart on a fresh branch from the last known good commit.** Commit first; the
+- **Restart on a fresh branch from where the ticket started.** Commit first; the
   abandoned branch stays put. Build from the plan, not from the old code.
