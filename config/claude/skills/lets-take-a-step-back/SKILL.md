@@ -108,7 +108,7 @@ route is closed. In a lit repo, the plan goes on the ticket:
 ## 4. Restart from the last known good commit
 
 Commit anything uncommitted onto the current branch first. `git switch` carries
-uncommitted changes along, and those changes are the detour. Then branch from the
+uncommitted changes along, which would bring the abandoned work with you. Then branch from the
 good commit and implement the plan there:
 
 ```
