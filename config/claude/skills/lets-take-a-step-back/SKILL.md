@@ -45,27 +45,12 @@ Two arguments will be offered for pressing on:
   work is spent either way. The only live question is what the remaining work will
   cost on the current design compared with a sound one.
 
-## 1. Walk back to the last known good state
+## 1. Go back to the start of the implementation
 
-Trace back through the decisions, newest first: the commits, the plan's steps, and the
-choices made between them. At each point, ask whether it is solid ground. It is solid
-ground when three things hold:
-
-- It complies with `laws:code` throughout. Load that skill for this check.
-- It is a known quantity: you can say what the code does and why, and that is verified.
-- There is a clear strategy from that point to done.
-
-Keep going back until all three hold, as far as it takes, past the current branch if
-the wrong turn is older. The pull is to stop at the first point that feels
-comfortable. Stopping one step short puts you back in the hole.
-
-At each decision, ask: *how hard will this be to change later?* A decision that is
-cheap to reverse (a two-way door) is usually sound. One that is expensive or impossible
-to reverse (a one-way door) is usually wrong, and it is often where the complexity
-began.
-
-The last point where all three hold is the last known good commit. The decision just
-after it is the one to examine.
+Go back to the commit where the implementation started: the point where the branch
+diverged from its base (`git merge-base <base> HEAD`, with `<base>` the branch the PR
+targets). Every change after that commit is discarded. Nothing is judged commit by
+commit, and nothing is kept but the lesson from step 2.
 
 ## 2. Find the root cause
 
@@ -130,8 +115,8 @@ and if it comes out the same, good. Reading the old diff for ideas pulls the sam
   trigger, not the way out.
 - **Essential or accidental:** would it exist in any correct solution, or only in this
   one?
-- **Walk back to the last known good state.** That means `laws:code` compliant, a known
-  quantity, and a clear strategy. Go as far back as it takes.
+- **Go back to where the implementation started.** Discard every change after that
+  commit and keep only the lesson.
 - **Ask how hard each decision is to reverse.** Two-way doors are usually right;
   one-way doors are usually where things went wrong.
 - **Write the root cause as a statement a stranger can check.** "Be more careful" is
