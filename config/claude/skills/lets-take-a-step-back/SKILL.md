@@ -1,0 +1,141 @@
+---
+name: lets-take-a-step-back
+description: Stop when the work is bogged down, back up to the last known good state, find the decision that caused the trouble, and restart from there with a plan that carries the lesson. Use when complexity surprises you — a fix that needs another fix, a workaround or special case for code you wrote earlier, a step far harder than the plan expected, a rabbit hole with no clear strategy out. Unexpected complexity is the signal, and "I'm nearly there, one more fix" is the thought that keeps you in the hole. Also the mechanical trigger: the fourth review pass in one PR's cycle that returned findings to fix. Nothing is deleted: the abandoned branch stays where it is, and the new work starts on a fresh branch from the last known good commit. Triggers — "let's take a step back", "take a step back", "this is getting too complicated", "why is this so hard", "we're in a rabbit hole", "this isn't converging", "the fourth review found things again".
+---
+
+# Let's take a step back
+
+Some work is complex because the problem is: that is essential complexity, and no
+design removes it. Other work becomes complex because of a decision made along the
+way: accidental complexity. It announces itself as surprise. The change that should
+have been one line is forty, every fix needs another fix, and the code starts working
+around code written an hour ago. Unexpected complexity is the most reliable sign that
+a decision upstream was wrong. Pressing on stacks more on top of it, and every later
+step pays interest on it. [LAW:carrying-cost]
+
+This skill stops the work, walks back to solid ground, finds the root cause, learns
+from it, and restarts from there.
+
+## When to run it
+
+The trigger is a thought, not a metric: *"This is harder than it should be, but I'm
+nearly there, one more fix."* "Nearly there" is how every rabbit hole feels from the
+inside, because each step down looks small. The next fix will be followed by another.
+
+Signs the complexity is accidental:
+
+- It targets your own code rather than the problem: guards, special cases, adapters,
+  flags, a second code path beside the first.
+- Each fix exposes the next one, or one change needs edits scattered across many
+  places.
+- You can no longer state the strategy in one sentence.
+- A review cycle won't converge: the fourth pass with findings to fix.
+
+The test for essential complexity: would this complexity exist in any correct solution,
+or only in this one? The domain really having twelve cases is essential complexity.
+Twelve cases that exist because of where you put the state is accidental.
+
+Two arguments will be offered for pressing on:
+
+- *"Make it work, then make it right."* That holds when the design is sound and only
+  polish is missing, because a sound design cleans up. It fails here. Complexity that
+  came from a wrong decision doesn't get cleaned up later; it gets built on, and each
+  layer makes the decision harder to reverse.
+- *"We've built too much this way to turn back."* That is the sunk cost fallacy. The
+  work is spent either way. The only live question is what the remaining work will
+  cost on the current design compared with a sound one.
+
+## 1. Walk back to the last known good state
+
+Trace back through the decisions, newest first: the commits, the plan's steps, and the
+choices made between them. At each point, ask whether it is solid ground. It is solid
+ground when three things hold:
+
+- It complies with `laws:code` throughout. Load that skill for this check.
+- It is a known quantity: you can say what the code does and why, and that is verified.
+- There is a clear strategy from that point to done.
+
+Keep going back until all three hold, as far as it takes, past the current branch if
+the wrong turn is older. The pull is to stop at the first point that feels
+comfortable. Stopping one step short puts you back in the hole.
+
+At each decision, ask: *how hard will this be to change later?* A decision that is
+cheap to reverse (a two-way door) is usually sound. One that is expensive or impossible
+to reverse (a one-way door) is usually wrong, and it is often where the complexity
+began.
+
+The last point where all three hold is the last known good commit. The decision just
+after it is the one to examine.
+
+## 2. Find the root cause
+
+Name the decision, and say why it went wrong. It is usually one of these:
+
+- **A false premise or assumption:** a fact about the code, the data, a tool or the
+  requirement that turned out untrue.
+- **A misguided goal:** the goal as stated isn't worth reaching, and the right move is
+  a different direction. The goal is Brandon's call: bring him what you found and what
+  you would do instead.
+- **A small implementation decision that cascaded:** where a piece of state lives,
+  which layer makes a decision, a type that admits more than it should.
+
+Then write the lesson as a root cause statement: what was decided, why it looked
+right, and what it forced afterward. Write it so that a stranger could check it
+against the code.
+
+- BAD: "Lesson: be more careful with state." Nobody can act on this, so the lesson
+  will be learned again.
+- GOOD: "The cache decided when to invalidate, but only writers know when data
+  changes, so every writer grew a hook into the cache. Writers publish the change and
+  the cache subscribes."
+
+The lesson is what keeps the next attempt out of the same hole. It does that work
+alone: the abandoned code doesn't need to go anywhere.
+
+## 3. Plan for the lowest total complexity
+
+Write a new plan, starting from the last known good commit, with the root cause
+statement in it. Judge the plan by its total complexity over the whole effort: the
+area under the complexity curve, not its height at any one moment. A plan that is cheap
+today and forces a workaround at every later step loses to one that costs more up
+front and stays flat. For each decision in the plan, ask again how hard it will be to
+change later, and prefer the one that stays cheap to change.
+
+State the lesson in the plan itself, so whoever implements it sees why the obvious
+route is closed. In a lit repo, the plan goes on the ticket:
+`lit update <id> --plan-file <file>`.
+
+## 4. Restart from the last known good commit
+
+Commit anything uncommitted onto the current branch first. `git switch` carries
+uncommitted changes along, and those changes are the detour. Then branch from the
+good commit and implement the plan there:
+
+```
+git switch -c <new-branch> <last-known-good-commit>
+```
+
+The abandoned branch stays where it is, and there is nothing to clean up. If the wrong
+decision has already been merged, branch from the current base instead, and make
+reversing that decision the plan's first step.
+
+Build from the plan, not from the abandoned branch. The thought will come mid-way
+through: *"That function on the old branch was fine. I'll copy it over."* Code copied
+across brings the decisions it was written under. Write it again against the new plan,
+and if it comes out the same, good. Reading the old diff for ideas pulls the same way.
+
+## Recap
+
+- **Unexpected complexity means a wrong decision upstream.** "One more fix" is the
+  trigger, not the way out.
+- **Essential or accidental:** would it exist in any correct solution, or only in this
+  one?
+- **Walk back to the last known good state.** That means `laws:code` compliant, a known
+  quantity, and a clear strategy. Go as far back as it takes.
+- **Ask how hard each decision is to reverse.** Two-way doors are usually right;
+  one-way doors are usually where things went wrong.
+- **Write the root cause as a statement a stranger can check.** "Be more careful" is
+  not a lesson.
+- **Plan for the lowest total complexity,** the area under the curve.
+- **Restart on a fresh branch from the last known good commit.** Commit first; the
+  abandoned branch stays put. Build from the plan, not from the old code.
