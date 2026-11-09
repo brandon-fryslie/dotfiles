@@ -5,7 +5,9 @@ argument-hint: "[low|medium|high|xhigh|max] [--fix] [--comment] [<pr#>|<branch>|
 context: fork
 ---
 
-Run this command first, before anything else. After `--model`, put the exact id of the model you are running as (for example `claude-opus-5-5`). After `--agent-tool`, put `yes` if the Agent tool is in your tool set, otherwise `no`.
+Load the /laws:code skill. This is the benchmark by which you should judge this work.
+
+Then run this command. After `--model`, put the exact id of the model you are running as (for example `claude-opus-5-5`). After `--agent-tool`, put `yes` if the Agent tool is in your tool set, otherwise `no`.
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/review_prompt.py" --model <your model id> --agent-tool <yes|no> <<'CODE_REVIEW_ARGUMENTS'
