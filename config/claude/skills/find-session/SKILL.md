@@ -1,6 +1,6 @@
 ---
 name: find-session
-description: Find Claude Code session IDs in the current project that match a topic, then probe one session for context around the match or fetch one message's full body. Searches transcript JSONL files under ~/.claude/projects and ~/.claude.zai/projects, scoped by default to the current working directory's project slug. Use when the user asks "what was that session where I worked on X", "find the session about Y", "session id for the conversation about Z", "show me what was said around X in that session", or wants to locate and read a past Claude Code conversation by topic without remembering its UUID.
+description: Find Claude Code session IDs in the current project that match a topic, then probe one session for context around the match or fetch one message's full body. Searches transcript JSONL files under ${CLAUDE_CONFIG_DIR:-~/.claude}/projects, scoped by default to the current working directory's project slug. Use when the user asks "what was that session where I worked on X", "find the session about Y", "session id for the conversation about Z", "show me what was said around X in that session", or wants to locate and read a past Claude Code conversation by topic without remembering its UUID.
 ---
 
 # find-session
@@ -25,8 +25,7 @@ Default scope for `find_session.py` is the current project (`$PWD`). Pass `--all
 
 Claude Code stores each session as a JSONL transcript:
 
-- `~/.claude/projects/<slug>/<session-id>.jsonl`
-- `~/.claude.zai/projects/<slug>/<session-id>.jsonl` (if you also use the `zai` variant)
+- `${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<slug>/<session-id>.jsonl`
 
 `<slug>` is the working directory with every non-alphanumeric character replaced by `-` — `_` and `.` and `/` all collapse to the same thing. Example: `/Users/bmf/code/promptctl_laws` → `-Users-bmf-code-promptctl-laws`.
 

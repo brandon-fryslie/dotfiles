@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import sys
 from collections.abc import Iterator
 from pathlib import Path
-
-ROOTS = [Path.home() / ".claude" / "projects",
-         Path.home() / ".claude.zai" / "projects"]
 
 TEXT_TYPES = {"ai-title", "user", "assistant"}
 # Subset of TEXT_TYPES that represents navigable conversation messages.
@@ -34,33 +33,34 @@ def slug_for(cwd: Path) -> str:
     return re.sub(r"[^A-Za-z0-9]", "-", str(cwd))
 
 
+def projects_root() -> Path:
+    """Where Claude Code keeps every project's transcripts.
+
+    The config dir is the executing session's own, so a transcript reader run
+    from inside a session reads the transcripts that session's Claude Code wrote.
+    """
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "projects"
+
+
 def session_dirs(slug: str, all_projects: bool) -> list[Path]:
-    dirs: list[Path] = []
-    for root in ROOTS:
-        if not root.is_dir():
-            continue
-        if all_projects:
-            dirs.extend(p for p in root.iterdir() if p.is_dir())
-        else:
-            d = root / slug
-            if d.is_dir():
-                dirs.append(d)
-    return dirs
+    root = projects_root()
+    if not root.is_dir():
+        return []
+    if all_projects:
+        return [p for p in root.iterdir() if p.is_dir()]
+    d = root / slug
+    return [d] if d.is_dir() else []
 
 
 def locate_session_file(project: str, session_id: str) -> Path:
-    """Resolve <project>/<session_id>.jsonl under either root.
+    """Resolve <project>/<session_id>.jsonl under the projects root.
 
-    Raises FileNotFoundError listing both attempted paths if neither exists.
+    Raises FileNotFoundError naming the path tried.
     """
-    attempted: list[Path] = []
-    for root in ROOTS:
-        candidate = root / project / f"{session_id}.jsonl"
-        attempted.append(candidate)
-        if candidate.is_file():
-            return candidate
-    paths = "\n  ".join(str(p) for p in attempted)
-    raise FileNotFoundError(f"session file not found; tried:\n  {paths}")
+    candidate = projects_root() / project / f"{session_id}.jsonl"
+    if not candidate.is_file():
+        raise FileNotFoundError(f"session file not found: {candidate}")
+    return candidate
 
 
 def extract_text(event: dict) -> str:
@@ -131,20 +131,32 @@ def safe_path_component(s: str) -> str:
     return s
 
 
-def iter_events(path: Path) -> Iterator[dict]:
-    """Yield parsed JSONL events; malformed or non-object lines are skipped.
+def iter_rows(path: Path, *needles: bytes) -> Iterator[tuple[int, dict]]:
+    """Yield (line number, event) for every line of a transcript containing any needle.
 
-    Malformed-line tolerance is intentional: transcripts are append-only logs
-    and a torn final line during a crash is a known shape — failing the whole
-    scan on one bad line would be worse than skipping it. Non-object JSON
-    (a bare null, list, or string) is treated the same — the declared return
-    type is the contract; callers should be able to trust ev.get(...) works.
+    Needles are matched against the raw bytes before any JSON is parsed, which
+    is what keeps a scan across gigabytes of transcripts fast; with no needles
+    every line matches. Transcripts are append-only logs, and a torn final line
+    from a crash or a live writer is a known shape, so a line that is not a JSON
+    object does not fail the scan. It is reported on stderr with its location
+    instead, because a skip nobody can see reads as a transcript that never said
+    anything. [LAW:no-silent-failure]
     """
-    with path.open("r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            try:
-                ev = json.loads(line)
-            except json.JSONDecodeError:
+    with path.open("rb") as f:
+        for number, raw in enumerate(f, 1):
+            if needles and not any(n in raw for n in needles):
                 continue
-            if isinstance(ev, dict):
-                yield ev
+            try:
+                ev = json.loads(raw)
+            except ValueError as e:  # JSONDecodeError, or UnicodeDecodeError from invalid UTF-8
+                print(f"{path}:{number}: skipped a malformed transcript line ({e})", file=sys.stderr)
+                continue
+            if not isinstance(ev, dict):
+                print(f"{path}:{number}: skipped a transcript line that is not an object", file=sys.stderr)
+                continue
+            yield number, ev
+
+
+def iter_events(path: Path) -> Iterator[dict]:
+    """Every event of a transcript, in order; `iter_rows` without the line numbers."""
+    return (ev for _, ev in iter_rows(path))

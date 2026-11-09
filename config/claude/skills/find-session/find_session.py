@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Find Claude Code sessions in the current project matching a topic.
 
-Searches ~/.claude/projects/<slug>/*.jsonl and ~/.claude.zai/projects/<slug>/*.jsonl
-where <slug> is $PWD with `/` and `.` replaced by `-` (matches Claude Code's
+Searches ${CLAUDE_CONFIG_DIR:-~/.claude}/projects/<slug>/*.jsonl where <slug> is $PWD with `/` and `.` replaced by `-` (matches Claude Code's
 own project-dir encoding).
 
 Only meaningful text fields are searched (ai-title, user prompts, assistant
@@ -38,7 +37,6 @@ from _session_lib import (
 class SessionHit:
     session_id: str
     project: str
-    root_label: str
     title: str = ""
     matches: int = 0
     first_snippet: str = ""
@@ -47,12 +45,11 @@ class SessionHit:
     first_user_prompt: str = ""
 
 
-def scan_file(path: Path, pat: re.Pattern, project: str, root_label: str) -> SessionHit | None:
+def scan_file(path: Path, pat: re.Pattern, project: str) -> SessionHit | None:
     try:
         hit = SessionHit(
             session_id=path.stem,
             project=project,
-            root_label=root_label,
             mtime=path.stat().st_mtime,
         )
         for ev in iter_events(path):
@@ -124,11 +121,10 @@ def main() -> int:
 
     hits: list[SessionHit] = []
     for d in dirs:
-        root_label = ".claude.zai" if ".claude.zai" in str(d) else ".claude"
         for f in d.glob("*.jsonl"):
             if f.stem == current_id:
                 continue
-            h = scan_file(f, pat, project=d.name, root_label=root_label)
+            h = scan_file(f, pat, project=d.name)
             if h:
                 hits.append(h)
 
@@ -144,7 +140,7 @@ def main() -> int:
         date = fmt_date(h.last_ts, h.mtime)
         title = h.title or h.first_user_prompt[:60] or "(untitled)"
         line = (f"{h.session_id}  {date}  hits={h.matches:<3}  "
-                f"[{h.root_label}]  {h.project}  {title}")
+                f"{h.project}  {title}")
         print(line)
         snip = h.first_snippet[:args.snippet_len]
         if snip:
