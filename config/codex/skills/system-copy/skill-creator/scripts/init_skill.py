@@ -20,9 +20,16 @@ from pathlib import Path
 MAX_SKILL_NAME_LENGTH = 64
 ALLOWED_RESOURCES = {"scripts", "references", "assets"}
 
+# [LAW:one-source-of-truth] quick_validate imports this to recognize an unfilled description
+DESCRIPTION_PLACEHOLDER = (
+    "[TODO: Complete and informative explanation of what the skill does and when to use it. "
+    "Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]"
+)
+
+# the description is quoted: unquoted, a leading [ makes YAML load the placeholder as a list
 SKILL_TEMPLATE = """---
 name: {skill_name}
-description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
+description: "{description_placeholder}"
 ---
 
 # {skill_title}
@@ -283,7 +290,11 @@ def init_skill(skill_name, path, resources, include_examples):
 
     # Create SKILL.md from template
     skill_title = title_case_skill_name(skill_name)
-    skill_content = SKILL_TEMPLATE.format(skill_name=skill_name, skill_title=skill_title)
+    skill_content = SKILL_TEMPLATE.format(
+        skill_name=skill_name,
+        skill_title=skill_title,
+        description_placeholder=DESCRIPTION_PLACEHOLDER,
+    )
 
     skill_md_path = skill_dir / "SKILL.md"
     try:
