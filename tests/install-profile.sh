@@ -4,7 +4,7 @@
 # A stub `uvx` first on PATH records each call's argv instead of installing. An unknown or
 # empty profile, or more than one argument, exits nonzero before any call, with the error
 # and usage on stderr and nothing on stdout; -h/--help exit 0 with no call; no argument
-# means home.
+# means home; a failing dotbot call stops the install there.
 #
 # Run: tests/install-profile.sh
 set -euo pipefail
@@ -17,6 +17,8 @@ mkdir "$work/bin"
 cat >"$work/bin/uvx" <<'SH'
 #!/usr/bin/env bash
 echo "$*" >>"$UVX_LOG"
+# Fail the call whose argv contains $UVX_FAIL, if set.
+[ -z "${UVX_FAIL:-}" ] || [[ "$*" != *"$UVX_FAIL"* ]]
 SH
 chmod +x "$work/bin/uvx"
 
@@ -32,9 +34,9 @@ run() {
 
 expect_calls() {
   local label=$1; shift
-  local want; want=$(printf "dotbot -d $repo -c install-%s.conf.yaml\n" "$@")
+  local want; want=$(for c in "$@"; do printf 'dotbot -d %s -c install-%s.conf.yaml\n' "$repo" "$c"; done)
   [ "$rc" -eq 0 ] || fail "$label: exit $rc: $(cat "$work/err")"
-  [ "$(cat "$work/calls")" = "$want" ] || fail "$label: ran [$(tr '\n' ' ' <"$work/calls")], want [$(echo $want)]"
+  [ "$(cat "$work/calls")" = "$want" ] || fail "$label: ran [$(tr '\n' ' ' <"$work/calls")], want [$(tr '\n' ' ' <<<"$want")]"
 }
 
 expect_rejected() {
@@ -54,6 +56,13 @@ run base;  expect_calls "base" base
 run hoem;  expect_rejected "hoem"
 run "";    expect_rejected "empty profile"
 run base home; expect_rejected "two profiles"
+
+export UVX_FAIL=install-base.conf.yaml
+run home
+unset UVX_FAIL
+[ "$rc" -ne 0 ] || fail "failing base: exited 0"
+[ "$(wc -l <"$work/calls")" -eq 1 ] || fail "failing base: ran [$(tr '\n' ' ' <"$work/calls")] after the failure"
+! grep -q 'complete' "$work/out" || fail "failing base: reported completion"
 
 for flag in -h --help; do
   run "$flag"

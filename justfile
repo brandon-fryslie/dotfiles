@@ -6,8 +6,9 @@ default:
     @just --list
 
 # Install dotfiles with specified profile (calls ./install script)
+[positional-arguments]
 install *ARGS:
-    ./install {{ARGS}}
+    ./install "$@"
 
 # Show current dotfiles status (which profile is active, repo location, indicator health)
 status:
