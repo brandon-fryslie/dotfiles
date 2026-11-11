@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# install - Interactive Dotbot installation wrapper
-# Usage: ./install [home|work|base]
+# install - Dotbot installation wrapper
+# Usage: ./install [home|work|base|-h|--help]   (no argument means home)
 
 set -euo pipefail
 
@@ -8,53 +8,37 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd "${BASEDIR}"
 
-PROFILE="${1:-home}"
-
-if [[ -z "$PROFILE" ]]; then
-  echo "Usage: ./install [home|work|base]"
+usage() {
+  echo "Usage: ./install [home|work|base|-h|--help]"
   echo ""
   echo "Profiles:"
-  echo "  home   - Personal development environment"
+  echo "  home   - Personal development environment (default)"
   echo "  work   - Work environment"
   echo "  base   - Base configuration only"
-  exit 2
-fi
-
-# Run dotbot with the specified configuration files
-run_dotbot() {
-  local description="$1"
-  shift
-  local configs=("$@")
-
-  echo "Installing ${description}..."
-
-  local config_args=()
-  for config in "${configs[@]}"; do
-    config_args+=(-c "$config")
-  done
-
-  uvx dotbot -d "${BASEDIR}" "${config_args[@]}"
+  exit "${1:-0}"
 }
 
-case "$PROFILE" in
-  home)
-    run_dotbot "base configuration" install-base.conf.yaml
-    run_dotbot "home profile" install-home.conf.yaml
-    run_dotbot "rad-shell configuration" install-rad.conf.yaml
-    run_dotbot "agent-cli configuration" install-agent-cli.conf.yaml
-    ;;
-  work)
-    run_dotbot "base configuration" install-base.conf.yaml
-    run_dotbot "work profile" install-work.conf.yaml
-    run_dotbot "agent-cli configuration" install-agent-cli.conf.yaml
-    ;;
-  base)
-    run_dotbot "base configuration" install-base.conf.yaml
-    ;;
+if (( $# > 1 )); then
+  echo "install: expected one profile, got $#: $*" >&2
+  usage 1 >&2
+fi
+
+# Each profile is the ordered list of install-<name>.conf.yaml files it runs. The whole
+# list is chosen before anything runs, so an unknown profile installs nothing.
+case "${1-home}" in
+  home) configs=(base home rad agent-cli) ;;
+  work) configs=(base work agent-cli) ;;
+  base) configs=(base) ;;
+  -h|--help) usage ;;
   *)
-    run_dotbot "base configuration" install-base.conf.yaml
-    run_dotbot "${PROFILE} profile" "install-${PROFILE}.conf.yaml"
+    echo "install: unknown profile: '${1}'" >&2
+    usage 1 >&2
     ;;
 esac
+
+for config in "${configs[@]}"; do
+  echo "Installing ${config}..."
+  uvx dotbot -d "${BASEDIR}" -c "install-${config}.conf.yaml"
+done
 
 echo "✓ Installation complete!"
