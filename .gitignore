@@ -82,6 +82,3 @@ config/claude.codexapi/*
 # tracked -- the trust store is machine state, not configuration.
 config/certs/*.pem
 config/certs/env.sh
-
-# Scratch directory of config/claude/tests/repo-session.sh (removed on exit)
-/rs.test
