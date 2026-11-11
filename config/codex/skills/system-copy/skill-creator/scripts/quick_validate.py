@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import yaml
+from init_skill import DESCRIPTION_PLACEHOLDER
 
 MAX_SKILL_NAME_LENGTH = 64
 
@@ -68,6 +69,12 @@ def validate_skill(skill_path):
     description, error = required_text(frontmatter, "description")
     if error:
         return False, error
+    if description == DESCRIPTION_PLACEHOLDER:
+        return (
+            False,
+            "Description is still the init_skill placeholder; "
+            "replace it with what the skill does and when to use it",
+        )
 
     if not re.match(r"^[a-z0-9-]+$", name):
         return (

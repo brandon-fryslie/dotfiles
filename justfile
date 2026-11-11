@@ -92,7 +92,7 @@ test-share-slop:
 test-tmux-sender-info:
     ./tests/tmux-sender-info.sh
 
-# Assert the codex skill-creator validator rejects an empty, whitespace-only, or bare-key name or description, naming the field (PyYAML via uv)
+# Assert the codex skill-creator validator rejects an empty, whitespace-only, or bare-key name or description, naming the field, and a fresh init_skill's unfilled description placeholder (PyYAML via uv)
 test-skill-creator:
     uv run --with pyyaml python -m unittest tests/test_skill_creator_quick_validate.py
 
