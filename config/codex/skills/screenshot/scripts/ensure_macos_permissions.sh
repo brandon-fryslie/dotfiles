@@ -18,7 +18,7 @@ mkdir -p "$MODULE_CACHE"
 
 screen_capture_status() {
   local json
-  json="$(swift -module-cache-path "$MODULE_CACHE" "$PERM_SWIFT" "$@")"
+  json="$(swift -module-cache-path "$MODULE_CACHE" "$PERM_SWIFT" "$@")" || return
   python3 -c 'import json, sys; data=json.loads(sys.argv[1]); print("1" if data.get("screenCapture") else "0")' "$json"
 }
 
@@ -27,7 +27,10 @@ if [[ -n "${CODEX_SANDBOX:-}" ]]; then
   exit 3
 fi
 
-if [[ "$(screen_capture_status)" == "1" ]]; then
+# Assigned before testing: a failing helper inside [[ ]] would read as "not granted",
+# while a failing assignment stops the script under set -e with the helper's stderr.
+status="$(screen_capture_status)"
+if [[ "$status" == "1" ]]; then
   echo "Screen Recording permission already granted."
   exit 0
 fi
@@ -40,9 +43,10 @@ Recording for your terminal and rerun the command.
 MSG
 
 # Request permission once after explaining why it is needed.
-screen_capture_status --request >/dev/null || true
+screen_capture_status --request >/dev/null
 
-if [[ "$(screen_capture_status)" != "1" ]]; then
+status="$(screen_capture_status)"
+if [[ "$status" != "1" ]]; then
   cat <<'MSG'
 Screen Recording is still not granted.
 Open System Settings > Privacy & Security > Screen Recording and enable it for

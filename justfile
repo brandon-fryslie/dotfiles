@@ -80,6 +80,10 @@ test-install-profile:
 test-git-taculous:
     ./tests/git-taculous-prompt.sh
 
+# Assert the codex screenshot skill's permission check reports a failing swift helper as an error, never as "not granted" (stub swift)
+test-screenshot-permissions:
+    ./tests/screenshot-permissions.sh
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
