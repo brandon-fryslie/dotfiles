@@ -231,23 +231,25 @@ def slugify(prompt):
     return (s[:48] or "image").rstrip("-")
 
 
+# [LAW:one-source-of-truth] each image type's suffix and magic bytes; ext_for and
+# IMAGE_SUFFIXES both derive from this table.
+IMAGE_TYPES = (
+    (".png", lambda d: d[:8] == b"\x89PNG\r\n\x1a\n"),
+    (".jpg", lambda d: d[:3] == b"\xff\xd8\xff"),
+    (".gif", lambda d: d[:6] in (b"GIF87a", b"GIF89a")),
+    (".webp", lambda d: d[:4] == b"RIFF" and d[8:12] == b"WEBP"),
+)
+IMAGE_SUFFIXES = {suffix for suffix, _ in IMAGE_TYPES} | {".jpeg"}
+
+
 def ext_for(data, content_type):
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return ".png"
-    if data[:3] == b"\xff\xd8\xff":
-        return ".jpg"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return ".gif"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return ".webp"
+    for suffix, matches in IMAGE_TYPES:
+        if matches(data):
+            return suffix
     raise SystemExit(
         f"[slop-image] downloaded bytes are not a recognized image "
         f"(content-type={content_type!r}, first bytes={data[:12]!r})"
     )
-
-
-# Every suffix ext_for can produce, plus the .jpeg spelling of .jpg.
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
 @dataclass(frozen=True)
@@ -259,8 +261,7 @@ class OutFile:
         return self.path.parent
 
     def target(self, name):
-        # The downloaded bytes decide the extension; the user's path decides the rest.
-        return self.path.with_suffix(Path(name).suffix)
+        return self.path
 
 
 @dataclass(frozen=True)
@@ -334,9 +335,10 @@ def main():
     print(f"[slop-image] provider={args.provider} aspect={args.aspect} "
           f"count={len(urls)} key-source={src}", file=sys.stderr)
 
-    paths = [save_image(u, args.prompt, out, i, len(urls)) for i, u in enumerate(urls)]
-    for path in paths:
-        print(path)
+    # Each path is printed as it lands, so a later failure still reports the paid-for
+    # images already on disk.
+    for i, u in enumerate(urls):
+        print(save_image(u, args.prompt, out, i, len(urls)), flush=True)
 
 
 if __name__ == "__main__":

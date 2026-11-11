@@ -48,9 +48,9 @@ def test_file_path_with_one_image_is_the_file_and_its_parent_is_created(tmp_path
     assert f.parent.is_dir()
 
 
-def test_file_extension_follows_the_downloaded_bytes(tmp_path):
-    f = tmp_path / "pic.jpg"
-    assert parse_out(str(f), 1).target("img.png") == tmp_path / "pic.png"
+def test_file_path_is_written_exactly_as_named(tmp_path):
+    f = tmp_path / "hero.JPEG"
+    assert parse_out(str(f), 1).target("img.png") == f
 
 
 def test_new_path_without_suffix_is_a_directory(tmp_path):
@@ -77,3 +77,20 @@ def test_bad_out_is_rejected_before_any_provider_is_called(tmp_path, monkeypatch
     with pytest.raises(SystemExit):
         slop_image.main()
     assert calls == []
+
+
+def test_saved_paths_are_reported_even_when_a_later_image_fails(tmp_path, monkeypatch, capsys):
+    monkeypatch.setitem(slop_image.DISPATCH, "fal-flux", lambda *a: (["u1", "u2"], "test"))
+
+    def save(url, prompt, out, index, total):
+        if index == 1:
+            raise SystemExit("[slop-image] downloaded bytes are not a recognized image")
+        return out.target(f"img-{index + 1}.png")
+
+    monkeypatch.setattr(slop_image, "save_image", save)
+    monkeypatch.setattr(sys, "argv", [
+        "slop-image", "a cat", "--count", "2", "--out", str(tmp_path),
+    ])
+    with pytest.raises(SystemExit):
+        slop_image.main()
+    assert capsys.readouterr().out == f"{tmp_path / 'img-1.png'}\n"
