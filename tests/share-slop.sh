@@ -84,16 +84,9 @@ reset; transcript "$work/home/.claude"
 run CLAUDE_CONFIG_DIR="$work/config"
 refuses "transcript only under ~/.claude with CLAUDE_CONFIG_DIR set" "$work/config/projects"
 
-# Two copies of one session: the live transcript is the newest, so the stale copy is
-# never uploaded and stderr says which one was shared.
-reset; transcript "$work/config" -a-stale; transcript "$work/config" -b-live
-stale="$work/config/projects/-a-stale/$session.jsonl"
-echo '{"type":"user","marker":"stale-copy"}' >"$stale"
-touch -t 202001010000 "$stale"
+reset; transcript "$work/config" -a; transcript "$work/config" -b
 run CLAUDE_CONFIG_DIR="$work/config"
-uploads "two transcripts for one session"
-! grep -q 'stale-copy' "$work/body" || fail "two transcripts: uploaded the stale copy"
-grep -qF "sharing the newest: $work/config/projects/-b-live/$session.jsonl" "$work/err" \
-  || fail "two transcripts: stderr does not name the shared copy: $(cat "$work/err")"
+refuses "two transcripts for one session" "$work/config/projects/-a/$session.jsonl"
+refuses "two transcripts for one session" "$work/config/projects/-b/$session.jsonl"
 
 echo "PASS - share-slop transcript lookup"
