@@ -96,6 +96,10 @@ test-skill-creator:
 test-skill-installer:
     python3 -m unittest tests/test_skill_installer.py
 
+# Assert the codex imagegen batch retries a rate-limited job within --max-attempts, honoring the server's delay
+test-image-gen:
+    uv run --with openai==3.49.0 python -m unittest tests/test_image_gen_retries.py
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'

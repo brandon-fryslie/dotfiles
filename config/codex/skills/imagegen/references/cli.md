@@ -110,7 +110,7 @@ rm -f tmp/imagegen/prompts.jsonl
 ```
 
 Notes:
-- Use `--concurrency` to control parallelism (default `5`). Higher concurrency can hit rate limits; the CLI retries on transient errors.
+- Use `--concurrency` to control parallelism (default `5`). Higher concurrency can hit rate limits; the openai SDK retries rate limits, timeouts, and server errors, honoring the server's Retry-After, up to `--max-attempts` requests per job (default `3`). Each job reports its retry count; `OPENAI_LOG=info` logs every retry and its delay.
 - Per-job overrides are supported in JSONL (e.g., `size`, `quality`, `background`, `output_format`, `n`, and prompt-augmentation fields).
 - `--n` generates multiple variants for a single prompt; `generate-batch` is for many different prompts.
 - Treat the JSONL file as temporary: write it under `tmp/` and delete it after the run (don’t commit it).
