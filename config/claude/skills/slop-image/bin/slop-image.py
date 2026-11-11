@@ -93,7 +93,7 @@ def get_key(keychain_service, dev_vars_key):
 @dataclass(frozen=True)
 class ImageFormat:
     name: str  # the value a provider's output_format option takes
-    suffixes: tuple  # canonical first
+    suffixes: tuple[str, ...]  # canonical first
     matches: Callable[[bytes], bool]  # magic bytes
 
 
@@ -104,15 +104,20 @@ PNG = ImageFormat("png", (".png",), lambda d: d[:8] == b"\x89PNG\r\n\x1a\n")
 JPEG = ImageFormat("jpeg", (".jpg", ".jpeg"), lambda d: d[:3] == b"\xff\xd8\xff")
 WEBP = ImageFormat("webp", (".webp",), lambda d: d[:4] == b"RIFF" and d[8:12] == b"WEBP")
 GIF = ImageFormat("gif", (".gif",), lambda d: d[:6] in (b"GIF87a", b"GIF89a"))
-FORMAT_BY_SUFFIX = {s: f for f in (PNG, JPEG, WEBP, GIF) for s in f.suffixes}
+FORMATS = (PNG, JPEG, WEBP, GIF)
+FORMAT_BY_SUFFIX = {s: f for f in FORMATS for s in f.suffixes}
+
+
+def sniff(data):
+    return next((f for f in FORMATS if f.matches(data)), None)
 
 
 @dataclass(frozen=True)
 class Provider:
     name: str
-    key: tuple  # (keychain service, .dev.vars key)
-    formats: tuple  # ImageFormats it can produce; the first is the default for a directory --out
-    generate: Callable  # (key, prompt, aspect, fmt) -> image URL
+    key: tuple[str, str]  # (keychain service, .dev.vars key)
+    formats: tuple[ImageFormat, ...]  # what it can produce; the first is the default for a directory --out
+    generate: Callable[[str, str, str, ImageFormat], str]  # (key, prompt, aspect, fmt) -> image URL
 
 
 FAL_KEY = ("slopspot-fal-api-key", "SLOPSPOT_FAL_API_KEY")
@@ -275,19 +280,28 @@ def save_image(url, prompt, out, index, total):
     if not r.ok:
         raise SystemExit(f"[slop-image] failed to download image: {r.status_code} {url}")
     data = r.content
-    if not out.format.matches(data):
-        raise SystemExit(
-            f"[slop-image] asked for {out.format.name} but {url} is not {out.format.name} "
-            f"(content-type={r.headers.get('Content-Type', '')!r}, first bytes={data[:12]!r}); "
-            f"nothing written"
-        )
     short = hashlib.sha256(url.encode()).hexdigest()[:8]
     suffix = f"-{index + 1}" if total > 1 else ""
-    name = f"{slugify(prompt)}-{short}{suffix}{out.format.suffixes[0]}"
+    target = out.target(f"{slugify(prompt)}-{short}{suffix}{out.format.suffixes[0]}")
 
-    target = out.target(name)
-    target.write_bytes(data)
-    return target.resolve()
+    got = sniff(data)
+    if got is out.format:
+        target.write_bytes(data)
+        return target.resolve()
+    if got is None:
+        raise SystemExit(
+            f"[slop-image] asked for {out.format.name} but {url} is no image format slop-image "
+            f"knows (content-type={r.headers.get('Content-Type', '')!r}, first bytes={data[:12]!r}); "
+            f"nothing written"
+        )
+    # The provider table is wrong about this provider: fail, but keep the paid-for image
+    # under the name of the format it actually is (delivery URLs expire).
+    kept = target.with_suffix(got.suffixes[0])
+    kept.write_bytes(data)
+    raise SystemExit(
+        f"[slop-image] asked for {out.format.name} but the provider sent {got.name}; "
+        f"saved it as {kept.resolve()}"
+    )
 
 
 def main():

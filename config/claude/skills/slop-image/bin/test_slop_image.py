@@ -131,7 +131,14 @@ def test_bad_out_is_rejected_before_any_provider_is_called(tmp_path, monkeypatch
     assert not (tmp_path / "logo.gif").exists()
 
 
-def test_file_suffix_sets_the_output_format_fal_is_asked_for(tmp_path, monkeypatch):
+@pytest.mark.parametrize("provider, name, data, expected", [
+    ("fal-nano-banana", "pic.jpg", JPEG_BYTES,
+     {"aspect_ratio": "16:9", "num_images": 1, "output_format": "jpeg"}),
+    ("fal-flux", "pic.png", PNG_BYTES,
+     {"image_size": "landscape_16_9", "num_inference_steps": 4, "output_format": "png"}),
+])
+def test_file_suffix_sets_the_output_format_fal_is_asked_for(
+        tmp_path, monkeypatch, provider, name, data, expected):
     bodies = []
 
     def post(url, json, **kw):
@@ -139,11 +146,11 @@ def test_file_suffix_sets_the_output_format_fal_is_asked_for(tmp_path, monkeypat
         return FakeResponse(body={"images": [{"url": "https://img/1"}]})
 
     monkeypatch.setattr(slop_image.requests, "post", post)
-    monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(JPEG_BYTES))
-    f = tmp_path / "pic.jpg"
-    run_main(monkeypatch, "--provider", "fal-nano-banana", "--out", str(f))
-    assert bodies[0]["output_format"] == "jpeg"
-    assert f.read_bytes() == JPEG_BYTES
+    monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(data))
+    f = tmp_path / name
+    run_main(monkeypatch, "--provider", provider, "--aspect", "16:9", "--out", str(f))
+    assert bodies[0] == {"prompt": "a cat", **expected}
+    assert f.read_bytes() == data
 
 
 def test_directory_file_is_named_for_the_requested_format(tmp_path, monkeypatch, capsys):
@@ -156,14 +163,23 @@ def test_directory_file_is_named_for_the_requested_format(tmp_path, monkeypatch,
     assert saved.parent == tmp_path.resolve() and saved.suffix == ".jpg"
 
 
-def test_bytes_not_in_the_requested_format_are_not_written(tmp_path, monkeypatch):
-    calls = []
-    fake_provider(monkeypatch, FLUX, calls)
+def test_bytes_in_another_format_fail_but_are_kept_under_their_real_suffix(tmp_path, monkeypatch):
+    fake_provider(monkeypatch, FLUX, [])
     monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(PNG_BYTES))
     f = tmp_path / "pic.jpg"
-    with pytest.raises(SystemExit, match="asked for jpeg"):
+    kept = tmp_path / "pic.png"
+    with pytest.raises(SystemExit, match=f"asked for jpeg but the provider sent png; saved it as {kept}"):
         run_main(monkeypatch, "--out", str(f))
     assert not f.exists()
+    assert kept.read_bytes() == PNG_BYTES
+
+
+def test_bytes_in_no_known_format_are_not_written(tmp_path, monkeypatch):
+    fake_provider(monkeypatch, FLUX, [])
+    monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(b"<html>"))
+    with pytest.raises(SystemExit, match="no image format slop-image knows"):
+        run_main(monkeypatch, "--out", str(tmp_path))
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_a_format_mismatch_stops_before_the_next_image_is_paid_for(tmp_path, monkeypatch):
