@@ -5,16 +5,17 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import functools
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.error
 import urllib.parse
 import zipfile
+import zlib
 
-from github_utils import github_request
+from github_utils import GitHubRequestError, github_request
 DEFAULT_REF = "main"
 
 
@@ -35,7 +36,13 @@ class Source:
     repo: str
     ref: str
     paths: list[str]
-    repo_url: str | None = None
+
+
+@dataclass
+class Install:
+    name: str
+    path: str  # inside the repo
+    dest: str
 
 
 class InstallError(Exception):
@@ -82,13 +89,18 @@ def _download_repo_zip(owner: str, repo: str, ref: str, dest_dir: str) -> str:
     zip_path = os.path.join(dest_dir, "repo.zip")
     try:
         payload = _request(zip_url)
-    except urllib.error.HTTPError as exc:
-        raise InstallError(f"Download failed: HTTP {exc.code}") from exc
-    with open(zip_path, "wb") as file_handle:
-        file_handle.write(payload)
-    with zipfile.ZipFile(zip_path, "r") as zip_file:
-        _safe_extract_zip(zip_file, dest_dir)
-        top_levels = {name.split("/")[0] for name in zip_file.namelist() if name}
+    except GitHubRequestError as exc:
+        raise InstallError(f"Download failed: {exc}") from exc
+    try:
+        with open(zip_path, "wb") as file_handle:
+            file_handle.write(payload)
+        with zipfile.ZipFile(zip_path, "r") as zip_file:
+            _safe_extract_zip(zip_file, dest_dir)
+            top_levels = {name.split("/")[0] for name in zip_file.namelist() if name}
+    except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as exc:
+        # a proxy or captive portal can answer 200 with an HTML page; a corrupt deflate
+        # stream fails only at extraction
+        raise InstallError(f"Download failed: could not unpack {zip_url}: {exc}") from exc
     if not top_levels:
         raise InstallError("Downloaded archive was empty.")
     if len(top_levels) != 1:
@@ -96,19 +108,25 @@ def _download_repo_zip(owner: str, repo: str, ref: str, dest_dir: str) -> str:
     return os.path.join(dest_dir, next(iter(top_levels)))
 
 
-def _run_git(args: list[str]) -> None:
-    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+def _run_git(args: list[str], what: str) -> None:
+    try:
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except OSError as exc:  # git is not installed, or not executable
+        raise InstallError(f"{what} failed: {exc}") from exc
     if result.returncode != 0:
-        raise InstallError(result.stderr.strip() or "Git command failed.")
+        cause = result.stderr.strip() or f"exit {result.returncode}"
+        raise InstallError(f"{what} failed: {cause}")
+
+
+def _resolves_within(path: str, root: str) -> bool:
+    resolved, real_root = os.path.realpath(path), os.path.realpath(root)
+    return resolved == real_root or resolved.startswith(real_root + os.sep)
 
 
 def _safe_extract_zip(zip_file: zipfile.ZipFile, dest_dir: str) -> None:
-    dest_root = os.path.realpath(dest_dir)
     for info in zip_file.infolist():
-        extracted_path = os.path.realpath(os.path.join(dest_dir, info.filename))
-        if extracted_path == dest_root or extracted_path.startswith(dest_root + os.sep):
-            continue
-        raise InstallError("Archive contains files outside the destination.")
+        if not _resolves_within(os.path.join(dest_dir, info.filename), dest_dir):
+            raise InstallError("Archive contains files outside the destination.")
     zip_file.extractall(dest_dir)
 
 
@@ -127,53 +145,84 @@ def _validate_skill_name(name: str) -> None:
 
 def _git_sparse_checkout(repo_url: str, ref: str, paths: list[str], dest_dir: str) -> str:
     repo_dir = os.path.join(dest_dir, "repo")
-    clone_cmd = [
-        "git",
-        "clone",
-        "--filter=blob:none",
-        "--depth",
-        "1",
-        "--sparse",
-        "--single-branch",
-        "--branch",
-        ref,
-        repo_url,
-        repo_dir,
+    # Fetching the ref, rather than cloning it with --branch, takes a branch, a tag, or a
+    # commit SHA alike: the same refs the download takes. The fetch goes through a named
+    # remote so the partial clone has a promisor to fetch the blobs checkout needs.
+    # `--` keeps a ref or path that starts with "-" from being read as a git option.
+    steps = [
+        (["init", "--quiet", repo_dir], f"git init {repo_dir}"),
+        (["-C", repo_dir, "remote", "add", "origin", repo_url], f"git remote add {repo_url}"),
+        (
+            ["-C", repo_dir, "fetch", "--quiet", "--depth", "1", "--filter=blob:none", "--", "origin", ref],
+            f"git fetch {repo_url} (ref {ref})",
+        ),
+        (["-C", repo_dir, "sparse-checkout", "set", "--", *paths], f"git sparse-checkout of {repo_url}"),
+        (["-C", repo_dir, "checkout", "--quiet", "FETCH_HEAD"], f"git checkout of {ref}"),
     ]
-    try:
-        _run_git(clone_cmd)
-    except InstallError:
-        _run_git(
-            [
-                "git",
-                "clone",
-                "--filter=blob:none",
-                "--depth",
-                "1",
-                "--sparse",
-                "--single-branch",
-                repo_url,
-                repo_dir,
-            ]
-        )
-    _run_git(["git", "-C", repo_dir, "sparse-checkout", "set", *paths])
-    _run_git(["git", "-C", repo_dir, "checkout", ref])
+    for args, what in steps:
+        _run_git(["git", *args], what)
     return repo_dir
 
 
-def _validate_skill(path: str) -> None:
+def _validate_skill(repo_root: str, skill_path: str) -> None:
+    path = os.path.join(repo_root, skill_path)
+    if not _resolves_within(path, repo_root):
+        raise InstallError(f"Skill path resolves outside the repo: {skill_path}")
     if not os.path.isdir(path):
         raise InstallError(f"Skill path not found: {path}")
     skill_md = os.path.join(path, "SKILL.md")
     if not os.path.isfile(skill_md):
         raise InstallError("SKILL.md not found in selected skill directory.")
+    # A git checkout makes real symlinks and copytree follows them, so a link out of the
+    # skill would copy local files (say ~/.ssh) into the installed skill.
+    for dirpath, dirnames, filenames in os.walk(path):
+        for entry in (os.path.join(dirpath, e) for e in dirnames + filenames):
+            if os.path.islink(entry) and not _resolves_within(entry, path):
+                raise InstallError(f"Skill links outside itself: {entry} -> {os.readlink(entry)}")
 
 
-def _copy_skill(src: str, dest_dir: str) -> None:
-    os.makedirs(os.path.dirname(dest_dir), exist_ok=True)
-    if os.path.exists(dest_dir):
-        raise InstallError(f"Destination already exists: {dest_dir}")
-    shutil.copytree(src, dest_dir)
+def _plan_installs(paths: list[str], name: str | None, dest_root: str) -> list[Install]:
+    # [LAW:parse-dont-validate] every name and destination is settled here, before the repo
+    # is fetched, so a bad second path cannot leave the first one installed.
+    if name is not None and len(paths) > 1:
+        raise InstallError("--name names a single skill; it cannot be used with several --path values.")
+    installs: list[Install] = []
+    for path in paths:
+        skill_name = name if name is not None else os.path.basename(path.rstrip("/"))
+        _validate_relative_path(path)
+        _validate_skill_name(skill_name)
+        if any(install.name == skill_name for install in installs):
+            raise InstallError(f"Two --path values would both install as {skill_name}.")
+        dest_dir = os.path.join(dest_root, skill_name)
+        if os.path.lexists(dest_dir):
+            raise InstallError(f"Destination already exists: {dest_dir}")
+        installs.append(Install(skill_name, path, dest_dir))
+    return installs
+
+
+def _copy_skills(installs: list[Install], repo_root: str) -> None:
+    created: list[str] = []
+    try:
+        for install in installs:
+            os.makedirs(os.path.dirname(install.dest), exist_ok=True)
+            # mkdir first: a destination is ours to roll back only once we created it
+            os.mkdir(install.dest)
+            created.append(install.dest)
+            shutil.copytree(os.path.join(repo_root, install.path), install.dest, dirs_exist_ok=True)
+    except BaseException as exc:
+        # every exit rolls back, Ctrl-C included; only a copy error becomes ours to report
+        leftovers = []
+        for dest in created:
+            try:
+                shutil.rmtree(dest)
+            except OSError as rm_exc:
+                leftovers.append(f"could not remove {dest}: {rm_exc}")
+        if not isinstance(exc, OSError):
+            for leftover in leftovers:
+                print(f"Error: {leftover}", file=sys.stderr)
+            raise
+        detail = "; ".join([str(exc), *leftovers])
+        raise InstallError(f"Copy failed, nothing installed: {detail}") from exc
 
 
 def _build_repo_url(owner: str, repo: str) -> str:
@@ -185,25 +234,31 @@ def _build_repo_ssh(owner: str, repo: str) -> str:
 
 
 def _prepare_repo(source: Source, method: str, tmp_dir: str) -> str:
-    if method in ("download", "auto"):
+    download = functools.partial(_download_repo_zip, source.owner, source.repo, source.ref)
+    https_url = _build_repo_url(source.owner, source.repo)
+    ssh_url = _build_repo_ssh(source.owner, source.repo)
+    clone_https = functools.partial(_git_sparse_checkout, https_url, source.ref, source.paths)
+    clone_ssh = functools.partial(_git_sparse_checkout, ssh_url, source.ref, source.paths)
+    # [LAW:no-silent-failure] the one fallback ladder: every failed rung is reported,
+    # whether a later rung succeeds or not.
+    attempts = {
+        "download": [download],
+        "git": [clone_https, clone_ssh],
+        "auto": [download, clone_https, clone_ssh],
+    }[method]
+    failures: list[str] = []
+    for index, attempt in enumerate(attempts):
+        work_dir = os.path.join(tmp_dir, str(index))
+        os.mkdir(work_dir)
         try:
-            return _download_repo_zip(source.owner, source.repo, source.ref, tmp_dir)
+            repo_root = attempt(work_dir)
         except InstallError as exc:
-            if method == "download":
-                raise
-            err_msg = str(exc)
-            if "HTTP 401" in err_msg or "HTTP 403" in err_msg or "HTTP 404" in err_msg:
-                pass
-            else:
-                raise
-    if method in ("git", "auto"):
-        repo_url = source.repo_url or _build_repo_url(source.owner, source.repo)
-        try:
-            return _git_sparse_checkout(repo_url, source.ref, source.paths, tmp_dir)
-        except InstallError:
-            repo_url = _build_repo_ssh(source.owner, source.repo)
-            return _git_sparse_checkout(repo_url, source.ref, source.paths, tmp_dir)
-    raise InstallError("Unsupported method.")
+            failures.append(str(exc))
+            continue
+        for failure in failures:
+            print(f"Note: {failure} (fell back to the next method)", file=sys.stderr)
+        return repo_root
+    raise InstallError("; ".join(failures))
 
 
 def _resolve_source(args: Args) -> Source:
@@ -270,34 +325,18 @@ def main(argv: list[str]) -> int:
     args = _parse_args(argv)
     try:
         source = _resolve_source(args)
-        source.ref = source.ref or args.ref
-        if not source.paths:
-            raise InstallError("No skill paths provided.")
-        for path in source.paths:
-            _validate_relative_path(path)
         dest_root = args.dest or _default_dest()
+        installs = _plan_installs(source.paths, args.name, dest_root)
         tmp_dir = tempfile.mkdtemp(prefix="skill-install-", dir=_tmp_root())
         try:
             repo_root = _prepare_repo(source, args.method, tmp_dir)
-            installed = []
-            for path in source.paths:
-                skill_name = args.name if len(source.paths) == 1 else None
-                skill_name = skill_name or os.path.basename(path.rstrip("/"))
-                _validate_skill_name(skill_name)
-                if not skill_name:
-                    raise InstallError("Unable to derive skill name.")
-                dest_dir = os.path.join(dest_root, skill_name)
-                if os.path.exists(dest_dir):
-                    raise InstallError(f"Destination already exists: {dest_dir}")
-                skill_src = os.path.join(repo_root, path)
-                _validate_skill(skill_src)
-                _copy_skill(skill_src, dest_dir)
-                installed.append((skill_name, dest_dir))
+            for install in installs:
+                _validate_skill(repo_root, install.path)
+            _copy_skills(installs, repo_root)
         finally:
-            if os.path.isdir(tmp_dir):
-                shutil.rmtree(tmp_dir, ignore_errors=True)
-        for skill_name, dest_dir in installed:
-            print(f"Installed {skill_name} to {dest_dir}")
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        for install in installs:
+            print(f"Installed {install.name} to {install.dest}")
         return 0
     except InstallError as exc:
         print(f"Error: {exc}", file=sys.stderr)

@@ -92,6 +92,10 @@ test-share-slop:
 test-skill-creator:
     uv run --with pyyaml python -m unittest tests/test_skill_creator_quick_validate.py
 
+# Assert the codex skill-installer fails with its own errors offline, falls back to git, and installs all-or-nothing
+test-skill-installer:
+    python3 -m unittest tests/test_skill_installer.py
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
