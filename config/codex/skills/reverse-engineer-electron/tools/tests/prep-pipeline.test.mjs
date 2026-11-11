@@ -142,15 +142,21 @@ test("verify-dependency-swap passes and fails deterministically based on structu
 });
 
 // A project with demo-pkg@1.2.3 copied into the app and installed at the root; rootIndexJs decides
-// whether the swap verifies (same shape as the app copy) or fails (different shape).
-function swapProject(rootIndexJs) {
+// whether the swap verifies (same shape as the app copy) or fails (different shape). With pnpmLink, the app
+// path is a relative symlink into the app's own .pnpm store, the way a pnpm-installed app ships it.
+const PNPM_TARGET = ".pnpm/demo-pkg@1.2.3/node_modules/demo-pkg";
+
+function swapProject(rootIndexJs, { pnpmLink = false } = {}) {
   const tmp = mkTmpDir();
-  const appPkgDir = path.join(tmp, "resources", "app", "node_modules", "demo-pkg");
+  const appNodeModules = path.join(tmp, "resources", "app", "node_modules");
+  const appPkgDir = path.join(appNodeModules, "demo-pkg");
   const rootPkgDir = path.join(tmp, "node_modules", "demo-pkg");
   const logPath = path.join(tmp, "deps", "replacements.json");
 
-  writeJson(path.join(appPkgDir, "package.json"), { name: "demo-pkg", version: "1.2.3" });
-  writeText(path.join(appPkgDir, "index.js"), "module.exports=function(){return 1};\n");
+  const appCopyDir = pnpmLink ? path.join(appNodeModules, PNPM_TARGET) : appPkgDir;
+  writeJson(path.join(appCopyDir, "package.json"), { name: "demo-pkg", version: "1.2.3" });
+  writeText(path.join(appCopyDir, "index.js"), "module.exports=function(){return 1};\n");
+  if (pnpmLink) fs.symlinkSync(PNPM_TARGET, appPkgDir, "dir");
   writeJson(path.join(rootPkgDir, "package.json"), { name: "demo-pkg", version: "1.2.3" });
   writeText(path.join(rootPkgDir, "index.js"), rootIndexJs);
 
@@ -169,7 +175,12 @@ function swapProject(rootIndexJs) {
   writeText(fakeNpm, "#!/usr/bin/env bash\nexit 0\n");
   fs.chmodSync(fakeNpm, 0o755);
 
-  const replace = (version = "1.2.3") =>
+  // A verify script that SIGKILLs replace-dependency mid-verification: the run dies with its link in place and
+  // the log exactly as the tool wrote it ahead of the swap.
+  const killingVerify = path.join(tmp, "kill-parent.mjs");
+  writeText(killingVerify, "process.kill(process.ppid, 'SIGKILL');\n");
+
+  const replace = (version = "1.2.3", { verifyScript = path.join(TOOLS_DIR, "verify-dependency-swap.mjs") } = {}) =>
     runNode(
       path.join(TOOLS_DIR, "replace-dependency.mjs"),
       [
@@ -177,7 +188,7 @@ function swapProject(rootIndexJs) {
         "--version", version,
         "--app-dir", path.join(tmp, "resources", "app"),
         "--npm", fakeNpm,
-        "--verify-script", path.join(TOOLS_DIR, "verify-dependency-swap.mjs"),
+        "--verify-script", verifyScript,
         "--verification-dir", path.join(tmp, "deps", "verification"),
         "--out", logPath,
         "--threshold", "0.99",
@@ -192,7 +203,28 @@ function swapProject(rootIndexJs) {
     writeJson(logPath, log);
   };
 
-  return { tmp, appPkgDir, rootPkgDir, replace, readLog, forgetPackage };
+  // Kill a trial mid-verification; returns the in-flight entry the tool wrote ahead of the swap.
+  const killMidVerify = () => {
+    const killed = replace("1.2.3", { verifyScript: killingVerify });
+    assert.equal(killed.signal, "SIGKILL", killed.stderr || killed.stdout);
+    const entry = readLog().packages["demo-pkg"];
+    assert.equal(entry.status, "in-flight", JSON.stringify(entry));
+    return entry;
+  };
+  const backupOf = (entry) => path.resolve(path.dirname(logPath), entry.inFlight.original.backupPath);
+
+  const gate = (cwd = tmp) => {
+    for (const dir of ["baseline", "working"]) writeText(path.join(tmp, dir, "main.js"), "console.log(1);\n");
+    const out = path.join(tmp, "gates", "remove-deps.json");
+    const result = runNode(
+      path.join(TOOLS_DIR, "gate.mjs"),
+      ["remove-deps", "--baseline", path.join(tmp, "baseline"), "--working", path.join(tmp, "working"), "--deps-dir", path.join(tmp, "deps"), "--out", out],
+      cwd,
+    );
+    return { status: result.status, artifact: JSON.parse(fs.readFileSync(out, "utf8")) };
+  };
+
+  return { tmp, appPkgDir, rootPkgDir, logPath, replace, readLog, forgetPackage, killMidVerify, backupOf, gate };
 }
 
 const VERIFYING_INDEX = "module.exports=function(){return 1};\n";
@@ -215,6 +247,7 @@ test("replace-dependency rolls back failed verified swap and logs transaction", 
   assert.equal(lastAttempt.rolledBack, true);
 
   assert.ok(fs.existsSync(path.join(appPkgDir, "package.json")), "app dependency should be restored after rollback");
+  assert.deepEqual(fs.readdirSync(path.join(path.dirname(appPkgDir), ".original")), [], "a rolled-back trial leaves no backup directories");
 });
 
 test("replace-dependency links the app copy to the root package", () => {
@@ -276,17 +309,18 @@ test("replace-dependency refuses when the log says resolved but the app copy is 
   assert.equal(pkgState.status, "resolved", JSON.stringify(pkgState.attempts));
 });
 
-test("replace-dependency refuses an app link the log has no resolved swap for (interrupted run)", () => {
-  const { appPkgDir, replace, forgetPackage } = swapProject(VERIFYING_INDEX);
+test("replace-dependency refuses its own link when the log has no resolved swap for it, instead of trialing root against root", () => {
+  const { appPkgDir, replace, readLog, forgetPackage } = swapProject(VERIFYING_INDEX);
   assert.equal(replace().status, 0);
 
-  // A run killed between linking and recording leaves the link on disk and no resolved entry in the log.
+  // The entry is deleted while our link is still on disk.
   forgetPackage();
 
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, /the app copy is already a link, but \S+ records no resolved swap/);
+  assert.match(result.stderr, /already links to the root package, but \S+ records no resolved swap for it — put the original back over the link first/);
   assert.ok(fs.lstatSync(appPkgDir).isSymbolicLink(), "the link must be left untouched");
+  assert.equal(readLog().packages["demo-pkg"], undefined, "nothing may be recorded resolved");
 });
 
 test("replace-dependency refuses a resolved swap whose root package was removed (dangling link)", () => {
@@ -329,4 +363,247 @@ test("replace-dependency refuses an explicit --version that differs from the res
   const retrial = replace("1.2.4");
   assert.equal(retrial.status, 0, retrial.stderr || retrial.stdout);
   assert.equal(readLog().packages["demo-pkg"].attempts.at(-1).attemptedVersion, "1.2.4");
+});
+
+const interruptedAttempts = (entry) => entry.attempts.filter((attempt) => attempt.reason === "interrupted");
+
+test("replace-dependency recovers a trial killed mid-verification: the original comes back, then the trial reruns", () => {
+  const { appPkgDir, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  assert.ok(fs.lstatSync(appPkgDir).isSymbolicLink(), "the kill leaves our link in place");
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.ok(rerun.stdout.includes(`interrupted trial of 1.2.3: restored the original at ${backupOf(inFlight)}`), rerun.stdout);
+  const entry = readLog().packages["demo-pkg"];
+  assert.equal(entry.status, "resolved", JSON.stringify(entry));
+  assert.deepEqual(interruptedAttempts(entry).map((attempt) => attempt.recovery), ["restored"]);
+});
+
+test("replace-dependency recovers a trial killed after the rename, before the link", () => {
+  const { appPkgDir, replace, readLog, killMidVerify } = swapProject(VERIFYING_INDEX);
+  killMidVerify();
+  fs.unlinkSync(appPkgDir);
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  const entry = readLog().packages["demo-pkg"];
+  assert.equal(entry.status, "resolved");
+  assert.deepEqual(interruptedAttempts(entry).map((attempt) => attempt.recovery), ["restored"]);
+});
+
+test("replace-dependency records a trial killed before anything moved as original-in-place, then trials it", () => {
+  const { appPkgDir, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  fs.unlinkSync(appPkgDir);
+  fs.renameSync(backupOf(inFlight), appPkgDir);
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.match(rerun.stdout, /interrupted trial of 1\.2\.3: the original was still in place/);
+  const entry = readLog().packages["demo-pkg"];
+  assert.equal(entry.status, "resolved");
+  assert.deepEqual(interruptedAttempts(entry).map((attempt) => attempt.recovery), ["original-in-place"]);
+});
+
+test("replace-dependency refuses an interrupted trial whose backup and app path both hold a directory, naming the backup", () => {
+  const { appPkgDir, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  fs.unlinkSync(appPkgDir);
+  fs.cpSync(backupOf(inFlight), appPkgDir, { recursive: true });
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.ok(result.stderr.includes(`left the original at ${backupOf(inFlight)}, but the app path holds a directory too`), result.stderr);
+  assert.ok(fs.existsSync(backupOf(inFlight)) && !fs.lstatSync(appPkgDir).isSymbolicLink(), "disk must be left untouched");
+  assert.equal(readLog().packages["demo-pkg"].status, "in-flight");
+});
+
+test("replace-dependency refuses an interrupted trial whose backup is gone: the original is lost", () => {
+  const { appPkgDir, replace, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  fs.unlinkSync(appPkgDir);
+  fs.rmSync(backupOf(inFlight), { recursive: true });
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /which is gone — the original is lost/);
+});
+
+test("the remove-deps gate fails on a swap left in flight", () => {
+  const { killMidVerify, gate } = swapProject(VERIFYING_INDEX);
+  killMidVerify();
+
+  const { status, artifact } = gate();
+  assert.equal(status, 1);
+  assert.deepEqual(artifact.mismatches.replacementLogErrors.map((error) => error.type), ["swap-in-flight"]);
+});
+
+test("the remove-deps gate reads verification paths relative to the log, from any cwd", () => {
+  const { replace, gate } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+
+  const { status, artifact } = gate(mkTmpDir());
+  assert.equal(status, 0, JSON.stringify(artifact.mismatches));
+});
+
+test("replace-dependency trials a foreign link against the files it points at, and puts the same link back on failure", () => {
+  const { appPkgDir, replace, readLog } = swapProject(FAILING_INDEX, { pnpmLink: true });
+
+  const result = replace();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const entry = readLog().packages["demo-pkg"];
+  assert.equal(entry.status, "unresolved");
+  assert.equal(entry.attempts.at(-1).reason, "verification-failed");
+  assert.deepEqual(entry.attempts.at(-1).original, { kind: "link", target: PNPM_TARGET });
+  assert.equal(fs.readlinkSync(appPkgDir), PNPM_TARGET);
+});
+
+// Resolving needs the verification to see the files the link points at; a dangling renamed link fails it.
+test("replace-dependency resolves a foreign link, and recovers one killed mid-verification", () => {
+  const { appPkgDir, rootPkgDir, replace, readLog, killMidVerify } = swapProject(VERIFYING_INDEX, { pnpmLink: true });
+  killMidVerify();
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.ok(rerun.stdout.includes(`restored a symlink to ${PNPM_TARGET}`), rerun.stdout);
+  const entry = readLog().packages["demo-pkg"];
+  assert.equal(entry.status, "resolved", JSON.stringify(entry));
+  assert.deepEqual(entry.attempts.at(-1).original, { kind: "link", target: PNPM_TARGET });
+  assert.equal(fs.realpathSync(appPkgDir), fs.realpathSync(rootPkgDir));
+});
+
+test("replace-dependency and the gate refuse a log the parser rejects, with the same error", () => {
+  const cases = [
+    ["resolved-success-count", (log) => { log.packages["demo-pkg"].attempts = []; }],
+    ["in-flight-record-on-settled", (log) => { log.packages["demo-pkg"].inFlight = { attemptedVersion: "1.2.3" }; }],
+    ["schema-version", (log) => { log.schemaVersion = 3; }],
+    ["attempt-invalid", (log) => { log.packages["demo-pkg"].attempts[0].rolledBack = true; }],
+  ];
+  for (const [type, corrupt] of cases) {
+    const { logPath, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
+    assert.equal(replace().status, 0);
+    const log = readLog();
+    corrupt(log);
+    writeJson(logPath, log);
+
+    const result = replace();
+    assert.equal(result.status, 2, `${type}: ${result.stdout}`);
+    assert.ok(result.stderr.includes(`"type":"${type}"`), `${type}: ${result.stderr}`);
+    const { status, artifact } = gate();
+    assert.equal(status, 1, type);
+    assert.deepEqual(artifact.mismatches.replacementLogErrors.map((error) => error.type), [type]);
+  }
+});
+
+test("replace-dependency checks a foreign link before anything is installed at the root", () => {
+  const { tmp, replace, readLog } = swapProject(VERIFYING_INDEX, { pnpmLink: true });
+  fs.rmSync(path.join(tmp, "node_modules"), { recursive: true });
+
+  // The fake npm installs nothing, so the trial fails after install instead of crashing before it.
+  const result = replace();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(readLog().packages["demo-pkg"].attempts.at(-1).reason, "root-package-json-missing");
+});
+
+test("replace-dependency refuses an interrupted trial whose backup is gone as lost, even under a foreign link", () => {
+  const { appPkgDir, replace, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  fs.unlinkSync(appPkgDir);
+  fs.rmSync(backupOf(inFlight), { recursive: true });
+  fs.symlinkSync("elsewhere", appPkgDir, "dir");
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /which is gone — the original is lost/);
+});
+
+test("replace-dependency refuses to delete a backup root outside the app's .original/", () => {
+  const { appPkgDir, logPath, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  fs.unlinkSync(appPkgDir);
+  fs.renameSync(backupOf(inFlight), appPkgDir);
+  // A hand edit points the backup at the log's own directory: its root would be deps/ itself.
+  const log = readLog();
+  log.packages["demo-pkg"].inFlight.original.backupPath = "x";
+  writeJson(logPath, log);
+
+  const result = replace();
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /is not under \S+\.original; refusing to delete it/);
+  assert.ok(fs.existsSync(logPath), "the log's directory survives");
+});
+
+test("replace-dependency settles an interrupted trial of a package it was not asked about, without trialing it", () => {
+  const { tmp, appPkgDir, logPath, replace, readLog, killMidVerify } = swapProject(VERIFYING_INDEX);
+  killMidVerify();
+
+  // A second package, requested on its own, with nothing to trial.
+  const result = runNode(
+    path.join(TOOLS_DIR, "replace-dependency.mjs"),
+    ["--pkg", "other-pkg", "--app-dir", path.join(tmp, "resources", "app"), "--out", logPath],
+    tmp,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /\[demo-pkg\] interrupted trial of 1\.2\.3: restored the original/);
+  const entry = readLog().packages["demo-pkg"];
+  assert.equal(entry.status, "unresolved", JSON.stringify(entry));
+  assert.deepEqual(entry.attempts.map((attempt) => attempt.reason), ["interrupted"]);
+  assert.ok(!fs.lstatSync(appPkgDir).isSymbolicLink(), "the original is back at the app path");
+  assert.deepEqual(fs.readdirSync(path.join(path.dirname(appPkgDir), ".original")), []);
+});
+
+test("replace-dependency removes a backup root that collected stray files once the original is back", () => {
+  const { appPkgDir, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  writeText(path.join(path.dirname(backupOf(inFlight)), ".DS_Store"), "");
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+  // Only the passing trial's backup remains.
+  const roots = fs.readdirSync(path.join(path.dirname(appPkgDir), ".original"));
+  assert.equal(roots.length, 1, JSON.stringify(roots));
+  assert.ok(!roots.includes(path.basename(path.dirname(backupOf(inFlight)))));
+});
+
+test("replace-dependency migrates a v1 log, so a package a v1 run resolved stays resolved", () => {
+  const { tmp, logPath, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+  const v2 = readLog();
+
+  // The same swap as v1 recorded it: backupPath on the attempt, every stored path relative to the run's cwd.
+  const fromCwd = (stored) => path.relative(tmp, path.resolve(path.dirname(logPath), stored));
+  const v1 = structuredClone(v2);
+  v1.schemaVersion = 1;
+  for (const attempt of v1.packages["demo-pkg"].attempts) {
+    attempt.backupPath = fromCwd(attempt.original.backupPath);
+    delete attempt.original;
+    attempt.verification.path = fromCwd(attempt.verification.path);
+  }
+  writeJson(logPath, v1);
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.match(rerun.stdout, /\[demo-pkg\] already resolved with 1\.2\.3; skipped/);
+  // Each stored path leads to the same file it did under v2, however the migration spelled it.
+  const leadsTo = (stored) => fs.realpathSync(path.resolve(path.dirname(logPath), stored));
+  const [migrated] = readLog().packages["demo-pkg"].attempts;
+  const [original] = v2.packages["demo-pkg"].attempts;
+  assert.equal(readLog().schemaVersion, 2);
+  assert.equal(JSON.parse(fs.readFileSync(`${logPath}.v1`, "utf8")).schemaVersion, 1, "the v1 text is kept");
+  assert.equal(leadsTo(migrated.original.backupPath), leadsTo(original.original.backupPath));
+  assert.equal(leadsTo(migrated.verification.path), leadsTo(original.verification.path));
+  assert.equal(gate().status, 0);
+});
+
+test("replace-dependency recognises a link to the root package however its target is spelled", () => {
+  const { tmp, appPkgDir, replace } = swapProject(VERIFYING_INDEX);
+  fs.rmSync(appPkgDir, { recursive: true });
+  // os.tmpdir() sits under a symlinked prefix on macOS (/var -> /private/var); the target keeps the unresolved one.
+  fs.symlinkSync(path.join(tmp, "node_modules", "demo-pkg"), appPkgDir, "dir");
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /already links to the root package/);
 });
