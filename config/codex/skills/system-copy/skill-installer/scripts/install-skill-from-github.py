@@ -13,6 +13,7 @@ import sys
 import tempfile
 import urllib.parse
 import zipfile
+import zlib
 
 from github_utils import GitHubRequestError, github_request
 DEFAULT_REF = "main"
@@ -96,9 +97,9 @@ def _download_repo_zip(owner: str, repo: str, ref: str, dest_dir: str) -> str:
         with zipfile.ZipFile(zip_path, "r") as zip_file:
             _safe_extract_zip(zip_file, dest_dir)
             top_levels = {name.split("/")[0] for name in zip_file.namelist() if name}
-    except (zipfile.BadZipFile, OSError) as exc:
-        # a proxy or captive portal can answer 200 with an HTML page; a truncated archive
-        # fails its CRC only at extraction
+    except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as exc:
+        # a proxy or captive portal can answer 200 with an HTML page; a corrupt deflate
+        # stream fails only at extraction
         raise InstallError(f"Download failed: could not unpack {zip_url}: {exc}") from exc
     if not top_levels:
         raise InstallError("Downloaded archive was empty.")
@@ -108,7 +109,10 @@ def _download_repo_zip(owner: str, repo: str, ref: str, dest_dir: str) -> str:
 
 
 def _run_git(args: list[str], what: str) -> None:
-    result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except OSError as exc:  # git is not installed, or not executable
+        raise InstallError(f"{what} failed: {exc}") from exc
     if result.returncode != 0:
         cause = result.stderr.strip() or f"exit {result.returncode}"
         raise InstallError(f"{what} failed: {cause}")
@@ -144,14 +148,15 @@ def _git_sparse_checkout(repo_url: str, ref: str, paths: list[str], dest_dir: st
     # Fetching the ref, rather than cloning it with --branch, takes a branch, a tag, or a
     # commit SHA alike: the same refs the download takes. The fetch goes through a named
     # remote so the partial clone has a promisor to fetch the blobs checkout needs.
+    # `--` keeps a ref or path that starts with "-" from being read as a git option.
     steps = [
         (["init", "--quiet", repo_dir], f"git init {repo_dir}"),
         (["-C", repo_dir, "remote", "add", "origin", repo_url], f"git remote add {repo_url}"),
         (
-            ["-C", repo_dir, "fetch", "--quiet", "--depth", "1", "--filter=blob:none", "origin", ref],
+            ["-C", repo_dir, "fetch", "--quiet", "--depth", "1", "--filter=blob:none", "--", "origin", ref],
             f"git fetch {repo_url} (ref {ref})",
         ),
-        (["-C", repo_dir, "sparse-checkout", "set", *paths], f"git sparse-checkout of {repo_url}"),
+        (["-C", repo_dir, "sparse-checkout", "set", "--", *paths], f"git sparse-checkout of {repo_url}"),
         (["-C", repo_dir, "checkout", "--quiet", "FETCH_HEAD"], f"git checkout of {ref}"),
     ]
     for args, what in steps:
@@ -159,7 +164,10 @@ def _git_sparse_checkout(repo_url: str, ref: str, paths: list[str], dest_dir: st
     return repo_dir
 
 
-def _validate_skill(path: str) -> None:
+def _validate_skill(repo_root: str, skill_path: str) -> None:
+    path = os.path.join(repo_root, skill_path)
+    if not _resolves_within(path, repo_root):
+        raise InstallError(f"Skill path resolves outside the repo: {skill_path}")
     if not os.path.isdir(path):
         raise InstallError(f"Skill path not found: {path}")
     skill_md = os.path.join(path, "SKILL.md")
@@ -178,9 +186,9 @@ def _plan_installs(paths: list[str], name: str | None, dest_root: str) -> list[I
     # is fetched, so a bad second path cannot leave the first one installed.
     if name is not None and len(paths) > 1:
         raise InstallError("--name names a single skill; it cannot be used with several --path values.")
-    names = [name] if name is not None else [os.path.basename(p.rstrip("/")) for p in paths]
     installs: list[Install] = []
-    for skill_name, path in zip(names, paths, strict=True):
+    for path in paths:
+        skill_name = name if name is not None else os.path.basename(path.rstrip("/"))
         _validate_relative_path(path)
         _validate_skill_name(skill_name)
         if any(install.name == skill_name for install in installs):
@@ -192,16 +200,6 @@ def _plan_installs(paths: list[str], name: str | None, dest_root: str) -> list[I
     return installs
 
 
-def _remove_created(created: list[str]) -> list[str]:
-    leftovers = []
-    for dest in created:
-        try:
-            shutil.rmtree(dest)
-        except OSError as rm_exc:
-            leftovers.append(f"could not remove {dest}: {rm_exc}")
-    return leftovers
-
-
 def _copy_skills(installs: list[Install], repo_root: str) -> None:
     created: list[str] = []
     try:
@@ -211,14 +209,20 @@ def _copy_skills(installs: list[Install], repo_root: str) -> None:
             os.mkdir(install.dest)
             created.append(install.dest)
             shutil.copytree(os.path.join(repo_root, install.path), install.dest, dirs_exist_ok=True)
-    except OSError as exc:
-        detail = "; ".join([str(exc), *_remove_created(created)])
-        raise InstallError(f"Copy failed, nothing installed: {detail}") from exc
     except BaseException as exc:
-        # Ctrl-C mid-copy still installs nothing; it propagates as itself
-        for leftover in _remove_created(created):
-            exc.add_note(leftover)
-        raise
+        # every exit rolls back, Ctrl-C included; only a copy error becomes ours to report
+        leftovers = []
+        for dest in created:
+            try:
+                shutil.rmtree(dest)
+            except OSError as rm_exc:
+                leftovers.append(f"could not remove {dest}: {rm_exc}")
+        if not isinstance(exc, OSError):
+            for leftover in leftovers:
+                print(f"Error: {leftover}", file=sys.stderr)
+            raise
+        detail = "; ".join([str(exc), *leftovers])
+        raise InstallError(f"Copy failed, nothing installed: {detail}") from exc
 
 
 def _build_repo_url(owner: str, repo: str) -> str:
@@ -327,7 +331,7 @@ def main(argv: list[str]) -> int:
         try:
             repo_root = _prepare_repo(source, args.method, tmp_dir)
             for install in installs:
-                _validate_skill(os.path.join(repo_root, install.path))
+                _validate_skill(repo_root, install.path)
             _copy_skills(installs, repo_root)
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)

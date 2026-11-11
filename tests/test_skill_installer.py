@@ -149,6 +149,28 @@ class InstallerTest(unittest.TestCase):
         self.assertCleanFailure(result, "Skill links outside itself")
         self.assertEqual(self.installed(), [])
 
+    def test_skill_that_is_a_link_out_of_the_repo_is_refused(self):
+        local = self.root / "local-skill"
+        local.mkdir()
+        (local / "SKILL.md").write_text("private\n")
+        self.make_repo({"skills/alpha": True}, links={"skills/foo": str(local)})
+        result = self.install("--path", "skills/foo")
+        self.assertCleanFailure(result, "resolves outside the repo")
+        self.assertEqual(self.installed(), [])
+
+    def test_ref_that_looks_like_an_option_is_only_a_ref(self):
+        self.make_repo({"skills/alpha": True})
+        pwned = self.root / "pwned"
+        result = self.install("--path", "skills/alpha", "--method", "git", f"--ref=--upload-pack=touch {pwned}")
+        self.assertCleanFailure(result, "git fetch")
+        self.assertFalse(pwned.exists())
+
+    def test_missing_git_is_the_scripts_own_error(self):
+        self.env["PATH"] = str(self.root)  # no git on it
+        result = self.install("--path", "skills/alpha")
+        self.assertCleanFailure(result, "Download failed")
+        self.assertIn("git init", result.stderr)
+
     def test_copy_failure_rolls_back_every_skill(self):
         # beta passes validation, but its dangling symlink fails copytree after alpha landed.
         self.make_repo({"skills/alpha": True, "skills/beta": True}, links={"skills/beta/gone": "does-not-exist"})
