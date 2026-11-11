@@ -49,8 +49,9 @@ the send it decorates. Each of those but the missing session id also says why on
 stderr, which tmux-talk passes through to the sender. The lookup is
 `claude-shared/bin/claude-transcript`, the one share-slop uses: found by session
 id under any project dir, and several copies refused with every path named rather
-than one picked. A malformed or oddly shaped line costs only that line. A
-directory-only line therefore means
+than one picked. A malformed line, or one that is not an assistant message, costs
+only that line; a usage in a format the script does not understand is reported by
+jq. A directory-only line therefore means
 "these facts were unavailable" — usually a sender that is not a Claude session,
 but equally a session id that never reached the environment. Read it as absence
 of evidence, not as evidence that no Claude session is on the other end.

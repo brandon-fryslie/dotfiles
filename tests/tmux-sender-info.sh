@@ -79,10 +79,17 @@ for bash in bash /bin/bash; do
   reads "$bash: CLAUDE_CONFIG_DIR empty"
 
   reset; transcript "$work/config"
-  printf '%s\n' '{"type":"assistant","message":"oops"}' '{"type":"assistant","message":{"usage":"x"}}' 'half a li' \
+  printf '%s\n' '{"type":"assistant","message":"oops"}' '"a string"' 'half a li' \
     >>"$work/config/projects/-Users-someone-elsewhere/$session.jsonl"
   run CLAUDE_CODE_SESSION_ID="$session" CLAUDE_CONFIG_DIR="$work/config"
-  reads "$bash: malformed and oddly shaped lines after the last good turn"
+  reads "$bash: malformed and non-message lines after the last good turn"
+
+  reset; transcript "$work/config"
+  echo '{"type":"assistant","message":{"model":"m","usage":{"input_tokens":"many"}}}' \
+    >>"$work/config/projects/-Users-someone-elsewhere/$session.jsonl"
+  run CLAUDE_CODE_SESSION_ID="$session" CLAUDE_CONFIG_DIR="$work/config"
+  directory_only "$bash: usage in a format the script does not understand"
+  [ -s "$work/err" ] || fail "$bash: usage in a format the script does not understand: stderr empty"
 
   reset; mkdir -p "$work/config/projects/-p"
   echo '{"type":"user","message":{"content":"hi"}}' >"$work/config/projects/-p/$session.jsonl"
