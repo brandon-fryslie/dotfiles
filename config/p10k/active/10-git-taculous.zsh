@@ -42,20 +42,22 @@ if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
     fi
   }
 
-  # Show count of stashed changes
+  # Show count of stashed changes. Ask git, not the file layout: refs/stash is
+  # no loose file once packed, and .git is a file in a linked worktree.
   (( $+functions[+vi-git-stash] )) || function +vi-git-stash() {
-    local -a stashes
-    if [[ -s ${hook_com[base]}/.git/refs/stash ]]; then
-      stashes=$(git stash list 2>/dev/null | wc -l | sed -e 's/^[[:blank:]]*//')
+    local stashes
+    if stashes=$(git rev-list --walk-reflogs --count refs/stash 2>/dev/null); then
       hook_com[misc]+=" (${stashes} stashed)"
     fi
   }
 
-  # Show local git user.name
+  # Show the repo's own git user.name, only when it sets one
   (( $+functions[+vi-git-username] )) || function +vi-git-username() {
-    local -a username
-    username=$(git config --local --get user.name | sed -e 's/\(.\{40\}\).*/\1.../')
-    hook_com[misc]+=" ($username)"
+    local username
+    if username=$(git config --local --get user.name); then
+      (( ${#username} > 40 )) && username="${username[1,40]}..."
+      hook_com[misc]+=" ($username)"
+    fi
   }
 
   typeset -g POWERLEVEL9K_CUSTOM_GIT_TACULOUS='vcs_info && print -r -- ${vcs_info_msg_0_}'
