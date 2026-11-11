@@ -54,7 +54,7 @@ run() {
 fails_loudly() {
   run "$1"
   [ "$rc" -ne 0 ] || fail "$sh $1: exited 0"
-  grep -q "$2" "$work/err" || fail "$sh $1: stderr lacks the helper's error: $(cat "$work/err")"
+  grep -qF "$2" "$work/err" || fail "$sh $1: stderr lacks the helper's error: $(cat "$work/err")"
   ! grep -qi 'not granted' "$work/out" "$work/err" || fail "$sh $1: reported as not granted"
 }
 
