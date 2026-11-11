@@ -69,8 +69,18 @@ for bash in bash /bin/bash; do
   reads "$bash: CLAUDE_CONFIG_DIR set"
 
   reset; transcript "$work/home/.claude"
+  run CLAUDE_CODE_SESSION_ID="$session"
+  reads "$bash: CLAUDE_CONFIG_DIR unset"
+
+  reset; transcript "$work/home/.claude"
   run CLAUDE_CODE_SESSION_ID="$session" CLAUDE_CONFIG_DIR=
   reads "$bash: CLAUDE_CONFIG_DIR empty"
+
+  reset; mkdir -p "$work/config/projects/-p"
+  echo '{"type":"user","message":{"content":"hi"}}' >"$work/config/projects/-p/$session.jsonl"
+  run CLAUDE_CODE_SESSION_ID="$session" CLAUDE_CONFIG_DIR="$work/config"
+  directory_only "$bash: transcript with no assistant turn"
+  reports "$bash: transcript with no assistant turn" "no main-thread assistant turn"
 
   reset; transcript "$work/config" -a; transcript "$work/config" -b
   run CLAUDE_CODE_SESSION_ID="$session" CLAUDE_CONFIG_DIR="$work/config"

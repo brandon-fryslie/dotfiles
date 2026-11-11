@@ -26,38 +26,27 @@ set -uo pipefail
 # a human shell is not a failure.
 
 usage_line() {
-  local config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}" matches=()
+  local transcript usage
   [[ -n "${CLAUDE_CODE_SESSION_ID:-}" ]] || return 0
 
-  # [LAW:one-source-of-truth] share-slop.sh's lookup: the transcript is found by
-  # session id under any project dir, and several copies of one id are refused with
-  # every path named, so the two tools cannot read different transcripts for one
-  # session.
-  shopt -s nullglob
-  matches=("$config_dir"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl)
-  shopt -u nullglob
-  case ${#matches[@]} in
-    1) ;;
-    0)
-      echo "tmux-sender-info: no transcript for session $CLAUDE_CODE_SESSION_ID under $config_dir/projects" >&2
-      return 0 ;;
-    *)
-      echo "tmux-sender-info: session $CLAUDE_CODE_SESSION_ID has more than one transcript:" >&2
-      printf '  %s\n' "${matches[@]}" >&2
-      return 0 ;;
-  esac
+  # [LAW:one-source-of-truth] claude-shared's claude-transcript is the lookup
+  # share-slop uses too, so the two cannot read different transcripts for one
+  # session. It names the reason on stderr when there is no single transcript.
+  transcript="$("$(dirname "$0")/../../claude-shared/bin/claude-transcript" "$CLAUDE_CODE_SESSION_ID")" || return 0
 
   # Each line is parsed on its own (-R plus fromjson?), so a malformed line — half
   # written while we read it, or truncated by an old crash — costs that one line
   # instead of stopping the scan and freezing the reported figure. <synthetic>
   # turns are the harness's error and interrupt placeholders: zero usage, no model.
-  jq -rR '
+  usage="$(jq -rR '
     fromjson?
     | select(.type == "assistant" and .isSidechain != true
              and .message.usage != null and .message.model != "<synthetic>")
     | .message as $m
     | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens + .output_tokens) // 0) as $t
-    | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "${matches[0]}" | tail -n 1
+    | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" | tail -n 1)" || return 0
+  [[ -n "$usage" ]] || { echo "tmux-sender-info: no main-thread assistant turn with usage in $transcript" >&2; return 0; }
+  printf '%s' "$usage"
 }
 
 # Anchored at a path separator so /Users/bmfoo does not render as ~oo, and as a
