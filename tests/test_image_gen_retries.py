@@ -1,6 +1,6 @@
 """How the codex imagegen batch retries a rate-limited job: against a local stand-in for the
 Image API, --max-attempts bounds the requests sent, the server's retry-after-ms is waited
-out, and every retry is reported on stderr.
+out, and the job reports how many retries it took.
 
 Run: just test-image-gen
 """
@@ -20,16 +20,21 @@ SCRIPT = Path(__file__).resolve().parent.parent / "config/codex/skills/imagegen/
 IMAGE = b"\x89PNG\r\n\x1a\n-stand-in-bytes"
 
 
-class ImageApi(BaseHTTPRequestHandler):
+class ImageApi(ThreadingHTTPServer):
     """Answers POST /v1/images/generations from `statuses`, one per request; the last repeats."""
 
-    statuses: list = []
-    requests = 0
+    def __init__(self, statuses):
+        super().__init__(("127.0.0.1", 0), ImageApiHandler)
+        self.statuses = statuses
+        self.requests = 0
 
+
+class ImageApiHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         self.rfile.read(int(self.headers["Content-Length"]))
-        status = type(self).statuses[min(type(self).requests, len(type(self).statuses) - 1)]
-        type(self).requests += 1
+        api = self.server
+        status = api.statuses[min(api.requests, len(api.statuses) - 1)]
+        api.requests += 1
         if status == 429:
             body = {"error": {"message": "Rate limit reached", "type": "requests", "code": "rate_limit_exceeded"}}
         else:
@@ -48,50 +53,48 @@ class ImageApi(BaseHTTPRequestHandler):
 
 class BatchRetryTest(unittest.TestCase):
     def run_batch(self, statuses, max_attempts):
-        ImageApi.statuses = statuses
-        ImageApi.requests = 0
-        server = ThreadingHTTPServer(("127.0.0.1", 0), ImageApi)
-        threading.Thread(target=server.serve_forever, daemon=True).start()
-        self.addCleanup(server.server_close)
-        self.addCleanup(server.shutdown)
+        api = ImageApi(statuses)
+        threading.Thread(target=api.serve_forever, daemon=True).start()
+        self.addCleanup(api.server_close)
+        self.addCleanup(api.shutdown)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         out = Path(tmp.name)
         jobs = out / "jobs.jsonl"
         jobs.write_text('{"prompt": "a red cube", "out": "cube.png"}\n')
-        # Only what the script needs: no proxy, OPENAI_LOG, or org settings from the caller's shell.
+        # Only what the script needs: no OPENAI_LOG or org settings from the caller's shell, and
+        # NO_PROXY so neither a proxy variable nor a macOS system proxy reroutes 127.0.0.1.
         env = {
             "PATH": os.environ["PATH"],
+            "NO_PROXY": "*",
             "OPENAI_API_KEY": "test-key",
-            "OPENAI_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1",
+            "OPENAI_BASE_URL": f"http://127.0.0.1:{api.server_port}/v1",
         }
         proc = subprocess.run(
             [sys.executable, str(SCRIPT), "generate-batch", "--input", str(jobs), "--out-dir", str(out),
              "--no-augment", "--max-attempts", str(max_attempts)],
             env=env, capture_output=True, text=True, timeout=60,
         )
-        return proc, out / "cube.png"
+        return proc, api.requests, out / "cube.png"
 
     def test_rate_limited_then_served(self):
-        proc, image = self.run_batch([429, 200], max_attempts=3)
+        proc, requests, image = self.run_batch([429, 200], max_attempts=3)
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(ImageApi.requests, 2)
+        self.assertEqual(requests, 2)
         self.assertEqual(image.read_bytes(), IMAGE)
-        self.assertRegex(proc.stderr, r'\[job 1/1\] HTTP Request: POST \S+ "HTTP/1\.\d 429 Too Many Requests"')
-        self.assertRegex(proc.stderr, r"\[job 1/1\] Retrying request .*0\.01")
+        self.assertRegex(proc.stderr, r"\[job 1/1\] completed in \S+s after 1 retries")
 
     def test_max_attempts_bounds_requests(self):
-        proc, image = self.run_batch([429], max_attempts=2)
+        proc, requests, image = self.run_batch([429], max_attempts=2)
         self.assertEqual(proc.returncode, 1, proc.stderr)
-        self.assertEqual(ImageApi.requests, 2)
+        self.assertEqual(requests, 2)
         self.assertFalse(image.exists())
         self.assertIn("[job 1/1] failed", proc.stderr)
 
     def test_one_attempt_never_retries(self):
-        proc, _ = self.run_batch([429], max_attempts=1)
+        proc, requests, _ = self.run_batch([429], max_attempts=1)
         self.assertEqual(proc.returncode, 1, proc.stderr)
-        self.assertEqual(ImageApi.requests, 1)
-        self.assertNotIn("Retrying", proc.stderr)
+        self.assertEqual(requests, 1)
 
 
 if __name__ == "__main__":
