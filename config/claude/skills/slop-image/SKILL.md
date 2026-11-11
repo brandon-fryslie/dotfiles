@@ -31,14 +31,21 @@ slop-image "<prompt>" \
 - **--out** (default `~/Pictures/slop`) — a directory (filename auto-named from
   prompt + short hash + extension) or, for a single image, an explicit file path.
   An existing directory, or a path ending in `/`, is a directory; otherwise a
-  path ending in an image extension (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) is
+  path ending in an image extension (`.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`) is
   a file, and a file path with `--count` > 1 is rejected. Any other path,
   including one with a non-image suffix like `.tiff` or `v2.0`, is a directory.
+  A file's extension picks the format the provider is asked for, so the bytes
+  always match the name; an extension the provider cannot produce (see the
+  Formats column below; no provider makes `.gif`) is refused before anything is
+  generated. A directory gets the provider's first listed format.
 
 The script prints each saved absolute path to **stdout**, one per line. A short
-status line (provider, aspect, key source) goes to **stderr**. On any provider
+status line (provider, aspect, format, key source) goes to **stderr**. On any provider
 or download failure it exits non-zero with the real upstream error — no silent
-fallback to another provider, no swallowed errors.
+fallback to another provider, no swallowed errors. If a provider sends a
+different format than it was asked for, the image is still saved under a
+generated name with its real extension and that path printed, then it exits
+non-zero.
 
 ### Examples
 
@@ -63,12 +70,12 @@ provider implementations (`/Users/bmf/code/slopspot-web/app/providers/`);
 verified end-to-end. Callers never need to know any of this — it is encapsulated
 in the script.
 
-| `--provider`         | Model                     | Mechanism                                   | Aspect mapping                  | ~cost  |
-|----------------------|---------------------------|---------------------------------------------|----------------------------------|--------|
-| `fal-flux` (default) | fal.ai FLUX schnell       | `fal.run/<id>` synchronous REST             | canonical → fal `image_size` enum| ~$0.003|
-| `fal-nano-banana`    | fal.ai Nano Banana (Gemini 2.5 Flash Image) | `fal.run/<id>` synchronous REST           | canonical → native `aspect_ratio` enum | ~$0.039|
-| `replicate-sdxl`     | Replicate SDXL            | `/v1/predictions` + `Prefer:wait` + poll    | canonical → explicit `width`/`height` | ~$0.0035|
-| `replicate-ideogram` | Replicate Ideogram v2 Turbo | `/v1/predictions` + `Prefer:wait` + poll  | canonical → native `aspect_ratio` enum | ~$0.025|
+| `--provider`         | Model                     | Mechanism                                   | Aspect mapping                  | Formats | ~cost  |
+|----------------------|---------------------------|---------------------------------------------|----------------------------------|---------|--------|
+| `fal-flux` (default) | fal.ai FLUX schnell       | `fal.run/<id>` synchronous REST             | canonical → fal `image_size` enum| jpeg, png | ~$0.003|
+| `fal-nano-banana`    | fal.ai Nano Banana (Gemini 2.5 Flash Image) | `fal.run/<id>` synchronous REST           | canonical → native `aspect_ratio` enum | png, jpeg, webp | ~$0.039|
+| `replicate-sdxl`     | Replicate SDXL            | `/v1/predictions` + `Prefer:wait` + poll    | canonical → explicit `width`/`height` | png | ~$0.0035|
+| `replicate-ideogram` | Replicate Ideogram v2 Turbo | `/v1/predictions` + `Prefer:wait` + poll  | canonical → native `aspect_ratio` enum | png | ~$0.025|
 
 - **fal-flux** — fast, cheap, photographic. The good default. 4 inference steps
   (schnell's max). Synchronous endpoint returns the image URL directly.
