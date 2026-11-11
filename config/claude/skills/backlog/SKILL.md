@@ -16,6 +16,6 @@ base directory.
    fixed until the requester has approved and adjusted the collection in chat. Nothing is
    written to the tracker before that.
 3. Write it against the craft.
-4. Read back what you produced - the epics and issues as the tracker shows them, not
-   your memory of writing them - and check it against the requirements and the craft. If it misses, revise
+4. Read back the file you produced - the file itself, not your memory of writing
+   it - and check it against the requirements and the craft. If it misses, revise
    until it holds.

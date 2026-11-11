@@ -2,7 +2,7 @@
 
 backlog2 is for building and maintaining an engineering backlog to the standard of a top-tier engineering organization: what a well-formed item contains, how the list is ordered, how the top of it is made ready, and how its health is kept.
 
-It is a standalone skill. Its content comes from established engineering practice (Definition of Ready, triage, refinement, vertical slicing, severity versus priority), not from any other skill in this repo, and it carries no rule that depends on another skill being loaded.
+It is a standalone skill. Its content comes from established engineering practice (Definition of Ready, triage, refinement, vertical slicing, severity versus priority), not from any other skill, and it carries no rule that depends on another skill being loaded.
 
 ## What it serves
 

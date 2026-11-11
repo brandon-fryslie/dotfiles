@@ -76,8 +76,9 @@ into confetti, a ceiling turns into arbitrary splits. The concept we want is clo
 stated well enough to be a rule. Until it is, the craft says nothing about size at all.
 Do not add a softer version of a size rule in the meantime.
 
-## Scope
+## Relationship to the other media
 
-This skill says which tickets to write and in what shape, not how one ticket is written.
-A backlog rule about what to plan is not a ticket rule, and a rule about what a
-description carries is not a backlog rule.
+The ticket skill (laws:ticket, cut in laws 0.45.0) said how one ticket is written. This skill says which tickets to write
+and in what shape. Rules from one must not be copied into the other. A backlog rule
+about what to plan is not a ticket rule, and a ticket rule about what a description
+carries is not a backlog rule.
