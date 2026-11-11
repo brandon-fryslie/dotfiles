@@ -34,17 +34,19 @@ usage_line() {
   # session. It names the reason on stderr when there is no single transcript.
   transcript="$("$(dirname "$0")/../../claude-shared/bin/claude-transcript" "$CLAUDE_CODE_SESSION_ID")" || return 0
 
-  # Each line is parsed on its own (-R plus fromjson?), so a malformed line — half
-  # written while we read it, or truncated by an old crash — costs that one line
-  # instead of stopping the scan and freezing the reported figure. <synthetic>
-  # turns are the harness's error and interrupt placeholders: zero usage, no model.
+  # Each line is read on its own (-R) and the whole per-line filter is wrapped in
+  # ( )?, so a line that is malformed — half written while we read it, truncated by
+  # an old crash — or that parses but has an unexpected shape costs that one line
+  # instead of stopping the scan and discarding the figure already found. A read
+  # error is not a filter error and still fails jq. <synthetic> turns are the
+  # harness's error and interrupt placeholders: zero usage, no model.
   usage="$(jq -rR '
-    fromjson?
+    ( fromjson
     | select(.type == "assistant" and .isSidechain != true
              and .message.usage != null and .message.model != "<synthetic>")
     | .message as $m
     | ($m.usage | (.input_tokens + .cache_read_input_tokens + .cache_creation_input_tokens + .output_tokens) // 0) as $t
-    | "\($m.model) · \(($t / 1000) | round)k tokens of context · "' "$transcript" | tail -n 1)" || return 0
+    | "\($m.model) · \(($t / 1000) | round)k tokens of context · " )?' "$transcript" | tail -n 1)" || return 0
   [[ -n "$usage" ]] || { echo "tmux-sender-info: no main-thread assistant turn with usage in $transcript" >&2; return 0; }
   printf '%s' "$usage"
 }

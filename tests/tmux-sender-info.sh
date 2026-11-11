@@ -15,7 +15,7 @@ repo=$(cd "$(dirname "$0")/.." && pwd -P)
 script="$repo/config/claude/skills/tmux-shared/bin/tmux-sender-info"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-mkdir "$work/cwd"
+mkdir "$work/cwd" "$work/shim"
 
 session=11111111-2222-3333-4444-555555555555
 
@@ -37,11 +37,13 @@ reset() {
 }
 
 # run [VAR=VALUE...] : runs the script from the temp cwd under $bash, leaving status in
-# $rc and output in $work/{out,err}.
+# $rc and output in $work/{out,err}. $bash is also first on PATH, so claude-transcript,
+# which runs by its env-bash shebang, runs under the same bash.
 run() {
   rc=0
-  (cd "$work/cwd" && env -u CLAUDE_CONFIG_DIR -u CLAUDE_CODE_SESSION_ID HOME="$work/home" "$@" \
-    "$bash" "$script") >"$work/out" 2>"$work/err" || rc=$?
+  ln -sf "$(command -v "$bash")" "$work/shim/bash"
+  (cd "$work/cwd" && env -u CLAUDE_CONFIG_DIR -u CLAUDE_CODE_SESSION_ID HOME="$work/home" \
+    PATH="$work/shim:$PATH" "$@" "$bash" "$script") >"$work/out" 2>"$work/err" || rc=$?
 }
 
 # reads CASE : the line carries the fixture's model and context, with nothing on stderr.
@@ -75,6 +77,12 @@ for bash in bash /bin/bash; do
   reset; transcript "$work/home/.claude"
   run CLAUDE_CODE_SESSION_ID="$session" CLAUDE_CONFIG_DIR=
   reads "$bash: CLAUDE_CONFIG_DIR empty"
+
+  reset; transcript "$work/config"
+  printf '%s\n' '{"type":"assistant","message":"oops"}' '{"type":"assistant","message":{"usage":"x"}}' 'half a li' \
+    >>"$work/config/projects/-Users-someone-elsewhere/$session.jsonl"
+  run CLAUDE_CODE_SESSION_ID="$session" CLAUDE_CONFIG_DIR="$work/config"
+  reads "$bash: malformed and oddly shaped lines after the last good turn"
 
   reset; mkdir -p "$work/config/projects/-p"
   echo '{"type":"user","message":{"content":"hi"}}' >"$work/config/projects/-p/$session.jsonl"
