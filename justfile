@@ -96,9 +96,9 @@ test-skill-creator:
 test-skill-installer:
     python3 -m unittest tests/test_skill_installer.py
 
-# Assert the codex imagegen script reads fractional Retry-After seconds from an error message
+# Assert the codex imagegen batch retries a rate-limited job within --max-attempts, honoring the server's delay
 test-image-gen:
-    python3 -m unittest tests/test_image_gen_retry_after.py
+    uv run --with openai python -m unittest tests/test_image_gen_retries.py
 
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:

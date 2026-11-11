@@ -10,6 +10,7 @@ import argparse
 import asyncio
 import base64
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -311,7 +312,7 @@ def _create_client():
     return OpenAI()
 
 
-def _create_async_client():
+def _create_async_client(max_attempts: int):
     try:
         from openai import AsyncOpenAI
     except ImportError:
@@ -322,7 +323,13 @@ def _create_async_client():
         _die(
             "AsyncOpenAI not available in this openai SDK version. Upgrade with `uv pip install -U openai`."
         )
-    return AsyncOpenAI()
+    # [LAW:single-enforcer] the SDK is the one retry layer: it retries 408/409/429/5xx with
+    # exponential backoff and jitter, honoring retry-after-ms / Retry-After up to its cap.
+    # [LAW:nothing-unseen] its per-retry INFO line is the record that a retry happened.
+    retry_log = logging.getLogger("openai._base_client")
+    retry_log.setLevel(logging.INFO)
+    retry_log.addHandler(logging.StreamHandler(sys.stderr))
+    return AsyncOpenAI(max_retries=max_attempts - 1)
 
 
 def _slugify(value: str) -> str:
@@ -412,63 +419,6 @@ def _job_output_paths(
     ]
 
 
-def _extract_retry_after_seconds(exc: Exception) -> Optional[float]:
-    # Best-effort: openai SDK errors vary by version. Prefer a conservative fallback.
-    for attr in ("retry_after", "retry_after_seconds"):
-        val = getattr(exc, attr, None)
-        if isinstance(val, (int, float)) and val >= 0:
-            return float(val)
-    msg = str(exc)
-    m = re.search(r"retry[- ]after[:= ]+([0-9]+(?:\.[0-9]+)?)", msg, re.IGNORECASE)
-    return float(m.group(1)) if m else None
-
-
-def _is_rate_limit_error(exc: Exception) -> bool:
-    name = exc.__class__.__name__.lower()
-    if "ratelimit" in name or "rate_limit" in name:
-        return True
-    msg = str(exc).lower()
-    return "429" in msg or "rate limit" in msg or "too many requests" in msg
-
-
-def _is_transient_error(exc: Exception) -> bool:
-    if _is_rate_limit_error(exc):
-        return True
-    name = exc.__class__.__name__.lower()
-    if "timeout" in name or "timedout" in name or "tempor" in name:
-        return True
-    msg = str(exc).lower()
-    return "timeout" in msg or "timed out" in msg or "connection reset" in msg
-
-
-async def _generate_one_with_retries(
-    client: Any,
-    payload: Dict[str, Any],
-    *,
-    attempts: int,
-    job_label: str,
-) -> Any:
-    last_exc: Optional[Exception] = None
-    for attempt in range(1, attempts + 1):
-        try:
-            return await client.images.generate(**payload)
-        except Exception as exc:
-            last_exc = exc
-            if not _is_transient_error(exc):
-                raise
-            if attempt == attempts:
-                raise
-            sleep_s = _extract_retry_after_seconds(exc)
-            if sleep_s is None:
-                sleep_s = min(60.0, 2.0**attempt)
-            print(
-                f"{job_label} attempt {attempt}/{attempts} failed ({exc.__class__.__name__}); retrying in {sleep_s:.1f}s",
-                file=sys.stderr,
-            )
-            await asyncio.sleep(sleep_s)
-    raise last_exc or RuntimeError("unknown error")
-
-
 async def _run_generate_batch(args: argparse.Namespace) -> int:
     jobs = _read_jobs_jsonl(args.input)
     out_dir = Path(args.out_dir)
@@ -529,7 +479,7 @@ async def _run_generate_batch(args: argparse.Namespace) -> int:
             )
         return 0
 
-    client = _create_async_client()
+    client = _create_async_client(args.max_attempts)
     sem = asyncio.Semaphore(args.concurrency)
 
     any_failed = False
@@ -566,12 +516,7 @@ async def _run_generate_batch(args: argparse.Namespace) -> int:
             async with sem:
                 print(f"{job_label} starting", file=sys.stderr)
                 started = time.time()
-                result = await _generate_one_with_retries(
-                    client,
-                    payload,
-                    attempts=args.max_attempts,
-                    job_label=job_label,
-                )
+                result = await client.images.generate(**payload)
                 elapsed = time.time() - started
                 print(f"{job_label} completed in {elapsed:.1f}s", file=sys.stderr)
             images = [item.b64_json for item in result.data]
