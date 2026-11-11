@@ -79,11 +79,12 @@ class EmptyFieldsTest(unittest.TestCase):
 class InitPlaceholderTest(unittest.TestCase):
     def test_fresh_init_skill_is_rejected_for_its_placeholder(self):
         with tempfile.TemporaryDirectory() as root:
-            subprocess.run(
+            init = subprocess.run(
                 [sys.executable, "-B", str(INIT_SCRIPT), "my-skill", "--path", root],
                 capture_output=True,
-                check=True,
+                text=True,
             )
+            self.assertEqual(init.returncode, 0, init.stdout + init.stderr)
             valid, message = validate_skill(Path(root) / "my-skill")
         self.assertFalse(valid, message)
         self.assertEqual(

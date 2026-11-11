@@ -13,6 +13,7 @@ Examples:
 """
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -26,10 +27,11 @@ DESCRIPTION_PLACEHOLDER = (
     "Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]"
 )
 
-# the description is quoted: unquoted, a leading [ makes YAML load the placeholder as a list
+# a JSON string is a YAML double-quoted scalar: the description loads back as exactly
+# DESCRIPTION_PLACEHOLDER, never as the list an unquoted leading [ would make
 SKILL_TEMPLATE = """---
 name: {skill_name}
-description: "{description_placeholder}"
+description: {description_placeholder}
 ---
 
 # {skill_title}
@@ -293,7 +295,7 @@ def init_skill(skill_name, path, resources, include_examples):
     skill_content = SKILL_TEMPLATE.format(
         skill_name=skill_name,
         skill_title=skill_title,
-        description_placeholder=DESCRIPTION_PLACEHOLDER,
+        description_placeholder=json.dumps(DESCRIPTION_PLACEHOLDER),
     )
 
     skill_md_path = skill_dir / "SKILL.md"
