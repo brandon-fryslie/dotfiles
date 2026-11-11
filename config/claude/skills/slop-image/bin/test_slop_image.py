@@ -119,16 +119,20 @@ def test_format_the_provider_cannot_produce_is_refused(tmp_path, provider, name,
     assert not (tmp_path / name).exists()
 
 
-@pytest.mark.parametrize("out", ["pic.png", "notes", "pic.webp", "logo.gif"])
-def test_bad_out_is_rejected_before_any_provider_is_called(tmp_path, monkeypatch, out):
+@pytest.mark.parametrize("out, count", [
+    ("pic.png", "3"),  # a file cannot hold several images
+    ("notes", "3"),  # an existing regular file cannot be the directory
+    ("pic.webp", "1"),  # fal-flux cannot produce webp
+    ("logo.gif", "1"),  # no provider produces gif
+])
+def test_bad_out_is_rejected_before_any_provider_is_called(tmp_path, monkeypatch, out, count):
     (tmp_path / "notes").write_text("a file, not a directory")
     calls = []
     fake_provider(monkeypatch, FLUX, calls)
-    count = "3" if out in ("pic.png", "notes") else "1"
     with pytest.raises(SystemExit):
         run_main(monkeypatch, "--count", count, "--out", str(tmp_path / out))
     assert calls == []
-    assert not (tmp_path / "logo.gif").exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["notes"]
 
 
 @pytest.mark.parametrize("provider, name, data, expected", [
@@ -163,14 +167,17 @@ def test_directory_file_is_named_for_the_requested_format(tmp_path, monkeypatch,
     assert saved.parent == tmp_path.resolve() and saved.suffix == ".jpg"
 
 
-def test_bytes_in_another_format_fail_but_are_kept_under_their_real_suffix(tmp_path, monkeypatch):
+def test_bytes_in_another_format_fail_but_are_kept_and_reported(tmp_path, monkeypatch, capsys):
     fake_provider(monkeypatch, FLUX, [])
     monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(PNG_BYTES))
+    (tmp_path / "pic.png").write_text("a file the caller did not name")
     f = tmp_path / "pic.jpg"
-    kept = tmp_path / "pic.png"
-    with pytest.raises(SystemExit, match=f"asked for jpeg but the provider sent png; saved it as {kept}"):
+    with pytest.raises(SystemExit, match="asked for jpeg but the provider sent png$"):
         run_main(monkeypatch, "--out", str(f))
+    kept = Path(capsys.readouterr().out.strip())
     assert not f.exists()
+    assert (tmp_path / "pic.png").read_text() == "a file the caller did not name"
+    assert kept.parent == tmp_path.resolve() and kept.suffix == ".png"
     assert kept.read_bytes() == PNG_BYTES
 
 
@@ -220,13 +227,10 @@ def test_unexpected_replicate_output_is_refused(tmp_path, monkeypatch, output):
 
 def test_saved_paths_are_reported_even_when_a_later_image_fails(tmp_path, monkeypatch, capsys):
     fake_provider(monkeypatch, FLUX, [])
-
-    def save(url, prompt, out, index, total):
-        if index == 1:
-            raise SystemExit("[slop-image] asked for jpeg but the download is not jpeg")
-        return out.target(f"img-{index + 1}.png")
-
-    monkeypatch.setattr(slop_image, "save_image", save)
-    with pytest.raises(SystemExit):
+    downloads = iter([JPEG_BYTES, b"<html>"])
+    monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(next(downloads)))
+    with pytest.raises(SystemExit, match="nothing written"):
         run_main(monkeypatch, "--count", "2", "--out", str(tmp_path))
-    assert capsys.readouterr().out == f"{tmp_path / 'img-1.png'}\n"
+    reported = capsys.readouterr().out.splitlines()
+    assert [Path(p) for p in reported] == [p.resolve() for p in tmp_path.iterdir()]
+    assert len(reported) == 1

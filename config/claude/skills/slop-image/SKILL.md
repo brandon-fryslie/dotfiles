@@ -42,7 +42,10 @@ slop-image "<prompt>" \
 The script prints each saved absolute path to **stdout**, one per line. A short
 status line (provider, aspect, format, key source) goes to **stderr**. On any provider
 or download failure it exits non-zero with the real upstream error — no silent
-fallback to another provider, no swallowed errors.
+fallback to another provider, no swallowed errors. If a provider sends a
+different format than it was asked for, the image is still saved under a
+generated name with its real extension and that path printed, then it exits
+non-zero.
 
 ### Examples
 

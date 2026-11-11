@@ -280,28 +280,25 @@ def save_image(url, prompt, out, index, total):
     if not r.ok:
         raise SystemExit(f"[slop-image] failed to download image: {r.status_code} {url}")
     data = r.content
-    short = hashlib.sha256(url.encode()).hexdigest()[:8]
-    suffix = f"-{index + 1}" if total > 1 else ""
-    target = out.target(f"{slugify(prompt)}-{short}{suffix}{out.format.suffixes[0]}")
-
     got = sniff(data)
-    if got is out.format:
-        target.write_bytes(data)
-        return target.resolve()
     if got is None:
         raise SystemExit(
             f"[slop-image] asked for {out.format.name} but {url} is no image format slop-image "
             f"knows (content-type={r.headers.get('Content-Type', '')!r}, first bytes={data[:12]!r}); "
             f"nothing written"
         )
-    # The provider table is wrong about this provider: fail, but keep the paid-for image
-    # under the name of the format it actually is (delivery URLs expire).
-    kept = target.with_suffix(got.suffixes[0])
-    kept.write_bytes(data)
-    raise SystemExit(
-        f"[slop-image] asked for {out.format.name} but the provider sent {got.name}; "
-        f"saved it as {kept.resolve()}"
-    )
+    short = hashlib.sha256(url.encode()).hexdigest()[:8]
+    suffix = f"-{index + 1}" if total > 1 else ""
+    name = f"{slugify(prompt)}-{short}{suffix}{got.suffixes[0]}"
+
+    # A mismatch means the provider table is wrong about this provider. The paid-for
+    # image is still kept (delivery URLs expire) under the generated name, which no
+    # caller-named file can share, and its path is reported like any other.
+    target = out.target(name) if got is out.format else out.directory / name
+    target.write_bytes(data)
+    print(target.resolve(), flush=True)
+    if got is not out.format:
+        raise SystemExit(f"[slop-image] asked for {out.format.name} but the provider sent {got.name}")
 
 
 def main():
@@ -333,7 +330,7 @@ def main():
     # image, and a later failure still reports the paths already on disk.
     for i in range(args.count):
         url = provider.generate(key, args.prompt, args.aspect, out.format)
-        print(save_image(url, args.prompt, out, i, args.count), flush=True)
+        save_image(url, args.prompt, out, i, args.count)
 
 
 if __name__ == "__main__":
