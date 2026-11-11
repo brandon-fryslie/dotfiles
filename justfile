@@ -95,10 +95,6 @@ test-global-hooks-path:
 check-hooks-path dir=".":
     ./bin/check-hooks-path "{{dir}}"
 
-# Assert the code-review installer, fleet pass and review-outcome reader against a throwaway fleet (no network)
-test-code-review-fleet:
-    ./config/claude/tests/code-review-fleet.sh
-
 # Assert the managed settings decide Claude's Bash-tool shell (runs a claude -p)
 test-claude-shell:
     ./config/claude/tests/tool-shell.sh
