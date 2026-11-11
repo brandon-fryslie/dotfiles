@@ -13,6 +13,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent.parent / "config/codex/skills/system-copy/skill-creator/scripts"
 sys.path.insert(0, str(SCRIPTS))
+sys.dont_write_bytecode = True  # importing must not drop __pycache__ into the linked ~/.codex skill
 from quick_validate import validate_skill  # noqa: E402
 
 SCRIPT = SCRIPTS / "quick_validate.py"
@@ -51,6 +52,12 @@ class EmptyFieldsTest(unittest.TestCase):
     def test_bare_description_key(self):
         self.check("my-skill", "", "Description")
 
+    def test_non_string_name(self):
+        with tempfile.TemporaryDirectory() as root:
+            valid, message = validate_skill(skill_dir(root, "123", "Does a thing."))
+        self.assertFalse(valid, message)
+        self.assertEqual(message, "Name must be a string, got int")
+
     def test_valid_skill_passes(self):
         with tempfile.TemporaryDirectory() as root:
             valid, message = validate_skill(skill_dir(root, "my-skill", "Does a thing."))
@@ -64,7 +71,7 @@ class EmptyFieldsTest(unittest.TestCase):
                 text=True,
             )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Name", result.stdout)
+        self.assertEqual(result.stdout.strip(), "Name is empty in frontmatter")
 
 
 if __name__ == "__main__":

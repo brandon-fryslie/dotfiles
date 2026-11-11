@@ -65,6 +65,10 @@ def validate_skill(skill_path):
     name, error = required_text(frontmatter, "name")
     if error:
         return False, error
+    description, error = required_text(frontmatter, "description")
+    if error:
+        return False, error
+
     if not re.match(r"^[a-z0-9-]+$", name):
         return (
             False,
@@ -82,9 +86,6 @@ def validate_skill(skill_path):
             f"Maximum is {MAX_SKILL_NAME_LENGTH} characters.",
         )
 
-    description, error = required_text(frontmatter, "description")
-    if error:
-        return False, error
     if "<" in description or ">" in description:
         return False, "Description cannot contain angle brackets (< or >)"
     if len(description) > 1024:

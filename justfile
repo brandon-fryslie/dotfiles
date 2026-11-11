@@ -88,9 +88,9 @@ test-screenshot-permissions:
 test-share-slop:
     ./tests/share-slop.sh
 
-# Assert the codex skill-creator validator rejects an empty, whitespace-only, or bare-key name or description, naming the field (PyYAML via uv; no bytecode written into the linked skill)
+# Assert the codex skill-creator validator rejects an empty, whitespace-only, or bare-key name or description, naming the field (PyYAML via uv)
 test-skill-creator:
-    PYTHONDONTWRITEBYTECODE=1 uv run --with pyyaml python -m unittest tests/test_skill_creator_quick_validate.py
+    uv run --with pyyaml python -m unittest tests/test_skill_creator_quick_validate.py
 
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
