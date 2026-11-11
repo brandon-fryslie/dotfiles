@@ -82,14 +82,15 @@ function writeJson(filePath, payload) {
 function lockTree(lockPath) {
   ensureDir(path.dirname(lockPath));
   const fd = fs.openSync(lockPath, "a+");
-  const res = spawnSync("/usr/bin/perl", ["-MFcntl=:flock", "-e", "exit(flock(STDIN, LOCK_EX | LOCK_NB) ? 0 : 3)"], { stdio: [fd, "inherit", "inherit"] });
+  // Exit 3 means only that another run holds the lock; any other flock failure dies with its errno on stderr.
+  const res = spawnSync("perl", ["-MFcntl=:flock", "-e", 'flock(STDIN, LOCK_EX | LOCK_NB) and exit 0; $!{EWOULDBLOCK} and exit 3; die "flock: $!\\n"'], { stdio: [fd, "inherit", "inherit"] });
   if (res.status === 3) {
     const holder = fs.readFileSync(lockPath, "utf8").trim() || "it has not recorded itself yet";
     console.error(`Error: ${lockPath} is held by another replace-dependency run (${holder}) — wait for it to finish, or stop it; its locks are released the moment it exits, and the next run recovers any trial it left in flight`);
     process.exit(2);
   }
   if (res.status !== 0) {
-    console.error(`Error: could not lock ${lockPath} with /usr/bin/perl: ${res.error?.message ?? `exit ${res.status}, signal ${res.signal}`}`);
+    console.error(`Error: could not lock ${lockPath} with perl:${res.error?.message ?? `exit ${res.status}, signal ${res.signal}`}`);
     process.exit(2);
   }
   fs.ftruncateSync(fd, 0);
@@ -433,10 +434,16 @@ function main() {
     process.exit(2);
   }
   // [LAW:no-ambient-temporal-coupling] Every tree a run changes is locked before anything is read: the project's
-  // node_modules (npm writes it and package.json), the app's node_modules (renames, links, .original/), and the log.
-  // Spellings that name one file are locked once, or the run would refuse itself.
-  const lockPaths = [path.join(projectRoot, "node_modules", ".replace-dependency.lock"), path.join(appNodeModules, ".replace-dependency.lock"), `${outPath}.lock`];
-  for (const lockPath of unique(lockPaths.map(canonicalEntry))) lockTree(lockPath);
+  // node_modules (npm writes it and package.json), the app's node_modules (renames, links, .original/), the
+  // verification dir, and the log. Spellings that name one file are locked once, or the run would refuse itself; locks
+  // are taken in path order, so of two runs wanting the same locks the one that loses is refused before it holds any.
+  const lockPaths = [
+    path.join(projectRoot, "node_modules", ".replace-dependency.lock"),
+    path.join(appNodeModules, ".replace-dependency.lock"),
+    path.join(verificationDir, ".replace-dependency.lock"),
+    `${outPath}.lock`,
+  ];
+  for (const lockPath of unique(lockPaths.map(canonicalEntry)).sort()) lockTree(lockPath);
 
   // The log is loaded first, so a v1 log migrates even on a run that finds nothing to trial.
   const logState = loadLog(outPath, projectRoot);

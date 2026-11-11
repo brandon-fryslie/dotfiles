@@ -215,9 +215,11 @@ function swapProject(rootIndexJs, { pnpmLink = false } = {}) {
     let output = "";
     child.stdout.on("data", (chunk) => { output += chunk; });
     child.stderr.on("data", (chunk) => { output += chunk; });
-    const exited = new Promise((resolve) => child.on("exit", (status) => resolve({ status, output })));
+    // 'close' comes after the output has drained, and it reports a run ended by a signal as well as by a status.
+    let ended = null;
+    const exited = new Promise((resolve) => child.on("close", (status, signal) => resolve(ended = { status, signal, output })));
     while (!fs.existsSync(heldMarker)) {
-      if (child.exitCode !== null) assert.fail(`the held run exited early: ${output}`);
+      if (ended) assert.fail(`the held run ended early (${ended.status ?? ended.signal}): ${output}`);
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     return { pid: child.pid, release: () => { writeText(releaseMarker, ""); return exited; } };
@@ -660,11 +662,29 @@ test("replace-dependency refuses a second run from the same project over another
   writeJson(path.join(tmp, "app2", "node_modules", "demo-pkg", "package.json"), { name: "demo-pkg", version: "1.2.3" });
   const held = await startHeld(t);
 
-  const second = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", "app2", "--npm", fakeNpm, "--out", path.join(tmp, "deps", "app2.json")], tmp);
+  const second = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", "app2", "--npm", fakeNpm, "--verification-dir", "deps/app2-verification", "--out", path.join(tmp, "deps", "app2.json")], tmp);
   assert.equal(second.status, 2, second.stdout);
   assert.ok(second.stderr.includes(path.join(fs.realpathSync(tmp), "node_modules", ".replace-dependency.lock")), second.stderr);
   assert.ok(!fs.existsSync(path.join(tmp, "deps", "app2.json")), "the refused run writes no log");
   assert.ok(fs.existsSync(path.join(rootPkgDir, "package.json")), "the root package is untouched");
+
+  const first = await held.release();
+  assert.equal(first.status, 0, first.output);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+});
+
+test("replace-dependency refuses a second run writing the verification dir another run is writing, naming it", async (t) => {
+  const { tmp, fakeNpm, readLog, startHeld } = swapProject(VERIFYING_INDEX);
+  const held = await startHeld(t);
+
+  // Another project and another app: only the verification dir is shared.
+  const otherProject = mkTmpDir();
+  writeJson(path.join(otherProject, "app", "node_modules", "demo-pkg", "package.json"), { name: "demo-pkg", version: "1.2.3" });
+  const verificationDir = path.join(tmp, "deps", "verification");
+  const second = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", "app", "--npm", fakeNpm, "--verification-dir", verificationDir], otherProject);
+  assert.equal(second.status, 2, second.stdout);
+  assert.ok(second.stderr.includes(path.join(fs.realpathSync(verificationDir), ".replace-dependency.lock")), second.stderr);
+  assert.ok(!fs.existsSync(path.join(otherProject, "deps", "replacements.json")), "the refused run writes no log");
 
   const first = await held.release();
   assert.equal(first.status, 0, first.output);
