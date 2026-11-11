@@ -174,7 +174,7 @@ Run in order, then commit.
 
    **Delegate writing the new tickets.** Dispatch a fresh general-purpose subagent,
    not a fork — a fork inherits this session's loaded skills, which degrades the
-   ticket text. Tell it to load `laws:backlog` and `laws:prompt` and nothing else.
+   ticket text. Tell it to load `backlog` and `laws:prompt` and nothing else.
    Include verbatim: the epic's `lit show` body, the existing children's titles and
    rank, the gap you found, the output of `lit quickstart new`, and the reference
    limit from this document. It returns proposed tickets as text. Read the proposed
