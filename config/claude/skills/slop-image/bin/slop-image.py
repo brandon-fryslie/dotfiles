@@ -107,8 +107,21 @@ GIF = ImageFormat("gif", (".gif",), lambda d: d[:6] in (b"GIF87a", b"GIF89a"))
 FORMAT_BY_SUFFIX = {s: f for f in (PNG, JPEG, WEBP, GIF) for s in f.suffixes}
 
 
-def fal(endpoint, input_for):
-    def generate(name, key, prompt, aspect, fmt):
+@dataclass(frozen=True)
+class Provider:
+    name: str
+    key: tuple  # (keychain service, .dev.vars key)
+    formats: tuple  # ImageFormats it can produce; the first is the default for a directory --out
+    generate: Callable  # (key, prompt, aspect, fmt) -> image URL
+
+
+FAL_KEY = ("slopspot-fal-api-key", "SLOPSPOT_FAL_API_KEY")
+REPLICATE_KEY = ("slopspot-replicate-api-key", "SLOPSPOT_REPLICATE_API_KEY")
+
+
+def fal(name, endpoint, formats, input_for):
+    # formats is the endpoint's output_format enum; each request names the one it wants.
+    def generate(key, prompt, aspect, fmt):
         r = requests.post(
             f"https://fal.run/{endpoint}",
             headers={"Authorization": f"Key {key}", "Content-Type": "application/json"},
@@ -121,7 +134,7 @@ def fal(endpoint, input_for):
         if not images or not images[0].get("url"):
             raise SystemExit(f"[slop-image] {name} returned no image: {r.text}")
         return images[0]["url"]
-    return generate
+    return Provider(name, FAL_KEY, formats, generate)
 
 
 def _replicate_create_and_poll(version, input_obj, token):
@@ -164,16 +177,16 @@ def _replicate_create_and_poll(version, input_obj, token):
     return pred["output"]
 
 
-def replicate(version, input_for, url_of):
-    # Replicate versions take no format option; each produces the one format its
-    # Provider lists, so fmt is already decided.
-    def generate(name, key, prompt, aspect, fmt):
+def replicate(name, version, fmt, input_for, url_of):
+    # [LAW:types-are-the-program] a Replicate version takes no format option, so it
+    # produces exactly one: the signature admits one, and the request ignores fmt.
+    def generate(key, prompt, aspect, _fmt):
         output = _replicate_create_and_poll(version, {"prompt": prompt, **input_for(aspect)}, key)
         url = url_of(output)
         if not isinstance(url, str) or not url:
             raise SystemExit(f"[slop-image] {name} returned unexpected output: {output!r}")
         return url
-    return generate
+    return Provider(name, REPLICATE_KEY, (fmt,), generate)
 
 
 def _sdxl_input(aspect):
@@ -181,34 +194,20 @@ def _sdxl_input(aspect):
     return {"width": w, "height": h, "num_outputs": 1, "guidance_scale": SDXL_DEFAULT_GUIDANCE}
 
 
-@dataclass(frozen=True)
-class Provider:
-    name: str
-    key: tuple  # (keychain service, .dev.vars key)
-    formats: tuple  # ImageFormats it can produce; the first is the default for a directory --out
-    generate: Callable  # (name, key, prompt, aspect, fmt) -> image URL
-
-
-FAL_KEY = ("slopspot-fal-api-key", "SLOPSPOT_FAL_API_KEY")
-REPLICATE_KEY = ("slopspot-replicate-api-key", "SLOPSPOT_REPLICATE_API_KEY")
-
 # [LAW:one-type-per-behavior] four providers, one type; what differs is data.
 # fal formats are each endpoint's output_format enum (fal OpenAPI schema, defaults
 # first); the Replicate versions produce PNG (their model pages' example outputs).
 PROVIDERS = {p.name: p for p in (
-    Provider("fal-flux", FAL_KEY, (JPEG, PNG), fal(
-        "fal-ai/flux/schnell",
+    fal("fal-flux", "fal-ai/flux/schnell", (JPEG, PNG),
         # schnell tops out at 4 inference steps (FIREHOSE_STEPS)
-        lambda a: {"image_size": FAL_IMAGE_SIZE[a], "num_inference_steps": 4})),
-    Provider("fal-nano-banana", FAL_KEY, (PNG, JPEG, WEBP), fal(
-        "fal-ai/nano-banana",
-        lambda a: {"aspect_ratio": NANO_ASPECT_RATIO[a], "num_images": 1})),
-    Provider("replicate-sdxl", REPLICATE_KEY, (PNG,), replicate(
-        SDXL_VERSION, _sdxl_input, lambda out: out[0] if isinstance(out, list) and out else None)),
-    Provider("replicate-ideogram", REPLICATE_KEY, (PNG,), replicate(
-        IDEOGRAM_VERSION,
-        lambda a: {"aspect_ratio": IDEOGRAM_ASPECT_RATIO[a], "magic_prompt_option": "Auto"},
-        lambda out: out)),
+        lambda a: {"image_size": FAL_IMAGE_SIZE[a], "num_inference_steps": 4}),
+    fal("fal-nano-banana", "fal-ai/nano-banana", (PNG, JPEG, WEBP),
+        lambda a: {"aspect_ratio": NANO_ASPECT_RATIO[a], "num_images": 1}),
+    replicate("replicate-sdxl", SDXL_VERSION, PNG, _sdxl_input,
+              lambda out: out[0] if isinstance(out, list) and out else None),
+    replicate("replicate-ideogram", IDEOGRAM_VERSION, PNG,
+              lambda a: {"aspect_ratio": IDEOGRAM_ASPECT_RATIO[a], "magic_prompt_option": "Auto"},
+              lambda out: out),
 )}
 
 
@@ -303,7 +302,8 @@ def main():
                    help="aspect ratio (default: 1:1)")
     p.add_argument("--count", type=int, default=1, help="number of images (default: 1)")
     p.add_argument("--out", default=str(DEFAULT_OUT_DIR),
-                   help="output file or directory (default: ~/Pictures/slop)")
+                   help="output directory, or for one image a file whose extension picks "
+                        "the format (default: ~/Pictures/slop)")
     args = p.parse_args()
 
     if args.count < 1:
@@ -312,15 +312,14 @@ def main():
     out = parse_out(args.out, args.count, provider)
 
     key, src = get_key(*provider.key)
-    urls = [provider.generate(provider.name, key, args.prompt, args.aspect, out.format)
-            for _ in range(args.count)]
     print(f"[slop-image] provider={provider.name} aspect={args.aspect} format={out.format.name} "
-          f"count={len(urls)} key-source={src}", file=sys.stderr)
+          f"count={args.count} key-source={src}", file=sys.stderr)
 
-    # Each path is printed as it lands, so a later failure still reports the paid-for
-    # images already on disk.
-    for i, u in enumerate(urls):
-        print(save_image(u, args.prompt, out, i, len(urls)), flush=True)
+    # Each image is saved before the next is paid for, so a format mismatch costs one
+    # image, and a later failure still reports the paths already on disk.
+    for i in range(args.count):
+        url = provider.generate(key, args.prompt, args.aspect, out.format)
+        print(save_image(url, args.prompt, out, i, args.count), flush=True)
 
 
 if __name__ == "__main__":

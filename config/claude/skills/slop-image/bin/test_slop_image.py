@@ -45,7 +45,7 @@ def run_main(monkeypatch, *args):
 
 
 def fake_provider(monkeypatch, provider, calls):
-    def generate(name, key, prompt, aspect, fmt):
+    def generate(key, prompt, aspect, fmt):
         calls.append(fmt)
         return f"https://img/{len(calls)}"
     monkeypatch.setitem(slop_image.PROVIDERS, provider.name,
@@ -164,6 +164,42 @@ def test_bytes_not_in_the_requested_format_are_not_written(tmp_path, monkeypatch
     with pytest.raises(SystemExit, match="asked for jpeg"):
         run_main(monkeypatch, "--out", str(f))
     assert not f.exists()
+
+
+def test_a_format_mismatch_stops_before_the_next_image_is_paid_for(tmp_path, monkeypatch):
+    calls = []
+    fake_provider(monkeypatch, FLUX, calls)
+    monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(PNG_BYTES))
+    with pytest.raises(SystemExit, match="asked for jpeg"):
+        run_main(monkeypatch, "--count", "3", "--out", str(tmp_path))
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("provider, output", [
+    ("replicate-sdxl", ["https://img/1"]),
+    ("replicate-ideogram", "https://img/1"),
+])
+def test_replicate_output_is_downloaded_as_png(tmp_path, monkeypatch, provider, output):
+    bodies = []
+
+    def post(url, json, **kw):
+        bodies.append(json)
+        return FakeResponse(body={"id": "p1", "status": "succeeded", "output": output})
+
+    monkeypatch.setattr(slop_image.requests, "post", post)
+    monkeypatch.setattr(slop_image.requests, "get", lambda url, **kw: FakeResponse(PNG_BYTES))
+    f = tmp_path / "pic.png"
+    run_main(monkeypatch, "--provider", provider, "--out", str(f))
+    assert "output_format" not in bodies[0]["input"]
+    assert f.read_bytes() == PNG_BYTES
+
+
+@pytest.mark.parametrize("output", [[], {"url": "https://img/1"}, None])
+def test_unexpected_replicate_output_is_refused(tmp_path, monkeypatch, output):
+    monkeypatch.setattr(slop_image.requests, "post", lambda url, json, **kw: FakeResponse(
+        body={"id": "p1", "status": "succeeded", "output": output}))
+    with pytest.raises(SystemExit, match="replicate-sdxl returned unexpected output"):
+        run_main(monkeypatch, "--provider", "replicate-sdxl", "--out", str(tmp_path))
 
 
 def test_saved_paths_are_reported_even_when_a_later_image_fails(tmp_path, monkeypatch, capsys):
