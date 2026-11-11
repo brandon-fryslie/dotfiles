@@ -21,31 +21,9 @@ set -euo pipefail
 
 base_url="${SLOPSPOT_URL:-https://paste.slopspot.ai}"
 
-# The config root is CC's rule for where it writes transcripts: $CLAUDE_CONFIG_DIR,
-# or ~/.claude when that is unset or empty. find-session's _session_lib.py and
-# tmux-sender-info apply the same rule; a change to it lands in all three.
-config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-
-# [LAW:one-source-of-truth] Find the transcript by session id under any project dir
-# rather than re-deriving CC's project slug from the cwd - a slug drifts when the shell
-# has cd'd or the path runs through a symlink. Several copies of one id is ambiguous
-# (which holds the live conversation, which holds its subagents?), so it is refused
-# with every path named rather than guessed at.
-shopt -s nullglob
-matches=("$config_dir"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl)
-shopt -u nullglob
-case ${#matches[@]} in
-  1) jsonl="${matches[0]}" ;;
-  0)
-    echo "share-slop: no transcript for session $CLAUDE_CODE_SESSION_ID under $config_dir/projects" >&2
-    echo "  The config root is \$CLAUDE_CONFIG_DIR, or ~/.claude when that is unset or empty;" >&2
-    echo "  check it is the one this session runs under." >&2
-    exit 1 ;;
-  *)
-    echo "share-slop: session $CLAUDE_CODE_SESSION_ID has more than one transcript:" >&2
-    printf '  %s\n' "${matches[@]}" >&2
-    exit 1 ;;
-esac
+# [LAW:one-source-of-truth] claude-shared's claude-transcript is the one lookup; it
+# names the reason on stderr when there is no single transcript, and set -e stops here.
+jsonl="$("$(dirname "$0")/../claude-shared/bin/claude-transcript" "$CLAUDE_CODE_SESSION_ID")"
 project_dir="$(dirname "$jsonl")"
 
 # Subagent transcripts live alongside the main session, one file per agent:

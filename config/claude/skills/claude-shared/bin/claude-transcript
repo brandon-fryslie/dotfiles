@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# [LAW:one-source-of-truth] The one definition of where Claude Code keeps a session's
+# transcript. Prints the path of <session-id>'s transcript, or fails with the reason
+# on stderr. Each caller sets its own policy on failure: share-slop stops, the
+# advisory sender line degrades.
+#
+# The config root is CC's rule for where it writes transcripts: $CLAUDE_CONFIG_DIR,
+# or ~/.claude when that is unset or empty. find-session's _session_lib.py applies
+# the same rule for its slug-scoped search; a change to it lands in both.
+#
+# The transcript is found by session id under any project dir rather than by
+# re-deriving CC's project slug from the cwd - a slug drifts when the shell has cd'd
+# or the path runs through a symlink. Several copies of one id is ambiguous (which
+# holds the live conversation?), so it is refused with every path named rather than
+# guessed at.
+
+id="${1:?usage: claude-transcript <session-id>}"
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
+shopt -s nullglob
+matches=("$config_dir"/projects/*/"$id".jsonl)
+shopt -u nullglob
+case ${#matches[@]} in
+  1) printf '%s\n' "${matches[0]}" ;;
+  0)
+    echo "claude-transcript: no transcript for session $id under $config_dir/projects" >&2
+    echo "  The config root is \$CLAUDE_CONFIG_DIR, or ~/.claude when that is unset or empty;" >&2
+    echo "  check it is the one this session runs under." >&2
+    exit 1 ;;
+  *)
+    echo "claude-transcript: session $id has more than one transcript:" >&2
+    printf '  %s\n' "${matches[@]}" >&2
+    exit 1 ;;
+esac
