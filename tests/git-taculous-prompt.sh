@@ -24,9 +24,12 @@ mkdir -p "$HOME"; : >"$GIT_CONFIG_GLOBAL"
 failures=0
 fail() { echo "FAIL - $*" >&2; failures=$((failures + 1)); }
 
-# The segment as the prompt renders it in directory $1.
+# The segment as the prompt renders it in directory $1. p10k loads first and defines its own
+# +vi-git-stash; the decoys stand in for it, so a segment that defers to them shows "DECOY".
 render() {
-  (cd "$1" && zsh -f -c 'source "$1"; vcs_info; print -r -- "$vcs_info_msg_0_"' zsh "$segment")
+  (cd "$1" && zsh -f -c '
+    for h in st stash username; do functions[+vi-git-$h]="hook_com[misc]+=\" DECOY\""; done
+    source "$1"; vcs_info; print -r -- "$vcs_info_msg_0_"' zsh "$segment")
 }
 
 new_repo() {
@@ -48,6 +51,7 @@ expect_has "packed stash" "$out" "(1 stashed)"
 git -C "$work/stashed" worktree add -q "$work/linked" -b linked
 out=$(render "$work/linked")
 expect_has "linked worktree" "$out" "(1 stashed)"
+expect_lacks "hooks of the same name loaded first" "$out" "DECOY"
 
 # No stash and no local user.name: neither part shows.
 new_repo "$work/plain"
@@ -55,10 +59,19 @@ out=$(render "$work/plain")
 expect_lacks "no stash" "$out" "stashed"
 expect_lacks "no local user.name" "$out" "()"
 
+# A local user.name set to the empty string shows nothing either.
+git -C "$work/plain" config --local user.name ''
+out=$(render "$work/plain")
+expect_lacks "empty local user.name" "$out" "()"
+
 # A local user.name shows, cut to 40 characters.
 git -C "$work/plain" config --local user.name Alice
 out=$(render "$work/plain")
 expect_has "local user.name" "$out" "(Alice)"
+exact=$(printf 'n%.0s' $(seq 40))
+git -C "$work/plain" config --local user.name "$exact"
+out=$(render "$work/plain")
+expect_has "40-character user.name" "$out" "($exact)"
 long=$(printf 'n%.0s' $(seq 50))
 git -C "$work/plain" config --local user.name "$long"
 out=$(render "$work/plain")
