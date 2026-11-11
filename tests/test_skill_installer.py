@@ -51,16 +51,18 @@ class InstallerTest(unittest.TestCase):
             "PYTHONDONTWRITEBYTECODE": "1",  # must not drop __pycache__ into the linked ~/.codex skill
         }
 
-    def make_repo(self, skills, dangling=None):
-        """skills: {path: has_skill_md}; dangling: a path to commit as a symlink to nothing"""
+    def make_repo(self, skills, links=None):
+        """skills: {path: has_skill_md}; links: {path: symlink target} to commit"""
         self.repo.mkdir()
         git("init", "-q", "-b", "main", cwd=self.repo)
+        # honour --filter as GitHub does, so checkout must lazy-fetch the blobs
+        git("config", "uploadpack.allowFilter", "true", cwd=self.repo)
         for path, has_skill_md in skills.items():
             d = self.repo / path
             d.mkdir(parents=True)
             (d / ("SKILL.md" if has_skill_md else "README.md")).write_text("x\n")
-        if dangling:
-            (self.repo / dangling).symlink_to("does-not-exist")
+        for link, target in (links or {}).items():
+            (self.repo / link).symlink_to(target)
         git("add", "-A", cwd=self.repo)
         git("commit", "-q", "-m", "skills", cwd=self.repo)
 
@@ -139,9 +141,17 @@ class InstallerTest(unittest.TestCase):
         self.assertCleanFailure(result, "--name")
         self.assertEqual(self.installed(), [])
 
+    def test_link_out_of_the_skill_is_refused(self):
+        secret = self.root / "secret"
+        secret.write_text("private\n")
+        self.make_repo({"skills/alpha": True}, links={"skills/alpha/creds": str(secret)})
+        result = self.install("--path", "skills/alpha")
+        self.assertCleanFailure(result, "Skill links outside itself")
+        self.assertEqual(self.installed(), [])
+
     def test_copy_failure_rolls_back_every_skill(self):
         # beta passes validation, but its dangling symlink fails copytree after alpha landed.
-        self.make_repo({"skills/alpha": True, "skills/beta": True}, dangling="skills/beta/gone")
+        self.make_repo({"skills/alpha": True, "skills/beta": True}, links={"skills/beta/gone": "does-not-exist"})
         result = self.install("--path", "skills/alpha", "skills/beta")
         self.assertCleanFailure(result, "Copy failed")
         self.assertEqual(self.installed(), [])

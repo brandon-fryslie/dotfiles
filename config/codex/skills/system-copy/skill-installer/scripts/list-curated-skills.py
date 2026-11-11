@@ -57,7 +57,11 @@ def _list_curated(repo: str, path: str, ref: str) -> list[str]:
                 f"https://github.com/{repo}/tree/{ref}/{path}"
             ) from exc
         raise ListError(f"Failed to fetch curated skills: {exc}") from exc
-    data = json.loads(payload.decode("utf-8"))
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except ValueError as exc:
+        # a proxy or captive portal can answer 200 with an HTML page
+        raise ListError(f"Failed to fetch curated skills: {api_url} did not return JSON") from exc
     if not isinstance(data, list):
         raise ListError("Unexpected curated listing response.")
     skills = [item["name"] for item in data if item.get("type") == "dir"]
