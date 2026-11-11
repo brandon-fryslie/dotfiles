@@ -231,21 +231,21 @@ def slugify(prompt):
     return (s[:48] or "image").rstrip("-")
 
 
-# [LAW:one-source-of-truth] each image type's suffix and magic bytes; ext_for and
-# IMAGE_SUFFIXES both derive from this table.
+# [LAW:one-source-of-truth] each image type's suffixes (canonical first) and magic
+# bytes; ext_for and IMAGE_SUFFIXES both derive from this table.
 IMAGE_TYPES = (
-    (".png", lambda d: d[:8] == b"\x89PNG\r\n\x1a\n"),
-    (".jpg", lambda d: d[:3] == b"\xff\xd8\xff"),
-    (".gif", lambda d: d[:6] in (b"GIF87a", b"GIF89a")),
-    (".webp", lambda d: d[:4] == b"RIFF" and d[8:12] == b"WEBP"),
+    ((".png",), lambda d: d[:8] == b"\x89PNG\r\n\x1a\n"),
+    ((".jpg", ".jpeg"), lambda d: d[:3] == b"\xff\xd8\xff"),
+    ((".gif",), lambda d: d[:6] in (b"GIF87a", b"GIF89a")),
+    ((".webp",), lambda d: d[:4] == b"RIFF" and d[8:12] == b"WEBP"),
 )
-IMAGE_SUFFIXES = {suffix for suffix, _ in IMAGE_TYPES} | {".jpeg"}
+IMAGE_SUFFIXES = {suffix for suffixes, _ in IMAGE_TYPES for suffix in suffixes}
 
 
 def ext_for(data, content_type):
-    for suffix, matches in IMAGE_TYPES:
+    for suffixes, matches in IMAGE_TYPES:
         if matches(data):
-            return suffix
+            return suffixes[0]
     raise SystemExit(
         f"[slop-image] downloaded bytes are not a recognized image "
         f"(content-type={content_type!r}, first bytes={data[:12]!r})"
@@ -278,14 +278,15 @@ class OutDir:
 
 def parse_out(raw, count):
     # [LAW:parse-dont-validate] --out is resolved once, before any provider spend:
-    # its directory exists on return, so a path that cannot hold images fails here.
+    # its directory exists on return, so a path that cannot be a directory fails here.
     path = Path(raw).expanduser()
     names_file = (not raw.endswith(os.sep) and not path.is_dir()
                   and path.suffix.lower() in IMAGE_SUFFIXES)
     if names_file and count > 1:
         raise SystemExit(
             f"[slop-image] --out {raw} is a file path, but --count is {count}; "
-            f"pass a directory to save multiple images"
+            f"pass a directory to save multiple images (end it with / to name a new "
+            f"directory {raw.rstrip(os.sep)}{os.sep})"
         )
     out = OutFile(path) if names_file else OutDir(path)
     try:
