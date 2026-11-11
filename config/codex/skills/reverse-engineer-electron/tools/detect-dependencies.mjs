@@ -509,14 +509,6 @@ function findFingerprintMatches(text, fingerprints) {
   return counts;
 }
 
-function pickUniqueMax(counts) {
-  const entries = Object.entries(counts);
-  if (entries.length === 0) return null;
-  entries.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
-  if (entries.length > 1 && entries[0][1] === entries[1][1]) return null;
-  return { name: entries[0][0], hits: entries[0][1] };
-}
-
 function findVersionText(text) {
   let current = "";
   for (let idx = 0; idx < text.length; idx++) {

@@ -5,6 +5,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+const TOOLS_DIR = path.join(import.meta.dirname, "..");
+
 function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ec-prep-test-"));
 }
@@ -60,11 +62,11 @@ test("find-near-match-versions only returns patch-level candidates and ranks exa
     "demo-pkg": ["1.1.9", "1.2.1", "1.2.3", "1.2.5", "1.3.0", "2.0.0"],
   });
 
-  const script = path.resolve("find-near-match-versions.mjs");
+  const script = path.join(TOOLS_DIR, "find-near-match-versions.mjs");
   const result = runNode(
     script,
     ["--deps", depsPath, "--app-dir", path.join(tmp, "resources", "app"), "--registry-file", registryFixturePath, "--out", outPath],
-    path.resolve("."),
+    TOOLS_DIR,
   );
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -89,7 +91,7 @@ test("verify-dependency-swap passes and fails deterministically based on structu
   writeText(path.join(afterDir, "index.js"), "module.exports=function(a){return a+1};\n");
 
   const passOut = path.join(tmp, "verify-pass.json");
-  const script = path.resolve("verify-dependency-swap.mjs");
+  const script = path.join(TOOLS_DIR, "verify-dependency-swap.mjs");
   const passResult = runNode(
     script,
     [
@@ -106,7 +108,7 @@ test("verify-dependency-swap passes and fails deterministically based on structu
       "--out",
       passOut,
     ],
-    path.resolve("."),
+    TOOLS_DIR,
   );
 
   assert.equal(passResult.status, 0, passResult.stderr || passResult.stdout);
@@ -131,7 +133,7 @@ test("verify-dependency-swap passes and fails deterministically based on structu
       "--out",
       failOut,
     ],
-    path.resolve("."),
+    TOOLS_DIR,
   );
 
   assert.equal(failResult.status, 1);
@@ -139,20 +141,20 @@ test("verify-dependency-swap passes and fails deterministically based on structu
   assert.equal(failArtifact.pass, false);
 });
 
-test("replace-dependency rolls back failed verified swap and logs transaction", () => {
+// A project with demo-pkg@1.2.3 copied into the app and installed at the root; rootIndexJs decides
+// whether the swap verifies (same shape as the app copy) or fails (different shape).
+function swapProject(rootIndexJs) {
   const tmp = mkTmpDir();
   const appPkgDir = path.join(tmp, "resources", "app", "node_modules", "demo-pkg");
   const rootPkgDir = path.join(tmp, "node_modules", "demo-pkg");
-  const depsDir = path.join(tmp, "deps");
-  const logPath = path.join(depsDir, "replacements.json");
+  const logPath = path.join(tmp, "deps", "replacements.json");
 
   writeJson(path.join(appPkgDir, "package.json"), { name: "demo-pkg", version: "1.2.3" });
   writeText(path.join(appPkgDir, "index.js"), "module.exports=function(){return 1};\n");
-
   writeJson(path.join(rootPkgDir, "package.json"), { name: "demo-pkg", version: "1.2.3" });
-  writeText(path.join(rootPkgDir, "index.js"), "module.exports=function(){const o={x:2};return o.x};\n");
+  writeText(path.join(rootPkgDir, "index.js"), rootIndexJs);
 
-  writeJson(path.join(depsDir, "near-matches.json"), {
+  writeJson(path.join(tmp, "deps", "near-matches.json"), {
     packages: [
       {
         name: "demo-pkg",
@@ -167,34 +169,36 @@ test("replace-dependency rolls back failed verified swap and logs transaction", 
   writeText(fakeNpm, "#!/usr/bin/env bash\nexit 0\n");
   fs.chmodSync(fakeNpm, 0o755);
 
-  const script = path.resolve("replace-dependency.mjs");
-  const result = runNode(
-    script,
-    [
-      "--pkg",
-      "demo-pkg",
-      "--version",
-      "1.2.3",
-      "--app-dir",
-      path.join(tmp, "resources", "app"),
-      "--npm",
-      fakeNpm,
-      "--verify-script",
-      path.resolve("verify-dependency-swap.mjs"),
-      "--verification-dir",
-      path.join(tmp, "deps", "verification"),
-      "--out",
-      logPath,
-      "--threshold",
-      "0.99",
-    ],
-    tmp,
-  );
+  const replace = (version = "1.2.3") =>
+    runNode(
+      path.join(TOOLS_DIR, "replace-dependency.mjs"),
+      [
+        "--pkg", "demo-pkg",
+        "--version", version,
+        "--app-dir", path.join(tmp, "resources", "app"),
+        "--npm", fakeNpm,
+        "--verify-script", path.join(TOOLS_DIR, "verify-dependency-swap.mjs"),
+        "--verification-dir", path.join(tmp, "deps", "verification"),
+        "--out", logPath,
+        "--threshold", "0.99",
+      ],
+      tmp,
+    );
+  const readLog = () => JSON.parse(fs.readFileSync(logPath, "utf8"));
+
+  return { tmp, appPkgDir, rootPkgDir, replace, readLog };
+}
+
+const VERIFYING_INDEX = "module.exports=function(){return 1};\n";
+const FAILING_INDEX = "module.exports=function(){const o={x:2};return o.x};\n";
+
+test("replace-dependency rolls back failed verified swap and logs transaction", () => {
+  const { appPkgDir, replace, readLog } = swapProject(FAILING_INDEX);
+  const result = replace();
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
 
-  const log = JSON.parse(fs.readFileSync(logPath, "utf8"));
-  const pkgState = log.packages["demo-pkg"];
+  const pkgState = readLog().packages["demo-pkg"];
   assert.ok(pkgState);
   assert.equal(pkgState.status, "unresolved");
   assert.ok(pkgState.attempts.length >= 1);
@@ -205,4 +209,59 @@ test("replace-dependency rolls back failed verified swap and logs transaction", 
   assert.equal(lastAttempt.rolledBack, true);
 
   assert.ok(fs.existsSync(path.join(appPkgDir, "package.json")), "app dependency should be restored after rollback");
+});
+
+test("replace-dependency links the app copy to the root package", () => {
+  const { appPkgDir, rootPkgDir, replace } = swapProject(VERIFYING_INDEX);
+  const result = replace();
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.ok(fs.lstatSync(appPkgDir).isSymbolicLink());
+  assert.equal(fs.realpathSync(appPkgDir), fs.realpathSync(rootPkgDir));
+});
+
+test("replace-dependency rerun on a resolved package is skipped and the remove-deps gate passes", () => {
+  const { tmp, replace, readLog } = swapProject(VERIFYING_INDEX);
+  for (const dir of ["baseline", "working"]) writeText(path.join(tmp, dir, "main.js"), "console.log(1);\n");
+
+  const first = replace();
+  assert.equal(first.status, 0, first.stderr || first.stdout);
+  const second = replace();
+  assert.equal(second.status, 0, second.stderr || second.stdout);
+  assert.match(second.stdout, /\[demo-pkg\] already resolved with 1\.2\.3; skipped/);
+
+  const pkgState = readLog().packages["demo-pkg"];
+  assert.equal(pkgState.status, "resolved");
+  assert.equal(pkgState.attempts.filter((attempt) => attempt.result === "pass").length, 1);
+
+  const gateOut = path.join(tmp, "gates", "remove-deps.json");
+  const gate = runNode(
+    path.join(TOOLS_DIR, "gate.mjs"),
+    ["remove-deps", "--baseline", "baseline", "--working", "working", "--deps-dir", "deps", "--out", gateOut],
+    tmp,
+  );
+  assert.equal(gate.status, 0, fs.existsSync(gateOut) ? fs.readFileSync(gateOut, "utf8") : gate.stderr);
+});
+
+test("replace-dependency refuses when the log says resolved but the app copy is not linked", () => {
+  const { appPkgDir, replace } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+
+  // A re-extracted app puts a real directory back under the old log.
+  fs.rmSync(appPkgDir);
+  writeJson(path.join(appPkgDir, "package.json"), { name: "demo-pkg", version: "1.2.3" });
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /not linked to the root package/);
+  assert.ok(!fs.lstatSync(appPkgDir).isSymbolicLink(), "app copy must be left untouched");
+});
+
+test("replace-dependency refuses an explicit --version that differs from the resolved one", () => {
+  const { replace } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+
+  const result = replace("1.2.4");
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /already resolved with 1\.2\.3; --version 1\.2\.4/);
 });

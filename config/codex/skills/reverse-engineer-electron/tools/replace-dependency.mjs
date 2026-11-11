@@ -229,6 +229,26 @@ function determineCandidatesForPackage(opts, pkgName, candidateSource, onDiskVer
   return unique(candidates);
 }
 
+// [LAW:one-source-of-truth] A log status of "resolved" records a swap that already happened, so a rerun must
+// not trial the package again (gate.mjs requires exactly one pass per resolved package). Disk has to agree
+// with that record; when it doesn't, neither side can be trusted to win, so the run refuses. [LAW:no-silent-failure]
+function priorSwap(pkgState, appPkgDir, rootPkgDir, requestedVersion) {
+  if (pkgState?.status !== "resolved") return { kind: "untried" };
+  const chosen = pkgState.chosenVersion;
+  if (requestedVersion && requestedVersion !== chosen) {
+    return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} needs the original copy restored first` };
+  }
+  const linked =
+    fs.existsSync(appPkgDir) &&
+    fs.lstatSync(appPkgDir).isSymbolicLink() &&
+    fs.existsSync(rootPkgDir) &&
+    fs.realpathSync(appPkgDir) === fs.realpathSync(rootPkgDir);
+  if (!linked) {
+    return { kind: "conflict", reason: `resolved with ${chosen} in the log, but the app copy is not linked to the root package (re-extracted app with an old log?)` };
+  }
+  return { kind: "resolved", version: chosen };
+}
+
 function main() {
   const { help, opts } = parseArgs(process.argv);
   if (help || (!opts.pkg && !opts.autoNearMatch)) {
@@ -259,9 +279,24 @@ function main() {
   }
 
   const logState = loadLog(outPath);
+  const appPkgDirOf = (pkgName) => path.join(appNodeModules, ...pkgPathParts(pkgName));
+  const rootPkgDirOf = (pkgName) => path.join(projectRoot, "node_modules", ...pkgPathParts(pkgName));
 
-  for (const pkgName of packageList) {
-    const appPkgDir = path.join(appNodeModules, ...pkgPathParts(pkgName));
+  const priors = packageList.map((pkgName) => ({
+    pkgName,
+    prior: priorSwap(logState.packages[pkgName], appPkgDirOf(pkgName), rootPkgDirOf(pkgName), opts.pkg === pkgName ? opts.version : ""),
+  }));
+  const conflicts = priors.filter(({ prior }) => prior.kind === "conflict");
+  if (conflicts.length > 0) {
+    for (const { pkgName, prior } of conflicts) console.error(`Error: [${pkgName}] ${prior.reason} — see ${path.relative(projectRoot, outPath)}`);
+    process.exit(2);
+  }
+  const skipped = priors.filter(({ prior }) => prior.kind === "resolved");
+  for (const { pkgName, prior } of skipped) console.log(`[${pkgName}] already resolved with ${prior.version}; skipped`);
+  const toTry = priors.filter(({ prior }) => prior.kind === "untried").map(({ pkgName }) => pkgName);
+
+  for (const pkgName of toTry) {
+    const appPkgDir = appPkgDirOf(pkgName);
     const appPkgJson = path.join(appPkgDir, "package.json");
 
     const onDiskVersion = readPkgVersion(appPkgJson);
@@ -332,7 +367,7 @@ function main() {
         continue;
       }
 
-      const rootPkgDir = path.join(projectRoot, "node_modules", ...pkgPathParts(pkgName));
+      const rootPkgDir = rootPkgDirOf(pkgName);
       const rootPkgJson = path.join(rootPkgDir, "package.json");
       if (!fs.existsSync(rootPkgJson)) {
         attempt.reason = "root-package-json-missing";
@@ -360,8 +395,10 @@ function main() {
         backupCreated = true;
 
         ensureDir(path.dirname(appPkgDir));
-        const linkTarget = path.relative(path.dirname(appPkgDir), rootPkgDir);
-        fs.symlinkSync(linkTarget, appPkgDir, "junction");
+        // A relative target resolves from the link's real directory, so both ends are realpaths: --app-dir and
+        // cwd can name the same tree through different symlinked prefixes (/var vs /private/var on macOS).
+        const linkTarget = path.relative(fs.realpathSync(path.dirname(appPkgDir)), fs.realpathSync(rootPkgDir));
+        fs.symlinkSync(linkTarget, appPkgDir, "dir");
         attempt.swapApplied = true;
 
         const verificationName = `${safeIdPart(pkgName)}@${version}.json`;
@@ -446,6 +483,7 @@ function main() {
 
   console.log(`\nWrote ${path.relative(projectRoot, outPath)}`);
   console.log(`- packages tracked: ${Object.keys(logState.packages).length}`);
+  console.log(`- already resolved, skipped: ${skipped.length}`);
   console.log(`- unresolved packages: ${unresolved.length}`);
   if (unresolved.length > 0) {
     console.log(`- unresolved list: ${unresolved.join(", ")}`);

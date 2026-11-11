@@ -4,7 +4,7 @@
 #
 # Usage: detect-electron-version.sh <path-to-app> [extracted-app-dir]
 #
-# Tries three methods in order:
+# Tries two methods in order:
 #   1. Electron Framework Info.plist (preferred, no heuristics)
 #   2. package.json in the extracted app (if extracted-app-dir provided)
 #
@@ -44,8 +44,10 @@ fi
 
 # Method 2: package.json in extracted app
 if [ -n "$EXTRACTED_DIR" ] && [ -f "$EXTRACTED_DIR/package.json" ]; then
-  DETECTED=$(node -e "
-    const p=JSON.parse(require('fs').readFileSync('$EXTRACTED_DIR/package.json','utf8'));
+  # [LAW:no-silent-failure] A malformed package.json is an error, not "version unknown";
+  # node's stderr reaches the caller. The path travels as argv, never spliced into JS source.
+  if ! DETECTED="$(node -e "
+    const p=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
     const v = p.devDependencies?.electron || p.dependencies?.electron || '';
     if (!v) process.exit(0);
     let s = String(v).trim();
@@ -55,7 +57,10 @@ if [ -n "$EXTRACTED_DIR" ] && [ -f "$EXTRACTED_DIR/package.json" ]; then
       s = s.slice(1);
     }
     if (s) console.log(s);
-  " 2>/dev/null || true)
+  " "$EXTRACTED_DIR/package.json")"; then
+    echo "Error: failed to parse $EXTRACTED_DIR/package.json" >&2
+    exit 1
+  fi
   if [ -n "$DETECTED" ]; then
     MAJOR="${DETECTED%%.*}"
     echo "  Found in package.json: $DETECTED" >&2
