@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Which dotbot configs ./install runs for each profile argument, and that a bad one runs none.
 #
-# A stub `uvx` first on PATH records each call's config instead of installing. An unknown
-# or empty profile exits nonzero before any call, with the error and usage on stderr and
-# nothing on stdout; -h exits 0 with no call; no argument means home.
+# A stub `uvx` first on PATH records each call's argv instead of installing. An unknown or
+# empty profile, or more than one argument, exits nonzero before any call, with the error
+# and usage on stderr and nothing on stdout; -h/--help exit 0 with no call; no argument
+# means home.
 #
 # Run: tests/install-profile.sh
 set -euo pipefail
@@ -15,11 +16,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir "$work/bin"
 cat >"$work/bin/uvx" <<'SH'
 #!/usr/bin/env bash
-# Record the -c argument of `uvx dotbot -d DIR -c CONFIG`.
-while [ $# -gt 0 ]; do
-  if [ "$1" = -c ]; then echo "$2" >>"$UVX_LOG"; fi
-  shift
-done
+echo "$*" >>"$UVX_LOG"
 SH
 chmod +x "$work/bin/uvx"
 
@@ -35,7 +32,7 @@ run() {
 
 expect_calls() {
   local label=$1; shift
-  local want; want=$(printf 'install-%s.conf.yaml\n' "$@")
+  local want; want=$(printf "dotbot -d $repo -c install-%s.conf.yaml\n" "$@")
   [ "$rc" -eq 0 ] || fail "$label: exit $rc: $(cat "$work/err")"
   [ "$(cat "$work/calls")" = "$want" ] || fail "$label: ran [$(tr '\n' ' ' <"$work/calls")], want [$(echo $want)]"
 }
@@ -44,7 +41,7 @@ expect_rejected() {
   local label=$1
   [ "$rc" -ne 0 ] || fail "$label: exited 0"
   [ ! -s "$work/out" ] || fail "$label: wrote to stdout: $(cat "$work/out")"
-  grep -q 'unknown profile' "$work/err" || fail "$label: stderr lacks the error: $(cat "$work/err")"
+  grep -q '^install: ' "$work/err" || fail "$label: stderr lacks the error: $(cat "$work/err")"
   grep -q 'Usage:' "$work/err" || fail "$label: stderr lacks usage: $(cat "$work/err")"
   [ ! -s "$work/calls" ] || fail "$label: ran dotbot: $(cat "$work/calls")"
 }
@@ -56,10 +53,13 @@ run base;  expect_calls "base" base
 
 run hoem;  expect_rejected "hoem"
 run "";    expect_rejected "empty profile"
+run base home; expect_rejected "two profiles"
 
-run -h
-[ "$rc" -eq 0 ] || fail "-h: exit $rc"
-grep -q 'Usage:' "$work/out" || fail "-h: usage not on stdout"
-[ ! -s "$work/calls" ] || fail "-h: ran dotbot"
+for flag in -h --help; do
+  run "$flag"
+  [ "$rc" -eq 0 ] || fail "$flag: exit $rc"
+  grep -q 'Usage:' "$work/out" || fail "$flag: usage not on stdout"
+  [ ! -s "$work/calls" ] || fail "$flag: ran dotbot"
+done
 
 echo "PASS - install profile selection"

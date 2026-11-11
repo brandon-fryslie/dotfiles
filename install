@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# install - Interactive Dotbot installation wrapper
-# Usage: ./install [home|work|base]
+# install - Dotbot installation wrapper
+# Usage: ./install [home|work|base|-h|--help]   (no argument means home)
 
 set -euo pipefail
 
@@ -9,7 +9,7 @@ BASEDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${BASEDIR}"
 
 usage() {
-  echo "Usage: ./install [home|work|base]"
+  echo "Usage: ./install [home|work|base|-h|--help]"
   echo ""
   echo "Profiles:"
   echo "  home   - Personal development environment (default)"
@@ -17,6 +17,11 @@ usage() {
   echo "  base   - Base configuration only"
   exit "${1:-0}"
 }
+
+if (( $# > 1 )); then
+  echo "install: expected one profile, got $#: $*" >&2
+  usage 1 >&2
+fi
 
 # Each profile is the ordered list of install-<name>.conf.yaml files it runs. The whole
 # list is chosen before anything runs, so an unknown profile installs nothing.
