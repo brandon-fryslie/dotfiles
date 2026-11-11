@@ -53,6 +53,11 @@ out=$(render "$work/linked")
 expect_has "linked worktree" "$out" "(1 stashed)"
 expect_lacks "hooks of the same name loaded first" "$out" "DECOY"
 
+# refs/stash left behind with an emptied reflog: no "(0 stashed)".
+git -C "$work/stashed" reflog expire --expire-unreachable=now --expire=now refs/stash
+out=$(render "$work/stashed")
+expect_lacks "emptied stash reflog" "$out" "stashed"
+
 # No stash and no local user.name: neither part shows.
 new_repo "$work/plain"
 out=$(render "$work/plain")
@@ -72,6 +77,9 @@ exact=$(printf 'n%.0s' $(seq 40))
 git -C "$work/plain" config --local user.name "$exact"
 out=$(render "$work/plain")
 expect_has "40-character user.name" "$out" "($exact)"
+git -C "$work/plain" config --local user.name 'Ops 100%B'
+out=$(render "$work/plain")
+expect_has "user.name with %" "$out" "(Ops 100%%B)"
 long=$(printf 'n%.0s' $(seq 50))
 git -C "$work/plain" config --local user.name "$long"
 out=$(render "$work/plain")

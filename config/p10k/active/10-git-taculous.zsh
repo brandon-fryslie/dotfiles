@@ -11,7 +11,7 @@ if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
   (( $+functions[vcs_info] )) || autoload -Uz vcs_info
   setopt promptsubst
 
-  # Fallback styles/hooks if git-taculous theme hasn't set them.
+  # Fallback styles if git-taculous theme hasn't set them.
   if ! zstyle -L ':vcs_info:*' enable >/dev/null 2>&1; then
     zstyle ':vcs_info:*' enable git
   fi
@@ -25,6 +25,7 @@ if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
   fi
   # The hooks carry this segment's own names: p10k defines +vi-git-stash, and whichever
   # file loads first would otherwise decide which stash hook runs [LAW:one-source-of-truth].
+  # p10k's own `vcs` segment, if enabled, rewrites this zstyle at init.
   zstyle ':vcs_info:git*+set-message:*' hooks gittaculous-st gittaculous-stash gittaculous-username
 
   # Show remote ref name and number of commits ahead-of or behind
@@ -46,7 +47,7 @@ if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
   # no loose file once packed, and .git is a file in a linked worktree.
   function +vi-gittaculous-stash() {
     local stashes
-    if stashes=$(git rev-list --walk-reflogs --count refs/stash 2>/dev/null); then
+    if stashes=$(git rev-list --walk-reflogs --count refs/stash 2>/dev/null) && (( stashes )); then
       hook_com[misc]+=" (${stashes} stashed)"
     fi
   }
@@ -56,7 +57,8 @@ if [[ -z ${GITTACULOUS_VCS_SETUP_DONE:-} ]]; then
     local username
     if username=$(git config --local --get user.name) && [[ -n $username ]]; then
       (( ${#username} > 40 )) && username="${username[1,40]}..."
-      hook_com[misc]+=" ($username)"
+      # misc is prompt-expanded: a literal % in the name must not start an escape.
+      hook_com[misc]+=" (${username//\%/%%})"
     fi
   }
 
