@@ -4,7 +4,8 @@ The backlog skill is for deciding what work goes into a project's backlog, and h
 much is said about each piece. It governs the set of tickets as a whole: what shape
 the work takes, how confidently each piece speaks, and how each piece proves itself.
 Deciding that a far ticket exists and speaks only as far as it knows is this skill's
-call; how any ticket's text is then written is outside it.
+call; how any ticket's text is then written is the ticket skill's job (laws:ticket, cut in
+laws 0.45.0).
 
 ## What it is for
 
