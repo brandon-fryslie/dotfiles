@@ -21,29 +21,30 @@ set -euo pipefail
 
 base_url="${SLOPSPOT_URL:-https://paste.slopspot.ai}"
 
-# [LAW:one-source-of-truth] The config root is CC's own rule for where it writes
-# transcripts: $CLAUDE_CONFIG_DIR, or ~/.claude when that is unset (the same rule
-# find-session's _session_lib.py uses). Both paths below derive from project_dir.
+# The config root is CC's rule for where it writes transcripts: $CLAUDE_CONFIG_DIR,
+# or ~/.claude when that is unset or empty. find-session's _session_lib.py and
+# tmux-sender-info apply the same rule; a change to it lands in all three.
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-# Project slug: pwd with every non-alphanumeric char replaced by "-".
-# Mirrors how CC names project dirs under <config root>/projects — CC normalizes
-# EVERY non-alphanumeric (including "_", not just "/" and "."), so a path like
-# ".../promptctl_links-issue-tracker" maps to "...-promptctl-links-issue-tracker".
-# The class must match CC's producer exactly or the slug misses the session dir.
-slug="$(pwd | sed 's|[^A-Za-z0-9]|-|g')"
-project_dir="$config_dir/projects/$slug"
-jsonl="$project_dir/$CLAUDE_CODE_SESSION_ID.jsonl"
-
-if [ ! -f "$jsonl" ]; then
-  echo "share-slop: session file not found: $jsonl" >&2
-  echo "  Config root: $config_dir (CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-<unset>})" >&2
-  echo "  Expected project slug: $slug" >&2
-  echo "  Check that the config root is the one this session runs under, and that" >&2
-  echo "  the project dir matches CC's expectation (sometimes a recent project" >&2
-  echo "  rename leaves the slug stale)." >&2
-  exit 1
-fi
+# [LAW:one-source-of-truth] The session UUID names exactly one transcript, so find it
+# by id under any project dir rather than re-deriving CC's project slug from the cwd -
+# a slug drifts when the shell has cd'd or the path runs through a symlink.
+shopt -s nullglob
+matches=("$config_dir"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl)
+shopt -u nullglob
+case ${#matches[@]} in
+  1) jsonl="${matches[0]}" ;;
+  0)
+    echo "share-slop: no transcript for session $CLAUDE_CODE_SESSION_ID under $config_dir/projects" >&2
+    echo "  The config root is \$CLAUDE_CONFIG_DIR, or ~/.claude when that is unset or empty;" >&2
+    echo "  check it is the one this session runs under." >&2
+    exit 1 ;;
+  *)
+    echo "share-slop: session $CLAUDE_CODE_SESSION_ID has more than one transcript:" >&2
+    printf '  %s\n' "${matches[@]}" >&2
+    exit 1 ;;
+esac
+project_dir="$(dirname "$jsonl")"
 
 # Subagent transcripts live alongside the main session, one file per agent:
 #   <slug>/<session-id>/subagents/agent-<agentId>.jsonl

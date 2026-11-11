@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Where share-slop.sh looks for the session transcript: under $CLAUDE_CONFIG_DIR when it is
-# set, under ~/.claude only when it is not, and never under ~/.claude as a fallback.
+# set, under ~/.claude only when it is unset or empty, and never under ~/.claude as a
+# fallback. The transcript is found by session id, whatever project dir holds it, so the
+# fixture's project dir deliberately has nothing to do with the cwd the script runs from.
 #
 # A stub `curl` first on PATH records the POSTed body and answers like /api/draft; a stub
 # `open` does nothing. HOME, the config dir, and the cwd are all temp dirs, so no real
@@ -14,7 +16,7 @@ script="$repo/config/claude/skills/share-slop/share-slop.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-mkdir "$work/bin" "$work/project"
+mkdir "$work/bin" "$work/cwd"
 cat >"$work/bin/curl" <<'SH'
 #!/bin/sh
 cat >"$CURL_BODY"
@@ -24,26 +26,27 @@ printf '#!/bin/sh\n' >"$work/bin/open"
 chmod +x "$work/bin/curl" "$work/bin/open"
 
 session=11111111-2222-3333-4444-555555555555
-slug=$(cd "$work/project" && pwd | sed 's|[^A-Za-z0-9]|-|g')
 
 fail() { echo "FAIL - $*" >&2; exit 1; }
 
-# transcript ROOT : writes a main transcript and one subagent transcript under ROOT/projects/<slug>.
+# transcript ROOT [PROJECT] : writes a main transcript and one subagent transcript under
+# ROOT/projects/PROJECT (default: a project dir unrelated to the cwd).
 transcript() {
-  mkdir -p "$1/projects/$slug/$session/subagents"
-  echo '{"type":"user","marker":"main-transcript"}' >"$1/projects/$slug/$session.jsonl"
+  local dir="$1/projects/${2:--Users-someone-elsewhere}"
+  mkdir -p "$dir/$session/subagents"
+  echo '{"type":"user","marker":"main-transcript"}' >"$dir/$session.jsonl"
   echo '{"agentId":"a1","isSidechain":true,"marker":"subagent-transcript"}' \
-    >"$1/projects/$slug/$session/subagents/agent-a1.jsonl"
+    >"$dir/$session/subagents/agent-a1.jsonl"
 }
 
-# run [VAR=VALUE...] : runs the script from the temp project, leaving status in $rc and
-# output in $work/{out,err,body}.
+# run [VAR=VALUE...] : runs the script from the temp cwd after the commands in $setup,
+# leaving status in $rc and output in $work/{out,err,body}.
 run() {
   rm -rf "$work/home" "$work/config" "$work/body"
   mkdir "$work/home" "$work/config"
-  "${setup[@]}"
+  eval "$setup"
   rc=0
-  (cd "$work/project" && env -u CLAUDE_CONFIG_DIR PATH="$work/bin:$PATH" HOME="$work/home" \
+  (cd "$work/cwd" && env -u CLAUDE_CONFIG_DIR PATH="$work/bin:$PATH" HOME="$work/home" \
     CLAUDE_CODE_SESSION_ID="$session" CURL_BODY="$work/body" "$@" \
     bash "$script") >"$work/out" 2>"$work/err" || rc=$?
 }
@@ -55,19 +58,31 @@ uploads() {
   grep -q 'subagent-transcript' "$work/body" || fail "$1: body lacks the subagent transcript"
 }
 
-setup=(transcript "$work/config")
+# refuses CASE TEXT : the run failed, uploaded nothing, and stderr names TEXT.
+refuses() {
+  [ "$rc" -ne 0 ] || fail "$1: exited 0"
+  [ ! -e "$work/body" ] || fail "$1: uploaded"
+  grep -qF "$2" "$work/err" || fail "$1: stderr does not name $2: $(cat "$work/err")"
+}
+
+setup='transcript "$work/config"'
 run CLAUDE_CONFIG_DIR="$work/config"
 uploads "CLAUDE_CONFIG_DIR set"
 
-setup=(transcript "$work/home/.claude")
+setup='transcript "$work/home/.claude"'
 run
 uploads "CLAUDE_CONFIG_DIR unset"
 
-setup=(transcript "$work/home/.claude")
+setup='transcript "$work/home/.claude"'
+run CLAUDE_CONFIG_DIR=
+uploads "CLAUDE_CONFIG_DIR empty"
+
+setup='transcript "$work/home/.claude"'
 run CLAUDE_CONFIG_DIR="$work/config"
-[ "$rc" -ne 0 ] || fail "transcript only under ~/.claude with CLAUDE_CONFIG_DIR set: exited 0"
-[ ! -e "$work/body" ] || fail "transcript only under ~/.claude with CLAUDE_CONFIG_DIR set: uploaded"
-grep -qF "$work/config/projects/$slug/$session.jsonl" "$work/err" \
-  || fail "not-found error does not name the CLAUDE_CONFIG_DIR path: $(cat "$work/err")"
+refuses "transcript only under ~/.claude with CLAUDE_CONFIG_DIR set" "$work/config/projects"
+
+setup='transcript "$work/config" -a; transcript "$work/config" -b'
+run CLAUDE_CONFIG_DIR="$work/config"
+refuses "two transcripts for one session" "$work/config/projects/-b/$session.jsonl"
 
 echo "PASS - share-slop transcript lookup"
