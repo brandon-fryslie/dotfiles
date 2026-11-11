@@ -7,9 +7,8 @@ import argparse
 import json
 import os
 import sys
-import urllib.error
 
-from github_utils import github_api_contents_url, github_request
+from github_utils import GitHubRequestError, github_api_contents_url, github_request
 
 DEFAULT_REPO = "openai/skills"
 DEFAULT_PATH = "skills/.curated"
@@ -51,13 +50,13 @@ def _list_curated(repo: str, path: str, ref: str) -> list[str]:
     api_url = github_api_contents_url(repo, path, ref)
     try:
         payload = _request(api_url)
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
+    except GitHubRequestError as exc:
+        if exc.status == 404:
             raise ListError(
                 "Curated skills path not found: "
                 f"https://github.com/{repo}/tree/{ref}/{path}"
             ) from exc
-        raise ListError(f"Failed to fetch curated skills: HTTP {exc.code}") from exc
+        raise ListError(f"Failed to fetch curated skills: {exc}") from exc
     data = json.loads(payload.decode("utf-8"))
     if not isinstance(data, list):
         raise ListError("Unexpected curated listing response.")

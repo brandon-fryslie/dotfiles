@@ -41,10 +41,10 @@ All of these scripts use network, so when running in the sandbox, request escala
 ## Behavior and Options
 
 - Defaults to direct download for public GitHub repos.
-- If download fails with auth/permission errors, falls back to git sparse checkout.
+- If the download fails for any reason, `--method auto` falls back to git sparse checkout and notes each failed method on stderr.
 - Aborts if the destination skill directory already exists.
 - Installs into `$CODEX_HOME/skills/<skill-name>` (defaults to `~/.codex/skills`).
-- Multiple `--path` values install multiple skills in one run, each named from the path basename unless `--name` is supplied.
+- Multiple `--path` values install multiple skills in one run, each named from the path basename; `--name` works only with a single `--path`. Every path is checked before anything is copied, so a failed run installs nothing.
 - Options: `--ref <ref>` (default `main`), `--dest <path>`, `--method auto|download|git`.
 
 ## Notes
