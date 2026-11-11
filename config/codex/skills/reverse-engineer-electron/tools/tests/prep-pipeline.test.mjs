@@ -209,11 +209,6 @@ function swapProject(rootIndexJs, { pnpmLink = false } = {}) {
     assert.equal(killed.signal, "SIGKILL", killed.stderr || killed.stdout);
     const entry = readLog().packages["demo-pkg"];
     assert.equal(entry.status, "in-flight", JSON.stringify(entry));
-    // The killed run's lock refuses the next run until the operator removes it.
-    const locked = replace();
-    assert.equal(locked.status, 2, locked.stdout);
-    assert.match(locked.stderr, /locked by process \d+, which is no longer running/);
-    fs.unlinkSync(`${logPath}.lock`);
     return entry;
   };
   const backupOf = (entry) => path.resolve(path.dirname(logPath), entry.inFlight.original.backupPath);
@@ -523,22 +518,20 @@ test("replace-dependency refuses an interrupted trial whose backup is gone as lo
   assert.match(result.stderr, /which is gone — the original is lost/);
 });
 
-test("replace-dependency refuses a locked log, naming the holder, whether it is live, dead, or unrecorded", () => {
-  const cases = [
-    [String(process.pid), new RegExp(`locked by running process ${process.pid} `)],
-    ["", /locked by a run that recorded no pid/],
-  ];
-  for (const [content, expected] of cases) {
-    const { logPath, replace } = swapProject(VERIFYING_INDEX);
-    writeText(`${logPath}.lock`, content);
+test("replace-dependency refuses to delete a backup root outside the app's .original/", () => {
+  const { appPkgDir, logPath, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  fs.unlinkSync(appPkgDir);
+  fs.renameSync(backupOf(inFlight), appPkgDir);
+  // A hand edit points the backup at the log's own directory: its root would be deps/ itself.
+  const log = readLog();
+  log.packages["demo-pkg"].inFlight.original.backupPath = "x";
+  writeJson(logPath, log);
 
-    const result = replace();
-    assert.equal(result.status, 2, result.stdout);
-    assert.match(result.stderr, expected);
-    assert.match(result.stderr, /remove the lock and rerun/);
-    assert.equal(fs.readFileSync(`${logPath}.lock`, "utf8"), content, "another run's lock is left alone");
-    assert.ok(!fs.existsSync(logPath), "nothing is written under another run's lock");
-  }
+  const result = replace();
+  assert.notEqual(result.status, 0, result.stdout);
+  assert.match(result.stderr, /is not under \S+\.original; refusing to delete it/);
+  assert.ok(fs.existsSync(logPath), "the log's directory survives");
 });
 
 test("replace-dependency settles an interrupted trial of a package it was not asked about, without trialing it", () => {
@@ -598,6 +591,7 @@ test("replace-dependency migrates a v1 log, so a package a v1 run resolved stays
   const [migrated] = readLog().packages["demo-pkg"].attempts;
   const [original] = v2.packages["demo-pkg"].attempts;
   assert.equal(readLog().schemaVersion, 2);
+  assert.equal(JSON.parse(fs.readFileSync(`${logPath}.v1`, "utf8")).schemaVersion, 1, "the v1 text is kept");
   assert.equal(leadsTo(migrated.original.backupPath), leadsTo(original.original.backupPath));
   assert.equal(leadsTo(migrated.verification.path), leadsTo(original.verification.path));
   assert.equal(gate().status, 0);

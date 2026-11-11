@@ -66,8 +66,7 @@ function readJson(p) {
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
-// Write-then-rename: an interrupted write leaves the previous file whole, never a truncated one. One temp path per
-// file is enough because lockLog lets one run at a time write the log.
+// Write-then-rename: an interrupted write leaves the previous file whole, never a truncated one.
 function writeJson(filePath, payload) {
   ensureDir(path.dirname(filePath));
   const tmpPath = `${filePath}.tmp`;
@@ -160,45 +159,16 @@ function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function isAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code === "EPERM";
-  }
-}
-
-function describeHolder(content) {
-  const pid = Number(content);
-  if (!Number.isInteger(pid) || pid <= 0) return "a run that recorded no pid";
-  return isAlive(pid) ? `running process ${pid}` : `process ${pid}, which is no longer running`;
-}
-
-// [LAW:single-enforcer] One run owns the log at a time: every write replaces the whole file from that run's copy,
-// so a second run sharing --out would erase the first's write-ahead records. A lock left by a killed run is never
-// taken over: two runs that both judged it stale could both take it, so the operator removes it.
-function lockLog(logPath) {
-  const lockPath = `${logPath}.lock`;
-  ensureDir(path.dirname(lockPath));
-  try {
-    fs.writeFileSync(lockPath, String(process.pid), { flag: "wx" });
-  } catch (error) {
-    if (error.code !== "EEXIST") throw error;
-    console.error(`Error: ${logPath} is locked by ${describeHolder(fs.readFileSync(lockPath, "utf8"))} (${lockPath}) — if no run is using the log, remove the lock and rerun`);
-    process.exit(2);
-  }
-  process.on("exit", () => fs.rmSync(lockPath, { force: true }));
-}
-
+// A v1 log is migrated on load; its text is kept beside the log, because the migration takes cwd to be the v1 run's.
 function loadLog(logPath, cwd) {
   if (!fs.existsSync(logPath)) return emptyLog();
   const text = fs.readFileSync(logPath, "utf8");
   const migrated = migrateV1(text, logPath, cwd);
-  const parsed = parseLog(migrated, logPath);
-  if (parsed.ok && migrated !== text) {
+  const parsed = parseLog(migrated ?? text, logPath);
+  if (parsed.ok && migrated !== null) {
+    fs.writeFileSync(`${logPath}.v1`, text);
     writeLog(logPath, parsed.log);
-    console.log(`Migrated ${logPath} to schema v${parsed.log.schemaVersion}`);
+    console.log(`Migrated ${logPath} to schema v${parsed.log.schemaVersion} (v1 text kept at ${logPath}.v1)`);
   }
   if (parsed.ok) return parsed.log;
   for (const error of parsed.errors) console.error(`Error: ${logPath}: ${JSON.stringify(error)}`);
@@ -342,15 +312,20 @@ function restoreOriginal(pkgName, appPkgDir, original, logPath) {
     console.error(`Error: [${pkgName}] could not restore ${describeOriginal(original, logPath)} to ${appPkgDir}: ${error.message} — ${logPath} keeps the trial in flight; fix the cause and rerun to recover`);
     process.exit(1);
   }
-  removeBackupRoot(pkgName, original, logPath);
+  removeBackupRoot(pkgName, appPkgDir, original, logPath);
 }
 
 // A dir original's backup root under .original/ belongs to its one trial, so once the original is out of it (or
 // never went in) the root holds nothing worth keeping — empty directories, or a .DS_Store Finder dropped there.
-function removeBackupRoot(pkgName, original, logPath) {
+// The recursive delete is driven by log data, so it refuses any root that is not a direct child of the app's
+// .original/ — a hand-edited backupPath must never reach the log's own directory.
+function removeBackupRoot(pkgName, appPkgDir, original, logPath) {
   if (original.kind !== "dir") return;
-  const backup = fromLogPath(logPath, original.backupPath);
-  fs.rmSync(path.join(backup, ...pkgPathParts(pkgName).map(() => "..")), { recursive: true, force: true });
+  const up = pkgPathParts(pkgName).map(() => "..");
+  const backupsDir = path.join(appPkgDir, ...up, ".original");
+  const root = path.join(fromLogPath(logPath, original.backupPath), ...up);
+  if (path.dirname(root) !== backupsDir) throw new Error(`[${pkgName}] backup root ${root} is not under ${backupsDir}; refusing to delete it`);
+  fs.rmSync(root, { recursive: true, force: true });
 }
 
 // An in-flight entry, read against disk. "original-in-place": the original never moved, or was already put back.
@@ -432,7 +407,6 @@ function main() {
   const candidateSourcePath = path.resolve(projectRoot, opts.candidateSource);
 
   // The log is loaded first, so a v1 log migrates even on a run that finds nothing to trial.
-  lockLog(outPath);
   const logState = loadLog(outPath, projectRoot);
 
   const candidateSource = loadCandidateSource(candidateSourcePath);
@@ -468,7 +442,7 @@ function main() {
   for (const { pkgName, prior } of interrupted) {
     const { recovery, inFlight } = prior;
     if (recovery === "restored") restoreOriginal(pkgName, appPkgDirOf(pkgName), inFlight.original, outPath);
-    else removeBackupRoot(pkgName, inFlight.original, outPath);
+    else removeBackupRoot(pkgName, appPkgDirOf(pkgName), inFlight.original, outPath);
     recordAttempt(logState, pkgName, {
       attemptedVersion: inFlight.attemptedVersion,
       startedAt: inFlight.startedAt,
@@ -599,6 +573,8 @@ function main() {
         restoreOriginal(pkgName, appPkgDir, original, outPath);
         attempt.rolledBack = true;
       }
+      // A set-aside that threw may have made the backup's directories without moving anything into them.
+      if (!setAsideDone) removeBackupRoot(pkgName, appPkgDir, original, outPath);
       finish();
 
       if (attempt.result === "pass") {

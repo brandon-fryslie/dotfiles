@@ -116,7 +116,7 @@ function parseEntry(raw) {
   return { entry: { status: "in-flight", attempts: raw.attempts, inFlight } };
 }
 
-// The text of a v1 log rewritten as v2; any other text unchanged. v1 kept a trial's backup as backupPath on the
+// The text of a v1 log rewritten as v2, or null when the text is not a v1 log. v1 kept a trial's backup as backupPath on the
 // attempt and stored paths relative to the cwd of the run that wrote them, so cwd must be that run's — the project
 // root every documented invocation runs from. A v1 backup is always a directory rename, a renamed link included.
 // Only the shape moves; parseLog still judges the result.
@@ -125,9 +125,9 @@ export function migrateV1(text, logPath, cwd) {
   try {
     raw = JSON.parse(text);
   } catch {
-    return text;
+    return null;
   }
-  if (!isObject(raw) || raw.schemaVersion !== 1 || !isObject(raw.packages)) return text;
+  if (!isObject(raw) || raw.schemaVersion !== 1 || !isObject(raw.packages)) return null;
   const rebase = (stored) => (isString(stored) ? toLogPath(logPath, path.resolve(cwd, stored)) : stored);
   const migrateAttempt = ({ backupPath, ...attempt }) => ({
     ...attempt,
@@ -160,7 +160,7 @@ export function parseLog(text, logPath) {
         path: logPath,
         found: raw.schemaVersion ?? null,
         expected: SCHEMA_VERSION,
-        detail: `a v1 log is migrated by any replace-dependency run (e.g. --auto-near-match) from the directory that wrote it`,
+        detail: `replace-dependency migrates a v1 log when it loads it; to migrate without trialing anything, run it from the directory that wrote the log with --pkg <a package the log resolved>, which is skipped`,
       }],
     };
   }
