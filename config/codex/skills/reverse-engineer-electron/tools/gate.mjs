@@ -26,6 +26,7 @@ import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
+import { fromLogPath, parseLog } from "./replacement-log.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const EXIT = {
@@ -436,7 +437,6 @@ function runRemoveDepsGate(opts) {
       jsHashMismatches: 0,
       packagesTracked: 0,
       attemptsTracked: 0,
-      failedAttemptsWithoutRollback: 0,
       missingVerificationArtifacts: 0,
     },
     mismatches: {
@@ -486,77 +486,35 @@ function runRemoveDepsGate(opts) {
       missingFiles.length === 0 && extraFiles.length === 0 && hashMismatches.length === 0;
   }
 
-  let replacements = null;
-  try {
-    if (fs.existsSync(replacementsPath)) {
-      replacements = JSON.parse(fs.readFileSync(replacementsPath, "utf8"));
-    }
-  } catch (error) {
-    artifact.mismatches.replacementLogErrors.push({ type: "replacements-read", error: String(error?.message || error) });
-  }
-
+  // [LAW:single-enforcer] The log's shape — one pass per resolved package, none under unresolved, no applied swap
+  // left un-rolled-back — is replacement-log.mjs's to enforce; the gate adds only what needs disk.
   const replacementLogErrors = artifact.mismatches.replacementLogErrors;
   const missingVerificationArtifacts = [];
-  if (!replacements || typeof replacements !== "object") {
-    replacementLogErrors.push({ type: "replacements-type", expected: "object" });
-  } else {
-    const packages = replacements.packages && typeof replacements.packages === "object" ? replacements.packages : null;
-    if (!packages) {
-      replacementLogErrors.push({ type: "replacements-packages-missing" });
-    } else {
-      const entries = Object.entries(packages);
-      artifact.metrics.packagesTracked = entries.length;
+  if (fs.existsSync(replacementsPath)) {
+    const parsed = parseLog(fs.readFileSync(replacementsPath, "utf8"), replacementsPath);
+    if (!parsed.ok) replacementLogErrors.push(...parsed.errors);
+    const entries = parsed.ok ? Object.entries(parsed.log.packages) : [];
+    artifact.metrics.packagesTracked = entries.length;
+    artifact.metrics.attemptsTracked = entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0);
 
-      for (const [pkgName, pkgState] of entries) {
-        const attempts = Array.isArray(pkgState?.attempts) ? pkgState.attempts : [];
-        artifact.metrics.attemptsTracked += attempts.length;
-        if (!Array.isArray(pkgState?.attempts)) {
-          replacementLogErrors.push({ type: "attempts-missing", package: pkgName });
-          continue;
+    // An in-flight entry is a swap whose original may still be set aside: disk and log disagree until it is recovered.
+    for (const [pkgName, entry] of entries.filter(([, entry]) => entry.status === "in-flight")) {
+      replacementLogErrors.push({ type: "swap-in-flight", package: pkgName, attemptVersion: entry.inFlight.attemptedVersion });
+    }
+
+    for (const [pkgName, entry] of entries.filter(([, entry]) => entry.status === "resolved")) {
+      const verificationPath = fromLogPath(replacementsPath, entry.pass.verification.path);
+      if (!fs.existsSync(verificationPath)) {
+        missingVerificationArtifacts.push({ package: pkgName, attemptVersion: entry.chosenVersion, path: verificationPath });
+        continue;
+      }
+      try {
+        const verification = JSON.parse(fs.readFileSync(verificationPath, "utf8"));
+        if (!verification?.pass) {
+          replacementLogErrors.push({ type: "verification-failed", package: pkgName, path: verificationPath });
         }
-
-        let successCount = 0;
-        for (const attempt of attempts) {
-          const result = attempt?.result;
-          const swapApplied = Boolean(attempt?.swapApplied);
-          const rolledBack = Boolean(attempt?.rolledBack);
-
-          if (result === "pass") {
-            successCount += 1;
-            const verificationPath = attempt?.verification?.path;
-            if (!verificationPath || !fs.existsSync(path.resolve(process.cwd(), verificationPath))) {
-              missingVerificationArtifacts.push({ package: pkgName, attemptVersion: attempt?.attemptedVersion, path: verificationPath || null });
-              continue;
-            }
-
-            try {
-              const verification = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), verificationPath), "utf8"));
-              if (!verification?.pass) {
-                replacementLogErrors.push({ type: "verification-failed", package: pkgName, path: verificationPath });
-              }
-            } catch (error) {
-              replacementLogErrors.push({ type: "verification-read", package: pkgName, path: verificationPath, error: String(error?.message || error) });
-            }
-          }
-
-          if (result === "fail" && swapApplied && !rolledBack) {
-            artifact.metrics.failedAttemptsWithoutRollback += 1;
-            replacementLogErrors.push({ type: "rollback-missing", package: pkgName, attemptVersion: attempt?.attemptedVersion });
-          }
-        }
-
-        if (pkgState?.status === "resolved") {
-          if (successCount !== 1) {
-            replacementLogErrors.push({ type: "resolved-success-count", package: pkgName, successCount });
-          }
-          if (!pkgState?.chosenVersion) {
-            replacementLogErrors.push({ type: "resolved-missing-version", package: pkgName });
-          }
-        }
-
-        if (pkgState?.status === "unresolved" && successCount > 0) {
-          replacementLogErrors.push({ type: "unresolved-has-success", package: pkgName });
-        }
+      } catch (error) {
+        replacementLogErrors.push({ type: "verification-read", package: pkgName, path: verificationPath, error: String(error?.message || error) });
       }
     }
   }
