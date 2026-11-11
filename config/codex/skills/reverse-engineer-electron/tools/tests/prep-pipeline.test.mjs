@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 const TOOLS_DIR = path.join(import.meta.dirname, "..");
@@ -180,21 +180,48 @@ function swapProject(rootIndexJs, { pnpmLink = false } = {}) {
   const killingVerify = path.join(tmp, "kill-parent.mjs");
   writeText(killingVerify, "process.kill(process.ppid, 'SIGKILL');\n");
 
-  const replace = (version = "1.2.3", { verifyScript = path.join(TOOLS_DIR, "verify-dependency-swap.mjs") } = {}) =>
-    runNode(
-      path.join(TOOLS_DIR, "replace-dependency.mjs"),
-      [
-        "--pkg", "demo-pkg",
-        "--version", version,
-        "--app-dir", path.join(tmp, "resources", "app"),
-        "--npm", fakeNpm,
-        "--verify-script", verifyScript,
-        "--verification-dir", path.join(tmp, "deps", "verification"),
-        "--out", logPath,
-        "--threshold", "0.99",
-      ],
-      tmp,
-    );
+  const replaceArgs = (version, verifyScript) => [
+    path.join(TOOLS_DIR, "replace-dependency.mjs"),
+    "--pkg", "demo-pkg",
+    "--version", version,
+    "--app-dir", path.join(tmp, "resources", "app"),
+    "--npm", fakeNpm,
+    "--verify-script", verifyScript,
+    "--verification-dir", path.join(tmp, "deps", "verification"),
+    "--out", logPath,
+    "--threshold", "0.99",
+  ];
+  const replace = (version = "1.2.3", { verifyScript = path.join(TOOLS_DIR, "verify-dependency-swap.mjs") } = {}) => {
+    const [script, ...args] = replaceArgs(version, verifyScript);
+    return runNode(script, args, tmp);
+  };
+
+  // Start a run whose verification holds until release(): resolves once the run is mid-trial, holding its locks.
+  // The run is killed when the test ends however it ends, and the hold ends with the run it verifies.
+  const startHeld = async (t) => {
+    const heldMarker = path.join(tmp, "held");
+    const releaseMarker = path.join(tmp, "release");
+    const holdingVerify = path.join(tmp, "hold.mjs");
+    writeText(holdingVerify, [
+      'import fs from "node:fs";',
+      `fs.writeFileSync(${JSON.stringify(heldMarker)}, "");`,
+      "const pause = new Int32Array(new SharedArrayBuffer(4));",
+      "const run = process.ppid;",
+      `while (!fs.existsSync(${JSON.stringify(releaseMarker)}) && process.ppid === run) Atomics.wait(pause, 0, 0, 20);`,
+      "",
+    ].join("\n"));
+    const child = spawn("node", replaceArgs("1.2.3", holdingVerify), { cwd: tmp, stdio: ["ignore", "pipe", "pipe"] });
+    t.after(() => child.kill("SIGKILL"));
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += chunk; });
+    child.stderr.on("data", (chunk) => { output += chunk; });
+    const exited = new Promise((resolve) => child.on("exit", (status) => resolve({ status, output })));
+    while (!fs.existsSync(heldMarker)) {
+      if (child.exitCode !== null) assert.fail(`the held run exited early: ${output}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return { pid: child.pid, release: () => { writeText(releaseMarker, ""); return exited; } };
+  };
   const readLog = () => JSON.parse(fs.readFileSync(logPath, "utf8"));
 
   const forgetPackage = () => {
@@ -224,7 +251,7 @@ function swapProject(rootIndexJs, { pnpmLink = false } = {}) {
     return { status: result.status, artifact: JSON.parse(fs.readFileSync(out, "utf8")) };
   };
 
-  return { tmp, appPkgDir, rootPkgDir, logPath, replace, readLog, forgetPackage, killMidVerify, backupOf, gate };
+  return { tmp, appPkgDir, rootPkgDir, logPath, fakeNpm, replace, startHeld, readLog, forgetPackage, killMidVerify, backupOf, gate };
 }
 
 const VERIFYING_INDEX = "module.exports=function(){return 1};\n";
@@ -606,4 +633,56 @@ test("replace-dependency recognises a link to the root package however its targe
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
   assert.match(result.stderr, /already links to the root package/);
+});
+
+test("replace-dependency refuses a second run over an app tree another run is swapping, however it names the tree", async (t) => {
+  const { tmp, appPkgDir, fakeNpm, readLog, startHeld } = swapProject(VERIFYING_INDEX);
+  const held = await startHeld(t);
+
+  // Another project, its own log, the same app through a symlinked spelling: only the app tree is shared.
+  const otherProject = mkTmpDir();
+  fs.symlinkSync(path.join(tmp, "resources", "app"), path.join(otherProject, "app"), "dir");
+  const otherLog = path.join(otherProject, "deps", "replacements.json");
+  const second = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", "app", "--npm", fakeNpm, "--out", otherLog], otherProject);
+  assert.equal(second.status, 2, second.stdout);
+  assert.ok(second.stderr.includes(path.join(fs.realpathSync(path.dirname(appPkgDir)), ".replace-dependency.lock")), second.stderr);
+  assert.ok(second.stderr.includes(`pid ${held.pid},`), second.stderr);
+  assert.ok(!fs.existsSync(otherLog), "the refused run writes no log");
+  assert.equal(readLog().packages["demo-pkg"].status, "in-flight", "the holder's trial is untouched");
+
+  const first = await held.release();
+  assert.equal(first.status, 0, first.output);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+});
+
+test("replace-dependency refuses a second run from the same project over another app tree, naming the project's node_modules", async (t) => {
+  const { tmp, rootPkgDir, fakeNpm, readLog, startHeld } = swapProject(VERIFYING_INDEX);
+  writeJson(path.join(tmp, "app2", "node_modules", "demo-pkg", "package.json"), { name: "demo-pkg", version: "1.2.3" });
+  const held = await startHeld(t);
+
+  const second = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", "app2", "--npm", fakeNpm, "--out", path.join(tmp, "deps", "app2.json")], tmp);
+  assert.equal(second.status, 2, second.stdout);
+  assert.ok(second.stderr.includes(path.join(fs.realpathSync(tmp), "node_modules", ".replace-dependency.lock")), second.stderr);
+  assert.ok(!fs.existsSync(path.join(tmp, "deps", "app2.json")), "the refused run writes no log");
+  assert.ok(fs.existsSync(path.join(rootPkgDir, "package.json")), "the root package is untouched");
+
+  const first = await held.release();
+  assert.equal(first.status, 0, first.output);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+});
+
+test("replace-dependency is not refused by the locks of a run that was killed", () => {
+  const { replace, readLog, killMidVerify } = swapProject(VERIFYING_INDEX);
+  killMidVerify();
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+});
+
+test("replace-dependency refuses an --app-dir with no node_modules, naming it", () => {
+  const tmp = mkTmpDir();
+  fs.mkdirSync(path.join(tmp, "app"));
+  const result = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", "app"], tmp);
+  assert.equal(result.status, 2, result.stdout);
+  assert.ok(result.stderr.includes(path.join(tmp, "app", "node_modules")), result.stderr);
 });
