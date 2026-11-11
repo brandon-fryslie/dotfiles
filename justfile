@@ -71,6 +71,10 @@ validate:
 test-install-backup:
     ./tests/install-backup.sh
 
+# Assert the prompt's git segment shows packed and worktree stashes, and a user.name only when the repo sets one (throwaway repos, real zsh -f)
+test-git-taculous:
+    ./tests/git-taculous-prompt.sh
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
