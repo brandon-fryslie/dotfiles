@@ -186,7 +186,13 @@ function swapProject(rootIndexJs) {
     );
   const readLog = () => JSON.parse(fs.readFileSync(logPath, "utf8"));
 
-  return { tmp, appPkgDir, rootPkgDir, replace, readLog };
+  const forgetPackage = () => {
+    const log = readLog();
+    delete log.packages["demo-pkg"];
+    writeJson(logPath, log);
+  };
+
+  return { tmp, appPkgDir, rootPkgDir, replace, readLog, forgetPackage };
 }
 
 const VERIFYING_INDEX = "module.exports=function(){return 1};\n";
@@ -243,25 +249,55 @@ test("replace-dependency rerun on a resolved package is skipped and the remove-d
   assert.equal(gate.status, 0, fs.existsSync(gateOut) ? fs.readFileSync(gateOut, "utf8") : gate.stderr);
 });
 
-test("replace-dependency refuses when the log says resolved but the app copy is not linked", () => {
-  const { appPkgDir, replace } = swapProject(VERIFYING_INDEX);
+test("replace-dependency refuses when the log says resolved but the app copy is not linked, until the entry is deleted", () => {
+  const { appPkgDir, replace, readLog, forgetPackage } = swapProject(VERIFYING_INDEX);
   assert.equal(replace().status, 0);
 
   // A re-extracted app puts a real directory back under the old log.
   fs.rmSync(appPkgDir);
   writeJson(path.join(appPkgDir, "package.json"), { name: "demo-pkg", version: "1.2.3" });
+  writeText(path.join(appPkgDir, "index.js"), VERIFYING_INDEX);
 
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
   assert.match(result.stderr, /not linked to the root package/);
+  assert.match(result.stderr, /delete the package's entry from \/\S+\/deps\/replacements\.json$/m);
   assert.ok(!fs.lstatSync(appPkgDir).isSymbolicLink(), "app copy must be left untouched");
+
+  forgetPackage();
+  const retrial = replace();
+  assert.equal(retrial.status, 0, retrial.stderr || retrial.stdout);
+  const pkgState = readLog().packages["demo-pkg"];
+  assert.equal(pkgState.status, "resolved", JSON.stringify(pkgState.attempts));
 });
 
-test("replace-dependency refuses an explicit --version that differs from the resolved one", () => {
-  const { replace } = swapProject(VERIFYING_INDEX);
+test("replace-dependency refuses a resolved package whose root copy drifted from the verified version", () => {
+  const { rootPkgDir, replace } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+
+  writeJson(path.join(rootPkgDir, "package.json"), { name: "demo-pkg", version: "1.2.4" });
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /resolved with 1\.2\.3, but the root package is now 1\.2\.4/);
+});
+
+test("replace-dependency refuses an explicit --version that differs from the resolved one, until the original is restored", () => {
+  const { tmp, appPkgDir, replace, readLog, forgetPackage } = swapProject(VERIFYING_INDEX);
   assert.equal(replace().status, 0);
 
   const result = replace("1.2.4");
   assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, /already resolved with 1\.2\.3; --version 1\.2\.4/);
+  assert.match(result.stderr, /already resolved with 1\.2\.3; --version 1\.2\.4 is a retrial/);
+
+  // Follow the message: the original named in it goes back over the link, and the entry goes.
+  const backup = readLog().packages["demo-pkg"].attempts.find((attempt) => attempt.result === "pass").backupPath;
+  assert.ok(result.stderr.includes(backup), result.stderr);
+  fs.rmSync(appPkgDir);
+  fs.renameSync(path.join(tmp, backup), appPkgDir);
+  forgetPackage();
+
+  const retrial = replace("1.2.4");
+  assert.equal(retrial.status, 0, retrial.stderr || retrial.stdout);
+  assert.equal(readLog().packages["demo-pkg"].attempts.at(-1).attemptedVersion, "1.2.4");
 });

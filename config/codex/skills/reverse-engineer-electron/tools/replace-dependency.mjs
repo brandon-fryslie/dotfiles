@@ -231,12 +231,15 @@ function determineCandidatesForPackage(opts, pkgName, candidateSource, onDiskVer
 
 // [LAW:one-source-of-truth] A log status of "resolved" records a swap that already happened, so a rerun must
 // not trial the package again (gate.mjs requires exactly one pass per resolved package). Disk has to agree
-// with that record; when it doesn't, neither side can be trusted to win, so the run refuses. [LAW:no-silent-failure]
-function priorSwap(pkgState, appPkgDir, rootPkgDir, requestedVersion) {
+// with that record; when it doesn't, neither side can be trusted to win, so the run refuses and names the way
+// out: the gate forbids a pass under "unresolved" too, so a retrial starts by deleting the package's entry. [LAW:no-silent-failure]
+function priorSwap(pkgState, appPkgDir, rootPkgDir, requestedVersion, logPath) {
   if (pkgState?.status !== "resolved") return { kind: "untried" };
   const chosen = pkgState.chosenVersion;
+  const backup = pkgState.attempts.find((attempt) => attempt.result === "pass")?.backupPath;
+  const restore = `to trial it again, replace the app copy with the original at ${backup} and delete the package's entry from ${logPath}`;
   if (requestedVersion && requestedVersion !== chosen) {
-    return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} needs the original copy restored first` };
+    return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} is a retrial — ${restore}` };
   }
   const linked =
     fs.existsSync(appPkgDir) &&
@@ -244,7 +247,11 @@ function priorSwap(pkgState, appPkgDir, rootPkgDir, requestedVersion) {
     fs.existsSync(rootPkgDir) &&
     fs.realpathSync(appPkgDir) === fs.realpathSync(rootPkgDir);
   if (!linked) {
-    return { kind: "conflict", reason: `resolved with ${chosen} in the log, but the app copy is not linked to the root package (re-extracted app with an old log?)` };
+    return { kind: "conflict", reason: `resolved with ${chosen} in the log, but the app copy is not linked to the root package (re-extracted app with an old log?) — to trial this app copy, delete the package's entry from ${logPath}` };
+  }
+  const rootVersion = readPkgVersion(path.join(rootPkgDir, "package.json"));
+  if (rootVersion !== chosen) {
+    return { kind: "conflict", reason: `resolved with ${chosen}, but the root package is now ${rootVersion} — reinstall ${chosen} at the root, or ${restore}` };
   }
   return { kind: "resolved", version: chosen };
 }
@@ -284,11 +291,11 @@ function main() {
 
   const priors = packageList.map((pkgName) => ({
     pkgName,
-    prior: priorSwap(logState.packages[pkgName], appPkgDirOf(pkgName), rootPkgDirOf(pkgName), opts.pkg === pkgName ? opts.version : ""),
+    prior: priorSwap(logState.packages[pkgName], appPkgDirOf(pkgName), rootPkgDirOf(pkgName), opts.pkg === pkgName ? opts.version : "", outPath),
   }));
   const conflicts = priors.filter(({ prior }) => prior.kind === "conflict");
   if (conflicts.length > 0) {
-    for (const { pkgName, prior } of conflicts) console.error(`Error: [${pkgName}] ${prior.reason} — see ${path.relative(projectRoot, outPath)}`);
+    for (const { pkgName, prior } of conflicts) console.error(`Error: [${pkgName}] ${prior.reason}`);
     process.exit(2);
   }
   const skipped = priors.filter(({ prior }) => prior.kind === "resolved");
@@ -384,7 +391,10 @@ function main() {
         continue;
       }
 
-      const backupRoot = path.join(appNodeModules, ".original", safeNowStamp());
+      // [LAW:types-are-the-program] mkdtemp makes each trial's backup root unique by construction; a bare
+      // per-second stamp collided when a retrial landed in the same second as an earlier swap.
+      ensureDir(path.join(appNodeModules, ".original"));
+      const backupRoot = fs.mkdtempSync(path.join(appNodeModules, ".original", `${safeNowStamp()}-`));
       const backupDir = path.join(backupRoot, ...pkgPathParts(pkgName));
       attempt.backupPath = path.relative(projectRoot, backupDir).split(path.sep).join("/");
       let backupCreated = false;
@@ -395,9 +405,10 @@ function main() {
         backupCreated = true;
 
         ensureDir(path.dirname(appPkgDir));
-        // A relative target resolves from the link's real directory, so both ends are realpaths: --app-dir and
-        // cwd can name the same tree through different symlinked prefixes (/var vs /private/var on macOS).
-        const linkTarget = path.relative(fs.realpathSync(path.dirname(appPkgDir)), fs.realpathSync(rootPkgDir));
+        // A relative target resolves from the link's real directory, so both ends resolve their parent directories:
+        // --app-dir and cwd can name the same tree through different symlinked prefixes (/var vs /private/var on
+        // macOS). The root entry itself stays unresolved, so a workspace or npm-link entry keeps its indirection.
+        const linkTarget = path.relative(fs.realpathSync(path.dirname(appPkgDir)), path.join(fs.realpathSync(path.dirname(rootPkgDir)), path.basename(rootPkgDir)));
         fs.symlinkSync(linkTarget, appPkgDir, "dir");
         attempt.swapApplied = true;
 
@@ -487,7 +498,6 @@ function main() {
   console.log(`- unresolved packages: ${unresolved.length}`);
   if (unresolved.length > 0) {
     console.log(`- unresolved list: ${unresolved.join(", ")}`);
-    process.exit(0);
   }
 
   process.exit(0);

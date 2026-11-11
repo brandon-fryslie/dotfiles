@@ -45,7 +45,7 @@ fi
 # Method 2: package.json in extracted app
 if [ -n "$EXTRACTED_DIR" ] && [ -f "$EXTRACTED_DIR/package.json" ]; then
   # [LAW:no-silent-failure] A malformed package.json is an error, not "version unknown";
-  # node's stderr reaches the caller. The path travels as argv, never spliced into JS source.
+  # node's stderr says why. The path travels as argv after --, never spliced into JS source or read as a node option.
   if ! DETECTED="$(node -e "
     const p=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
     const v = p.devDependencies?.electron || p.dependencies?.electron || '';
@@ -57,8 +57,8 @@ if [ -n "$EXTRACTED_DIR" ] && [ -f "$EXTRACTED_DIR/package.json" ]; then
       s = s.slice(1);
     }
     if (s) console.log(s);
-  " "$EXTRACTED_DIR/package.json")"; then
-    echo "Error: failed to parse $EXTRACTED_DIR/package.json" >&2
+  " -- "$EXTRACTED_DIR/package.json")"; then
+    echo "Error: node could not read the electron version from $EXTRACTED_DIR/package.json" >&2
     exit 1
   fi
   if [ -n "$DETECTED" ]; then
