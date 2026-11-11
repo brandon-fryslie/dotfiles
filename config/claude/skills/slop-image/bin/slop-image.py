@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -245,6 +246,36 @@ def ext_for(data, content_type):
     )
 
 
+@dataclass(frozen=True)
+class OutFile:
+    path: Path
+
+    def target(self, name):
+        return self.path
+
+
+@dataclass(frozen=True)
+class OutDir:
+    path: Path
+
+    def target(self, name):
+        return self.path / name
+
+
+def parse_out(raw, count):
+    # [LAW:parse-dont-validate] --out is resolved once, before any provider spend;
+    # save_image receives a target that is already a file or a directory.
+    path = Path(raw).expanduser()
+    if path.is_dir() or not path.suffix:
+        return OutDir(path)
+    if count > 1:
+        raise SystemExit(
+            f"[slop-image] --out {raw} is a file path, but --count is {count}; "
+            f"pass a directory to save multiple images"
+        )
+    return OutFile(path)
+
+
 def save_image(url, prompt, out, index, total):
     r = requests.get(url, timeout=60)
     if not r.ok:
@@ -257,11 +288,7 @@ def save_image(url, prompt, out, index, total):
     suffix = f"-{index + 1}" if total > 1 else ""
     name = f"{slugify(prompt)}-{short}{suffix}{ext}"
 
-    out_path = Path(out).expanduser()
-    if out_path.suffix and total == 1:
-        target = out_path
-    else:
-        target = out_path / name
+    target = out.target(name)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     return target.resolve()
@@ -284,12 +311,13 @@ def main():
 
     if args.count < 1:
         raise SystemExit("[slop-image] --count must be >= 1")
+    out = parse_out(args.out, args.count)
 
     urls, src = DISPATCH[args.provider](args.prompt, args.aspect, args.count)
     print(f"[slop-image] provider={args.provider} aspect={args.aspect} "
           f"count={len(urls)} key-source={src}", file=sys.stderr)
 
-    paths = [save_image(u, args.prompt, args.out, i, len(urls)) for i, u in enumerate(urls)]
+    paths = [save_image(u, args.prompt, out, i, len(urls)) for i, u in enumerate(urls)]
     for path in paths:
         print(path)
 
