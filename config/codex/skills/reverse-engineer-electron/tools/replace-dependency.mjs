@@ -175,15 +175,9 @@ function loadLog(filePath) {
   return parsed;
 }
 
-function appendAttempt(logState, pkgName, attempt) {
-  if (!logState.packages[pkgName]) {
-    logState.packages[pkgName] = {
-      status: "unresolved",
-      chosenVersion: null,
-      attempts: [],
-    };
-  }
-
+// [LAW:one-source-of-truth] The log is written as each attempt lands, so an interrupted run leaves disk and log
+// disagreeing by at most the one trial in flight - which priorSwap refuses rather than re-trials.
+function appendAttempt(logState, pkgName, attempt, outPath) {
   logState.packages[pkgName].attempts.push(attempt);
   logState.events.push({
     package: pkgName,
@@ -193,6 +187,12 @@ function appendAttempt(logState, pkgName, attempt) {
     finishedAt: attempt.finishedAt,
     rollback: attempt.rolledBack,
   });
+  writeLog(outPath, logState);
+}
+
+function writeLog(outPath, logState) {
+  logState.updatedAt = new Date().toISOString();
+  writeJson(outPath, logState);
 }
 
 function readPkgVersion(packageJsonPath) {
@@ -231,27 +231,30 @@ function determineCandidatesForPackage(opts, pkgName, candidateSource, onDiskVer
 
 // [LAW:one-source-of-truth] A log status of "resolved" records a swap that already happened, so a rerun must
 // not trial the package again (gate.mjs requires exactly one pass per resolved package). Disk has to agree
-// with that record; when it doesn't, neither side can be trusted to win, so the run refuses and names the way
-// out: the gate forbids a pass under "unresolved" too, so a retrial starts by deleting the package's entry. [LAW:no-silent-failure]
-function priorSwap(pkgState, appPkgDir, rootPkgDir, requestedVersion, logPath) {
-  if (pkgState?.status !== "resolved") return { kind: "untried" };
+// with that record in both directions; when it doesn't, neither side can be trusted to win, so the run refuses
+// and names the way out: the gate forbids a pass under "unresolved" too, so a retrial starts by deleting the
+// package's entry. [LAW:no-silent-failure]
+function priorSwap(pkgState, { appPkgDir, rootPkgDir, backupsDir, logPath, projectRoot }, requestedVersion) {
+  const appIsLink = fs.lstatSync(appPkgDir, { throwIfNoEntry: false })?.isSymbolicLink() === true;
+  if (pkgState?.status !== "resolved") {
+    if (!appIsLink) return { kind: "untried" };
+    return { kind: "conflict", reason: `the app copy is already a link, but ${logPath} records no resolved swap for it (interrupted run?) — put the original back from the newest backup under ${backupsDir} and rerun` };
+  }
   const chosen = pkgState.chosenVersion;
-  const backup = pkgState.attempts.find((attempt) => attempt.result === "pass")?.backupPath;
+  const backup = path.resolve(projectRoot, pkgState.attempts.find((attempt) => attempt.result === "pass").backupPath);
   const restore = `to trial it again, replace the app copy with the original at ${backup} and delete the package's entry from ${logPath}`;
   if (requestedVersion && requestedVersion !== chosen) {
     return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} is a retrial — ${restore}` };
   }
-  const linked =
-    fs.existsSync(appPkgDir) &&
-    fs.lstatSync(appPkgDir).isSymbolicLink() &&
-    fs.existsSync(rootPkgDir) &&
-    fs.realpathSync(appPkgDir) === fs.realpathSync(rootPkgDir);
-  if (!linked) {
+  if (!appIsLink) {
     return { kind: "conflict", reason: `resolved with ${chosen} in the log, but the app copy is not linked to the root package (re-extracted app with an old log?) — to trial this app copy, delete the package's entry from ${logPath}` };
   }
   const rootVersion = readPkgVersion(path.join(rootPkgDir, "package.json"));
   if (rootVersion !== chosen) {
-    return { kind: "conflict", reason: `resolved with ${chosen}, but the root package is now ${rootVersion} — reinstall ${chosen} at the root, or ${restore}` };
+    return { kind: "conflict", reason: `resolved with ${chosen}, but the root package is now ${rootVersion ?? "missing"} — reinstall ${chosen} at the root, or ${restore}` };
+  }
+  if (!fs.existsSync(appPkgDir) || fs.realpathSync(appPkgDir) !== fs.realpathSync(rootPkgDir)) {
+    return { kind: "conflict", reason: `resolved with ${chosen}, but the app link does not resolve to the root package — ${restore}` };
   }
   return { kind: "resolved", version: chosen };
 }
@@ -291,7 +294,11 @@ function main() {
 
   const priors = packageList.map((pkgName) => ({
     pkgName,
-    prior: priorSwap(logState.packages[pkgName], appPkgDirOf(pkgName), rootPkgDirOf(pkgName), opts.pkg === pkgName ? opts.version : "", outPath),
+    prior: priorSwap(
+      logState.packages[pkgName],
+      { appPkgDir: appPkgDirOf(pkgName), rootPkgDir: rootPkgDirOf(pkgName), backupsDir: path.join(appNodeModules, ".original"), logPath: outPath, projectRoot },
+      opts.pkg === pkgName ? opts.version : "",
+    ),
   }));
   const conflicts = priors.filter(({ prior }) => prior.kind === "conflict");
   if (conflicts.length > 0) {
@@ -329,7 +336,7 @@ function main() {
         swapApplied: false,
         rolledBack: false,
         verification: { path: null, pass: false },
-      });
+      }, outPath);
       continue;
     }
 
@@ -345,7 +352,7 @@ function main() {
         swapApplied: false,
         rolledBack: false,
         verification: { path: null, pass: false },
-      });
+      }, outPath);
       continue;
     }
 
@@ -370,7 +377,7 @@ function main() {
       if (!installExact(opts.npm, pkgName, version)) {
         attempt.reason = "npm-install-failed";
         attempt.finishedAt = new Date().toISOString();
-        appendAttempt(logState, pkgName, attempt);
+        appendAttempt(logState, pkgName, attempt, outPath);
         continue;
       }
 
@@ -379,7 +386,7 @@ function main() {
       if (!fs.existsSync(rootPkgJson)) {
         attempt.reason = "root-package-json-missing";
         attempt.finishedAt = new Date().toISOString();
-        appendAttempt(logState, pkgName, attempt);
+        appendAttempt(logState, pkgName, attempt, outPath);
         continue;
       }
 
@@ -387,7 +394,7 @@ function main() {
       if (installed?.name !== pkgName || installed?.version !== version) {
         attempt.reason = `installed-package-mismatch:${installed?.name || "?"}@${installed?.version || "?"}`;
         attempt.finishedAt = new Date().toISOString();
-        appendAttempt(logState, pkgName, attempt);
+        appendAttempt(logState, pkgName, attempt, outPath);
         continue;
       }
 
@@ -437,17 +444,16 @@ function main() {
           attempt.reason = "verification-failed";
           attempt.rolledBack = true;
           attempt.finishedAt = new Date().toISOString();
-          appendAttempt(logState, pkgName, attempt);
+          appendAttempt(logState, pkgName, attempt, outPath);
           continue;
         }
 
         attempt.result = "pass";
         attempt.reason = "verified";
         attempt.finishedAt = new Date().toISOString();
-        appendAttempt(logState, pkgName, attempt);
-
         logState.packages[pkgName].status = "resolved";
         logState.packages[pkgName].chosenVersion = version;
+        appendAttempt(logState, pkgName, attempt, outPath);
         resolved = true;
 
         console.log(`[${pkgName}] resolved with ${version}`);
@@ -473,7 +479,7 @@ function main() {
 
         attempt.reason = `trial-error:${String(error?.message || error)}`;
         attempt.finishedAt = new Date().toISOString();
-        appendAttempt(logState, pkgName, attempt);
+        appendAttempt(logState, pkgName, attempt, outPath);
       }
     }
 
@@ -484,8 +490,7 @@ function main() {
     }
   }
 
-  logState.updatedAt = new Date().toISOString();
-  writeJson(outPath, logState);
+  writeLog(outPath, logState);
 
   const unresolved = Object.entries(logState.packages)
     .filter(([, state]) => state?.status !== "resolved")

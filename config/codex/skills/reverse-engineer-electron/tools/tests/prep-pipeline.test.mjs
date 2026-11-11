@@ -271,6 +271,30 @@ test("replace-dependency refuses when the log says resolved but the app copy is 
   assert.equal(pkgState.status, "resolved", JSON.stringify(pkgState.attempts));
 });
 
+test("replace-dependency refuses an app link the log has no resolved swap for (interrupted run)", () => {
+  const { appPkgDir, replace, forgetPackage } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+
+  // A run killed between linking and recording leaves the link on disk and no resolved entry in the log.
+  forgetPackage();
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /the app copy is already a link, but \S+ records no resolved swap/);
+  assert.ok(fs.lstatSync(appPkgDir).isSymbolicLink(), "the link must be left untouched");
+});
+
+test("replace-dependency refuses a resolved swap whose root package was removed (dangling link)", () => {
+  const { rootPkgDir, replace } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+
+  fs.rmSync(rootPkgDir, { recursive: true });
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /resolved with 1\.2\.3, but the root package is now missing — reinstall 1\.2\.3 at the root/);
+});
+
 test("replace-dependency refuses a resolved package whose root copy drifted from the verified version", () => {
   const { rootPkgDir, replace } = swapProject(VERIFYING_INDEX);
   assert.equal(replace().status, 0);
@@ -283,7 +307,7 @@ test("replace-dependency refuses a resolved package whose root copy drifted from
 });
 
 test("replace-dependency refuses an explicit --version that differs from the resolved one, until the original is restored", () => {
-  const { tmp, appPkgDir, replace, readLog, forgetPackage } = swapProject(VERIFYING_INDEX);
+  const { appPkgDir, replace, readLog, forgetPackage } = swapProject(VERIFYING_INDEX);
   assert.equal(replace().status, 0);
 
   const result = replace("1.2.4");
@@ -291,10 +315,10 @@ test("replace-dependency refuses an explicit --version that differs from the res
   assert.match(result.stderr, /already resolved with 1\.2\.3; --version 1\.2\.4 is a retrial/);
 
   // Follow the message: the original named in it goes back over the link, and the entry goes.
-  const backup = readLog().packages["demo-pkg"].attempts.find((attempt) => attempt.result === "pass").backupPath;
-  assert.ok(result.stderr.includes(backup), result.stderr);
+  const backup = result.stderr.match(/the original at (\/\S+) and delete/)?.[1];
+  assert.ok(backup && fs.existsSync(path.join(backup, "package.json")), result.stderr);
   fs.rmSync(appPkgDir);
-  fs.renameSync(path.join(tmp, backup), appPkgDir);
+  fs.renameSync(backup, appPkgDir);
   forgetPackage();
 
   const retrial = replace("1.2.4");
