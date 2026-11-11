@@ -21,19 +21,27 @@ set -euo pipefail
 
 base_url="${SLOPSPOT_URL:-https://paste.slopspot.ai}"
 
+# [LAW:one-source-of-truth] The config root is CC's own rule for where it writes
+# transcripts: $CLAUDE_CONFIG_DIR, or ~/.claude when that is unset (the same rule
+# find-session's _session_lib.py uses). Both paths below derive from project_dir.
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
 # Project slug: pwd with every non-alphanumeric char replaced by "-".
-# Mirrors how CC names project dirs under ~/.claude/projects — CC normalizes
+# Mirrors how CC names project dirs under <config root>/projects — CC normalizes
 # EVERY non-alphanumeric (including "_", not just "/" and "."), so a path like
 # ".../promptctl_links-issue-tracker" maps to "...-promptctl-links-issue-tracker".
 # The class must match CC's producer exactly or the slug misses the session dir.
 slug="$(pwd | sed 's|[^A-Za-z0-9]|-|g')"
-jsonl="$HOME/.claude/projects/$slug/$CLAUDE_CODE_SESSION_ID.jsonl"
+project_dir="$config_dir/projects/$slug"
+jsonl="$project_dir/$CLAUDE_CODE_SESSION_ID.jsonl"
 
 if [ ! -f "$jsonl" ]; then
   echo "share-slop: session file not found: $jsonl" >&2
+  echo "  Config root: $config_dir (CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-<unset>})" >&2
   echo "  Expected project slug: $slug" >&2
-  echo "  Check that the project dir matches CC's expectation (sometimes a" >&2
-  echo "  recent project rename leaves the slug stale)." >&2
+  echo "  Check that the config root is the one this session runs under, and that" >&2
+  echo "  the project dir matches CC's expectation (sometimes a recent project" >&2
+  echo "  rename leaves the slug stale)." >&2
   exit 1
 fi
 
@@ -52,7 +60,7 @@ fi
 # group's first REAL sidechain line (which already carries agentId+isSidechain+
 # sessionId, so it stays a valid sidechain line and survives /api/augment). The
 # server parser's orphan branch reads it from there. [LAW:no-silent-failure]
-subdir="$HOME/.claude/projects/$slug/$CLAUDE_CODE_SESSION_ID/subagents"
+subdir="$project_dir/$CLAUDE_CODE_SESSION_ID/subagents"
 
 # Build the JSON request body. Use Python (always present, stdlib only) to
 # concatenate the transcripts and JSON-encode the result so newlines and quotes
