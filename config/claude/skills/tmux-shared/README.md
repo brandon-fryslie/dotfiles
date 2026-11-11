@@ -42,9 +42,13 @@ the entire prompt that turn was sent, so every earlier response is already in
 them; the turn's own output is added because it has not been fed back yet.
 
 Unlike the resolver, this part is advisory and **never fails**: no session id, no
-transcript, no `jq`, a half-written line — every way of not knowing degrades to
-the working directory alone and exits 0, so it cannot break the send it decorates.
-A directory-only line therefore means "these facts were unavailable" — usually a
-sender that is not a Claude session, but equally a missing `jq` or a session id
-that never reached the environment. Read it as absence of evidence, not as
-evidence that no Claude session is on the other end.
+transcript, several transcripts for one session id, no `jq`, an unreadable
+transcript — every way of not knowing degrades to the working directory alone and
+exits 0, so it cannot break the send it decorates. Each of those but the missing
+session id also says why on stderr, which tmux-talk passes through to the sender.
+The lookup is share-slop.sh's: found by session id under any project dir, and
+several copies refused with every path named rather than one picked. A
+half-written line costs only that line. A directory-only line therefore means
+"these facts were unavailable" — usually a sender that is not a Claude session,
+but equally a session id that never reached the environment. Read it as absence
+of evidence, not as evidence that no Claude session is on the other end.
