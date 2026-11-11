@@ -4,7 +4,7 @@ The backlog skill is for deciding what work goes into a project's backlog, and h
 much is said about each piece. It governs the set of tickets as a whole: what shape
 the work takes, how confidently each piece speaks, and how each piece proves itself.
 Deciding that a far ticket exists and speaks only as far as it knows is this skill's
-call; how any ticket's text is then written is the ticket skill's job.
+call; how any ticket's text is then written is outside it.
 
 ## What it is for
 
@@ -76,9 +76,8 @@ into confetti, a ceiling turns into arbitrary splits. The concept we want is clo
 stated well enough to be a rule. Until it is, the craft says nothing about size at all.
 Do not add a softer version of a size rule in the meantime.
 
-## Relationship to the other media
+## Scope
 
-The ticket skill says how one ticket is written. This skill says which tickets to write
-and in what shape. Rules from one must not be copied into the other. A backlog rule
-about what to plan is not a ticket rule, and a ticket rule about what a description
-carries is not a backlog rule.
+This skill says which tickets to write and in what shape, not how one ticket is written.
+A backlog rule about what to plan is not a ticket rule, and a rule about what a
+description carries is not a backlog rule.

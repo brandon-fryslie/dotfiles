@@ -66,7 +66,7 @@ Brandon runs a private homelab: four NixOS VMs on Proxmox at home, plus a NAS. T
 - **Datasource UID:** always `"prometheus"` — VictoriaMetrics is wired in behind that name. Reference it that way in exported JSON.
 
 ### Telemetry — wide events, traces, metrics through one collector
-The app-side shape (one wide event per unit of work, the shared layer, the default field set, the OTLP export edge with a file fallback) is `laws:code-observability`'s job. This section is only *where it goes on this machine*.
+The app-side shape (one wide event per unit of work, the shared layer, the default field set, the OTLP export edge with a file fallback) is `laws:observability`'s job. This section is only *where it goes on this machine*.
 - **Collector:** `otel.sanctuary.gdn`, OTLP gRPC on `4317`, OTLP HTTP on `4318`. Apps read the address from config (`OTEL_EXPORTER_OTLP_ENDPOINT`), emit OTLP to it, and never know what sits behind it.
 - **File fallback:** when the endpoint is unset or unreachable, the export edge appends JSONL to `${XDG_STATE_HOME:-$HOME/.local/state}/<service>/events.jsonl` and counts the drop. Never block or crash the unit of work on telemetry.
 - **Behind the collector:** metrics → VictoriaMetrics (datasource `prometheus`, above); wide events → ClickHouse; traces → Grafana Tempo. All three front in Grafana.

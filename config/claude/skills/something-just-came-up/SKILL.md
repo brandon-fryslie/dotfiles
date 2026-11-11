@@ -108,7 +108,7 @@ GOOD:
 
 ## 2. Write up the something
 
-`laws:backlog` governs the slate — read it when the writeup runs past a couple of
+`backlog` governs the slate — read it when the writeup runs past a couple of
 tickets. The shape is whatever the work actually is: one ticket with an acceptance
 criterion, or an epic with children. Do not inflate a ticket into an epic for
 ceremony, and do not crush a real epic into one ticket to look decisive.
