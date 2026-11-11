@@ -264,6 +264,11 @@ test("replace-dependency refuses when the log says resolved but the app copy is 
   assert.match(result.stderr, /delete the package's entry from \/\S+\/deps\/replacements\.json$/m);
   assert.ok(!fs.lstatSync(appPkgDir).isSymbolicLink(), "app copy must be left untouched");
 
+  // A different --version gets the same advice: a re-extracted app has no backup to restore.
+  const otherVersion = replace("1.2.4");
+  assert.equal(otherVersion.status, 2, otherVersion.stdout);
+  assert.match(otherVersion.stderr, /not linked to the root package/);
+
   forgetPackage();
   const retrial = replace();
   assert.equal(retrial.status, 0, retrial.stderr || retrial.stdout);

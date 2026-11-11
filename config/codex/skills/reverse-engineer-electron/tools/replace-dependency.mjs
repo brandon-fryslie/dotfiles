@@ -63,9 +63,12 @@ function readJson(p) {
   return JSON.parse(fs.readFileSync(p, "utf8"));
 }
 
+// Write-then-rename: an interrupted write leaves the previous file whole, never a truncated one.
 function writeJson(filePath, payload) {
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
+  const tmpPath = `${filePath}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2));
+  fs.renameSync(tmpPath, filePath);
 }
 
 function isScoped(name) {
@@ -241,20 +244,22 @@ function priorSwap(pkgState, { appPkgDir, rootPkgDir, backupsDir, logPath, proje
     return { kind: "conflict", reason: `the app copy is already a link, but ${logPath} records no resolved swap for it (interrupted run?) — put the original back from the newest backup under ${backupsDir} and rerun` };
   }
   const chosen = pkgState.chosenVersion;
-  const backup = path.resolve(projectRoot, pkgState.attempts.find((attempt) => attempt.result === "pass").backupPath);
-  const restore = `to trial it again, replace the app copy with the original at ${backup} and delete the package's entry from ${logPath}`;
-  if (requestedVersion && requestedVersion !== chosen) {
-    return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} is a retrial — ${restore}` };
-  }
   if (!appIsLink) {
     return { kind: "conflict", reason: `resolved with ${chosen} in the log, but the app copy is not linked to the root package (re-extracted app with an old log?) — to trial this app copy, delete the package's entry from ${logPath}` };
   }
+  const restore = () => {
+    const backup = path.resolve(projectRoot, pkgState.attempts.find((attempt) => attempt.result === "pass").backupPath);
+    return `to trial it again, replace the app copy with the original at ${backup} and delete the package's entry from ${logPath}`;
+  };
+  if (requestedVersion && requestedVersion !== chosen) {
+    return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} is a retrial — ${restore()}` };
+  }
   const rootVersion = readPkgVersion(path.join(rootPkgDir, "package.json"));
   if (rootVersion !== chosen) {
-    return { kind: "conflict", reason: `resolved with ${chosen}, but the root package is now ${rootVersion ?? "missing"} — reinstall ${chosen} at the root, or ${restore}` };
+    return { kind: "conflict", reason: `resolved with ${chosen}, but the root package is now ${rootVersion ?? "missing"} — reinstall ${chosen} at the root, or ${restore()}` };
   }
   if (!fs.existsSync(appPkgDir) || fs.realpathSync(appPkgDir) !== fs.realpathSync(rootPkgDir)) {
-    return { kind: "conflict", reason: `resolved with ${chosen}, but the app link does not resolve to the root package — ${restore}` };
+    return { kind: "conflict", reason: `resolved with ${chosen}, but the app link does not resolve to the root package — ${restore()}` };
   }
   return { kind: "resolved", version: chosen };
 }
@@ -461,14 +466,12 @@ function main() {
       } catch (error) {
         if (backupCreated) {
           try {
-            if (fs.existsSync(appPkgDir)) {
-              fs.rmSync(appPkgDir, { force: true, recursive: true });
-            }
+            fs.rmSync(appPkgDir, { force: true, recursive: true });
           } catch {
             // best-effort rollback cleanup
           }
           try {
-            if (fs.existsSync(backupDir) && !fs.existsSync(appPkgDir)) {
+            if (fs.existsSync(backupDir)) {
               fs.renameSync(backupDir, appPkgDir);
             }
             attempt.rolledBack = true;
@@ -484,8 +487,6 @@ function main() {
     }
 
     if (!resolved) {
-      logState.packages[pkgName].status = "unresolved";
-      logState.packages[pkgName].chosenVersion = null;
       console.log(`[${pkgName}] unresolved after ${candidates.length} candidate(s)`);
     }
   }
