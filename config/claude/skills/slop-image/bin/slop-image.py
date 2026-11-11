@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -230,19 +231,69 @@ def slugify(prompt):
     return (s[:48] or "image").rstrip("-")
 
 
+# [LAW:one-source-of-truth] each image type's suffixes (canonical first) and magic
+# bytes; ext_for and IMAGE_SUFFIXES both derive from this table.
+IMAGE_TYPES = (
+    ((".png",), lambda d: d[:8] == b"\x89PNG\r\n\x1a\n"),
+    ((".jpg", ".jpeg"), lambda d: d[:3] == b"\xff\xd8\xff"),
+    ((".gif",), lambda d: d[:6] in (b"GIF87a", b"GIF89a")),
+    ((".webp",), lambda d: d[:4] == b"RIFF" and d[8:12] == b"WEBP"),
+)
+IMAGE_SUFFIXES = {suffix for suffixes, _ in IMAGE_TYPES for suffix in suffixes}
+
+
 def ext_for(data, content_type):
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return ".png"
-    if data[:3] == b"\xff\xd8\xff":
-        return ".jpg"
-    if data[:6] in (b"GIF87a", b"GIF89a"):
-        return ".gif"
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return ".webp"
+    for suffixes, matches in IMAGE_TYPES:
+        if matches(data):
+            return suffixes[0]
     raise SystemExit(
         f"[slop-image] downloaded bytes are not a recognized image "
         f"(content-type={content_type!r}, first bytes={data[:12]!r})"
     )
+
+
+@dataclass(frozen=True)
+class OutFile:
+    path: Path
+
+    @property
+    def directory(self):
+        return self.path.parent
+
+    def target(self, name):
+        return self.path
+
+
+@dataclass(frozen=True)
+class OutDir:
+    path: Path
+
+    @property
+    def directory(self):
+        return self.path
+
+    def target(self, name):
+        return self.path / name
+
+
+def parse_out(raw, count):
+    # [LAW:parse-dont-validate] --out is resolved once, before any provider spend:
+    # its directory exists on return, so a path that cannot be a directory fails here.
+    path = Path(raw).expanduser()
+    names_file = (not raw.endswith(os.sep) and not path.is_dir()
+                  and path.suffix.lower() in IMAGE_SUFFIXES)
+    if names_file and count > 1:
+        raise SystemExit(
+            f"[slop-image] --out {raw} is a file path, but --count is {count}; "
+            f"pass a directory to save multiple images (end it with / to name a new "
+            f"directory {raw.rstrip(os.sep)}{os.sep})"
+        )
+    out = OutFile(path) if names_file else OutDir(path)
+    try:
+        out.directory.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise SystemExit(f"[slop-image] --out {raw}: cannot create directory {e.filename}: {e.strerror}")
+    return out
 
 
 def save_image(url, prompt, out, index, total):
@@ -257,12 +308,7 @@ def save_image(url, prompt, out, index, total):
     suffix = f"-{index + 1}" if total > 1 else ""
     name = f"{slugify(prompt)}-{short}{suffix}{ext}"
 
-    out_path = Path(out).expanduser()
-    if out_path.suffix and total == 1:
-        target = out_path
-    else:
-        target = out_path / name
-    target.parent.mkdir(parents=True, exist_ok=True)
+    target = out.target(name)
     target.write_bytes(data)
     return target.resolve()
 
@@ -284,14 +330,16 @@ def main():
 
     if args.count < 1:
         raise SystemExit("[slop-image] --count must be >= 1")
+    out = parse_out(args.out, args.count)
 
     urls, src = DISPATCH[args.provider](args.prompt, args.aspect, args.count)
     print(f"[slop-image] provider={args.provider} aspect={args.aspect} "
           f"count={len(urls)} key-source={src}", file=sys.stderr)
 
-    paths = [save_image(u, args.prompt, args.out, i, len(urls)) for i, u in enumerate(urls)]
-    for path in paths:
-        print(path)
+    # Each path is printed as it lands, so a later failure still reports the paid-for
+    # images already on disk.
+    for i, u in enumerate(urls):
+        print(save_image(u, args.prompt, out, i, len(urls)), flush=True)
 
 
 if __name__ == "__main__":
