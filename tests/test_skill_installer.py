@@ -113,13 +113,25 @@ class InstallerTest(unittest.TestCase):
         (self.dest / "beta").mkdir(parents=True)
         result = self.install("--path", "skills/alpha", "skills/beta")
         self.assertCleanFailure(result, "Destination already exists")
+        self.assertNotIn("Download failed", result.stderr)  # decided before touching the network
         self.assertEqual(self.installed(), ["beta"])
 
     def test_two_paths_with_one_name_copy_nothing(self):
         self.make_repo({"a/alpha": True, "b/alpha": True})
         result = self.install("--path", "a/alpha", "b/alpha")
-        self.assertCleanFailure(result, "alpha")
+        self.assertCleanFailure(result, "would both install as alpha")
         self.assertEqual(self.installed(), [])
+
+    def test_git_installs_from_a_commit_sha(self):
+        self.make_repo({"skills/alpha": True})
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        git("rm", "-rq", "skills/alpha", cwd=self.repo)
+        git("commit", "-q", "-m", "drop alpha", cwd=self.repo)
+        result = self.install("--path", "skills/alpha", "--ref", sha, "--method", "git")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.dest / "alpha" / "SKILL.md").is_file())
 
     def test_name_with_several_paths_is_rejected(self):
         self.make_repo({"skills/alpha": True, "skills/beta": True})

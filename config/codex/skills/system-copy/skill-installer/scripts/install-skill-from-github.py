@@ -40,7 +40,7 @@ class Source:
 @dataclass
 class Install:
     name: str
-    src: str
+    path: str  # inside the repo
     dest: str
 
 
@@ -92,7 +92,12 @@ def _download_repo_zip(owner: str, repo: str, ref: str, dest_dir: str) -> str:
         raise InstallError(f"Download failed: {exc}") from exc
     with open(zip_path, "wb") as file_handle:
         file_handle.write(payload)
-    with zipfile.ZipFile(zip_path, "r") as zip_file:
+    try:
+        zip_file = zipfile.ZipFile(zip_path, "r")
+    except zipfile.BadZipFile as exc:
+        # a proxy or captive portal can answer 200 with an HTML page
+        raise InstallError(f"Download failed: {zip_url} did not return a zip archive") from exc
+    with zip_file:
         _safe_extract_zip(zip_file, dest_dir)
         top_levels = {name.split("/")[0] for name in zip_file.namelist() if name}
     if not top_levels:
@@ -134,26 +139,19 @@ def _validate_skill_name(name: str) -> None:
 
 def _git_sparse_checkout(repo_url: str, ref: str, paths: list[str], dest_dir: str) -> str:
     repo_dir = os.path.join(dest_dir, "repo")
-    _run_git(
-        [
-            "git",
-            "clone",
-            "--filter=blob:none",
-            "--depth",
-            "1",
-            "--sparse",
-            "--single-branch",
-            "--branch",
-            ref,
-            repo_url,
-            repo_dir,
-        ],
-        f"git clone {repo_url} (ref {ref})",
-    )
-    _run_git(
-        ["git", "-C", repo_dir, "sparse-checkout", "set", *paths],
-        f"git sparse-checkout of {repo_url}",
-    )
+    # Fetching the ref, rather than cloning it with --branch, takes a branch, a tag, or a
+    # commit SHA alike: the same refs the download takes.
+    steps = [
+        (["init", "--quiet", repo_dir], f"git init {repo_dir}"),
+        (
+            ["-C", repo_dir, "fetch", "--quiet", "--depth", "1", "--filter=blob:none", repo_url, ref],
+            f"git fetch {repo_url} (ref {ref})",
+        ),
+        (["-C", repo_dir, "sparse-checkout", "set", *paths], f"git sparse-checkout of {repo_url}"),
+        (["-C", repo_dir, "checkout", "--quiet", "FETCH_HEAD"], f"git checkout of {ref}"),
+    ]
+    for args, what in steps:
+        _run_git(["git", *args], what)
     return repo_dir
 
 
@@ -165,44 +163,53 @@ def _validate_skill(path: str) -> None:
         raise InstallError("SKILL.md not found in selected skill directory.")
 
 
-def _plan_installs(
-    paths: list[str], name: str | None, repo_root: str, dest_root: str
-) -> list[Install]:
-    # [LAW:parse-dont-validate] every source and destination is checked here, before
-    # anything is copied, so a bad second path cannot leave the first one installed.
+def _plan_installs(paths: list[str], name: str | None, dest_root: str) -> list[Install]:
+    # [LAW:parse-dont-validate] every name and destination is settled here, before the repo
+    # is fetched, so a bad second path cannot leave the first one installed and a run that
+    # cannot succeed fails before touching the network.
+    if name is not None and len(paths) > 1:
+        raise InstallError("--name names a single skill; it cannot be used with several --path values.")
     names = [name] if name is not None else [os.path.basename(p.rstrip("/")) for p in paths]
     installs: list[Install] = []
     for skill_name, path in zip(names, paths, strict=True):
+        _validate_relative_path(path)
         _validate_skill_name(skill_name)
         if any(install.name == skill_name for install in installs):
             raise InstallError(f"Two --path values would both install as {skill_name}.")
         dest_dir = os.path.join(dest_root, skill_name)
         if os.path.exists(dest_dir):
             raise InstallError(f"Destination already exists: {dest_dir}")
-        skill_src = os.path.join(repo_root, path)
-        _validate_skill(skill_src)
-        installs.append(Install(skill_name, skill_src, dest_dir))
+        installs.append(Install(skill_name, path, dest_dir))
     return installs
 
 
-def _copy_skills(installs: list[Install], dest_root: str) -> None:
-    os.makedirs(dest_root, exist_ok=True)
+def _remove_created(created: list[str]) -> list[str]:
+    leftovers = []
+    for dest in created:
+        try:
+            shutil.rmtree(dest)
+        except OSError as rm_exc:
+            leftovers.append(f"could not remove {dest}: {rm_exc}")
+    return leftovers
+
+
+def _copy_skills(installs: list[Install], repo_root: str, dest_root: str) -> None:
     created: list[str] = []
     try:
+        os.makedirs(dest_root, exist_ok=True)
         for install in installs:
             # mkdir first: a destination is ours to roll back only once we created it
             os.mkdir(install.dest)
             created.append(install.dest)
-            shutil.copytree(install.src, install.dest, dirs_exist_ok=True)
+            shutil.copytree(os.path.join(repo_root, install.path), install.dest, dirs_exist_ok=True)
     except OSError as exc:
-        leftovers = []
-        for dest in created:
-            try:
-                shutil.rmtree(dest)
-            except OSError as rm_exc:
-                leftovers.append(f"could not remove {dest}: {rm_exc}")
-        detail = "; ".join([str(exc), *leftovers])
+        detail = "; ".join([str(exc), *_remove_created(created)])
         raise InstallError(f"Copy failed, nothing installed: {detail}") from exc
+    except BaseException as exc:
+        # Ctrl-C mid-copy still installs nothing; it propagates as itself
+        for leftover in _remove_created(created):
+            exc.add_note(leftover)
+        raise
 
 
 def _build_repo_url(owner: str, repo: str) -> str:
@@ -215,13 +222,10 @@ def _build_repo_ssh(owner: str, repo: str) -> str:
 
 def _prepare_repo(source: Source, method: str, tmp_dir: str) -> str:
     download = functools.partial(_download_repo_zip, source.owner, source.repo, source.ref)
-    clone_https, clone_ssh = (
-        functools.partial(_git_sparse_checkout, url, source.ref, source.paths)
-        for url in (
-            _build_repo_url(source.owner, source.repo),
-            _build_repo_ssh(source.owner, source.repo),
-        )
-    )
+    https_url = _build_repo_url(source.owner, source.repo)
+    ssh_url = _build_repo_ssh(source.owner, source.repo)
+    clone_https = functools.partial(_git_sparse_checkout, https_url, source.ref, source.paths)
+    clone_ssh = functools.partial(_git_sparse_checkout, ssh_url, source.ref, source.paths)
     # [LAW:no-silent-failure] the one fallback ladder: every failed rung is reported,
     # whether a later rung succeeds or not.
     attempts = {
@@ -308,16 +312,14 @@ def main(argv: list[str]) -> int:
     args = _parse_args(argv)
     try:
         source = _resolve_source(args)
-        if args.name is not None and len(source.paths) > 1:
-            raise InstallError("--name names a single skill; it cannot be used with several --path values.")
-        for path in source.paths:
-            _validate_relative_path(path)
         dest_root = args.dest or _default_dest()
+        installs = _plan_installs(source.paths, args.name, dest_root)
         tmp_dir = tempfile.mkdtemp(prefix="skill-install-", dir=_tmp_root())
         try:
             repo_root = _prepare_repo(source, args.method, tmp_dir)
-            installs = _plan_installs(source.paths, args.name, repo_root, dest_root)
-            _copy_skills(installs, dest_root)
+            for install in installs:
+                _validate_skill(os.path.join(repo_root, install.path))
+            _copy_skills(installs, repo_root, dest_root)
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
         for install in installs:
