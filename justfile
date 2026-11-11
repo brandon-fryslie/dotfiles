@@ -84,6 +84,10 @@ test-git-taculous:
 test-screenshot-permissions:
     ./tests/screenshot-permissions.sh
 
+# Assert share-slop finds the session transcript under $CLAUDE_CONFIG_DIR, ~/.claude only when unset (stub curl, temp dirs)
+test-share-slop:
+    ./tests/share-slop.sh
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'

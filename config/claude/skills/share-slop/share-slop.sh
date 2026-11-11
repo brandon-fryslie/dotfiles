@@ -21,24 +21,35 @@ set -euo pipefail
 
 base_url="${SLOPSPOT_URL:-https://paste.slopspot.ai}"
 
-# Project slug: pwd with every non-alphanumeric char replaced by "-".
-# Mirrors how CC names project dirs under ~/.claude/projects — CC normalizes
-# EVERY non-alphanumeric (including "_", not just "/" and "."), so a path like
-# ".../promptctl_links-issue-tracker" maps to "...-promptctl-links-issue-tracker".
-# The class must match CC's producer exactly or the slug misses the session dir.
-slug="$(pwd | sed 's|[^A-Za-z0-9]|-|g')"
-jsonl="$HOME/.claude/projects/$slug/$CLAUDE_CODE_SESSION_ID.jsonl"
+# The config root is CC's rule for where it writes transcripts: $CLAUDE_CONFIG_DIR,
+# or ~/.claude when that is unset or empty. find-session's _session_lib.py and
+# tmux-sender-info apply the same rule; a change to it lands in all three.
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-if [ ! -f "$jsonl" ]; then
-  echo "share-slop: session file not found: $jsonl" >&2
-  echo "  Expected project slug: $slug" >&2
-  echo "  Check that the project dir matches CC's expectation (sometimes a" >&2
-  echo "  recent project rename leaves the slug stale)." >&2
-  exit 1
-fi
+# [LAW:one-source-of-truth] Find the transcript by session id under any project dir
+# rather than re-deriving CC's project slug from the cwd - a slug drifts when the shell
+# has cd'd or the path runs through a symlink. Several copies of one id is ambiguous
+# (which holds the live conversation, which holds its subagents?), so it is refused
+# with every path named rather than guessed at.
+shopt -s nullglob
+matches=("$config_dir"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl)
+shopt -u nullglob
+case ${#matches[@]} in
+  1) jsonl="${matches[0]}" ;;
+  0)
+    echo "share-slop: no transcript for session $CLAUDE_CODE_SESSION_ID under $config_dir/projects" >&2
+    echo "  The config root is \$CLAUDE_CONFIG_DIR, or ~/.claude when that is unset or empty;" >&2
+    echo "  check it is the one this session runs under." >&2
+    exit 1 ;;
+  *)
+    echo "share-slop: session $CLAUDE_CODE_SESSION_ID has more than one transcript:" >&2
+    printf '  %s\n' "${matches[@]}" >&2
+    exit 1 ;;
+esac
+project_dir="$(dirname "$jsonl")"
 
 # Subagent transcripts live alongside the main session, one file per agent:
-#   <slug>/<session-id>/subagents/agent-<agentId>.jsonl
+#   <project dir>/<session-id>/subagents/agent-<agentId>.jsonl
 # Every line in those files self-identifies (top-level agentId + isSidechain),
 # so the server parser reattaches them to their spawning Agent call by id-join.
 # We CONCATENATE them onto the main blob losslessly: the stored origin stays one
@@ -52,7 +63,7 @@ fi
 # group's first REAL sidechain line (which already carries agentId+isSidechain+
 # sessionId, so it stays a valid sidechain line and survives /api/augment). The
 # server parser's orphan branch reads it from there. [LAW:no-silent-failure]
-subdir="$HOME/.claude/projects/$slug/$CLAUDE_CODE_SESSION_ID/subagents"
+subdir="$project_dir/$CLAUDE_CODE_SESSION_ID/subagents"
 
 # Build the JSON request body. Use Python (always present, stdlib only) to
 # concatenate the transcripts and JSON-encode the result so newlines and quotes
