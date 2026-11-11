@@ -26,28 +26,28 @@ base_url="${SLOPSPOT_URL:-https://paste.slopspot.ai}"
 # tmux-sender-info apply the same rule; a change to it lands in all three.
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
-# [LAW:one-source-of-truth] The session UUID names exactly one transcript, so find it
-# by id under any project dir rather than re-deriving CC's project slug from the cwd -
-# a slug drifts when the shell has cd'd or the path runs through a symlink.
+# [LAW:one-source-of-truth] Find the transcript by session id under any project dir
+# rather than re-deriving CC's project slug from the cwd - a slug drifts when the shell
+# has cd'd or the path runs through a symlink. If the id has copies in more than one
+# project dir, the live one is the newest: CC appends this very turn to it before the
+# script runs.
 shopt -s nullglob
 matches=("$config_dir"/projects/*/"$CLAUDE_CODE_SESSION_ID".jsonl)
 shopt -u nullglob
-case ${#matches[@]} in
-  1) jsonl="${matches[0]}" ;;
-  0)
-    echo "share-slop: no transcript for session $CLAUDE_CODE_SESSION_ID under $config_dir/projects" >&2
-    echo "  The config root is \$CLAUDE_CONFIG_DIR, or ~/.claude when that is unset or empty;" >&2
-    echo "  check it is the one this session runs under." >&2
-    exit 1 ;;
-  *)
-    echo "share-slop: session $CLAUDE_CODE_SESSION_ID has more than one transcript:" >&2
-    printf '  %s\n' "${matches[@]}" >&2
-    exit 1 ;;
-esac
+if [ ${#matches[@]} -eq 0 ]; then
+  echo "share-slop: no transcript for session $CLAUDE_CODE_SESSION_ID under $config_dir/projects" >&2
+  echo "  The config root is \$CLAUDE_CONFIG_DIR, or ~/.claude when that is unset or empty;" >&2
+  echo "  check it is the one this session runs under." >&2
+  exit 1
+fi
+jsonl="$(ls -t -- "${matches[@]}" | head -n 1)"
+if [ ${#matches[@]} -gt 1 ]; then
+  echo "share-slop: session has ${#matches[@]} transcripts; sharing the newest: $jsonl" >&2
+fi
 project_dir="$(dirname "$jsonl")"
 
 # Subagent transcripts live alongside the main session, one file per agent:
-#   <slug>/<session-id>/subagents/agent-<agentId>.jsonl
+#   <project dir>/<session-id>/subagents/agent-<agentId>.jsonl
 # Every line in those files self-identifies (top-level agentId + isSidechain),
 # so the server parser reattaches them to their spawning Agent call by id-join.
 # We CONCATENATE them onto the main blob losslessly: the stored origin stays one

@@ -39,12 +39,15 @@ transcript() {
     >"$dir/$session/subagents/agent-a1.jsonl"
 }
 
-# run [VAR=VALUE...] : runs the script from the temp cwd after the commands in $setup,
-# leaving status in $rc and output in $work/{out,err,body}.
-run() {
+# reset : empties HOME and the config dir and forgets the last upload.
+reset() {
   rm -rf "$work/home" "$work/config" "$work/body"
   mkdir "$work/home" "$work/config"
-  eval "$setup"
+}
+
+# run [VAR=VALUE...] : runs the script from the temp cwd, leaving status in $rc and
+# output in $work/{out,err,body}.
+run() {
   rc=0
   (cd "$work/cwd" && env -u CLAUDE_CONFIG_DIR PATH="$work/bin:$PATH" HOME="$work/home" \
     CLAUDE_CODE_SESSION_ID="$session" CURL_BODY="$work/body" "$@" \
@@ -65,24 +68,32 @@ refuses() {
   grep -qF "$2" "$work/err" || fail "$1: stderr does not name $2: $(cat "$work/err")"
 }
 
-setup='transcript "$work/config"'
+reset; transcript "$work/config"
 run CLAUDE_CONFIG_DIR="$work/config"
 uploads "CLAUDE_CONFIG_DIR set"
 
-setup='transcript "$work/home/.claude"'
+reset; transcript "$work/home/.claude"
 run
 uploads "CLAUDE_CONFIG_DIR unset"
 
-setup='transcript "$work/home/.claude"'
+reset; transcript "$work/home/.claude"
 run CLAUDE_CONFIG_DIR=
 uploads "CLAUDE_CONFIG_DIR empty"
 
-setup='transcript "$work/home/.claude"'
+reset; transcript "$work/home/.claude"
 run CLAUDE_CONFIG_DIR="$work/config"
 refuses "transcript only under ~/.claude with CLAUDE_CONFIG_DIR set" "$work/config/projects"
 
-setup='transcript "$work/config" -a; transcript "$work/config" -b'
+# Two copies of one session: the live transcript is the newest, so the stale copy is
+# never uploaded and stderr says which one was shared.
+reset; transcript "$work/config" -a-stale; transcript "$work/config" -b-live
+stale="$work/config/projects/-a-stale/$session.jsonl"
+echo '{"type":"user","marker":"stale-copy"}' >"$stale"
+touch -t 202001010000 "$stale"
 run CLAUDE_CONFIG_DIR="$work/config"
-refuses "two transcripts for one session" "$work/config/projects/-b/$session.jsonl"
+uploads "two transcripts for one session"
+! grep -q 'stale-copy' "$work/body" || fail "two transcripts: uploaded the stale copy"
+grep -qF "sharing the newest: $work/config/projects/-b-live/$session.jsonl" "$work/err" \
+  || fail "two transcripts: stderr does not name the shared copy: $(cat "$work/err")"
 
 echo "PASS - share-slop transcript lookup"
