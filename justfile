@@ -88,10 +88,6 @@ test-screenshot-permissions:
 test-share-slop:
     ./tests/share-slop.sh
 
-# Assert tmux-sender-info refuses several transcripts for one session, naming each, and reports a failed lookup on stderr (temp dirs, bash and /bin/bash)
-test-tmux-sender-info:
-    ./tests/tmux-sender-info.sh
-
 # Assert the codex skill-creator validator rejects an empty, whitespace-only, or bare-key name or description, naming the field, and a fresh init_skill's unfilled description placeholder (PyYAML via uv)
 test-skill-creator:
     uv run --with pyyaml python -m unittest tests/test_skill_creator_quick_validate.py

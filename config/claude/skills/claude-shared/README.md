@@ -11,5 +11,5 @@ The one definition of where a session's transcript is: `claude-transcript
 <session-id>` prints the path of `<session-id>.jsonl` under any project dir of
 `${CLAUDE_CONFIG_DIR:-~/.claude}/projects`, and exits 0. No transcript, or more
 than one for the id, exits 1 with the reason on stderr (every path, for several).
-share-slop and tmux-shared's `tmux-sender-info` call it, so the two cannot read
-different transcripts for one session.
+share-slop calls it. The skillz plugin's `tmux-shared/bin/claude-transcript` is a
+copy of this script for `tmux-sender-info`; a change to the lookup lands in both.
