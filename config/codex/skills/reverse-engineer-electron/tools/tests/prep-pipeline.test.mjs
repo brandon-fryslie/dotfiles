@@ -209,6 +209,11 @@ function swapProject(rootIndexJs, { pnpmLink = false } = {}) {
     assert.equal(killed.signal, "SIGKILL", killed.stderr || killed.stdout);
     const entry = readLog().packages["demo-pkg"];
     assert.equal(entry.status, "in-flight", JSON.stringify(entry));
+    // The killed run's lock refuses the next run until the operator removes it.
+    const locked = replace();
+    assert.equal(locked.status, 2, locked.stdout);
+    assert.match(locked.stderr, /locked by process \d+, which is no longer running/);
+    fs.unlinkSync(`${logPath}.lock`);
     return entry;
   };
   const backupOf = (entry) => path.resolve(path.dirname(logPath), entry.inFlight.original.backupPath);
@@ -518,13 +523,55 @@ test("replace-dependency refuses an interrupted trial whose backup is gone as lo
   assert.match(result.stderr, /which is gone — the original is lost/);
 });
 
-test("replace-dependency refuses a log another live run holds", () => {
-  const { logPath, replace } = swapProject(VERIFYING_INDEX);
-  writeText(`${logPath}.lock`, String(process.pid));
+test("replace-dependency refuses a locked log, naming the holder, whether it is live, dead, or unrecorded", () => {
+  const cases = [
+    [String(process.pid), new RegExp(`locked by running process ${process.pid} `)],
+    ["", /locked by a run that recorded no pid/],
+  ];
+  for (const [content, expected] of cases) {
+    const { logPath, replace } = swapProject(VERIFYING_INDEX);
+    writeText(`${logPath}.lock`, content);
 
-  const result = replace();
-  assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, new RegExp(`held by running process ${process.pid}`));
+    const result = replace();
+    assert.equal(result.status, 2, result.stdout);
+    assert.match(result.stderr, expected);
+    assert.match(result.stderr, /remove the lock and rerun/);
+    assert.equal(fs.readFileSync(`${logPath}.lock`, "utf8"), content, "another run's lock is left alone");
+    assert.ok(!fs.existsSync(logPath), "nothing is written under another run's lock");
+  }
+});
+
+test("replace-dependency settles an interrupted trial of a package it was not asked about, without trialing it", () => {
+  const { tmp, appPkgDir, logPath, replace, readLog, killMidVerify } = swapProject(VERIFYING_INDEX);
+  killMidVerify();
+
+  // A second package, requested on its own, with nothing to trial.
+  const result = runNode(
+    path.join(TOOLS_DIR, "replace-dependency.mjs"),
+    ["--pkg", "other-pkg", "--app-dir", path.join(tmp, "resources", "app"), "--out", logPath],
+    tmp,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /\[demo-pkg\] interrupted trial of 1\.2\.3: restored the original/);
+  const entry = readLog().packages["demo-pkg"];
+  assert.equal(entry.status, "unresolved", JSON.stringify(entry));
+  assert.deepEqual(entry.attempts.map((attempt) => attempt.reason), ["interrupted"]);
+  assert.ok(!fs.lstatSync(appPkgDir).isSymbolicLink(), "the original is back at the app path");
+  assert.deepEqual(fs.readdirSync(path.join(path.dirname(appPkgDir), ".original")), []);
+});
+
+test("replace-dependency removes a backup root that collected stray files once the original is back", () => {
+  const { appPkgDir, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  writeText(path.join(path.dirname(backupOf(inFlight)), ".DS_Store"), "");
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+  // Only the passing trial's backup remains.
+  const roots = fs.readdirSync(path.join(path.dirname(appPkgDir), ".original"));
+  assert.equal(roots.length, 1, JSON.stringify(roots));
+  assert.ok(!roots.includes(path.basename(path.dirname(backupOf(inFlight)))));
 });
 
 test("replace-dependency migrates a v1 log, so a package a v1 run resolved stays resolved", () => {
@@ -546,7 +593,13 @@ test("replace-dependency migrates a v1 log, so a package a v1 run resolved stays
   const rerun = replace();
   assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
   assert.match(rerun.stdout, /\[demo-pkg\] already resolved with 1\.2\.3; skipped/);
-  assert.deepEqual(readLog().packages, v2.packages);
+  // Each stored path leads to the same file it did under v2, however the migration spelled it.
+  const leadsTo = (stored) => fs.realpathSync(path.resolve(path.dirname(logPath), stored));
+  const [migrated] = readLog().packages["demo-pkg"].attempts;
+  const [original] = v2.packages["demo-pkg"].attempts;
+  assert.equal(readLog().schemaVersion, 2);
+  assert.equal(leadsTo(migrated.original.backupPath), leadsTo(original.original.backupPath));
+  assert.equal(leadsTo(migrated.verification.path), leadsTo(original.verification.path));
   assert.equal(gate().status, 0);
 });
 

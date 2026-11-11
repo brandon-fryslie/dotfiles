@@ -494,8 +494,9 @@ function runRemoveDepsGate(opts) {
     const parsed = parseLog(fs.readFileSync(replacementsPath, "utf8"), replacementsPath);
     if (!parsed.ok) replacementLogErrors.push(...parsed.errors);
     const entries = parsed.ok ? Object.entries(parsed.log.packages) : [];
-    artifact.metrics.packagesTracked = entries.length;
-    artifact.metrics.attemptsTracked = entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0);
+    // A rejected log's size is unknown, not zero.
+    artifact.metrics.packagesTracked = parsed.ok ? entries.length : null;
+    artifact.metrics.attemptsTracked = parsed.ok ? entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0) : null;
 
     // An in-flight entry is a swap whose original may still be set aside: disk and log disagree until it is recovered.
     for (const [pkgName, entry] of entries.filter(([, entry]) => entry.status === "in-flight")) {

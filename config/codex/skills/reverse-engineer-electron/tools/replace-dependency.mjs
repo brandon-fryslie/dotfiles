@@ -169,9 +169,15 @@ function isAlive(pid) {
   }
 }
 
+function describeHolder(content) {
+  const pid = Number(content);
+  if (!Number.isInteger(pid) || pid <= 0) return "a run that recorded no pid";
+  return isAlive(pid) ? `running process ${pid}` : `process ${pid}, which is no longer running`;
+}
+
 // [LAW:single-enforcer] One run owns the log at a time: every write replaces the whole file from that run's copy,
-// so a second run sharing --out would erase the first's write-ahead records. The lock names its holder, so a lock
-// left by a killed run is taken over and recovery never waits on a manual step.
+// so a second run sharing --out would erase the first's write-ahead records. A lock left by a killed run is never
+// taken over: two runs that both judged it stale could both take it, so the operator removes it.
 function lockLog(logPath) {
   const lockPath = `${logPath}.lock`;
   ensureDir(path.dirname(lockPath));
@@ -179,13 +185,8 @@ function lockLog(logPath) {
     fs.writeFileSync(lockPath, String(process.pid), { flag: "wx" });
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
-    const holder = Number(fs.readFileSync(lockPath, "utf8"));
-    if (isAlive(holder)) {
-      console.error(`Error: ${logPath} is held by running process ${holder} (${lockPath})`);
-      process.exit(2);
-    }
-    fs.unlinkSync(lockPath);
-    return lockLog(logPath);
+    console.error(`Error: ${logPath} is locked by ${describeHolder(fs.readFileSync(lockPath, "utf8"))} (${lockPath}) — if no run is using the log, remove the lock and rerun`);
+    process.exit(2);
   }
   process.on("exit", () => fs.rmSync(lockPath, { force: true }));
 }
@@ -193,8 +194,7 @@ function lockLog(logPath) {
 function loadLog(logPath, cwd) {
   if (!fs.existsSync(logPath)) return emptyLog();
   const text = fs.readFileSync(logPath, "utf8");
-  // process.cwd() is always a real path, so the log's must be too, or rebasing walks across a symlinked prefix.
-  const migrated = migrateV1(text, fs.realpathSync(logPath), cwd);
+  const migrated = migrateV1(text, logPath, cwd);
   const parsed = parseLog(migrated, logPath);
   if (parsed.ok && migrated !== text) {
     writeLog(logPath, parsed.log);
@@ -342,17 +342,15 @@ function restoreOriginal(pkgName, appPkgDir, original, logPath) {
     console.error(`Error: [${pkgName}] could not restore ${describeOriginal(original, logPath)} to ${appPkgDir}: ${error.message} — ${logPath} keeps the trial in flight; fix the cause and rerun to recover`);
     process.exit(1);
   }
-  if (original.kind === "dir") removeBackupDirs(pkgName, fromLogPath(logPath, original.backupPath));
+  removeBackupRoot(pkgName, original, logPath);
 }
 
-// The backup's own directories under .original/ (its root, and its @scope directory for a scoped package), empty
-// once the original is back at the app path.
-function removeBackupDirs(pkgName, backup) {
-  let dir = backup;
-  for (const _ of pkgPathParts(pkgName)) {
-    dir = path.dirname(dir);
-    fs.rmdirSync(dir);
-  }
+// A dir original's backup root under .original/ belongs to its one trial, so once the original is out of it (or
+// never went in) the root holds nothing worth keeping — empty directories, or a .DS_Store Finder dropped there.
+function removeBackupRoot(pkgName, original, logPath) {
+  if (original.kind !== "dir") return;
+  const backup = fromLogPath(logPath, original.backupPath);
+  fs.rmSync(path.join(backup, ...pkgPathParts(pkgName).map(() => "..")), { recursive: true, force: true });
 }
 
 // An in-flight entry, read against disk. "original-in-place": the original never moved, or was already put back.
@@ -433,6 +431,10 @@ function main() {
   const verifyScript = path.resolve(projectRoot, opts.verifyScript);
   const candidateSourcePath = path.resolve(projectRoot, opts.candidateSource);
 
+  // The log is loaded first, so a v1 log migrates even on a run that finds nothing to trial.
+  lockLog(outPath);
+  const logState = loadLog(outPath, projectRoot);
+
   const candidateSource = loadCandidateSource(candidateSourcePath);
   const packageList = determinePackageList(opts, candidateSource);
   if (packageList.length === 0) {
@@ -440,12 +442,12 @@ function main() {
     process.exit(2);
   }
 
-  lockLog(outPath);
-  const logState = loadLog(outPath, projectRoot);
   const appPkgDirOf = (pkgName) => path.join(appNodeModules, ...pkgPathParts(pkgName));
   const rootPkgDirOf = (pkgName) => path.join(projectRoot, "node_modules", ...pkgPathParts(pkgName));
 
-  const priors = packageList.map((pkgName) => ({
+  // Every in-flight entry is settled, requested or not: an unrequested one still has its original set aside.
+  const inFlightElsewhere = Object.keys(logState.packages).filter((pkgName) => logState.packages[pkgName].status === "in-flight" && !packageList.includes(pkgName));
+  const priors = [...packageList, ...inFlightElsewhere].map((pkgName) => ({
     pkgName,
     prior: priorSwap(
       logState.packages[pkgName],
@@ -461,11 +463,12 @@ function main() {
   const skipped = priors.filter(({ prior }) => prior.kind === "resolved");
   for (const { pkgName, prior } of skipped) console.log(`[${pkgName}] already resolved with ${prior.version}; skipped`);
 
-  // Recovery: settle every interrupted trial before any new one starts, then trial the package afresh.
+  // Recovery: settle every interrupted trial before any new one starts, then trial the requested packages afresh.
   const interrupted = priors.filter(({ prior }) => prior.kind === "interrupted");
   for (const { pkgName, prior } of interrupted) {
     const { recovery, inFlight } = prior;
     if (recovery === "restored") restoreOriginal(pkgName, appPkgDirOf(pkgName), inFlight.original, outPath);
+    else removeBackupRoot(pkgName, inFlight.original, outPath);
     recordAttempt(logState, pkgName, {
       attemptedVersion: inFlight.attemptedVersion,
       startedAt: inFlight.startedAt,
@@ -479,7 +482,9 @@ function main() {
     console.log(`[${pkgName}] interrupted trial of ${inFlight.attemptedVersion}: ${outcome}`);
   }
 
-  const toTry = priors.filter(({ prior }) => prior.kind === "untried" || prior.kind === "interrupted").map(({ pkgName }) => pkgName);
+  const toTry = priors
+    .filter(({ pkgName, prior }) => packageList.includes(pkgName) && (prior.kind === "untried" || prior.kind === "interrupted"))
+    .map(({ pkgName }) => pkgName);
 
   for (const pkgName of toTry) {
     const appPkgDir = appPkgDirOf(pkgName);

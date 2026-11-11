@@ -160,7 +160,7 @@ export function parseLog(text, logPath) {
         path: logPath,
         found: raw.schemaVersion ?? null,
         expected: SCHEMA_VERSION,
-        detail: `a v1 log is migrated by the next replace-dependency run from the directory that wrote it`,
+        detail: `a v1 log is migrated by any replace-dependency run (e.g. --auto-near-match) from the directory that wrote it`,
       }],
     };
   }
