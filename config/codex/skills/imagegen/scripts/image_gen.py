@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import contextvars
 import json
 import logging
 import os
@@ -304,11 +305,37 @@ def _decode_write_and_downscale(
         print(f"Wrote {derived}")
 
 
+# The job a log line belongs to; each batch job's asyncio task sets its own.
+_JOB_LABEL: contextvars.ContextVar[str] = contextvars.ContextVar("job_label", default="[image_gen]")
+
+
+class _JobLabelFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.job = _JOB_LABEL.get()
+        return True
+
+
+def _report_requests_and_retries() -> None:
+    # [LAW:nothing-unseen] the SDK's HTTP library logs each request with its status at INFO
+    # (the cause of a retry) - as httpx2 from openai 3.x, httpx before; the SDK logs each retry
+    # and its delay at INFO. Runs after the SDK import, which applies OPENAI_LOG, so a more
+    # verbose level already set there is kept.
+    handler = logging.StreamHandler(sys.stderr)
+    handler.addFilter(_JobLabelFilter())
+    handler.setFormatter(logging.Formatter("%(job)s %(message)s"))
+    for name in ("httpx2", "httpx", "openai._base_client"):
+        log = logging.getLogger(name)
+        log.setLevel(min(log.getEffectiveLevel(), logging.INFO))
+        log.propagate = False
+        log.addHandler(handler)
+
+
 def _create_client():
     try:
         from openai import OpenAI
     except ImportError as exc:
         _die("openai SDK not installed. Install with `uv pip install openai`.")
+    _report_requests_and_retries()
     return OpenAI()
 
 
@@ -323,12 +350,9 @@ def _create_async_client(max_attempts: int):
         _die(
             "AsyncOpenAI not available in this openai SDK version. Upgrade with `uv pip install -U openai`."
         )
+    _report_requests_and_retries()
     # [LAW:single-enforcer] the SDK is the one retry layer: it retries 408/409/429/5xx with
     # exponential backoff and jitter, honoring retry-after-ms / Retry-After up to its cap.
-    # [LAW:nothing-unseen] its per-retry INFO line is the record that a retry happened.
-    retry_log = logging.getLogger("openai._base_client")
-    retry_log.setLevel(logging.INFO)
-    retry_log.addHandler(logging.StreamHandler(sys.stderr))
     return AsyncOpenAI(max_retries=max_attempts - 1)
 
 
@@ -488,6 +512,7 @@ async def _run_generate_batch(args: argparse.Namespace) -> int:
         nonlocal any_failed
         prompt = str(job["prompt"]).strip()
         job_label = f"[job {i}/{len(jobs)}]"
+        _JOB_LABEL.set(job_label)
 
         fields = _merge_non_null(base_fields, job.get("fields", {}))
         fields = _merge_non_null(fields, {k: job.get(k) for k in base_fields.keys()})

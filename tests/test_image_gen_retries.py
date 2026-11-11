@@ -21,14 +21,14 @@ IMAGE = b"\x89PNG\r\n\x1a\n-stand-in-bytes"
 
 
 class ImageApi(BaseHTTPRequestHandler):
-    """Answers POST /v1/images/generations from `statuses`, one status per request."""
+    """Answers POST /v1/images/generations from `statuses`, one per request; the last repeats."""
 
     statuses: list = []
     requests = 0
 
     def do_POST(self):
         self.rfile.read(int(self.headers["Content-Length"]))
-        status = type(self).statuses[type(self).requests]
+        status = type(self).statuses[min(type(self).requests, len(type(self).statuses) - 1)]
         type(self).requests += 1
         if status == 429:
             body = {"error": {"message": "Rate limit reached", "type": "requests", "code": "rate_limit_exceeded"}}
@@ -54,14 +54,17 @@ class BatchRetryTest(unittest.TestCase):
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
-        out = Path(tempfile.mkdtemp())
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        out = Path(tmp.name)
         jobs = out / "jobs.jsonl"
         jobs.write_text('{"prompt": "a red cube", "out": "cube.png"}\n')
-        env = dict(
-            os.environ,
-            OPENAI_API_KEY="test-key",
-            OPENAI_BASE_URL=f"http://127.0.0.1:{server.server_port}/v1",
-        )
+        # Only what the script needs: no proxy, OPENAI_LOG, or org settings from the caller's shell.
+        env = {
+            "PATH": os.environ["PATH"],
+            "OPENAI_API_KEY": "test-key",
+            "OPENAI_BASE_URL": f"http://127.0.0.1:{server.server_port}/v1",
+        }
         proc = subprocess.run(
             [sys.executable, str(SCRIPT), "generate-batch", "--input", str(jobs), "--out-dir", str(out),
              "--no-augment", "--max-attempts", str(max_attempts)],
@@ -74,10 +77,11 @@ class BatchRetryTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(ImageApi.requests, 2)
         self.assertEqual(image.read_bytes(), IMAGE)
-        self.assertIn("Retrying request in 0.010000 seconds (retry 1 of 2)", proc.stderr)
+        self.assertRegex(proc.stderr, r'\[job 1/1\] HTTP Request: POST \S+ "HTTP/1\.\d 429 Too Many Requests"')
+        self.assertRegex(proc.stderr, r"\[job 1/1\] Retrying request .*0\.01")
 
     def test_max_attempts_bounds_requests(self):
-        proc, image = self.run_batch([429, 429, 429], max_attempts=2)
+        proc, image = self.run_batch([429], max_attempts=2)
         self.assertEqual(proc.returncode, 1, proc.stderr)
         self.assertEqual(ImageApi.requests, 2)
         self.assertFalse(image.exists())
