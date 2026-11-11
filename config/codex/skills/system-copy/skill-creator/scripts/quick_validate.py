@@ -12,6 +12,20 @@ import yaml
 MAX_SKILL_NAME_LENGTH = 64
 
 
+def required_text(frontmatter, field):
+    """Parse a required text field: (stripped text, None), or (None, error naming the field)."""
+    if field not in frontmatter:
+        return None, f"Missing '{field}' in frontmatter"
+    value = frontmatter[field]
+    # a bare `field:` loads as YAML null - the same empty field as `field: ""`
+    if not isinstance(value, (str, type(None))):
+        return None, f"{field.capitalize()} must be a string, got {type(value).__name__}"
+    text = (value or "").strip()
+    if not text:
+        return None, f"{field.capitalize()} is empty in frontmatter"
+    return text, None
+
+
 def validate_skill(skill_path):
     """Basic validation of a skill"""
     skill_path = Path(skill_path)
@@ -48,18 +62,9 @@ def validate_skill(skill_path):
             f"Unexpected key(s) in SKILL.md frontmatter: {unexpected}. Allowed properties are: {allowed}",
         )
 
-    if "name" not in frontmatter:
-        return False, "Missing 'name' in frontmatter"
-    if "description" not in frontmatter:
-        return False, "Missing 'description' in frontmatter"
-
-    name = frontmatter.get("name", "")
-    if not isinstance(name, str):
-        return False, f"Name must be a string, got {type(name).__name__}"
-    name = name.strip()
-    # [LAW:dataflow-not-control-flow] every check runs on every name; empty is a rejection of its own
-    if not name:
-        return False, "Name is empty in frontmatter"
+    name, error = required_text(frontmatter, "name")
+    if error:
+        return False, error
     if not re.match(r"^[a-z0-9-]+$", name):
         return (
             False,
@@ -77,12 +82,9 @@ def validate_skill(skill_path):
             f"Maximum is {MAX_SKILL_NAME_LENGTH} characters.",
         )
 
-    description = frontmatter.get("description", "")
-    if not isinstance(description, str):
-        return False, f"Description must be a string, got {type(description).__name__}"
-    description = description.strip()
-    if not description:
-        return False, "Description is empty in frontmatter"
+    description, error = required_text(frontmatter, "description")
+    if error:
+        return False, error
     if "<" in description or ">" in description:
         return False, "Description cannot contain angle brackets (< or >)"
     if len(description) > 1024:

@@ -1,5 +1,6 @@
-"""Which SKILL.md frontmatter quick_validate accepts: an empty or whitespace-only name or
-description is rejected with a message naming the field, never reported as valid.
+"""Which SKILL.md frontmatter the codex skill-creator's quick_validate accepts: an empty,
+whitespace-only, or bare-key (YAML null) name or description is rejected with a message
+naming the field as empty, never reported as valid.
 
 Run: just test-skill-creator
 """
@@ -10,9 +11,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from quick_validate import validate_skill
+SCRIPTS = Path(__file__).resolve().parent.parent / "config/codex/skills/system-copy/skill-creator/scripts"
+sys.path.insert(0, str(SCRIPTS))
+from quick_validate import validate_skill  # noqa: E402
 
-SCRIPT = Path(__file__).with_name("quick_validate.py")
+SCRIPT = SCRIPTS / "quick_validate.py"
 
 
 def skill_dir(root, name, description):
@@ -28,7 +31,7 @@ class EmptyFieldsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             valid, message = validate_skill(skill_dir(root, name, description))
         self.assertFalse(valid, message)
-        self.assertIn(field, message)
+        self.assertEqual(message, f"{field} is empty in frontmatter")
 
     def test_empty_name(self):
         self.check('""', "Does a thing.", "Name")
@@ -36,11 +39,17 @@ class EmptyFieldsTest(unittest.TestCase):
     def test_whitespace_name(self):
         self.check('"   "', "Does a thing.", "Name")
 
+    def test_bare_name_key(self):
+        self.check("", "Does a thing.", "Name")
+
     def test_empty_description(self):
         self.check("my-skill", '""', "Description")
 
     def test_whitespace_description(self):
         self.check("my-skill", '"   "', "Description")
+
+    def test_bare_description_key(self):
+        self.check("my-skill", "", "Description")
 
     def test_valid_skill_passes(self):
         with tempfile.TemporaryDirectory() as root:
