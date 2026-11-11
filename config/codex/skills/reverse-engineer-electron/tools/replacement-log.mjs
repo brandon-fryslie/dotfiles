@@ -81,8 +81,8 @@ function attemptError(attempt) {
     if (attempt.swapApplied && !attempt.rolledBack) return "rollback-missing";
     return attempt.original === null || attempt.original === undefined ? null : originalError(attempt.original);
   }
-  if (!attempt.swapApplied) return "a pass must have its swap applied";
-  if (!isString(attempt.verification.path)) return "a pass needs verification.path";
+  if (!attempt.swapApplied || attempt.rolledBack) return "a pass must have its swap applied and kept";
+  if (!isString(attempt.verification.path) || attempt.verification.pass !== true) return "a pass needs a passing verification with its path";
   return originalError(attempt.original);
 }
 
@@ -116,6 +116,33 @@ function parseEntry(raw) {
   return { entry: { status: "in-flight", attempts: raw.attempts, inFlight } };
 }
 
+// The text of a v1 log rewritten as v2; any other text unchanged. v1 kept a trial's backup as backupPath on the
+// attempt and stored paths relative to the cwd of the run that wrote them, so cwd must be that run's — the project
+// root every documented invocation runs from. A v1 backup is always a directory rename, a renamed link included.
+// Only the shape moves; parseLog still judges the result.
+export function migrateV1(text, logPath, cwd) {
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  if (!isObject(raw) || raw.schemaVersion !== 1 || !isObject(raw.packages)) return text;
+  const rebase = (stored) => (isString(stored) ? toLogPath(logPath, path.resolve(cwd, stored)) : stored);
+  const migrateAttempt = ({ backupPath, ...attempt }) => ({
+    ...attempt,
+    original: isString(backupPath) ? { kind: "dir", backupPath: rebase(backupPath) } : null,
+    verification: isObject(attempt.verification) ? { ...attempt.verification, path: rebase(attempt.verification.path) } : attempt.verification,
+  });
+  const packages = Object.fromEntries(
+    Object.entries(raw.packages).map(([name, entry]) => [
+      name,
+      isObject(entry) && Array.isArray(entry.attempts) ? { ...entry, attempts: entry.attempts.map((attempt) => (isObject(attempt) ? migrateAttempt(attempt) : attempt)) } : entry,
+    ]),
+  );
+  return JSON.stringify({ ...raw, schemaVersion: SCHEMA_VERSION, packages });
+}
+
 // { ok: true, log } with every entry parsed into its status's shape, or { ok: false, errors } naming each problem.
 export function parseLog(text, logPath) {
   let raw;
@@ -133,7 +160,7 @@ export function parseLog(text, logPath) {
         path: logPath,
         found: raw.schemaVersion ?? null,
         expected: SCHEMA_VERSION,
-        detail: `stored paths changed meaning in v${SCHEMA_VERSION}; move ${logPath} aside and rerun the swaps`,
+        detail: `a v1 log is migrated by the next replace-dependency run from the directory that wrote it`,
       }],
     };
   }

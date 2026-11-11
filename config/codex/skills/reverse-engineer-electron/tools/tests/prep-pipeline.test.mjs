@@ -247,6 +247,7 @@ test("replace-dependency rolls back failed verified swap and logs transaction", 
   assert.equal(lastAttempt.rolledBack, true);
 
   assert.ok(fs.existsSync(path.join(appPkgDir, "package.json")), "app dependency should be restored after rollback");
+  assert.deepEqual(fs.readdirSync(path.join(path.dirname(appPkgDir), ".original")), [], "a rolled-back trial leaves no backup directories");
 });
 
 test("replace-dependency links the app copy to the root package", () => {
@@ -476,7 +477,8 @@ test("replace-dependency and the gate refuse a log the parser rejects, with the 
   const cases = [
     ["resolved-success-count", (log) => { log.packages["demo-pkg"].attempts = []; }],
     ["in-flight-record-on-settled", (log) => { log.packages["demo-pkg"].inFlight = { attemptedVersion: "1.2.3" }; }],
-    ["schema-version", (log) => { log.schemaVersion = 1; }],
+    ["schema-version", (log) => { log.schemaVersion = 3; }],
+    ["attempt-invalid", (log) => { log.packages["demo-pkg"].attempts[0].rolledBack = true; }],
   ];
   for (const [type, corrupt] of cases) {
     const { logPath, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
@@ -492,4 +494,69 @@ test("replace-dependency and the gate refuse a log the parser rejects, with the 
     assert.equal(status, 1, type);
     assert.deepEqual(artifact.mismatches.replacementLogErrors.map((error) => error.type), [type]);
   }
+});
+
+test("replace-dependency checks a foreign link before anything is installed at the root", () => {
+  const { tmp, replace, readLog } = swapProject(VERIFYING_INDEX, { pnpmLink: true });
+  fs.rmSync(path.join(tmp, "node_modules"), { recursive: true });
+
+  // The fake npm installs nothing, so the trial fails after install instead of crashing before it.
+  const result = replace();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(readLog().packages["demo-pkg"].attempts.at(-1).reason, "root-package-json-missing");
+});
+
+test("replace-dependency refuses an interrupted trial whose backup is gone as lost, even under a foreign link", () => {
+  const { appPkgDir, replace, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  fs.unlinkSync(appPkgDir);
+  fs.rmSync(backupOf(inFlight), { recursive: true });
+  fs.symlinkSync("elsewhere", appPkgDir, "dir");
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /which is gone — the original is lost/);
+});
+
+test("replace-dependency refuses a log another live run holds", () => {
+  const { logPath, replace } = swapProject(VERIFYING_INDEX);
+  writeText(`${logPath}.lock`, String(process.pid));
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, new RegExp(`held by running process ${process.pid}`));
+});
+
+test("replace-dependency migrates a v1 log, so a package a v1 run resolved stays resolved", () => {
+  const { tmp, logPath, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
+  assert.equal(replace().status, 0);
+  const v2 = readLog();
+
+  // The same swap as v1 recorded it: backupPath on the attempt, every stored path relative to the run's cwd.
+  const fromCwd = (stored) => path.relative(tmp, path.resolve(path.dirname(logPath), stored));
+  const v1 = structuredClone(v2);
+  v1.schemaVersion = 1;
+  for (const attempt of v1.packages["demo-pkg"].attempts) {
+    attempt.backupPath = fromCwd(attempt.original.backupPath);
+    delete attempt.original;
+    attempt.verification.path = fromCwd(attempt.verification.path);
+  }
+  writeJson(logPath, v1);
+
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.match(rerun.stdout, /\[demo-pkg\] already resolved with 1\.2\.3; skipped/);
+  assert.deepEqual(readLog().packages, v2.packages);
+  assert.equal(gate().status, 0);
+});
+
+test("replace-dependency recognises a link to the root package however its target is spelled", () => {
+  const { tmp, appPkgDir, replace } = swapProject(VERIFYING_INDEX);
+  fs.rmSync(appPkgDir, { recursive: true });
+  // os.tmpdir() sits under a symlinked prefix on macOS (/var -> /private/var); the target keeps the unresolved one.
+  fs.symlinkSync(path.join(tmp, "node_modules", "demo-pkg"), appPkgDir, "dir");
+
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /already links to the root package/);
 });
