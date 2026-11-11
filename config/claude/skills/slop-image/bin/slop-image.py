@@ -246,34 +246,52 @@ def ext_for(data, content_type):
     )
 
 
+# Every suffix ext_for can produce, plus the .jpeg spelling of .jpg.
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
 @dataclass(frozen=True)
 class OutFile:
     path: Path
 
+    @property
+    def directory(self):
+        return self.path.parent
+
     def target(self, name):
-        return self.path
+        # The downloaded bytes decide the extension; the user's path decides the rest.
+        return self.path.with_suffix(Path(name).suffix)
 
 
 @dataclass(frozen=True)
 class OutDir:
     path: Path
 
+    @property
+    def directory(self):
+        return self.path
+
     def target(self, name):
         return self.path / name
 
 
 def parse_out(raw, count):
-    # [LAW:parse-dont-validate] --out is resolved once, before any provider spend;
-    # save_image receives a target that is already a file or a directory.
+    # [LAW:parse-dont-validate] --out is resolved once, before any provider spend:
+    # its directory exists on return, so a path that cannot hold images fails here.
     path = Path(raw).expanduser()
-    if path.is_dir() or not path.suffix:
-        return OutDir(path)
-    if count > 1:
+    names_file = (not raw.endswith(os.sep) and not path.is_dir()
+                  and path.suffix.lower() in IMAGE_SUFFIXES)
+    if names_file and count > 1:
         raise SystemExit(
             f"[slop-image] --out {raw} is a file path, but --count is {count}; "
             f"pass a directory to save multiple images"
         )
-    return OutFile(path)
+    out = OutFile(path) if names_file else OutDir(path)
+    try:
+        out.directory.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise SystemExit(f"[slop-image] --out {raw}: cannot create directory {e.filename}: {e.strerror}")
+    return out
 
 
 def save_image(url, prompt, out, index, total):
@@ -289,7 +307,6 @@ def save_image(url, prompt, out, index, total):
     name = f"{slugify(prompt)}-{short}{suffix}{ext}"
 
     target = out.target(name)
-    target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(data)
     return target.resolve()
 

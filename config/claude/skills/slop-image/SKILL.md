@@ -30,8 +30,10 @@ slop-image "<prompt>" \
 - **--count** (default `1`) — how many images to generate.
 - **--out** (default `~/Pictures/slop`) — a directory (filename auto-named from
   prompt + short hash + extension) or, for a single image, an explicit file path.
-  An existing directory is always a directory; otherwise a path with an
-  extension is a file, and a file path with `--count` > 1 is rejected.
+  An existing directory, or a path ending in `/`, is a directory; otherwise a
+  path ending in an image extension (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) is
+  a file, and a file path with `--count` > 1 is rejected. A file's extension is
+  replaced by the type of the image actually returned — read the printed path.
 
 The script prints each saved absolute path to **stdout**, one per line. A short
 status line (provider, aspect, key source) goes to **stderr**. On any provider
