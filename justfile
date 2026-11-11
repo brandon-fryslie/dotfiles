@@ -71,6 +71,10 @@ validate:
 test-install-backup:
     ./tests/install-backup.sh
 
+# Assert each install profile runs its dotbot configs in order and an unknown profile runs none (stub uvx)
+test-install-profile:
+    ./tests/install-profile.sh
+
 # Assert the prompt's git segment shows packed and worktree stashes, and a user.name only when the repo sets one (throwaway repos, real zsh -f)
 test-git-taculous:
     ./tests/git-taculous-prompt.sh
