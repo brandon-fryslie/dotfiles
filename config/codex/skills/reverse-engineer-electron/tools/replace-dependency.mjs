@@ -74,6 +74,29 @@ function writeJson(filePath, payload) {
   fs.renameSync(tmpPath, filePath);
 }
 
+// [LAW:one-source-of-truth] A tree is locked exactly while the run that locked it lives. The flock belongs to the
+// run's own open file description — perl takes it through stdin, which shares that description, and exits — so the
+// kernel releases it however the run ends, kill -9 included, and there is no stale lock to judge or take over. Node
+// opens files close-on-exec, so npm and the verify script never inherit it. The lock file is never unlinked: a run
+// holding the unlinked inode would lock nothing the next run can see.
+function lockTree(lockPath) {
+  ensureDir(path.dirname(lockPath));
+  const fd = fs.openSync(lockPath, "a+");
+  // Exit 3 means only that another run holds the lock; any other flock failure dies with its errno on stderr.
+  const res = spawnSync("perl", ["-MFcntl=:flock", "-e", 'flock(STDIN, LOCK_EX | LOCK_NB) and exit 0; $!{EWOULDBLOCK} and exit 3; die "flock: $!\\n"'], { stdio: [fd, "inherit", "inherit"] });
+  if (res.status === 3) {
+    const holder = fs.readFileSync(lockPath, "utf8").trim() || "it has not recorded itself yet";
+    console.error(`Error: ${lockPath} is held by another replace-dependency run (${holder}) — wait for it to finish, or stop it; its locks are released the moment it exits, and the next run recovers any trial it left in flight`);
+    process.exit(2);
+  }
+  if (res.status !== 0) {
+    console.error(`Error: could not lock ${lockPath} with perl:${res.error?.message ?? `exit ${res.status}, signal ${res.signal}`}`);
+    process.exit(2);
+  }
+  fs.ftruncateSync(fd, 0);
+  fs.writeSync(fd, `pid ${process.pid}, started ${new Date().toISOString()}, in ${process.cwd()}: ${process.argv.join(" ")}\n`);
+}
+
 function isScoped(name) {
   return name.startsWith("@") && name.includes("/");
 }
@@ -405,6 +428,22 @@ function main() {
   const verificationDir = path.resolve(projectRoot, opts.verificationDir);
   const verifyScript = path.resolve(projectRoot, opts.verifyScript);
   const candidateSourcePath = path.resolve(projectRoot, opts.candidateSource);
+
+  if (!fs.existsSync(appNodeModules)) {
+    console.error(`Error: ${appNodeModules} does not exist — --app-dir must name an extracted app with its node_modules`);
+    process.exit(2);
+  }
+  // [LAW:no-ambient-temporal-coupling] Every tree a run changes is locked before anything is read: the project's
+  // node_modules (npm writes it and package.json), the app's node_modules (renames, links, .original/), the
+  // verification dir, and the log. Spellings that name one file are locked once, or the run would refuse itself; locks
+  // are taken in path order, so of two runs wanting the same locks the one that loses is refused before it holds any.
+  const lockPaths = [
+    path.join(projectRoot, "node_modules", ".replace-dependency.lock"),
+    path.join(appNodeModules, ".replace-dependency.lock"),
+    path.join(verificationDir, ".replace-dependency.lock"),
+    `${outPath}.lock`,
+  ];
+  for (const lockPath of unique(lockPaths.map(canonicalEntry)).sort()) lockTree(lockPath);
 
   // The log is loaded first, so a v1 log migrates even on a run that finds nothing to trial.
   const logState = loadLog(outPath, projectRoot);
