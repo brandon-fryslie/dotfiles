@@ -7,7 +7,7 @@ description: Work through a project's completed laws audit. Find the audit and b
 
 ## Start or resume in the current project
 
-Invoking `$act-on-law-findings` by itself starts a repair run. Find the completed audit, put its findings in dependency order, and work through them under the project's normal contribution and review rules. A named epic or set of findings narrows the scope. “Rank only” is read-only and returns the graph and recommendation. “Rerank the backlog” applies the order and stops there. When the user asks to decide together, bring them the consequential tradeoff with your recommendation.
+Invoke `/act-on-law-findings` in Claude Code or `$act-on-law-findings` in Codex to start a repair run. Find the completed audit, put its findings in dependency order, and work through them under the project's normal contribution and review rules. A named epic or set of findings narrows the scope. “Rank only” is read-only and returns the graph and recommendation. “Rerank the backlog” applies the order and stops there. When the user asks to decide together, bring them the consequential tradeoff with your recommendation.
 
 Use findings already in the conversation or a supplied report or ticket. Otherwise follow the active epic or handoff, then search the project tracker and repository. In Lit, run `lit quickstart` and `lit backlog --all` to include epics outside the current focus. An audit may have been delivered only in chat. If needed, check accessible chat history scoped to this project and match the findings to its code. Ask for a pointer only if the intended audit is still missing or ambiguous.
 
