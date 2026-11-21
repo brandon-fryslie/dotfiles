@@ -109,6 +109,7 @@ A ticket is finished when the thing it is for works, stated in the terms of whoe
 ## Standing principles
 - Never block work on a human who is available. Ask once, in the moment, and keep working on everything that does not depend on the answer.
 - Write software as a professional engineer. Test as /laws:testing describes.
+- Running tests over and over, or with every CPU busy, is load testing and is not allowed: what it finds depends on the machine it runs on, and a row of passes is confidence nothing earned. A race is proven by forcing its interleaving inside the test (a delay or gate in a fake at that step), never by repeated runs.
 - There is no rule against playing audio to measure. Do not treat it as forbidden.
 - Do not make a live daemon run a prerequisite for code, grooming, or ticket work. Put the live check on its own ticket, with its evidence pointer, and let the chain proceed.
 </standing-principles>
