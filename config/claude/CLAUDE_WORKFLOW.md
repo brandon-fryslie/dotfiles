@@ -1,35 +1,12 @@
 <git-workflow>
-## Git workflow — mandatory for any code work
-- **Steps 1–5:** work in a worktree, never on master. `git fetch origin`, then use the EnterWorktree tool (ALWAYS create worktrees in according to your standard!), and work only there.
-  - Woke holding a message in a bottle? Skip steps 1–5 — they open a *new* unit of work and would strand the PR you were sent to finish. Go to the worktree and step the message names, and `git pull --rebase` there before you touch anything.
-  - Next ticket in a lane this checkout already holds (`lit next` or `lit backlog` says "claimed here" for the worktree you're in)? That is not new work: stay in this worktree, `git fetch origin`, and cut the new branch from `origin/master` here. lit ties a lane's claim to the checkout that ran `lit start` or `lit done`, so a fresh worktree makes your own lane look held by someone else, and `lit start` refuses it.
-  - New lane? Enter its worktree first, then run `lit start` from inside it, never from master or the worktree you're leaving.
-- **Step 6:** do the work; `git pull --rebase` once or twice a day on longer tasks.
-- **Step 7:** commit the finished work as its own commit — required, every time. Leave the tree clean.
-- **Step 8:** push to a branch and open a PR, unless the repo has other conventions.
-- **Step 9:** send a message in a bottle: `finalize-session` (the `/memento:message-in-a-bottle` skill), naming the branch, the PR, and `resume at step 10`. A review run in the context that wrote the code reads its own intent instead of the diff; the bottle washes that context away, and the branch and PR hold everything else.
-  - The message carries the position, not the story. WRONG: `Finished the parser refactor, tests pass, please review.` — no branch, no PR, no step; the PR is orphaned. RIGHT: `Branch fix/parser-null, PR #91, ticket lit-42. Resume at step 10: /laws:law-review. Cycle not started.`
-- **Step 10:** run /laws:law-review. Judge every finding by `<review-findings>` below. Push your fixes, adding comments / resolving conversations as the review process requires.
+## Git workflow — for ticketed code changes
+This workflow is for ticketed work that changes code. Changes that are only docs, or only agent guidance (CLAUDE.md, skills, prompts, agent definitions), are outside it.
 
-### Step 10 - The Review Loop
-
-Review loop definition: A series of steps of indefinite length where we repeatedly assess our implementation according to the laws.  Do you want to save time and be efficient?  Follow the laws.  If you take a shortcut during implementation, you WILL be undoing and redoing that work in the laws review cycle.  Even if it feels like a lot of work, sooner begun, sooner finished.  If you ever find yourself digging a hole, you know what the right thing to do is.  That's right, you STOP DIGGING.  No matter how far you are down the wrong road - turn around!  You've got this!
-
-Now here's the law-review loop for a PR:
-- Open a PR
-- LABEL 10
-- Review the PR using /laws:law-review <pr> <review #>
-  - 'review #' is the number of reviews you've been through, ie, loop index. Start at 1, then 2, 3, etc.
-- ONLY IF THE REVIEW SAYS "NO MAJOR FINDINGS", GOTO 20
-- Triage: Carefully consider each review finding on its merits.  Weight correctness and long term health of the project highest.  Take all unambiguous recommendations that improve the long term health of the project.  If a finding is more ambiguous, consider it more carefully.  Reject findings that misunderstand requirements or would make the project objectively worse quality.  Record the findings and whether you reject or accept them on the PR as a comment, and the lit ticket as a comment.
-- Make these changes, ensuring that EVERY CHANGE YOU MAKE ALSO IMPLEMENTS THE LAWS
-  - If you continually receive review findings on changes you make in review, an automatic safeguard kicks in and you will need to redo the ticket from scratch.  I recommend holding your work to a high standard.
-- Push the updated code to the PR
-- GOTO 10
-- LABEL 20
-- **Step 11:** Merge the ticket.
-- **Step 14:** close the ticket keep the worktree as your `lit` claim is tied to the checkout and it will serve the next tickets in your lane. Name the worktree in a bottle you send now: `finalize-session` (`/memento:message-in-a-bottle`) with `/next` (or the next ticket/item in the work you're assigned).
-- Fixes pushed in answer to findings are the cycle running, not a new change — carry on to the next step. The misreading to refuse: step 10 ended with fixes pushed, so the PR is "already reviewed" and the remaining passes look forbidden. That reading merges new code on a single pass. NEW work added after the cycle completes gets ONE /laws:law-review.
-- **Four failed reviews, no fifth.** A review pass fails when it returns a MAJOR finding you had to fix or rule on; trivial changes or minor quibbles that can be folded into the plan do not 'fail' a review. Ultimately, YOU are the judge of when you pass or fail this review cycle.  Continue it for as long as you are getting value, and when you're not, don't.  One thing though: AFTER EVERY REVIEW, when you are reviewing the feedback, you need to TAKE A STEP BACK AND ASK "Are the premeses under which I designed this plan really accurate?  Is this plan based on an assumption that's been invalidated?"  Most importantly: you need to keep your eye out for UNNECESSARY / ACCIDENTAL COMPLEXITY.  If you find yourself on the wrong end of an invalidated premise or assumption and it's leading to accidental complexity, YOU MUST RUN THE SKILL /skillz:lets-take-a-step-back.  No exceptions.  That is the ONLY time you run the skill, and you ALWAYS run the skill when you hit this.  Take a step back, clear your head, and start over with a totally new plan and a totally new set of assumptions.  It will be refreshing and crisp like a bright autumn day, you will love it.  Keep the lesson, drop the work, and build it again.  Inevitably, it's going to be better the next time through.  Note: THIS SAME PROCESS APPLIES TO BOTH THE PLAN AND PR REVIEW CYCLES!  Same idea.  Look for the complexity and be the champion we need: banish it!  And never take a recommendation that increases complexity.  Find a better way.  DO _NOT_ REPEAT YOUR EXACT IMPLEMENTATION PLEASE!  I know I used all caps but it's not shouting, it's just important.  You're doing great and there is really no pressure.  It's better not to implement anything than to do it wrong - but don't think *I* will know the answer!  If you get stuck, please follow the age old engineering strategy of Googling it (prefer Firecrawl).  I like to figure out how Apple, Microsoft, Netflix, Google, etc engineers would solve a problem and then combine and tailor a strategy for my circumstances.  Remember, you are in a far better position to understand and design the correct solution that the user (me) is, so asking me is pretty much a waste of time when it comes to technical implementation.  If it's a genuine question about whether some functionality is required or important, that's something I can help with, but I'd still like you to use common sense and your best judgement.  You've got this!
-- Both bottles are steps, not judgment calls. They arrive when you feel most in flow, and the voice says *"I have the whole thing in my head right now — sending the bottle throws that away, I'll review first and send after."* What you have in your head is the author's certainty, and a review that shares it finds nothing. Commit, push, say your one line, send it, and write nothing after — the reset lands seconds later and takes whatever you were mid-way through with it.
+1. **Start.** `git fetch origin`, then work in a worktree cut from `origin/master`, never on master. Lanes and claims follow `lit quickstart`.
+   - Woke holding a message in a bottle? Don't start new work. Go to the worktree and step it names, and `git pull --rebase` there first.
+2. **Work.** Commit the finished work as its own commit and leave the tree clean.
+3. **Push** to a branch and open a PR.
+4. **Bottle.** `/memento:message-in-a-bottle`, naming the branch, the PR, and `resume at step 5`. A review run in the context that wrote the code reads its own intent instead of the diff.
+5. **Review loop.** Run `/laws:law-review <pr> <n>`, where `n` counts passes from 1. Judge every finding by `<review-findings>` and record what you accepted and rejected on the PR and the ticket. Fix, push, and run the next pass, until a review says "NO MAJOR FINDINGS". After every pass, ask whether the premises the plan was built on still hold. Irreversible accidental complexity, or a major architectural assumption proven invalid, means `/skillz:lets-take-a-step-back`. You've got this!
+6. **Finish.** Merge, close the ticket, and keep the worktree: your lit claim is tied to it. Then send a bottle with `/next`.
 </git-workflow>
