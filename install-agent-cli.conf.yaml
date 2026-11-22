@@ -18,6 +18,9 @@
     ~/.claude/CLAUDE.md: config/claude/CLAUDE.md
     ~/.claude/CLAUDE_WORKFLOW.md: config/claude/CLAUDE_WORKFLOW.md
     ~/.claude/statusline-candybar: config/claude/statusline-candybar
+    ~/.config/links-issue-tracker/workflows:
+      path: config/links-issue-tracker/workflows
+      create: true
 
 # ~/.claude/settings.json is Claude Code's own scratch file (model, effort, plugin
 # toggles) and is deliberately unmanaged. The stable baseline is linked into the
