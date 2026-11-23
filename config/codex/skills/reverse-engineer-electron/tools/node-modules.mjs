@@ -53,7 +53,7 @@ export function stateText(state) {
   return field === null ? state.kind : `${state.kind}:${state[field]}`;
 }
 
-const isNonEmptyString = (value) => typeof value === "string" && value !== "";
+export const isNonEmptyString = (value) => typeof value === "string" && value !== "";
 
 // What a path holds as a package: the name and version its package.json gives, or, when it holds none, the path's
 // own state, a directory with no package.json, or a package.json that can't be read or lacks a name or version.
@@ -79,9 +79,10 @@ export function packageAt(dir) {
 }
 
 // The names an app loads from its node_modules top level: node_modules/<name> and node_modules/@scope/<name>, the way
-// node resolves them, through links, and each directory of them that can't be listed (node_modules or a scope), whose
-// packages no one can name. A scope that is not a directory is an entry under its own name, so its state is reported
-// rather than lost. Dot entries (.bin, .pnpm, .original, .package-lock.json) are tooling.
+// node resolves them, through links, and each directory of them that can't be listed (node_modules, or a scope that
+// can't be listed or even stat'd), whose packages no one can name. A scope that is a file or a dangling link holds no
+// packages, so it is an entry under its own name and its state is reported. Dot entries (.bin, .pnpm, .original,
+// .package-lock.json) are tooling.
 export function topLevelEntries(nodeModules) {
   const listing = (dir) => {
     const listed = listDir(dir);
@@ -92,7 +93,9 @@ export function topLevelEntries(nodeModules) {
   const top = listing(nodeModules);
   const parts = top.names.map((name) => {
     const dir = path.join(nodeModules, name);
-    if (!name.startsWith("@") || pathState(dir).kind !== "dir") return { names: [name], unlisted: [] };
+    const state = name.startsWith("@") ? pathState(dir) : null;
+    if (state?.kind === "unreadable") return { names: [], unlisted: [{ dir, code: state.code }] };
+    if (state?.kind !== "dir") return { names: [name], unlisted: [] };
     const scope = listing(dir);
     return { names: scope.names.map((child) => `${name}/${child}`), unlisted: scope.unlisted };
   });

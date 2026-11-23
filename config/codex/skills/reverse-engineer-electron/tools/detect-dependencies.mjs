@@ -122,7 +122,7 @@ function listPackageJsFiles(pkgDir) {
 function indexPackageShapeHashes(packages) {
   const byHash = new Map();
   const errors = [];
-  const add = (hash, entry) => byHash.set(hash, [...(byHash.get(hash) || []), entry]);
+  const add = (hash, entry) => byHash.set(hash, byHash.get(hash) ?? []).get(hash).push(entry);
   const attempt = (file, work) => {
     try {
       return work();

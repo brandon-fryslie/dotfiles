@@ -19,6 +19,7 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
+import { isNonEmptyString } from "./node-modules.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -109,7 +110,6 @@ function npmViewVersions(pkgName) {
 // listed in full, or one the app doesn't ship, lists every package on disk; any other is a tree it couldn't read.
 function parseOnDiskPackages(report) {
   const onDisk = report?.onDisk;
-  const isNonEmptyString = (value) => typeof value === "string" && value !== "";
   if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version))) {
     return { ok: false, error: "it has no onDisk.packages list of { name, version } — rerun detect-dependencies.mjs to write it" };
   }

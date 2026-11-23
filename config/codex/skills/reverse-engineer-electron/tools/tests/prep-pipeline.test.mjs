@@ -1090,6 +1090,8 @@ function everyStateApp(t) {
   writeText(path.join(nm, ".package-lock.json"), "{}");
   const locked = [pkg(path.join(nm, "locked"), "locked", "8.0.0"), path.dirname(pkg(path.join(nm, "@locked-scope", "x"), "@locked-scope/x", "9.0.0"))];
   const searchOnly = [pkg(path.join(nm, "searchable"), "searchable", "10.0.0"), path.dirname(pkg(path.join(nm, "@search-scope", "x"), "@search-scope/x", "11.0.0"))];
+  // A scope linked into a directory nothing can read through: its packages, if any, can't be named.
+  fs.symlinkSync(path.join("locked", "scope"), path.join(nm, "@hidden"), "dir");
   for (const dir of locked) fs.chmodSync(dir, 0o000);
   for (const dir of searchOnly) fs.chmodSync(dir, 0o311);
   t.after(() => { for (const dir of [...locked, ...searchOnly]) fs.chmodSync(dir, 0o755); });
@@ -1109,7 +1111,7 @@ const invalidJsonMessage = (text) => {
 };
 
 const EVERY_STATE_ON_DISK = {
-  nodeModules: { kind: "incomplete", reason: "couldn't list node_modules/@locked-scope (EACCES), node_modules/@search-scope (EACCES), so the packages inside aren't detected" },
+  nodeModules: { kind: "incomplete", reason: "couldn't list node_modules/@hidden (EACCES), node_modules/@locked-scope (EACCES), node_modules/@search-scope (EACCES), so the packages inside aren't detected" },
   packages: [
     { name: "@back/back", version: "7.0.0", path: "node_modules/@back/back", location: "node_modules/.pnpm/@back+back@7.0.0/node_modules/@back/back" },
     { name: "@scope/pnpm-scoped", version: "3.0.0", path: "node_modules/@scope/pnpm-scoped", location: "node_modules/.pnpm/@scope+pnpm-scoped@3.0.0/node_modules/@scope/pnpm-scoped" },
@@ -1131,6 +1133,7 @@ const EVERY_STATE_ON_DISK = {
     { name: "noversion", path: "node_modules/noversion", reason: "not-a-package:unusable-manifest:no-name-or-version", loads: null },
   ],
   unlisted: [
+    { path: "node_modules/@hidden", code: "EACCES" },
     { path: "node_modules/@locked-scope", code: "EACCES" },
     { path: "node_modules/@search-scope", code: "EACCES" },
   ],
