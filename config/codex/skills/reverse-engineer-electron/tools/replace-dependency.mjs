@@ -11,6 +11,11 @@
  * Usage (auto near-match over candidate source):
  *   node replace-dependency.mjs --auto-near-match --candidate-source deps/near-matches.json --app-dir resources/app
  *
+ * Exit status: 0 when every copy the run was asked for (every copy of the package, or the one at --location) is replaced
+ * and the whole tree was read; 3 when the run finished but one of those copies still loads something other than its
+ * replacement, or a directory couldn't be listed; 2 when the run refuses before moving anything more; 1 when an error
+ * stops it.
+ *
  * // [LAW:verifiable-goals] Every attempt is logged with result, rollback state, and verification evidence.
  * // [LAW:one-source-of-truth] deps/replacements.json is the canonical transaction log for dependency swaps, one entry
  * //   per copy; its shape is replacement-log.mjs's, and each trial is written there before the original moves.
@@ -24,15 +29,39 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
-import { emptyLog, fromLogPath, parseLog, serializeLog, toLogPath } from "./replacement-log.mjs";
-import { REPLACEMENT_SCOPE, appAt, appPathState, canonicalEntry, copiesOf, describeEntry, isInside, linkDestination, locationDir, locationOf, packageAt, pathState, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
+import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, parseLog, retiredBy, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
+import { appAt, appPathState, canonicalEntry, copiesOf, describeEntry, isNonEmptyString, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
+const USAGE = [
+  "Usage:",
+  "  node replace-dependency.mjs --pkg <name> [--location <loc>] [--version <x.y.z>] [--app-dir resources/app]",
+  "  node replace-dependency.mjs --auto-near-match --candidate-source deps/near-matches.json [--app-dir resources/app]",
+];
+
+// The flags that take a value, and the option each sets.
+const VALUE_FLAGS = {
+  "--app-dir": "appDir",
+  "--pkg": "pkg",
+  "--location": "location",
+  "--version": "version",
+  "--npm": "npm",
+  "--mode": "mode",
+  "--candidate-source": "candidateSource",
+  "--out": "out",
+  "--verification-dir": "verificationDir",
+  "--verify-script": "verifyScript",
+  "--threshold": "threshold",
+};
+
+// [LAW:parse-dont-validate] The command line as a run reads it, or every reason it can't be read: an unknown flag,
+// a flag missing its value, or flags that contradict each other are refused, never read as a default. --location
+// and --version choose among --pkg's copies, so they need it; pkg, location and version are null when not given.
 function parseArgs(argv) {
   const opts = {
     appDir: "resources/app",
-    pkg: "",
-    location: "",
-    version: "",
+    pkg: null,
+    location: null,
+    version: null,
     npm: "npm",
     mode: "symlink",
     candidateSource: "deps/near-matches.json",
@@ -40,27 +69,28 @@ function parseArgs(argv) {
     out: "deps/replacements.json",
     verificationDir: "deps/verification",
     verifyScript: "tools/verify-dependency-swap.mjs",
-    threshold: 0.8,
+    threshold: "0.8",
   };
-
+  const errors = [];
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--app-dir") opts.appDir = argv[++i] || opts.appDir;
-    else if (arg === "--pkg") opts.pkg = argv[++i] || "";
-    else if (arg === "--location") opts.location = argv[++i] || "";
-    else if (arg === "--version") opts.version = argv[++i] || "";
-    else if (arg === "--npm") opts.npm = argv[++i] || opts.npm;
-    else if (arg === "--mode") opts.mode = argv[++i] || opts.mode;
-    else if (arg === "--candidate-source") opts.candidateSource = argv[++i] || opts.candidateSource;
-    else if (arg === "--out") opts.out = argv[++i] || opts.out;
-    else if (arg === "--verification-dir") opts.verificationDir = argv[++i] || opts.verificationDir;
-    else if (arg === "--verify-script") opts.verifyScript = argv[++i] || opts.verifyScript;
-    else if (arg === "--threshold") opts.threshold = Number(argv[++i] || "0.8");
-    else if (arg === "--auto-near-match") opts.autoNearMatch = true;
-    else if (arg === "-h" || arg === "--help") return { help: true, opts };
+    if (arg === "-h" || arg === "--help") return { kind: "help" };
+    if (arg === "--auto-near-match") {
+      opts.autoNearMatch = true;
+      continue;
+    }
+    const key = VALUE_FLAGS[arg];
+    const value = argv[i + 1];
+    if (key === undefined) errors.push(`unknown argument ${arg}`);
+    else if (!isNonEmptyString(value) || value.startsWith("--")) errors.push(`${arg} needs a value`);
+    else opts[key] = argv[++i];
   }
-
-  return { help: false, opts };
+  if ((opts.pkg !== null) === opts.autoNearMatch) errors.push("give exactly one of --pkg <name> and --auto-near-match");
+  if (opts.pkg === null && (opts.location !== null || opts.version !== null)) errors.push("--location and --version choose among --pkg's copies, so they need --pkg");
+  const threshold = Number(opts.threshold);
+  if (!Number.isFinite(threshold)) errors.push(`--threshold ${opts.threshold} is not a number`);
+  if (opts.mode !== "symlink") errors.push(`unsupported mode ${opts.mode} (only 'symlink' supported)`);
+  return errors.length > 0 ? { kind: "invalid", errors } : { kind: "run", opts: { ...opts, threshold } };
 }
 
 function ensureDir(p) {
@@ -108,13 +138,23 @@ function safeNowStamp() {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 
+// [LAW:no-silent-failure] npm's verdict on the replacement: whether it installed. An npm that can't be started or is
+// killed gave no verdict, and every candidate after it would fail the same way, so the run stops; nothing has moved.
 function installReplacement(npmBin, replacement) {
   const res = spawnSync(npmBin, ["install", "--silent", "--no-progress", "--save-exact", replacement.spec], {
     stdio: "inherit",
   });
+  if (res.error || res.signal) {
+    console.error(`Error: could not run ${npmBin} install ${replacement.spec}: ${res.error?.message ?? `killed by ${res.signal}`} — fix it, then rerun`);
+    process.exit(1);
+  }
   return res.status === 0;
 }
 
+// [LAW:no-silent-failure] The verifier's verdict, read from the artifact it writes, which its exit status must agree
+// with: { kind: "verdict", pass }. A verifier that can't be started, is killed, or ends without a verdict that agrees
+// with its status gave none: { kind: "error", detail }. Any earlier file at the artifact's path is removed first, so a
+// verdict read back is this run's.
 function runVerifySwap({ verifyScript, pkgName, beforeDir, afterDir, expectedVersion, threshold, verificationOut }) {
   const args = [
     verifyScript,
@@ -132,38 +172,54 @@ function runVerifySwap({ verifyScript, pkgName, beforeDir, afterDir, expectedVer
     verificationOut,
   ];
 
+  fs.rmSync(verificationOut, { force: true });
   const result = spawnSync("node", args, {
     stdio: "inherit",
   });
-  return result.status === 0;
+  if (result.error || result.signal) return { kind: "error", detail: result.error?.message ?? `killed by ${result.signal}` };
+  let artifact;
+  try {
+    artifact = readJson(verificationOut);
+  } catch (error) {
+    return { kind: "error", detail: `exit ${result.status} with no verdict at ${verificationOut} (${error.message})` };
+  }
+  if (typeof artifact?.pass !== "boolean" || artifact.pass !== (result.status === 0)) {
+    return { kind: "error", detail: `exit ${result.status}, but its verdict at ${verificationOut} says pass: ${JSON.stringify(artifact?.pass)}` };
+  }
+  return { kind: "verdict", pass: artifact.pass };
 }
 
-// [LAW:parse-dont-validate] The candidate source as replace-dependency reads it: each package name it lists, mapped
-// from the exact version a copy of it is on disk to the versions to trial that copy against. A name it lists with no
-// copy on disk has no versions, and is still a name the run is asked about.
+// [LAW:parse-dont-validate] The candidate source as replace-dependency reads it: { kind: "read", byName }, each
+// package name it lists mapped from the exact version a copy of it is on disk to the versions to trial that copy
+// against, or { kind: "absent" } when no file is there. A name it lists with no copy on disk has no versions, and is
+// still a name the run is asked about. A file in any other shape, one an older find-near-match-versions wrote among
+// them, is refused.
 function loadCandidateSource(filePath) {
-  if (!fs.existsSync(filePath)) return new Map();
-  const parsed = readJson(filePath);
-  if (!Array.isArray(parsed?.packages)) {
-    console.error(`Error: ${filePath} has no packages list — rerun find-near-match-versions.mjs to write it`);
+  if (!fs.existsSync(filePath)) return { kind: "absent" };
+  const refuseSource = (why) => {
+    console.error(`Error: ${filePath} ${why} — rerun find-near-match-versions.mjs to write it`);
     process.exit(2);
+  };
+  let parsed;
+  try {
+    parsed = readJson(filePath);
+  } catch (error) {
+    refuseSource(`is not JSON (${error.message})`);
   }
+  if (!Array.isArray(parsed?.packages)) refuseSource("has no packages list");
   const byName = new Map();
   for (const item of parsed.packages) {
+    const itemOk = isNonEmptyString(item?.name)
+      && (item.onDiskVersion === null || isNonEmptyString(item.onDiskVersion))
+      && Array.isArray(item.candidates) && item.candidates.every((candidate) => isNonEmptyString(candidate?.version));
+    if (!itemOk) refuseSource(`lists ${JSON.stringify(item)}, which is not { name, onDiskVersion (a version or null), candidates: [{ version }] }`);
     const versions = byName.get(item.name) ?? new Map();
     byName.set(item.name, versions);
     if (item.onDiskVersion === null) continue;
-    if (versions.has(item.onDiskVersion)) {
-      console.error(`Error: ${filePath} lists ${item.name}@${item.onDiskVersion} twice — rerun find-near-match-versions.mjs to write it`);
-      process.exit(2);
-    }
+    if (versions.has(item.onDiskVersion)) refuseSource(`lists ${item.name}@${item.onDiskVersion} twice`);
     versions.set(item.onDiskVersion, item.candidates.map((candidate) => candidate.version));
   }
-  return byName;
-}
-
-function unique(values) {
-  return Array.from(new Set(values.filter(Boolean)));
+  return { kind: "read", byName };
 }
 
 function loadLog(logPath) {
@@ -184,14 +240,11 @@ const copyText = (copy) => `${copy.name} ${copy.location}`;
 // [LAW:one-source-of-truth] One write appends the attempt and moves the copy's entry to the status it implies,
 // replacing any in-flight record — so the log never shows a finished trial still in flight.
 function recordAttempt(logState, copy, attempt, logPath) {
-  const base = { name: copy.name, version: copy.version, attempts: [...(logState.copies[copy.location]?.attempts ?? []), attempt] };
-  logState.copies[copy.location] = attempt.result === "pass"
-    ? { ...base, status: "resolved", chosenVersion: attempt.attemptedVersion, pass: attempt }
-    : { ...base, status: "unresolved" };
+  logState.copies[copy.location] = settledEntry(logState.copies[copy.location], copy, attempt);
   writeLog(logPath, logState);
 }
 
-// Whether packageAt's answer for a replacement directory is pkgName at version, and that answer as text.
+// Whether a replacement directory's package is pkgName at version, and what it holds as text.
 const isInstalled = (root, pkgName, version) => root.kind === "package" && root.name === pkgName && root.version === version;
 const packageText = (state) => state.kind === "package" ? `${state.name}@${state.version}` : stateText(state);
 
@@ -200,12 +253,9 @@ function rootLinkTarget(dir, replacementDir) {
   return path.relative(fs.realpathSync(path.dirname(dir)), canonicalEntry(replacementDir));
 }
 
-// [LAW:one-source-of-truth] Whether a location holds our link is read off disk, one way for every log status: it is
-// a link to a replacement exactly when it leads into the project's replacement scope, and to the replacement for
-// name@version exactly when it leads to that one.
-const linkedTo = (state, dir) => (state.kind === "link" ? linkDestination(dir, state.target) : null);
-const isLinkTo = (state, dir, replacementDir) => linkedTo(state, dir) === canonicalEntry(replacementDir);
-const holdsReplacement = (state, dir, scopeDir) => linkedTo(state, dir) !== null && path.dirname(linkedTo(state, dir)) === realExisting(scopeDir);
+// [LAW:one-source-of-truth] Whether a location holds the link to one replacement is read off disk, one way for every
+// log status: it is exactly when the link there leads to that replacement's directory.
+const isLinkTo = (state, dir, replacementDir) => state.kind === "link" && linkDestination(dir, state.target) === canonicalEntry(replacementDir);
 
 // Decided before anything moves, and written into the log as the trial's in-flight record. Nothing is created here:
 // setAside makes the backup's directories, so a trial that never moves the original leaves nothing under .original/.
@@ -316,6 +366,7 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
 // resolved copy). When disk and log disagree, neither can be trusted to win, so the run refuses and names the way out.
 // A recorded swap at a location the app doesn't own is refused, since undoing it would touch files past a link out of
 // the app; any other refusal names the outcome's reason too, so a loop or an unreadable path is named as the cause.
+// requestedVersion is --version, or null.
 // [LAW:no-silent-failure]
 function priorSwap(entry, ctx, requestedVersion) {
   const { app, copy, projectRoot } = ctx;
@@ -340,7 +391,7 @@ function priorSwap(entry, ctx, requestedVersion) {
     return { kind: "conflict", reason: `resolved with ${chosen} in the log, but ${dir} is not linked to its replacement${why} (re-extracted app with an old log?) — to trial this app copy, ${ctx.deleteEntry}` };
   }
   const restore = `to trial it again, replace the link at ${dir} with ${describeOriginal(entry.pass.original, app.logPath)} and ${ctx.deleteEntry}`;
-  if (requestedVersion && requestedVersion !== chosen) {
+  if (requestedVersion !== null && requestedVersion !== chosen) {
     return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} is a retrial — ${restore}` };
   }
   const root = packageAt(replacement.dir);
@@ -359,26 +410,223 @@ function refuse(reasons) {
   if (reasons.length > 0) process.exit(2);
 }
 
-function main() {
-  const { help, opts } = parseArgs(process.argv);
-  if (help || (!opts.pkg && !opts.autoNearMatch)) {
-    console.log("Usage:");
-    console.log("  node replace-dependency.mjs --pkg <name> [--location <loc>] [--version <x.y.z>] [--app-dir resources/app]");
-    console.log("  node replace-dependency.mjs --auto-near-match --candidate-source deps/near-matches.json [--app-dir resources/app]");
-    process.exit(help ? 0 : 2);
+// Phase one: every in-flight entry is settled, requested or not, since an unrequested one still has its original set
+// aside. [LAW:no-ambient-temporal-coupling] Its record names its location, so it is read off the log, before anything
+// moves, and every trial after it reads the tree it leaves. Returns the trials it settled.
+function recoverInterrupted(run) {
+  const { app, logState, outPath } = run;
+  const inFlight = Object.entries(logState.copies)
+    .filter(([, entry]) => entry.status === "in-flight")
+    .map(([location, entry]) => {
+      const copy = { name: entry.name, location, version: entry.version };
+      return { copy, prior: priorSwap(entry, run.ctxOf(copy), null) };
+    });
+  refuse(conflictsOf(inFlight));
+
+  const interrupted = inFlight.filter(({ prior }) => prior.kind === "interrupted");
+  for (const { copy, prior } of interrupted) {
+    const { recovery, inFlight: record } = prior;
+    if (recovery === "restored") restoreOriginal(copy, record.original, app);
+    else removeBackupRoots(copy, backupRootsOf(copy, record.original, app));
+    recordAttempt(logState, copy, interruptedAttempt(record, recovery, new Date().toISOString()), outPath);
+    const outcome = recovery === "restored" ? `restored ${describeOriginal(record.original, outPath)}` : "the original was still in place";
+    console.log(`[${copyText(copy)}] interrupted trial of ${record.attemptedVersion}: ${outcome}`);
+  }
+  return interrupted;
+}
+
+// Phase two: the copies this run trials, each with its prior. Every recorded swap of a selected copy is checked
+// against disk, and an untried copy already linked to a replacement is refused (trialing it would verify a replacement
+// against itself and record a made-up original), before any trial moves anything.
+function selectCopies(run, found) {
+  const { app, logState, opts, outPath } = run;
+  const selected = opts.location === null ? found : found.filter(({ location, paths }) => location === opts.location || paths.includes(opts.location));
+  if (opts.location !== null && selected.length === 0) {
+    refuse([`--location ${opts.location} is not where any copy of ${opts.pkg} is reached; its copies are at ${found.map(({ location }) => location).join(", ") || "no location"}`]);
+  }
+  for (const copy of selected.filter(({ location }) => opts.location !== null && location !== opts.location)) {
+    console.log(`--location ${opts.location} reaches the copy at ${copy.location}, which is trialed for every path that loads it: ${copy.paths.join(", ")}`);
   }
 
-  if (opts.mode !== "symlink") {
-    console.error(`Error: unsupported mode ${opts.mode} (only 'symlink' supported)`);
-    process.exit(2);
+  const priors = selected.map((copy) => {
+    const entry = logState.copies[copy.location];
+    if (entry?.status === "resolved") return { copy, prior: priorSwap(entry, run.ctxOf(copy), opts.version) };
+    if (copy.outcome.cause !== "replacement") return { copy, prior: { kind: "untried" } };
+    return { copy, prior: { kind: "conflict", reason: `${locationDir(app, copy.location)} already links to a replacement, but ${outPath} records no resolved swap for it — put the original back over the link first (earlier backups are under ${app.backupsDir}), then rerun` } };
+  });
+  refuse(conflictsOf(priors));
+
+  const toTry = priors.filter(({ prior }) => prior.kind === "untried").map(({ copy }) => copy);
+  const trialable = toTry.filter(({ outcome }) => outcome.kind === "trialable");
+  if (opts.version !== null && new Set(trialable.map(({ outcome }) => outcome.loads.version)).size > 1) {
+    refuse([`--version ${opts.version} names one version, but ${opts.pkg}'s copies are ${trialable.map(({ location, outcome }) => `${location} (${outcome.loads.version})`).join(", ")} — choose one with --location`]);
   }
+  return { selected, skipped: priors.filter(({ prior }) => prior.kind === "resolved"), toTry };
+}
+
+// Phase three, for one copy: each candidate in turn until one verifies. A trial changes nothing but the copy's own
+// location and what lies inside it, so the outcome the copy was selected with is still the copy's.
+function trialCopy(run, found) {
+  const { app, logState, opts, outPath, projectRoot } = run;
+  const { name, location, outcome } = found;
+  const copy = { name, location, version: outcome.kind === "trialable" ? outcome.loads.version : null };
+  if (outcome.kind === "untrialable") {
+    console.log(`[${copyText(copy)}] not trialed: ${outcome.reason}`);
+    recordAttempt(logState, copy, untrialedAttempt(outcome.reason, new Date().toISOString()), outPath);
+    return;
+  }
+  const listed = run.candidateSource.kind === "read" ? run.candidateSource.byName.get(name)?.get(copy.version) ?? [] : [];
+  const candidates = opts.version !== null ? [opts.version] : [...new Set([copy.version, ...listed])];
+  const swapDir = locationDir(app, location);
+
+  for (const version of candidates) {
+    const startedAt = new Date().toISOString();
+    const attempt = trialAttempt(version, startedAt);
+    const finish = () => {
+      attempt.finishedAt = new Date().toISOString();
+      recordAttempt(logState, copy, attempt, outPath);
+    };
+
+    console.log(`\n[${copyText(copy)}] Trying candidate ${version}`);
+
+    const replacement = replacementOf(projectRoot, name, version);
+    if (!installReplacement(opts.npm, replacement)) {
+      attempt.reason = "npm-install-failed";
+      finish();
+      continue;
+    }
+
+    const installed = packageAt(replacement.dir);
+    if (!isInstalled(installed, name, version)) {
+      attempt.reason = `installed-package-mismatch:${packageText(installed)}`;
+      finish();
+      continue;
+    }
+
+    // Write-ahead: the log names the original before it moves, so a run killed at any point after this write
+    // leaves an in-flight entry the next run can undo exactly, and the gate refuses.
+    const original = originalOf(copy, app);
+    attempt.original = original;
+    logState.copies[location] = inFlightEntry(logState.copies[location], copy, { attemptedVersion: version, startedAt, original });
+    writeLog(outPath, logState);
+
+    let setAsideDone = false;
+    let verifierError = null;
+    try {
+      const beforeDir = originalDir(copy, original, app);
+      setAside(copy, original, app);
+      setAsideDone = true;
+      fs.symlinkSync(rootLinkTarget(swapDir, replacement.dir), swapDir, "dir");
+      attempt.swapApplied = true;
+
+      // One file per copy and version: the location's own path parts under the verification dir.
+      const verificationOutAbs = path.join(run.verificationDir, ...location.split("/"), `${encodeURIComponent(version)}.json`);
+      const verified = runVerifySwap({
+        verifyScript: run.verifyScript,
+        pkgName: name,
+        beforeDir,
+        afterDir: swapDir,
+        expectedVersion: version,
+        threshold: opts.threshold,
+        verificationOut: verificationOutAbs,
+      });
+      if (verified.kind === "error") {
+        verifierError = verified.detail;
+        attempt.reason = `verifier-error:${verified.detail}`;
+      } else {
+        attempt.verification = { path: toLogPath(outPath, verificationOutAbs), pass: verified.pass };
+        Object.assign(attempt, verified.pass ? { result: "pass", reason: "verified" } : { result: "fail", reason: "verification-failed" });
+      }
+    } catch (error) {
+      attempt.reason = `trial-error:${String(error?.message || error)}`;
+    }
+
+    if (attempt.result === "fail" && setAsideDone) {
+      restoreOriginal(copy, original, app);
+      attempt.rolledBack = true;
+    }
+    // A set-aside that threw may have made the backup's directories without moving anything into them.
+    if (!setAsideDone) removeBackupRoots(copy, backupRootsOf(copy, original, app));
+    finish();
+
+    // [LAW:no-silent-failure] A verifier that gave no verdict would give none for any candidate after this one.
+    if (verifierError !== null) {
+      console.error(`Error: [${copyText(copy)}] ${run.verifyScript} gave no verdict on ${version}: ${verifierError} — the original is back; fix the verifier, then rerun`);
+      process.exit(1);
+    }
+    if (attempt.result === "pass") {
+      console.log(`[${copyText(copy)}] resolved with ${version}`);
+      return;
+    }
+  }
+  console.log(`[${copyText(copy)}] unresolved after ${candidates.length} candidate(s)`);
+}
+
+// Phase four: what the run leaves, and the exit status it implies. [LAW:one-source-of-truth] It is read from the tree
+// as it is now, judged against the log: a copy is replaced exactly when its location holds the link to the replacement
+// its resolved entry chose, and every path that loads any other copy of a requested package is named with what it
+// loads. A logged copy whose container's swap retired it is listed as retired, not unresolved.
+function summarize(run, { found, selected, skipped, interrupted, retiredThisRun }) {
+  const { app, logState, outPath, projectRoot, names, appDir } = run;
+  const retired = new Map(retiredThisRun.map((copy) => [copy.location, copy]));
+  for (const [location, entry] of Object.entries(logState.copies)) {
+    if (retiredBy(logState, location) !== null) retired.set(location, { name: entry.name, location });
+  }
+  const unresolved = Object.entries(logState.copies)
+    .filter(([location, entry]) => entry.status !== "resolved" && !retired.has(location))
+    .map(([location, entry]) => ({ copy: { name: entry.name, location }, reason: entry.attempts.at(-1).reason }))
+    .sort((a, b) => copyText(a.copy).localeCompare(copyText(b.copy)));
+
+  const end = run.requestedCopies();
+  const replaced = (copy) => {
+    const entry = logState.copies[copy.location];
+    const dir = locationDir(app, copy.location);
+    return entry?.status === "resolved" && isLinkTo(appPathState(dir), dir, replacementOf(projectRoot, copy.name, entry.chosenVersion).dir);
+  };
+  const loadsText = ({ location, outcome }) => {
+    if (outcome.loads === null) return `nothing (${outcome.reason})`;
+    const where = outcome.kind === "untrialable" && !outcome.appOwns ? `a copy outside the app at ${location}` : `the app's copy at ${location}`;
+    return outcome.kind === "untrialable" ? `${where} (${outcome.reason})` : where;
+  };
+  const left = end.copies.filter((copy) => !replaced(copy));
+  const leftovers = left.flatMap((copy) => copy.paths.map((start) => ({ name: copy.name, start, loads: loadsText(copy) })));
+  // --location asks for one copy; otherwise every copy of the package, a path left loading nothing among them.
+  const asked = (copy) => run.opts.location === null || selected.some(({ location }) => location === copy.location);
+  const noCopy = names.filter((name) => !found.some((copy) => copy.name === name));
+  const { unlisted } = end.walk;
+
+  console.log(`\nLog: ${path.relative(projectRoot, outPath)}`);
+  console.log(`- copies tracked: ${Object.keys(logState.copies).length}`);
+  console.log(`- already resolved, skipped: ${skipped.length}`);
+  console.log(`- interrupted trials recovered: ${interrupted.length}`);
+  console.log(`- replaced with their container: ${retired.size}`);
+  for (const copy of retired.values()) console.log(`  [${copyText(copy)}]`);
+  console.log(`- unresolved copies: ${unresolved.length}`);
+  for (const { copy, reason } of unresolved) console.log(`  [${copyText(copy)}] ${reason}`);
+  console.log(`- requested packages with no copy in the directories it could list: ${noCopy.length}`);
+  for (const name of noCopy) console.log(`  ${name}`);
+  console.log(`- locations of requested packages loading something other than a replacement: ${leftovers.length}, not counting any inside the ${unlisted.length} directories it couldn't list`);
+  for (const { name, start, loads } of leftovers) console.log(`  [${name}] ${start} loads ${loads}`);
+  console.log("- directories it couldn't list:");
+  for (const { path: dir, code } of unlisted) console.log(`  ${path.join(appDir, dir)} (${code})`);
+
+  return left.some(asked) || unlisted.length > 0 ? 3 : 0;
+}
+
+function main() {
+  const parsed = parseArgs(process.argv);
+  if (parsed.kind !== "run") {
+    for (const error of parsed.kind === "invalid" ? parsed.errors : []) console.error(`Error: ${error}`);
+    for (const line of USAGE) console.log(line);
+    process.exit(parsed.kind === "help" ? 0 : 2);
+  }
+  const { opts } = parsed;
 
   const projectRoot = process.cwd();
   const appDir = path.resolve(projectRoot, opts.appDir);
   const appNodeModules = path.join(appDir, "node_modules");
   const outPath = path.resolve(projectRoot, opts.out);
   const verificationDir = path.resolve(projectRoot, opts.verificationDir);
-  const verifyScript = path.resolve(projectRoot, opts.verifyScript);
   const candidateSourcePath = path.resolve(projectRoot, opts.candidateSource);
 
   if (!fs.existsSync(appNodeModules)) {
@@ -400,258 +648,55 @@ function main() {
     path.join(verificationDir, ".replace-dependency.lock"),
     `${outPath}.lock`,
   ];
-  for (const lockPath of unique(lockPaths.map(canonicalEntry)).sort()) lockTree(lockPath);
+  for (const lockPath of [...new Set(lockPaths.map(canonicalEntry))].sort()) lockTree(lockPath);
 
   const logState = loadLog(outPath);
-
   const candidateSource = loadCandidateSource(candidateSourcePath);
-  const names = opts.pkg ? [opts.pkg] : [...candidateSource.keys()].sort((a, b) => a.localeCompare(b));
-  if (names.length === 0) {
-    console.error("No package candidates resolved. Provide --pkg or --auto-near-match with candidate source.");
-    process.exit(2);
+  if (candidateSource.kind === "absent") {
+    if (opts.autoNearMatch) refuse([`--auto-near-match trials the packages ${candidateSourcePath} lists, and there is no file there — run find-near-match-versions.mjs to write it, or name it with --candidate-source`]);
+    if (opts.version === null) console.log(`No candidate source at ${candidateSourcePath}: each copy is trialed against its own version only`);
   }
-  const requestedVersion = opts.pkg ? opts.version : "";
+  const names = opts.pkg !== null ? [opts.pkg] : [...candidateSource.byName.keys()].sort((a, b) => a.localeCompare(b));
+  if (names.length === 0) refuse([`${candidateSourcePath} lists no packages, so --auto-near-match has nothing to trial`]);
 
   const app = { ...appAt(appNodeModules), backupsDir: path.join(appNodeModules, ".original"), logPath: outPath };
-  const scopeDir = path.join(projectRoot, "node_modules", REPLACEMENT_SCOPE);
-  const ctxOf = (copy) => ({ app, copy, projectRoot, deleteEntry: `delete the copy's entry (${copy.location}) from ${outPath}` });
-
-  // The starts of every requested name, as the tree is now: each one the walk finds, and the app path node resolves
-  // without listing anything, kept when it holds something.
-  const requestedStarts = () => {
-    const walked = walkStarts(app);
-    const appPaths = names.map((name) => ({ name, start: locationOf(app.nodeModules, path.join(app.nodeModules, ...pkgPathParts(name))) }));
-    const starts = [...walked.starts.filter(({ name }) => names.includes(name)), ...appPaths]
-      .filter(({ start }, index, all) => all.findIndex((other) => other.start === start) === index)
-      .filter(({ start }) => appPathState(locationDir(app, start)).kind !== "absent");
-    return { starts, unlisted: walked.unlisted };
+  const run = {
+    app,
+    appDir,
+    logState,
+    opts,
+    outPath,
+    projectRoot,
+    names,
+    candidateSource,
+    verificationDir,
+    verifyScript: path.resolve(projectRoot, opts.verifyScript),
+    ctxOf: (copy) => ({ app, copy, projectRoot, deleteEntry: `delete the copy's entry (${copy.location}) from ${outPath}` }),
+    // Every copy of a requested package, as the tree is now, and the walk that found them.
+    requestedCopies: () => {
+      const walk = walkStarts(app, names);
+      return { walk, copies: copiesOf(app, walk.starts.filter(({ name }) => names.includes(name))) };
+    },
   };
-  const requestedCopies = () => copiesOf(app, requestedStarts().starts);
 
-  // Every in-flight entry is settled first, requested or not: an unrequested one still has its original set aside.
-  // [LAW:no-ambient-temporal-coupling] Its record names its location, so it is read off the log, before anything moves.
-  const inFlight = Object.entries(logState.copies)
-    .filter(([, entry]) => entry.status === "in-flight")
-    .map(([location, entry]) => {
-      const copy = { name: entry.name, location, version: entry.version };
-      return { copy, prior: priorSwap(entry, ctxOf(copy), "") };
-    });
-  refuse(conflictsOf(inFlight));
-
-  // Recovery: settle every interrupted trial before any new one starts.
-  const interrupted = inFlight.filter(({ prior }) => prior.kind === "interrupted");
-  for (const { copy, prior } of interrupted) {
-    const { recovery, inFlight: record } = prior;
-    if (recovery === "restored") restoreOriginal(copy, record.original, app);
-    else removeBackupRoots(copy, backupRootsOf(copy, record.original, app));
-    recordAttempt(logState, copy, {
-      attemptedVersion: record.attemptedVersion,
-      startedAt: record.startedAt,
-      finishedAt: new Date().toISOString(),
-      result: "fail",
-      reason: "interrupted",
-      recovery,
-      original: record.original,
-    }, outPath);
-    const outcome = recovery === "restored" ? `restored ${describeOriginal(record.original, outPath)}` : "the original was still in place";
-    console.log(`[${copyText(copy)}] interrupted trial of ${record.attemptedVersion}: ${outcome}`);
-  }
-
-  // [LAW:no-ambient-temporal-coupling] The copies this run trials are read from the tree recovery left, so a copy
-  // nested in a recovered original is among them.
-  const found = requestedCopies();
-  const selected = opts.location === "" ? found : found.filter(({ location, paths }) => location === opts.location || paths.includes(opts.location));
-  if (selected.length === 0 && opts.location !== "") {
-    refuse([`--location ${opts.location} is not where any copy of ${names.join(", ")} is reached; its copies are at ${found.map(({ location }) => location).join(", ") || "no location"}`]);
-  }
-
-  // Every recorded swap of a selected copy is checked against disk, and every untried one is checked for a link this
-  // tool would have written, before any trial moves anything.
-  const priors = selected.map((copy) => {
-    const entry = logState.copies[copy.location];
-    const logged = { name: copy.name, location: copy.location, version: entry?.version ?? null };
-    if (entry?.status === "resolved") return { copy: logged, prior: priorSwap(entry, ctxOf(logged), requestedVersion) };
-    const dir = locationDir(app, copy.location);
-    if (!holdsReplacement(appPathState(dir), dir, scopeDir)) return { copy: logged, prior: { kind: "untried" } };
-    // Trialing our own link would verify a replacement against itself and record a made-up original.
-    return { copy: logged, prior: { kind: "conflict", reason: `${dir} already links to a replacement, but ${outPath} records no resolved swap for it — put the original back over the link first (earlier backups are under ${app.backupsDir}), then rerun` } };
-  });
-  refuse(conflictsOf(priors));
-  const skipped = priors.filter(({ prior }) => prior.kind === "resolved");
+  const interrupted = recoverInterrupted(run);
+  // Read from the tree recovery left, so a copy nested in a recovered original is among them.
+  const found = run.requestedCopies().copies;
+  const { selected, skipped, toTry } = selectCopies(run, found);
   for (const { copy, prior } of skipped) console.log(`[${copyText(copy)}] already resolved with ${prior.version}; skipped`);
 
-  const toTry = selected.filter((copy) => priors.find((prior) => prior.copy.location === copy.location).prior.kind === "untried");
-  const versions = unique(toTry.map(({ outcome }) => outcome.loads?.version));
-  if (requestedVersion && versions.length > 1) {
-    refuse([`--version ${requestedVersion} names one version, but ${opts.pkg}'s copies are ${toTry.map(({ location, outcome }) => `${location} (${outcome.loads?.version ?? "no version"})`).join(", ")} — choose one with --location`]);
-  }
-
-  const retired = [];
-  for (const { name, location } of toTry) {
-    // [LAW:no-ambient-temporal-coupling] Read as this copy's trial starts, from the tree recovery and every earlier
-    // trial of this run left: a trial acts on the disk it reads, never on one read before something else moved. A
-    // location that is no longer a copy left the app's load graph with a container an earlier trial replaced.
-    const current = requestedCopies().find((copy) => copy.location === location);
-    if (current === undefined) {
-      retired.push({ name, location });
-      console.log(`[${name} ${location}] replaced with its container: nothing in the app's node_modules loads it any more`);
+  // A copy nested in one this run replaced went aside with it, so it is named, not trialed.
+  const retiredThisRun = [];
+  for (const copy of toTry) {
+    if (retiredBy(logState, copy.location) !== null) {
+      retiredThisRun.push(copy);
+      console.log(`[${copyText(copy)}] replaced with its container: nothing in the app's node_modules loads it any more`);
       continue;
     }
-    const { outcome } = current;
-    const copy = { name, location, version: outcome.kind === "trialable" ? outcome.loads.version : null };
-
-    const untrialable = (reason) => {
-      console.log(`[${copyText(copy)}] not trialed: ${reason}`);
-      const now = new Date().toISOString();
-      recordAttempt(logState, copy, {
-        attemptedVersion: null,
-        startedAt: now,
-        finishedAt: now,
-        result: "fail",
-        reason,
-        swapApplied: false,
-        rolledBack: false,
-        original: null,
-        verification: { path: null, pass: false },
-      }, outPath);
-    };
-    if (outcome.kind === "untrialable") {
-      untrialable(outcome.reason);
-      continue;
-    }
-    const candidates = requestedVersion ? [requestedVersion] : unique([copy.version, ...(candidateSource.get(name)?.get(copy.version) ?? [])]);
-
-    const swapDir = locationDir(app, location);
-    let resolved = false;
-
-    for (const version of candidates) {
-      const startedAt = new Date().toISOString();
-      const attempt = {
-        attemptedVersion: version,
-        startedAt,
-        finishedAt: null,
-        result: "fail",
-        reason: "unknown",
-        swapApplied: false,
-        rolledBack: false,
-        original: null,
-        verification: { path: null, pass: false },
-      };
-      const finish = () => {
-        attempt.finishedAt = new Date().toISOString();
-        recordAttempt(logState, copy, attempt, outPath);
-      };
-
-      console.log(`\n[${copyText(copy)}] Trying candidate ${version}`);
-
-      const replacement = replacementOf(projectRoot, name, version);
-      if (!installReplacement(opts.npm, replacement)) {
-        attempt.reason = "npm-install-failed";
-        finish();
-        continue;
-      }
-
-      const installed = packageAt(replacement.dir);
-      if (!isInstalled(installed, name, version)) {
-        attempt.reason = `installed-package-mismatch:${packageText(installed)}`;
-        finish();
-        continue;
-      }
-
-      // Write-ahead: the log names the original before it moves, so a run killed at any point after this write
-      // leaves an in-flight entry the next run can undo exactly, and the gate refuses.
-      const original = originalOf(copy, app);
-      attempt.original = original;
-      logState.copies[location] = {
-        name,
-        version: copy.version,
-        status: "in-flight",
-        attempts: logState.copies[location]?.attempts ?? [],
-        inFlight: { attemptedVersion: version, startedAt, original },
-      };
-      writeLog(outPath, logState);
-
-      let setAsideDone = false;
-      try {
-        const beforeDir = originalDir(copy, original, app);
-        setAside(copy, original, app);
-        setAsideDone = true;
-        fs.symlinkSync(rootLinkTarget(swapDir, replacement.dir), swapDir, "dir");
-        attempt.swapApplied = true;
-
-        // One file per copy and version: the location's own path parts under the verification dir.
-        const verificationOutAbs = path.join(verificationDir, ...location.split("/"), `${encodeURIComponent(version)}.json`);
-        const verificationPass = runVerifySwap({
-          verifyScript,
-          pkgName: name,
-          beforeDir,
-          afterDir: swapDir,
-          expectedVersion: version,
-          threshold: opts.threshold,
-          verificationOut: verificationOutAbs,
-        });
-        attempt.verification = { path: toLogPath(outPath, verificationOutAbs), pass: verificationPass };
-        Object.assign(attempt, verificationPass
-          ? { result: "pass", reason: "verified" }
-          : { result: "fail", reason: "verification-failed" });
-      } catch (error) {
-        attempt.reason = `trial-error:${String(error?.message || error)}`;
-      }
-
-      if (attempt.result === "fail" && setAsideDone) {
-        restoreOriginal(copy, original, app);
-        attempt.rolledBack = true;
-      }
-      // A set-aside that threw may have made the backup's directories without moving anything into them.
-      if (!setAsideDone) removeBackupRoots(copy, backupRootsOf(copy, original, app));
-      finish();
-
-      if (attempt.result === "pass") {
-        resolved = true;
-        console.log(`[${copyText(copy)}] resolved with ${version}`);
-        break;
-      }
-    }
-
-    if (!resolved) {
-      console.log(`[${copyText(copy)}] unresolved after ${candidates.length} candidate(s)`);
-    }
+    trialCopy(run, copy);
   }
 
-  // [LAW:one-source-of-truth] What the run leaves is read from the tree as it is now, never stored: every start of a
-  // requested package that loads something other than a replacement (an app copy, a copy outside the app, or nothing).
-  const unresolved = Object.entries(logState.copies)
-    .filter(([, entry]) => entry.status !== "resolved")
-    .map(([location, entry]) => ({ copy: { name: entry.name, location }, reason: entry.attempts.at(-1).reason }))
-    .sort((a, b) => copyText(a.copy).localeCompare(copyText(b.copy)));
-  const end = requestedStarts();
-  const loads = (start) => {
-    const dir = locationDir(app, start);
-    const state = pathState(dir);
-    if (state.kind !== "dir") return `nothing (${stateText(state)})`;
-    const real = fs.realpathSync(dir);
-    if (path.dirname(real) === realExisting(scopeDir)) return null;
-    return isInside(app, real) ? `the app's copy at ${locationOf(app.realNodeModules, real)}` : `a copy outside the app at ${real}`;
-  };
-  const leftovers = end.starts.map(({ name, start }) => ({ name, start, loads: loads(start) })).filter(({ loads: what }) => what !== null);
-  const noCopy = names.filter((name) => !found.some((copy) => copy.name === name));
-
-  console.log(`\nLog: ${path.relative(projectRoot, outPath)}`);
-  console.log(`- copies tracked: ${Object.keys(logState.copies).length}`);
-  console.log(`- already resolved, skipped: ${skipped.length}`);
-  console.log(`- interrupted trials recovered: ${interrupted.length}`);
-  console.log(`- replaced with their container: ${retired.length}`);
-  for (const copy of retired) console.log(`  [${copyText(copy)}]`);
-  console.log(`- unresolved copies: ${unresolved.length}`);
-  for (const { copy, reason } of unresolved) console.log(`  [${copyText(copy)}] ${reason}`);
-  console.log(`- requested packages with no copy in the app: ${noCopy.length}`);
-  for (const name of noCopy) console.log(`  ${name}`);
-  console.log(`- locations of requested packages loading something other than a replacement: ${leftovers.length}, not counting any inside the ${end.unlisted.length} directories it couldn't list`);
-  for (const { name, start, loads: what } of leftovers) console.log(`  [${name}] ${start} loads ${what}`);
-  console.log("- directories it couldn't list:");
-  for (const { path: dir, code } of end.unlisted) console.log(`  ${path.join(appDir, dir)} (${code})`);
-
-  process.exit(0);
+  process.exit(summarize(run, { found, selected, skipped, interrupted, retiredThisRun }));
 }
 
 main();

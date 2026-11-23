@@ -19,7 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { appAt, copiesOf, locationDir, walkStarts } from "./node-modules.mjs";
+import { appAt, compareLocations, copiesOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -103,16 +103,15 @@ function pkgNameFromNodeModulesPath(text) {
   return parts[0];
 }
 
-// [LAW:one-source-of-truth] Every copy of every package node can load from the app's node_modules, with
-// swapOutcome's answer for it, the one replace-dependency acts on, and walkStarts' verdict on how much of the tree
-// could be read.
+// [LAW:one-source-of-truth] Every copy of every package node can load from the app's node_modules, with the swap
+// outcome replace-dependency acts on, and the walk's verdict on how much of the tree could be read.
 function readOnDisk(appDir) {
   const app = appAt(path.join(appDir, "node_modules"));
   const { verdict, starts, unlisted } = walkStarts(app);
   return { verdict, unlisted, copies: copiesOf(app, starts).map((copy) => ({ ...copy, dir: locationDir(app, copy.location) })) };
 }
 
-const byNameThenLocation = (copies) => [...copies].sort((a, b) => a.name.localeCompare(b.name) || (a.location < b.location ? -1 : a.location > b.location ? 1 : 0));
+const byNameThenLocation = (copies) => [...copies].sort((a, b) => a.name.localeCompare(b.name) || compareLocations(a.location, b.location));
 
 function listPackageJsFiles(pkgDir) {
   return listFiles(pkgDir, SOURCE_TREE_EXCLUDES)
@@ -1033,14 +1032,16 @@ function main() {
   const onDisk = readOnDisk(appDir);
   // Every copy the app loads, trialable or not, lends its name and its shape hashes to classification: once, however
   // many paths reach it, and under the name of the package it is, so an alias's code is credited to the package it
-  // aliases and a shared copy's hashes stay unique to it. A package's version is the one the app's own require loads:
-  // the copy at its top-level path.
-  const loadedPackages = [...new Map(onDisk.copies
-    .filter(({ outcome }) => outcome.loads !== null)
-    .map(({ name, dir, paths, outcome }) => [fs.realpathSync(dir), { name: outcome.loads.name, version: outcome.loads.version, dir, topLevel: paths.includes(`node_modules/${name}`) }])).values()];
+  // aliases and a shared copy's hashes stay unique to it.
+  const loadingCopies = onDisk.copies.filter(({ outcome }) => outcome.loads !== null);
+  const loadedPackages = [...new Map(loadingCopies
+    .map(({ dir, outcome }) => [fs.realpathSync(dir), { name: outcome.loads.name, version: outcome.loads.version, dir }])).values()];
   const lockfilePackages = loadLockfilePackages(appDir);
-  const topLevelPackages = loadedPackages.filter(({ topLevel }) => topLevel);
-  const packageVersionByName = Object.fromEntries([...lockfilePackages, ...topLevelPackages].map((pkg) => [pkg.name, pkg.version]));
+  // A package's version is the one the app's own require loads: the copy its top-level path reaches.
+  const topLevelVersions = loadingCopies
+    .filter(({ name, paths }) => paths.includes(topLevelLocation(name)))
+    .map(({ outcome }) => ({ name: outcome.loads.name, version: outcome.loads.version }));
+  const packageVersionByName = Object.fromEntries([...lockfilePackages, ...topLevelVersions].map((pkg) => [pkg.name, pkg.version]));
   const shapeIndex = indexPackageShapeHashes(loadedPackages);
   const knownPackages = Array.from(
     new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackages.map((pkg) => pkg.name)]),
@@ -1084,7 +1085,7 @@ function main() {
     bundles: [],
     summary: {
       externalPackagesInCode: 0,
-      externalPackagesOnDisk: loadedPackages.length,
+      externalCopiesOnDisk: loadedPackages.length,
       externalPackagesInCodeAndOnDisk: 0,
       externalPackagesInCodeMissingOnDisk: 0,
       bundledThirdPartyPackages: 0,
@@ -1197,7 +1198,7 @@ function main() {
   console.log(`- Bundled third-party modules: ${report.summary.bundledThirdPartyModules}`);
   console.log(`- Candidate module classification rate: ${report.summary.classificationRate}`);
   console.log(`- Parse errors: ${report.parseErrors.length}`);
-  console.log(`- Packages on disk: ${loadedPackages.length} (trialable: ${onDiskReport.packages.length})`);
+  console.log(`- Copies on disk: ${loadedPackages.length} (trialable: ${onDiskReport.packages.length})`);
   console.log(`- Warnings: ${report.warnings.length}`);
   for (const warning of report.warnings) console.log(`  ${warning}`);
 }

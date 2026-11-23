@@ -10,8 +10,8 @@
 // The log holds one entry per copy, keyed by the copy's location: its swap location, the one every consumer of the
 // copy loads it through (node-modules.mjs's swapOutcome decides it). The key is the one place a location is stored.
 // Every entry names the package (name) and the version the app's copy is (version, null when the location held no
-// copy of name that could be trialed); by status it carries:
-//   unresolved  { attempts }                       no pass attempt
+// copy of name that could be trialed, so only an unresolved entry can have none); by status it carries:
+//   unresolved  { attempts }                       at least one attempt, and no pass
 //   in-flight   { attempts, inFlight }             a trial was moving the original when the run ended
 //   resolved    { attempts, chosenVersion, pass }  exactly one pass attempt, for chosenVersion
 // The original of a trial (inFlight.original, a pass attempt's original) is what sat at the copy's location:
@@ -21,6 +21,11 @@
 //   "interrupted" { recovery: "original-in-place" | "restored", original }  disk alone can't say whether a swap
 //                 happened and was undone before the kill, so it records only what disk showed
 //   any other     { swapApplied, rolledBack, original | null, verification }  a trial this run saw end
+// This module builds every entry and attempt the writer stores, so the shapes it writes are the shapes it parses.
+//
+// A copy whose location lies inside a resolved entry's location is retired: that swap set the container aside under
+// .original/ with everything nested in it, so nothing in the app loads the copy. Retirement is read off the log, never
+// stored, so it holds for an entry written before its container was swapped.
 //
 // A location is node-modules.mjs's isLocation: a package's path relative to the app dir, as npm's lockfile spells
 // one. Other stored paths (backupPath, verification.path) are relative to the log's directory, so a run from any
@@ -43,6 +48,47 @@ export function fromLogPath(logPath, storedPath) {
 
 export function emptyLog() {
   return { schemaVersion: SCHEMA_VERSION, createdAt: new Date().toISOString(), copies: {} };
+}
+
+// [LAW:single-enforcer] The attempts and entries replace-dependency stores, each in the shape parseEntry reads back.
+export const trialAttempt = (attemptedVersion, startedAt) => ({
+  attemptedVersion,
+  startedAt,
+  finishedAt: null,
+  result: "fail",
+  reason: "unknown",
+  swapApplied: false,
+  rolledBack: false,
+  original: null,
+  verification: { path: null, pass: false },
+});
+
+// A copy that was never trialed, and why.
+export const untrialedAttempt = (reason, at) => ({ ...trialAttempt(null, at), finishedAt: at, reason });
+
+export const interruptedAttempt = (inFlight, recovery, finishedAt) => ({
+  attemptedVersion: inFlight.attemptedVersion,
+  startedAt: inFlight.startedAt,
+  finishedAt,
+  result: "fail",
+  reason: "interrupted",
+  recovery,
+  original: inFlight.original,
+});
+
+// The entry a copy has once attempt is appended to its prior entry's (or to none): resolved on a pass, unresolved
+// otherwise, so a finished trial never stays in flight.
+export function settledEntry(prior, copy, attempt) {
+  const base = { name: copy.name, version: copy.version, attempts: [...(prior?.attempts ?? []), attempt] };
+  return attempt.result === "pass" ? { ...base, status: "resolved", chosenVersion: attempt.attemptedVersion, pass: attempt } : { ...base, status: "unresolved" };
+}
+
+// The write-ahead record of a trial about to move the copy's original.
+export const inFlightEntry = (prior, copy, inFlight) => ({ name: copy.name, version: copy.version, status: "in-flight", attempts: prior?.attempts ?? [], inFlight });
+
+// The location of the resolved entry whose swap retired the copy at location, or null when none contains it.
+export function retiredBy(log, location) {
+  return Object.entries(log.copies).find(([container, entry]) => entry.status === "resolved" && location.startsWith(`${container}/`))?.[0] ?? null;
 }
 
 // The on-disk form of a parsed log: `pass` is a reference into `attempts`, so it is derived, never stored.
@@ -106,6 +152,9 @@ function parseEntry(raw) {
   }
   const passes = raw.attempts.filter((attempt) => attempt.result === "pass");
   if (raw.status !== "in-flight" && raw.inFlight !== undefined) return { error: { type: "in-flight-record-on-settled", status: raw.status } };
+  // Only a copy that couldn't be trialed has no version, and an entry is unresolved after its first attempt.
+  if (raw.version === null && (raw.status === "resolved" || raw.status === "in-flight")) return { error: { type: "copy-name-invalid", detail: `a ${raw.status} entry needs the version of the copy it trialed` } };
+  if (raw.status === "unresolved" && raw.attempts.length === 0) return { error: { type: "attempts-missing", detail: "an unresolved entry records at least one attempt" } };
 
   if (raw.status === "resolved") {
     if (!isString(raw.chosenVersion)) return { error: { type: "resolved-missing-version" } };

@@ -200,8 +200,8 @@ function listTree(dir, rel = "") {
 }
 
 // Each layout places the app's copy of the package and the links that reach it, and returns where the copy lives:
-// "dir", at the app path; "pnpm", in the app's own .pnpm store, reached by a link at the app path and by a sibling
-// consumer's link, the way a pnpm-installed app ships it; "linked", outside the app's node_modules, reached by a link
+// "dir", at the app path; "pnpm", in the app's own .pnpm store, reached by a link at the app path and by the store's
+// hoisted link every store package resolves through, the way a pnpm-installed app ships it; "linked", outside the app's node_modules, reached by a link
 // at the app path, the way a workspace package is.
 const LAYOUTS = {
   dir: ({ appPkgDir }) => appPkgDir,
@@ -226,7 +226,7 @@ function swapProject(rootIndexJs, { layout = "dir", name = "demo-pkg" } = {}) {
   const appPkgDir = path.join(appDir, "node_modules", name);
   // pnpm names a store directory after the package, with a scope's "/" spelled "+".
   const storePkgDir = path.join(appDir, "node_modules", ".pnpm", `${name.replace("/", "+")}@1.2.3`, "node_modules", name);
-  const consumerPkgDir = path.join(appDir, "node_modules", ".pnpm", "consumer@1.0.0", "node_modules", name);
+  const consumerPkgDir = path.join(appDir, "node_modules", ".pnpm", "node_modules", name);
   const rootPkgDir = replacementOf(tmp, name, "1.2.3").dir;
   const logPath = path.join(tmp, "deps", "replacements.json");
 
@@ -287,10 +287,14 @@ function swapProject(rootIndexJs, { layout = "dir", name = "demo-pkg" } = {}) {
     const holdingVerify = path.join(tmp, "hold.mjs");
     writeText(holdingVerify, [
       'import fs from "node:fs";',
+      'import path from "node:path";',
       `fs.writeFileSync(${JSON.stringify(heldMarker)}, "");`,
       "const pause = new Int32Array(new SharedArrayBuffer(4));",
       "const run = process.ppid;",
       `while (!fs.existsSync(${JSON.stringify(releaseMarker)}) && process.ppid === run) Atomics.wait(pause, 0, 0, 20);`,
+      'const out = process.argv[process.argv.indexOf("--out") + 1];',
+      'fs.mkdirSync(path.dirname(out), { recursive: true });',
+      "fs.writeFileSync(out, JSON.stringify({ pass: true }));",
       "",
     ].join("\n"));
     const child = spawn("node", replaceArgs(pkgArgs("1.2.3"), holdingVerify), { cwd: tmp, stdio: ["ignore", "pipe", "pipe"] });
@@ -346,7 +350,7 @@ test("replace-dependency rolls back failed verified swap and logs transaction", 
   const { appPkgDir, replace, readLog, entry } = swapProject(FAILING_INDEX);
   const result = replace();
 
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
 
   const pkgState = entry();
   assert.ok(pkgState);
@@ -443,7 +447,7 @@ test("replace-dependency refuses a resolved swap whose replacement was removed (
 
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, /resolved with 1\.2\.3, but its replacement \S+ is now absent — reinstall it \(npm install @replace-dependency\/demo-pkg_401\.2\.3@npm:demo-pkg@1\.2\.3\)/);
+  assert.match(result.stderr, /resolved with 1\.2\.3, but its replacement \S+ is now absent — reinstall it \(npm install @replace-dependency\/demo-pkg__1\.2\.3@npm:demo-pkg@1\.2\.3\)/);
 });
 
 test("replace-dependency refuses a resolved package whose root copy drifted from the verified version", () => {
@@ -473,7 +477,7 @@ test("replace-dependency refuses an explicit --version that differs from the res
   forgetCopy();
 
   const retrial = replace("1.2.4");
-  assert.equal(retrial.status, 0, retrial.stderr || retrial.stdout);
+  assert.equal(retrial.status, 3, retrial.stderr || retrial.stdout);
   assert.equal(entry().attempts.at(-1).attemptedVersion, "1.2.4");
 });
 
@@ -563,7 +567,7 @@ test("replace-dependency trials a foreign link against the files it points at, a
   const { appPkgDir, shippedLink, replace, readLog, entry } = swapProject(FAILING_INDEX, { layout: "linked" });
 
   const result = replace();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
   const copy = entry();
   assert.equal(copy.status, "unresolved");
   assert.equal(copy.attempts.at(-1).reason, "verification-failed");
@@ -610,7 +614,7 @@ test("replace-dependency puts a pnpm store copy back for every consumer when its
   const { appPkgDir, storePkgDir, consumerPkgDir, replace, readLog, entry } = swapProject(FAILING_INDEX, { layout: "pnpm" });
 
   const result = replace();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
   assert.equal(entry().attempts.at(-1).reason, "verification-failed");
   assert.ok(fs.lstatSync(storePkgDir).isDirectory());
   for (const consumer of [appPkgDir, consumerPkgDir]) assert.equal(fs.realpathSync(consumer), fs.realpathSync(storePkgDir));
@@ -635,7 +639,7 @@ test("replace-dependency swaps a scoped package's pnpm store copy, and puts it b
   for (const [rootIndexJs, status] of [[VERIFYING_INDEX, "resolved"], [FAILING_INDEX, "unresolved"]]) {
     const { appDir, storePkgDir, consumerPkgDir, rootPkgDir, replace, readLog, entry } = swapProject(rootIndexJs, { layout: "pnpm", name: "@scope/demo-pkg" });
     const result = replace();
-    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(result.status, status === "resolved" ? 0 : 3, result.stderr || result.stdout);
     assert.equal(entry().status, status);
     const loaded = status === "resolved" ? rootPkgDir : storePkgDir;
     assert.equal(fs.realpathSync(consumerPkgDir), fs.realpathSync(loaded));
@@ -659,7 +663,7 @@ test("replace-dependency records a package past a scope linked out of the app as
   const before = treeSnapshot(sharedScope);
 
   const result = project.replace();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
   assert.match(result.stdout, /\[@scope\/demo-pkg node_modules\/@scope\/demo-pkg\] not trialed: outside-app:node_modules\/@scope\/demo-pkg/);
   const attempt = project.entry().attempts.at(-1);
   assert.equal(attempt.attemptedVersion, null);
@@ -689,7 +693,7 @@ test("replace-dependency records a package whose links loop as not trialed, nami
   fs.symlinkSync("demo-pkg", appPkgDir, "dir");
 
   const result = replace();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
   const reason = "loop:node_modules/demo-pkg -> node_modules/demo-pkg";
   assert.match(result.stdout, /\[demo-pkg node_modules\/demo-pkg\] not trialed: loop:node_modules\/demo-pkg -> node_modules\/demo-pkg/);
   assert.deepEqual(entry().attempts.map((attempt) => [attempt.attemptedVersion, attempt.reason]), [[null, reason]]);
@@ -727,12 +731,12 @@ test("replace-dependency reads each copy as its trial starts: a copy its contain
       "--verify-script", path.join(TOOLS_DIR, "verify-dependency-swap.mjs"), "--threshold", "0.99"],
     tmp,
   );
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
   assert.deepEqual(Object.keys(readLog().copies), ["node_modules/demo-pkg"], "inner's copy left with demo-pkg's original, so it has no entry");
   assert.equal(readLog().copies["node_modules/demo-pkg"].status, "resolved");
   assert.ok(result.stdout.includes("[inner node_modules/demo-pkg/node_modules/inner] replaced with its container"), result.stdout);
   assert.match(result.stdout, /- replaced with their container: 1\n/);
-  assert.match(result.stdout, /\[inner\] node_modules\/inner loads nothing \(dangling:/, "the app path that led to it is named, broken");
+  assert.match(result.stdout, /\[inner\] node_modules\/inner loads nothing \(not-a-package:dangling:/, "the app path that led to it is named, broken");
   assert.equal(npmCalls().length, 1, "only demo-pkg's replacement is installed");
 });
 
@@ -803,6 +807,10 @@ test("replace-dependency and the gate refuse a log the parser rejects, with the 
     ["attempt-invalid", (log, location) => { log.copies[location].attempts[0].rolledBack = true; }],
     ["copy-name-invalid", (log, location) => { delete log.copies[location].name; }],
     ["location-invalid", (log, location) => { log.copies["../escape"] = log.copies[location]; delete log.copies[location]; }],
+    // A path inside a package's own files is no location a copy can be at.
+    ["location-invalid", (log, location) => { log.copies["node_modules/demo-pkg/lib"] = log.copies[location]; delete log.copies[location]; }],
+    ["attempts-missing", (log, location) => { Object.assign(log.copies[location], { status: "unresolved", chosenVersion: null, attempts: [] }); }],
+    ["copy-name-invalid", (log, location) => { log.copies[location].version = null; }],
   ];
   for (const [type, corrupt] of cases) {
     const { logPath, location, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
@@ -826,7 +834,7 @@ test("replace-dependency checks a foreign link before anything is installed at t
 
   // The fake npm installs nothing, so the trial fails after install instead of crashing before it.
   const result = replace();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
   assert.equal(entry().attempts.at(-1).reason, "installed-package-mismatch:absent");
 });
 
@@ -1038,8 +1046,8 @@ function detect(tmp, appDir, code = "console.log(1);\n") {
 }
 
 // detect-dependencies, then find-near-match-versions against registry (a {name: [versions]} fixture), then
-// replace-dependency --auto-near-match with no --pkg over what they found.
-function detectAndReplace(project, { code, registry }) {
+// replace-dependency --auto-near-match with no --pkg over what they found, which exits with `status`.
+function detectAndReplace(project, { code, registry, status }) {
   const { report } = detect(project.tmp, project.appDir, code);
   const registryPath = path.join(project.tmp, "registry.json");
   writeJson(registryPath, registry);
@@ -1050,7 +1058,7 @@ function detectAndReplace(project, { code, registry }) {
   );
   assert.equal(nearMatch.status, 0, nearMatch.stderr || nearMatch.stdout);
   const result = project.replaceAuto();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, status, result.stderr || result.stdout);
   return { report, result, log: project.readLog() };
 }
 
@@ -1152,7 +1160,7 @@ test("detect-dependencies reports every top-level entry: linked packages with th
     assert.ok(result.stdout.includes(`  ${location}: `), `the console prints ${location}'s warning`);
   }
   // aliased and real-pkg reach one store copy: it is one package on disk, real-pkg, not two.
-  assert.equal(report.summary.externalPackagesOnDisk, 8);
+  assert.equal(report.summary.externalCopiesOnDisk, 8);
   const unreadPackages = report.parseErrors.filter(({ file }) => file.endsWith("node_modules/searchable"));
   assert.equal(unreadPackages.length, 1, `a loaded package whose files can't be listed is a parse error: ${JSON.stringify(report.parseErrors)}`);
   assert.match(unreadPackages[0].error, /EACCES/);
@@ -1174,13 +1182,14 @@ test("replace-dependency --pkg trials exactly the packages detect-dependencies r
   // Read at the location detect-dependencies reports, so the two tools must agree on where each copy is.
   const lastAttempt = (location) => JSON.parse(fs.readFileSync(logPath, "utf8")).copies[location].attempts.at(-1);
 
+  // The tree holds directories nothing can list, so every run ends with exit 3, its tree unread in full.
   for (const { name, location } of report.onDisk.packages) {
-    assert.equal(replace(name).status, 0);
+    assert.equal(replace(name).status, 3);
     assert.deepEqual([lastAttempt(location).attemptedVersion, lastAttempt(location).reason], ["9.9.9", "npm-install-failed"], name);
   }
   for (const { name, location, reason } of report.onDisk.untrialable) {
     const result = replace(name);
-    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(result.status, 3, result.stderr || result.stdout);
     assert.deepEqual([lastAttempt(location).attemptedVersion, lastAttempt(location).reason], [null, reason], name);
   }
   assert.deepEqual(npmCallsIn(tmp), report.onDisk.packages.map(({ name }) => `install --silent --no-progress --save-exact ${replacementOf(tmp, name, "9.9.9").spec}`));
@@ -1188,10 +1197,10 @@ test("replace-dependency --pkg trials exactly the packages detect-dependencies r
 
   // A scope detection can't list still has names replace-dependency can be asked for: under a scope nothing can read
   // through, the name is recorded as not trialed; under one node loads through, it is trialed.
-  assert.equal(replace("@locked-scope/x").status, 0);
+  assert.equal(replace("@locked-scope/x").status, 3);
   const locked = lastAttempt("node_modules/@locked-scope/x");
   assert.deepEqual([locked.attemptedVersion, locked.reason], [null, "not-a-package:unreadable:EACCES"]);
-  assert.equal(replace("@search-scope/x").status, 0);
+  assert.equal(replace("@search-scope/x").status, 3);
   const searched = lastAttempt("node_modules/@search-scope/x");
   assert.deepEqual([searched.attemptedVersion, searched.reason], ["9.9.9", "npm-install-failed"]);
 
@@ -1204,7 +1213,7 @@ test("replace-dependency --pkg trials exactly the packages detect-dependencies r
 
 test("replace-dependency --auto-near-match trials a pnpm app's linked scoped package detect-dependencies found, with no --pkg", () => {
   const project = swapProject(VERIFYING_INDEX, { layout: "pnpm", name: "@scope/demo-pkg" });
-  const { report, log } = detectAndReplace(project, { registry: { "@scope/demo-pkg": ["1.2.3"] } });
+  const { report, log } = detectAndReplace(project, { registry: { "@scope/demo-pkg": ["1.2.3"] }, status: 0 });
 
   assert.deepEqual(report.onDisk.packages.map(({ name, version }) => [name, version]), [["@scope/demo-pkg", "1.2.3"]]);
   assert.equal(log.copies[project.location].status, "resolved", JSON.stringify(log));
@@ -1215,7 +1224,7 @@ test("replace-dependency --auto-near-match trials a package linked from outside 
   const project = swapProject(VERIFYING_INDEX, { layout: "linked" });
   const vendor = path.join(project.tmp, "vendor");
   const before = treeSnapshot(vendor);
-  const { report, log } = detectAndReplace(project, { registry: { "demo-pkg": ["1.2.3"] } });
+  const { report, log } = detectAndReplace(project, { registry: { "demo-pkg": ["1.2.3"] }, status: 0 });
 
   assert.deepEqual(report.onDisk.packages.map(({ name, version }) => [name, version]), [["demo-pkg", "1.2.3"]]);
   assert.equal(log.copies[project.location].status, "resolved", JSON.stringify(log));
@@ -1233,6 +1242,8 @@ test("replace-dependency --auto-near-match resolves a pnpm package beside a scop
   const { report, log } = detectAndReplace(project, {
     code: 'require("demo-pkg");\nrequire("@ws/linked");\n',
     registry: { "demo-pkg": ["1.2.3"], "@ws/linked": ["1.0.0"] },
+    // The workspace copy can't be swapped, so the run ends with it still loaded.
+    status: 3,
   });
   const reason = "outside-app:node_modules/@ws/linked";
   assert.deepEqual(report.onDisk.untrialable, [{ name: "@ws/linked", location: "node_modules/@ws/linked", reason, loads: { name: "@ws/linked", version: "1.0.0" }, paths: ["node_modules/@ws/linked"] }]);
@@ -1258,7 +1269,7 @@ test("detect-dependencies credits an alias's copy to the package it is", () => {
   writeJson(path.join(store, "package.json"), { name: "real-pkg", version: "5.0.0" });
   linkTo(store, path.join(appDir, "node_modules", "aliased"));
   const { report } = detect(tmp, appDir, 'require("real-pkg");\n');
-  assert.equal(report.summary.externalPackagesOnDisk, 1);
+  assert.equal(report.summary.externalCopiesOnDisk, 1);
   assert.equal(report.summary.externalPackagesInCodeMissingOnDisk, 0, "real-pkg ships, under the alias's name");
 });
 
@@ -1283,7 +1294,7 @@ test("a node_modules detect-dependencies can search but not list is an incomplet
 });
 
 // An app shipping every kind of copy of foo, each with what reaches it: foo@1.0.0 and foo@2.0.0 in the pnpm store, each
-// with a consumer (and 1.0.0 at the top-level path too); foo@3.0.0 nested under bar, the npm way; a second foo@1.0.0
+// a dependency of a store package the app depends on, c1 and c2 (and 1.0.0 at the top-level path too); foo@3.0.0 nested under bar, the npm way; a second foo@1.0.0
 // nested under quux; foo@4.0.0 behind a symlinked nested node_modules, reached through baz and baz2; qux, a pnpm
 // dependency of foo@1.0.0 never hoisted to the top level; and a foo inside bar's own test fixtures, which node never
 // loads. Each name@version in `replacements` is installed at the project root (the fake npm installs nothing), verifying
@@ -1300,11 +1311,16 @@ function multiCopyApp({ replacements = [], failing = [] } = {}) {
   const store = (name, version) => pkg(path.join(nm, ".pnpm", `${name}@${version}`, "node_modules", name), name, version);
   const at = (...parts) => path.join(nm, ...parts);
 
+  // A store package the app depends on, with its dependency's link beside it in its store entry.
+  const consumer = (name, dependency) => {
+    linkTo(store(name, "1.0.0"), at(name));
+    linkTo(dependency, at(".pnpm", `${name}@1.0.0`, "node_modules", path.basename(dependency)));
+  };
   const foo1 = store("foo", "1.0.0");
   linkTo(foo1, at("foo"));
-  linkTo(foo1, at(".pnpm", "c1@1.0.0", "node_modules", "foo"));
+  consumer("c1", foo1);
   const foo2 = store("foo", "2.0.0");
-  linkTo(foo2, at(".pnpm", "c2@1.0.0", "node_modules", "foo"));
+  consumer("c2", foo2);
   pkg(at("bar"), "bar", "1.0.0");
   const foo3 = pkg(at("bar", "node_modules", "foo"), "foo", "3.0.0");
   pkg(at("bar", "test", "fixtures", "node_modules", "foo"), "foo", "9.9.9");
@@ -1337,12 +1353,12 @@ function multiCopyApp({ replacements = [], failing = [] } = {}) {
   const copies = {
     foo1: rel(foo1), foo2: rel(foo2), foo3: rel(foo3), quuxFoo: rel(quuxFoo), foo4: rel(foo4), qux: rel(qux),
   };
-  return { ...project, nm, at, copies, replace, npmCalls: () => npmCallsIn(tmp) };
+  return { ...project, nm, at, copies, consumer, replace, npmCalls: () => npmCallsIn(tmp) };
 }
 
 const FOO_COPIES = { foo1: "1.0.0", foo2: "2.0.0", foo3: "3.0.0", quuxFoo: "1.0.0", foo4: "4.0.0" };
 const ALL_REPLACEMENTS = ["foo@1.0.0", "foo@2.0.0", "foo@3.0.0", "foo@4.0.0", "qux@1.0.0"];
-const MULTI_REGISTRY = { foo: ["1.0.0", "2.0.0", "3.0.0", "4.0.0"], qux: ["1.0.0"], bar: ["1.0.0"], baz: ["1.0.0"], baz2: ["1.0.0"], quux: ["1.0.0"] };
+const MULTI_REGISTRY = { foo: ["1.0.0", "2.0.0", "3.0.0", "4.0.0"], qux: ["1.0.0"], bar: ["1.0.0"], baz: ["1.0.0"], baz2: ["1.0.0"], quux: ["1.0.0"], c1: ["1.0.0"], c2: ["1.0.0"] };
 const MULTI_CODE = 'require("foo");\nrequire("bar");\nrequire("baz");\nrequire("baz2");\nrequire("quux");\n';
 
 test("the walk finds every copy node can load: store copies with all their consumers, nested copies, one copy behind two symlinked node_modules, and no package's own fixtures", () => {
@@ -1361,7 +1377,7 @@ test("the walk finds every copy node can load: store copies with all their consu
 
 test("replace-dependency trials every copy an app ships against its own version in one run, and each consumer loads its own version's replacement", () => {
   const project = multiCopyApp({ replacements: ALL_REPLACEMENTS });
-  const { report, result, log } = detectAndReplace(project, { code: MULTI_CODE, registry: MULTI_REGISTRY });
+  const { report, result, log } = detectAndReplace(project, { code: MULTI_CODE, registry: MULTI_REGISTRY, status: 3 });
 
   const reported = report.onDisk.packages.filter(({ name }) => name === "foo" || name === "qux");
   assert.deepEqual(reported.map(({ location, version }) => [location, version]).sort(), [...Object.entries(FOO_COPIES).map(([key, version]) => [project.copies[key], version]), [project.copies.qux, "1.0.0"]].sort());
@@ -1399,7 +1415,7 @@ test("replace-dependency trials every copy an app ships against its own version 
 
 test("replace-dependency records a copy that fails on its own: the others stay replaced, and its consumers are named as loading the app's copy", () => {
   const project = multiCopyApp({ replacements: ALL_REPLACEMENTS, failing: ["foo@2.0.0"] });
-  const { result, log } = detectAndReplace(project, { code: MULTI_CODE, registry: MULTI_REGISTRY });
+  const { result, log } = detectAndReplace(project, { code: MULTI_CODE, registry: MULTI_REGISTRY, status: 3 });
 
   assert.equal(log.copies[project.copies.foo2].status, "unresolved");
   assert.equal(log.copies[project.copies.foo2].attempts.at(-1).reason, "verification-failed");
@@ -1414,17 +1430,18 @@ test("replace-dependency records a copy that fails on its own: the others stay r
 
 test("replace-dependency names each copy it can't swap with its location and reason, and installs nothing for it", () => {
   const project = multiCopyApp();
-  // A consumer link into a store copy that was pruned: the copy it leads to is the store location, which is absent.
-  const dangling = project.at(".pnpm", "pruned@1.0.0", "node_modules", "foo");
+  // A consumer's link into a store copy that was pruned: the copy it leads to is the store location, which is absent.
   const pruned = project.at(".pnpm", "foo@0.1.0", "node_modules", "foo");
-  linkTo(pruned, dangling);
+  project.consumer("pruned", pruned);
+  const dangling = project.at(".pnpm", "pruned@1.0.0", "node_modules", "foo");
   const alias = project.at(".pnpm", "c3@1.0.0", "node_modules", "foo");
-  linkTo(project.at(".pnpm", "qux@1.0.0", "node_modules", "qux"), alias);
+  project.consumer("c3", project.at(".pnpm", "qux@1.0.0", "node_modules", "qux"));
+  fs.renameSync(project.at(".pnpm", "c3@1.0.0", "node_modules", "qux"), alias);
 
   const result = project.replace(["--pkg", "foo", "--location", path.relative(project.appDir, dangling)]);
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
   const aliased = project.replace(["--pkg", "foo", "--location", path.relative(project.appDir, alias)]);
-  assert.equal(aliased.status, 0, aliased.stderr || aliased.stdout);
+  assert.equal(aliased.status, 3, aliased.stderr || aliased.stdout);
 
   const log = project.readLog();
   const reasons = Object.fromEntries(Object.entries(log.copies).map(([location, entry]) => [location, [entry.attempts.at(-1).attemptedVersion, entry.attempts.at(-1).reason]]));
@@ -1448,7 +1465,7 @@ test("replace-dependency trials a copy nested in another at the location it has 
     const project = multiCopyApp({ replacements: ["bar@1.0.0", "foo@3.0.0"], failing });
     candidates(project);
     const result = project.replaceAuto();
-    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.equal(result.status, 3, result.stderr || result.stdout);
     const log = project.readLog();
     assert.equal(log.copies["node_modules/bar"].status, failing.length ? "unresolved" : "resolved");
     if (fooOutcome === "retired") {
@@ -1459,7 +1476,7 @@ test("replace-dependency trials a copy nested in another at the location it has 
       assert.equal(fs.realpathSync(project.at("bar", "node_modules", "foo")), fs.realpathSync(replacementOf(project.tmp, "foo", "3.0.0").dir));
     }
     const rerun = project.replaceAuto();
-    assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+    assert.equal(rerun.status, 3, rerun.stderr || rerun.stdout);
   }
 });
 
@@ -1474,7 +1491,7 @@ test("replace-dependency recovers a killed container's trial, then trials the co
     packages: [["bar", "1.0.0"], ["foo", "3.0.0"]].map(([name, version]) => ({ name, onDiskVersion: version, observedVersion: version, candidates: [{ version }] })),
   });
   const rerun = project.replaceAuto();
-  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.equal(rerun.status, 3, rerun.stderr || rerun.stdout);
   assert.match(rerun.stdout, /\[bar node_modules\/bar\] interrupted trial of 1\.0\.0: restored the original/);
   assert.equal(project.readLog().copies[project.copies.foo3].status, "resolved", "the nested copy recovery put back is trialed");
 });
@@ -1502,7 +1519,9 @@ test("replacementOf gives every name@version its own valid npm alias", () => {
   const aliases = specs.map(([name, version]) => replacementOf("/project", name, version).alias);
   assert.equal(new Set(aliases).size, aliases.length, aliases.join(" "));
   for (const alias of aliases) assert.match(alias, /^@replace-dependency\/[a-z0-9._-]+$/);
-  assert.equal(replacementOf("/project", "@scope/foo", "1.0.0").spec, "@replace-dependency/_40scope_2ffoo_401.0.0@npm:@scope/foo@1.0.0");
+  assert.equal(replacementOf("/project", "@scope/foo", "1.0.0").spec, "@replace-dependency/_40scope_2ffoo__1.0.0@npm:@scope/foo@1.0.0");
+  // An "@" in either part is encoded inside that part, never read as the join.
+  assert.notEqual(replacementOf("/project", "a", "1.0@x").alias, replacementOf("/project", "a@1.0", "x").alias);
 });
 
 test("find-near-match-versions keys each copy by its exact on-disk version, so a prerelease and its release stay apart", () => {
@@ -1535,12 +1554,122 @@ test("replace-dependency recovers a kill at one copy's location only, then trial
     packages: ["1.0.0", "2.0.0"].map((version) => ({ name: "foo", onDiskVersion: version, observedVersion: version, candidates: [{ version }] })),
   });
   const rerun = project.replaceAuto();
-  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.equal(rerun.status, 3, rerun.stderr || rerun.stdout);
   assert.deepEqual(rerun.stdout.match(/interrupted trial of [^:]+/g), ["interrupted trial of 2.0.0"]);
   assert.ok(rerun.stdout.includes(`[foo ${project.copies.foo2}] interrupted trial of 2.0.0: restored the original`), rerun.stdout);
   const log = project.readLog();
   assert.deepEqual(log.copies[project.copies.foo2].attempts.map(({ reason }) => reason), ["interrupted", "verified"]);
   for (const key of ["foo1", "foo2", "foo3", "quuxFoo", "foo4"].filter((key) => ["1.0.0", "2.0.0"].includes(FOO_COPIES[key]))) {
     assert.equal(log.copies[project.copies[key]].status, "resolved", key);
+  }
+});
+
+test("replace-dependency refuses a flag with no value, an unknown flag, and flags that need --pkg, before it locks anything", () => {
+  const { tmp, logPath } = swapProject(VERIFYING_INDEX);
+  const run = (args) => runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), [...args, "--out", logPath], tmp);
+  for (const [args, message] of [
+    [["--pkg", "demo-pkg", "--location"], "--location needs a value"],
+    [["--pkg", "demo-pkg", "--verison", "1.2.3"], "unknown argument --verison"],
+    [["--auto-near-match", "--version", "1.2.3"], "--location and --version choose among --pkg's copies, so they need --pkg"],
+    [["--pkg", "demo-pkg", "--auto-near-match"], "give exactly one of --pkg <name> and --auto-near-match"],
+  ]) {
+    const result = run(args);
+    assert.equal(result.status, 2, args.join(" "));
+    assert.ok(result.stderr.includes(`Error: ${message}`), result.stderr);
+  }
+  assert.ok(!fs.existsSync(logPath), "nothing was read or written");
+});
+
+test("replace-dependency refuses a candidate source an older find-near-match-versions wrote, and one that isn't there in auto mode", () => {
+  const project = swapProject(VERIFYING_INDEX);
+  const source = path.join(project.tmp, "deps", "near-matches.json");
+  writeJson(source, { packages: [{ name: "demo-pkg", observedVersion: "1.2.3", candidates: [{ version: "1.2.3" }] }] });
+  const stale = project.replaceAuto();
+  assert.equal(stale.status, 2, stale.stdout);
+  assert.match(stale.stderr, /which is not \{ name, onDiskVersion \(a version or null\), candidates: \[\{ version \}\] \} — rerun find-near-match-versions\.mjs/);
+
+  fs.rmSync(source);
+  const absent = project.replaceAuto();
+  assert.equal(absent.status, 2, absent.stdout);
+  assert.match(absent.stderr, /there is no file there — run find-near-match-versions\.mjs to write it/);
+  assert.deepEqual(project.npmCalls(), []);
+});
+
+test("replace-dependency stops at an npm it can't run, and at a verifier that gives no verdict, putting the original back", () => {
+  const project = swapProject(VERIFYING_INDEX);
+  const noNpm = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", project.appDir, "--npm", path.join(project.tmp, "no-such-npm"), "--out", project.logPath], project.tmp);
+  assert.equal(noNpm.status, 1, noNpm.stdout);
+  assert.match(noNpm.stderr, /could not run .*no-such-npm install/);
+  assert.ok(fs.lstatSync(project.appPkgDir).isDirectory(), "nothing moved");
+
+  const silentVerify = path.join(project.tmp, "silent-verify.mjs");
+  writeText(silentVerify, "process.exit(0);\n");
+  const silent = project.replace("1.2.3", { verifyScript: silentVerify });
+  assert.equal(silent.status, 1, silent.stdout);
+  assert.match(silent.stderr, /gave no verdict on 1\.2\.3: exit 0 with no verdict at /);
+  assert.equal(project.entry().status, "unresolved");
+  assert.match(project.entry().attempts.at(-1).reason, /^verifier-error:/);
+  assert.ok(fs.lstatSync(project.appPkgDir).isDirectory(), "the original is back");
+});
+
+test("replace-dependency lists a copy logged before its container was swapped as replaced with its container, not unresolved", () => {
+  const project = multiCopyApp({ replacements: ["bar@1.0.0"] });
+  const first = project.replace(["--pkg", "foo", "--location", project.copies.foo3]);
+  assert.equal(first.status, 3, first.stdout);
+  assert.equal(project.readLog().copies[project.copies.foo3].status, "unresolved");
+
+  const second = project.replace(["--pkg", "bar"]);
+  assert.equal(second.status, 0, second.stderr || second.stdout);
+  assert.match(second.stdout, new RegExp(`- replaced with their container: 1\n {2}\\[foo ${project.copies.foo3}\\]\n`));
+  assert.doesNotMatch(second.stdout, new RegExp(`- unresolved copies: [^\n]*\n(?: {2}.*\n)* {2}\\[foo ${project.copies.foo3}\\]`));
+});
+
+test("detect-dependencies reports a copy already linked to a replacement as one replace-dependency can't trial", () => {
+  const project = swapProject(VERIFYING_INDEX);
+  assert.equal(project.replace().status, 0);
+  const { report } = detect(project.tmp, project.appDir);
+  const alias = replacementOf(project.tmp, "demo-pkg", "1.2.3").alias;
+  assert.deepEqual(report.onDisk.untrialable.map(({ location, reason }) => [location, reason]), [[project.location, `replacement:${alias}`]]);
+  assert.deepEqual(report.onDisk.packages, []);
+});
+
+test("the walk finds a pnpm store's copies by node's lookup paths, whatever the store directory is named", () => {
+  const tmp = mkTmpDir();
+  const nm = path.join(tmp, "app", "node_modules");
+  const storeCopy = (name) => {
+    const dir = path.join(nm, ".vstore", `${name}@1.0.0`, "node_modules", name);
+    writeJson(path.join(dir, "package.json"), { name, version: "1.0.0" });
+    return dir;
+  };
+  linkTo(storeCopy("top"), path.join(nm, "top"));
+  linkTo(storeCopy("hidden"), path.join(nm, ".vstore", "top@1.0.0", "node_modules", "hidden"));
+  const app = appAt(nm);
+  const walked = walkStarts(app);
+  assert.deepEqual(walked.verdict, { kind: "listed" });
+  assert.deepEqual(copiesOf(app, walked.starts).map(({ name, location }) => [name, location]), [
+    ["hidden", "node_modules/.vstore/hidden@1.0.0/node_modules/hidden"],
+    ["top", "node_modules/.vstore/top@1.0.0/node_modules/top"],
+  ]);
+});
+
+test("find-near-match-versions offers a prerelease copy only published versions, and is exact only against the copy's own", () => {
+  const tmp = mkTmpDir();
+  const depsPath = path.join(tmp, "deps", "detected-dependencies.json");
+  writeJson(depsPath, {
+    onDisk: {
+      nodeModules: { kind: "listed" },
+      packages: [["2.1.0-rc.1", "node_modules/foo"], ["5.0.0-rc.1", "node_modules/bar"]].map(([version, location]) => ({ name: path.basename(location), version, location, paths: [location] })),
+    },
+  });
+  const registry = { foo: ["2.1.0", "2.1.1-rc.1"], bar: ["5.0.0"] };
+  writeJson(path.join(tmp, "registry.json"), registry);
+  const out = path.join(tmp, "near.json");
+  const result = runNode(path.join(TOOLS_DIR, "find-near-match-versions.mjs"), ["--deps", depsPath, "--app-dir", tmp, "--registry-file", path.join(tmp, "registry.json"), "--out", out], tmp);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  for (const pkg of JSON.parse(fs.readFileSync(out, "utf8")).packages) {
+    const offered = pkg.candidates.map(({ version }) => version);
+    assert.deepEqual(offered.filter((version) => version !== pkg.onDiskVersion && !registry[pkg.name].includes(version)), [], `${pkg.name}: ${offered}`);
+    assert.equal(pkg.bestCandidate.version, pkg.onDiskVersion, pkg.name);
+    assert.equal(pkg.recommendation, "exact", pkg.name);
   }
 });

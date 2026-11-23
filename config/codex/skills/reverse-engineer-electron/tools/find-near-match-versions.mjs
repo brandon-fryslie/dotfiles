@@ -106,8 +106,9 @@ function npmViewVersions(pkgName) {
 }
 
 // [LAW:parse-dont-validate] The one reader of detect-dependencies' onDisk section: the copies replace-dependency can
-// trial, each with a name, a version and a location, or why the report holds no such list. Only a node_modules detect-dependencies
-// listed in full, or one the app doesn't ship, lists every package on disk; any other is a tree it couldn't read.
+// trial, each with a name, a version and a location, or why the report holds no such list. Only a node_modules
+// detect-dependencies listed in full, or one the app doesn't ship, lists every trialable copy; any other is a tree it
+// couldn't read.
 function parseOnDiskPackages(report) {
   const onDisk = report?.onDisk;
   if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version) && isNonEmptyString(pkg?.location))) {
@@ -203,7 +204,7 @@ function scoreCandidate(candidateVersion, observedVersion, ctx) {
   const parsedObserved = parseSemver(observedVersion);
   const parsedCandidate = parseSemver(candidateVersion);
 
-  if (parsedObserved && parsedCandidate && parsedObserved.normalized === parsedCandidate.normalized) {
+  if (candidateVersion === observedVersion) {
     score += 100;
     reasons.push("exact-observed-version");
   }
@@ -237,7 +238,7 @@ function scoreCandidate(candidateVersion, observedVersion, ctx) {
   }
 
   const risk =
-    parsedObserved && parsedCandidate && parsedObserved.normalized === parsedCandidate.normalized
+    candidateVersion === observedVersion
       ? "low"
       : score >= 90
         ? "medium"
@@ -251,22 +252,19 @@ function scoreCandidate(candidateVersion, observedVersion, ctx) {
   };
 }
 
+// [LAW:types-are-the-program] Candidates are versions as the registry publishes them, beside the observed version as
+// the copy holds it, so a prerelease copy is offered only versions that exist and is exact only against itself.
 function rankCandidates(ctx, registryVersions) {
   const observed = parseSemver(ctx.observedVersion || "");
   if (!observed) return [];
 
-  const filtered = [];
-  for (const version of registryVersions) {
+  const sameMinor = registryVersions.filter((version) => {
     const parsed = parseSemver(version);
-    if (!parsed) continue;
-    if (parsed.major !== observed.major || parsed.minor !== observed.minor) continue;
-    filtered.push(parsed.normalized);
-  }
+    return parsed !== null && parsed.major === observed.major && parsed.minor === observed.minor;
+  });
+  const unique = Array.from(new Set([...sameMinor, ctx.observedVersion]));
 
-  filtered.push(observed.normalized);
-  const unique = Array.from(new Set(filtered));
-
-  const scored = unique.map((version) => scoreCandidate(version, observed.normalized, ctx));
+  const scored = unique.map((version) => scoreCandidate(version, ctx.observedVersion, ctx));
   scored.sort((a, b) => b.score - a.score || compareSemverDesc(a.version, b.version));
 
   return scored;
@@ -312,7 +310,7 @@ function main() {
   };
 
   for (const ctx of packageContexts) {
-    const observed = parseSemver(ctx.observedVersion || "")?.normalized || null;
+    const observed = parseSemver(ctx.observedVersion || "") ? ctx.observedVersion : null;
 
     let versions = [];
     let source = "registry";
@@ -323,7 +321,8 @@ function main() {
       const registryResult = versionsOf(ctx.name);
       if (!registryResult.ok) {
         degradedMode = true;
-        degradedReasons.push({ package: ctx.name, reason: registryResult.error });
+        // One reason per package, however many of its versions the app ships.
+        if (!degradedReasons.some(({ package: name }) => name === ctx.name)) degradedReasons.push({ package: ctx.name, reason: registryResult.error });
         versions = observed ? [observed] : [];
         source = "degraded-local";
       } else {
@@ -377,7 +376,8 @@ function main() {
     packages,
     unresolved,
     summary: {
-      totalPackages: packages.length,
+      totalPackages: new Set(packages.map(({ name }) => name)).size,
+      totalPackageVersions: packages.length,
       exactRecommendations: packages.filter((item) => item.recommendation === "exact").length,
       nearMatchRecommendations: packages.filter((item) => item.recommendation === "near-match").length,
       unresolvedRecommendations: unresolved.length,
@@ -386,7 +386,7 @@ function main() {
 
   writeJson(outPath, payload);
   console.log(`Wrote ${path.relative(projectRoot, outPath)}`);
-  console.log(`- packages: ${payload.summary.totalPackages}`);
+  console.log(`- packages: ${payload.summary.totalPackages} (${payload.summary.totalPackageVersions} versions)`);
   console.log(`- exact: ${payload.summary.exactRecommendations}`);
   console.log(`- near-match: ${payload.summary.nearMatchRecommendations}`);
   console.log(`- unresolved: ${payload.summary.unresolvedRecommendations}`);
