@@ -100,6 +100,10 @@ test-skill-installer:
 test-image-gen:
     uv run --with openai==3.49.0 python -m unittest tests/test_image_gen_retries.py
 
+# Assert what tmux-resurrect's save records per pane: a Claude session as a resume of it, a program as launched, an idle shell as nothing
+test-tmux-resurrect:
+    python3 -m unittest tests/test_tmux_resurrect_pane_commands.py
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
