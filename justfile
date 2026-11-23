@@ -104,6 +104,14 @@ test-image-gen:
 test-tmux-pane-lifecycle:
     ./config/tmux/tests/pane-lifecycle.sh
 
+# Test what the tmux-resurrect save strategy records for each kind of pane
+test-tmux-resurrect:
+    python3 -m unittest tests/test_tmux_resurrect_command.py
+
+# Test reading a Claude process's launch and building its session's resume
+test-claude-lib:
+    python3 -m unittest discover -s config/claude/lib -p 'test_*.py'
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'

@@ -18,10 +18,8 @@ What the cut removes, so the resumed session cannot see it:
 macOS and tmux only: the session is read from the kernel and replaced in its pane.
 """
 
-import ctypes
 import json
 import os
-import struct
 import subprocess
 import sys
 import tempfile
@@ -29,11 +27,12 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+# The shared reader of how Claude was started, found through this file's symlink into the dotfiles repo.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
+from claude_process import claude_options, resumed, started_with  # noqa: E402
+
 # How long the old Claude has to exit after the pane is replaced before it is killed.
 EXIT_SECONDS = 10.0
-# Flags that pick which session Claude starts on; the resumed Claude gets `--resume <id>` in their place.
-SESSION_FLAGS_WITH_VALUE = {"--resume", "-r", "--session-id"}
-SESSION_FLAGS = {"--continue", "-c", "--fork-session"}
 THINKING = {"thinking", "redacted_thinking"}
 LINKS = ("parentUuid", "logicalParentUuid", "leafUuid")
 
@@ -169,51 +168,6 @@ def _dangling(lines: list[str]) -> set[str]:
     return {entry[link] for entry in entries for link in ("parentUuid", "logicalParentUuid") if entry.get(link) and entry[link] not in uuids}
 
 
-# ---- the process: what Claude was started with ----
-
-
-def started_with(pid: int) -> tuple[list[str], dict[str, str]]:
-    """The argv and environment process `pid` was exec'd with, as the kernel kept them (macOS KERN_PROCARGS2)."""
-    libc = ctypes.CDLL(None, use_errno=True)
-    size = ctypes.c_size_t(4)
-    argmax = ctypes.c_int()
-    if libc.sysctl((ctypes.c_int * 2)(1, 8), 2, ctypes.byref(argmax), ctypes.byref(size), None, 0) != 0:
-        raise Refused(f"cannot read the kernel's argument limit: {os.strerror(ctypes.get_errno())}")
-    buffer = ctypes.create_string_buffer(argmax.value)
-    size = ctypes.c_size_t(argmax.value)
-    if libc.sysctl((ctypes.c_int * 3)(1, 49, pid), 3, buffer, ctypes.byref(size), None, 0) != 0:
-        raise Refused(f"cannot read how process {pid} was started: {os.strerror(ctypes.get_errno())}")
-    raw = buffer.raw[: size.value]
-    (argc,) = struct.unpack_from("i", raw)
-    # After argc: the exec path, NUL padding, then argc arguments and the environment, each NUL-terminated.
-    rest = raw[4:]
-    rest = rest[rest.index(b"\0") :].lstrip(b"\0")
-    strings = rest.split(b"\0")
-    argv = [item.decode() for item in strings[:argc]]
-    environment = {}
-    for item in strings[argc:]:
-        if not item:
-            break
-        key, _, value = item.decode().partition("=")
-        environment[key] = value
-    return argv, environment
-
-
-def resumed(argv: list[str], session: str) -> list[str]:
-    """`argv` with whatever chose its session replaced by `--resume session`."""
-    out, skip = [], False
-    for arg in argv:
-        if skip:
-            skip = False
-        elif arg in SESSION_FLAGS_WITH_VALUE:
-            skip = True
-        elif arg in SESSION_FLAGS or any(arg.startswith(flag + "=") for flag in SESSION_FLAGS_WITH_VALUE):
-            pass
-        else:
-            out.append(arg)
-    return [*out, "--resume", session]
-
-
 # ---- the two commands ----
 
 
@@ -233,10 +187,10 @@ def restart(cuts_path: Path) -> None:
     # Checked now, while the session can still be told: the rewrite runs after it is gone.
     lines = transcript.read_text().splitlines()
     excised(lines, cuts)
-    argv, environment = started_with(pid)
+    process = started_with(pid)
     # Where the session last was, which is where its transcript is filed: it can have moved since Claude started.
     cwd = [entry["cwd"] for entry in map(json.loads, lines) if "cwd" in entry][-1]
-    plan = Plan(pid, str(transcript), cuts, resumed(argv, session), {**environment, "PWD": cwd}, cwd)
+    plan = Plan(pid, str(transcript), cuts, resumed(process.argv, session, claude_options()), {**process.environment, "PWD": cwd}, cwd)
     descriptor, plan_path = tempfile.mkstemp(prefix="excise-", suffix=".json")
     with os.fdopen(descriptor, "w") as out:
         json.dump(asdict(plan), out)
@@ -294,5 +248,5 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except Refused as refused:
+    except (Refused, OSError) as refused:
         sys.exit(f"excise: {refused}")
