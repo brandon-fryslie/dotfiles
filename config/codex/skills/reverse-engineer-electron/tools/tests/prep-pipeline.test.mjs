@@ -36,7 +36,7 @@ test("find-near-match-versions only returns patch-level candidates and ranks exa
 
   writeJson(depsPath, {
     onDisk: {
-      nodeModules: { kind: "dir" },
+      nodeModules: { kind: "listed" },
       packages: [{ name: "demo-pkg", version: "1.2.3", path: "node_modules/demo-pkg" }],
     },
     code: {
@@ -89,8 +89,9 @@ test("find-near-match-versions refuses a report whose on-disk packages it can't 
   };
   const cases = [
     [{ code: {} }, /has no onDisk\.packages list/],
-    [{ onDisk: { nodeModules: { kind: "dir" }, packages: [{ name: "", version: "1.0.0" }] } }, /has no onDisk\.packages list/],
-    [{ onDisk: { nodeModules: { kind: "dangling", target: "gone" }, packages: [] } }, /node_modules is \{"kind":"dangling","target":"gone"\}/],
+    [{ onDisk: { nodeModules: { kind: "listed" }, packages: [{ name: "", version: "1.0.0" }] } }, /has no onDisk\.packages list/],
+    [{ onDisk: { nodeModules: { kind: "incomplete", reason: "node_modules is not a directory: dangling:gone" }, packages: [] } }, /node_modules is not a directory: dangling:gone — fix it/],
+    [{ onDisk: { nodeModules: { kind: "dir" }, packages: [] } }, /its node_modules verdict is \{"kind":"dir"\}/],
   ];
   for (const [report, message] of cases) {
     const result = run(report);
@@ -1074,6 +1075,7 @@ function everyStateApp(t) {
   linkTo(store("@scope/pnpm-scoped", "3.0.0"), path.join(nm, "@scope", "pnpm-scoped"));
   linkTo(pkg(path.join(tmp, "vendor", "linked"), "linked", "4.0.0"), path.join(nm, "linked"));
   linkTo(store("real-pkg", "5.0.0"), path.join(nm, "aliased"));
+  linkTo(path.join(nm, ".pnpm", "real-pkg@5.0.0", "node_modules", "real-pkg"), path.join(nm, "real-pkg"));
   pkg(path.join(tmp, "workspace", "@ws", "inner"), "@ws/inner", "6.0.0");
   linkTo(path.join(tmp, "workspace", "@ws"), path.join(nm, "@ws"));
   linkTo(store("@back/back", "7.0.0"), path.join(tmp, "shared-back", "back"));
@@ -1107,13 +1109,14 @@ const invalidJsonMessage = (text) => {
 };
 
 const EVERY_STATE_ON_DISK = {
-  nodeModules: { kind: "dir" },
+  nodeModules: { kind: "incomplete", reason: "couldn't list node_modules/@locked-scope (EACCES), node_modules/@search-scope (EACCES), so the packages inside aren't detected" },
   packages: [
     { name: "@back/back", version: "7.0.0", path: "node_modules/@back/back", location: "node_modules/.pnpm/@back+back@7.0.0/node_modules/@back/back" },
     { name: "@scope/pnpm-scoped", version: "3.0.0", path: "node_modules/@scope/pnpm-scoped", location: "node_modules/.pnpm/@scope+pnpm-scoped@3.0.0/node_modules/@scope/pnpm-scoped" },
     { name: "linked", version: "4.0.0", path: "node_modules/linked", location: "node_modules/linked" },
     { name: "plain", version: "1.0.0", path: "node_modules/plain", location: "node_modules/plain" },
     { name: "pnpm-pkg", version: "2.0.0", path: "node_modules/pnpm-pkg", location: "node_modules/.pnpm/pnpm-pkg@2.0.0/node_modules/pnpm-pkg" },
+    { name: "real-pkg", version: "5.0.0", path: "node_modules/real-pkg", location: "node_modules/.pnpm/real-pkg@5.0.0/node_modules/real-pkg" },
     { name: "searchable", version: "10.0.0", path: "node_modules/searchable", location: "node_modules/searchable" },
   ],
   untrialable: [
@@ -1138,12 +1141,15 @@ test("detect-dependencies reports every top-level entry: linked packages with th
   const { result, report } = detect(tmp, appDir);
 
   assert.deepEqual(report.onDisk, EVERY_STATE_ON_DISK);
-  const warned = [...EVERY_STATE_ON_DISK.untrialable, ...EVERY_STATE_ON_DISK.unlisted];
-  assert.equal(report.warnings.length, warned.length, JSON.stringify(report.warnings));
-  for (const { path: entryPath } of warned) {
+  const treeWarning = `node_modules can't be fully read: ${EVERY_STATE_ON_DISK.nodeModules.reason}`;
+  assert.deepEqual(report.warnings.filter((warning) => warning === treeWarning), [treeWarning]);
+  assert.equal(report.warnings.length, EVERY_STATE_ON_DISK.untrialable.length + 1, JSON.stringify(report.warnings));
+  for (const { path: entryPath } of EVERY_STATE_ON_DISK.untrialable) {
     assert.equal(report.warnings.filter((warning) => warning.startsWith(`${entryPath}: `)).length, 1, entryPath);
     assert.ok(result.stdout.includes(`  ${entryPath}: `), `the console prints ${entryPath}'s warning`);
   }
+  // aliased and real-pkg reach one store copy: it is one package on disk, real-pkg, not two.
+  assert.equal(report.summary.externalPackagesOnDisk, 8);
   const unreadPackages = report.parseErrors.filter(({ file }) => file.endsWith("node_modules/searchable"));
   assert.equal(unreadPackages.length, 1, `a loaded package whose files can't be listed is a parse error: ${JSON.stringify(report.parseErrors)}`);
   assert.match(unreadPackages[0].error, /EACCES/);
@@ -1237,4 +1243,35 @@ test("detect-dependencies states that an app ships no node_modules, without a wa
   const { report } = detect(tmp, appDir);
   assert.deepEqual(report.onDisk, { nodeModules: { kind: "absent" }, packages: [], untrialable: [], unlisted: [] });
   assert.deepEqual(report.warnings, []);
+});
+
+test("detect-dependencies credits an alias's copy to the package it is", () => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "resources", "app");
+  const store = path.join(appDir, "node_modules", ".pnpm", "real-pkg@5.0.0", "node_modules", "real-pkg");
+  writeJson(path.join(store, "package.json"), { name: "real-pkg", version: "5.0.0" });
+  linkTo(store, path.join(appDir, "node_modules", "aliased"));
+  const { report } = detect(tmp, appDir, 'require("real-pkg");\n');
+  assert.equal(report.summary.externalPackagesOnDisk, 1);
+  assert.equal(report.summary.externalPackagesInCodeMissingOnDisk, 0, "real-pkg ships, under the alias's name");
+});
+
+test("a node_modules detect-dependencies can search but not list is an incomplete report, which find-near-match-versions refuses", { skip: EVERY_STATE_SKIP }, (t) => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "resources", "app");
+  const nm = path.join(appDir, "node_modules");
+  writeJson(path.join(nm, "demo-pkg", "package.json"), { name: "demo-pkg", version: "1.2.3" });
+  fs.chmodSync(nm, 0o311);
+  t.after(() => fs.chmodSync(nm, 0o755));
+
+  const { report } = detect(tmp, appDir, 'require("demo-pkg");\n');
+  const reason = "couldn't list node_modules (EACCES), so the packages inside aren't detected";
+  assert.deepEqual(report.onDisk, { nodeModules: { kind: "incomplete", reason }, packages: [], untrialable: [], unlisted: [{ path: "node_modules", code: "EACCES" }] });
+  const nearMatch = runNode(
+    path.join(TOOLS_DIR, "find-near-match-versions.mjs"),
+    ["--deps", path.join(tmp, "deps", "detected-dependencies.json"), "--app-dir", appDir, "--out", path.join(tmp, "deps", "near-matches.json")],
+    tmp,
+  );
+  assert.equal(nearMatch.status, 2, nearMatch.stdout);
+  assert.ok(nearMatch.stderr.includes(reason), nearMatch.stderr);
 });

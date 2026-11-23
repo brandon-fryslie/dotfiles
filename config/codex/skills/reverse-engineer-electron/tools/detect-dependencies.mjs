@@ -19,7 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { appAt, pathState, pkgPathParts, swapOutcome, topLevelEntries } from "./node-modules.mjs";
+import { readAppNodeModules } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -104,19 +104,10 @@ function pkgNameFromNodeModulesPath(text) {
 }
 
 // [LAW:one-source-of-truth] Every top-level entry of the app's node_modules with swapOutcome's answer for it, the one
-// replace-dependency acts on, and each directory of entries that couldn't be listed. An app with no node_modules (a
-// fully bundled one ships none) has no entries.
+// replace-dependency acts on, and readAppNodeModules' verdict on how much of the tree could be read.
 function readOnDisk(appDir) {
-  const nodeModules = path.join(appDir, "node_modules");
-  const state = pathState(nodeModules);
-  if (state.kind !== "dir") return { nodeModules: state, entries: [], unlisted: [] };
-  const app = appAt(nodeModules);
-  const { names, unlisted } = topLevelEntries(nodeModules);
-  const entries = names.map((name) => {
-    const dir = path.join(nodeModules, ...pkgPathParts(name));
-    return { name, dir, path: path.relative(appDir, dir), outcome: swapOutcome(app, name) };
-  });
-  return { nodeModules: state, entries, unlisted: unlisted.map(({ dir, code }) => ({ path: path.relative(appDir, dir), code })) };
+  const { verdict, entries, unlisted } = readAppNodeModules(path.join(appDir, "node_modules"));
+  return { verdict, unlisted, entries: entries.map((entry) => ({ ...entry, path: path.relative(appDir, entry.dir) })) };
 }
 
 function listPackageJsFiles(pkgDir) {
@@ -1036,10 +1027,12 @@ function main() {
 
   const fingerprints = loadFingerprints();
   const onDisk = readOnDisk(appDir);
-  // Every copy the app loads, trialable or not, lends its version, its name, and its shape hashes to classification.
-  const loadedPackages = onDisk.entries
+  // Every copy the app loads, trialable or not, lends its version, its name, and its shape hashes to classification:
+  // once, however many top-level names reach it, and under the name of the package it is, so an alias's code is
+  // credited to the package it aliases and a shared copy's hashes stay unique to it.
+  const loadedPackages = [...new Map(onDisk.entries
     .filter(({ outcome }) => outcome.loads !== null)
-    .map(({ name, dir, outcome }) => ({ name, version: outcome.loads.version, dir }));
+    .map(({ dir, outcome }) => [fs.realpathSync(dir), { name: outcome.loads.name, version: outcome.loads.version, dir }])).values()];
   const lockfilePackages = loadLockfilePackages(appDir);
   const packageVersionByName = Object.fromEntries([...lockfilePackages, ...loadedPackages].map((pkg) => [pkg.name, pkg.version]));
   const shapeIndex = indexPackageShapeHashes(loadedPackages);
@@ -1047,7 +1040,7 @@ function main() {
     new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackages.map((pkg) => pkg.name)]),
   ).sort((left, right) => right.length - left.length || left.localeCompare(right));
   const onDiskReport = {
-    nodeModules: onDisk.nodeModules,
+    nodeModules: onDisk.verdict,
     packages: onDisk.entries.filter(({ outcome }) => outcome.kind === "trialable")
       .map(({ name, path: entryPath, outcome }) => ({ name, version: outcome.loads.version, path: entryPath, location: outcome.location })),
     untrialable: onDisk.entries.filter(({ outcome }) => outcome.kind === "untrialable")
@@ -1098,9 +1091,8 @@ function main() {
   };
 
   for (const { path: entryPath, reason } of onDiskReport.untrialable) report.warnings.push(`${entryPath}: replace-dependency can't trial it (${reason})`);
-  for (const { path: entryPath, code } of onDiskReport.unlisted) report.warnings.push(`${entryPath}: can't be listed (${code}), so no package in it is detected`);
   for (const { file, error } of shapeIndex.errors) report.parseErrors.push({ file: fileRel(projectRoot, file), error });
-  if (!["dir", "absent"].includes(onDisk.nodeModules.kind)) report.warnings.push(`node_modules is not a directory node can list: ${JSON.stringify(onDisk.nodeModules)}`);
+  if (onDisk.verdict.kind === "incomplete") report.warnings.push(`node_modules can't be fully read: ${onDisk.verdict.reason}`);
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
   if (moduleIndexPath && fs.existsSync(moduleIndexPath)) {

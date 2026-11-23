@@ -105,16 +105,17 @@ function npmViewVersions(pkgName) {
 }
 
 // [LAW:parse-dont-validate] The one reader of detect-dependencies' onDisk section: the packages replace-dependency can
-// trial, each with a name and a version, or why the report holds no such list. A node_modules that is neither a
-// directory nor absent is an app this tool can't read packages from, not one that ships none.
+// trial, each with a name and a version, or why the report holds no such list. Only a node_modules detect-dependencies
+// listed in full, or one the app doesn't ship, lists every package on disk; any other is a tree it couldn't read.
 function parseOnDiskPackages(report) {
   const onDisk = report?.onDisk;
   const isNonEmptyString = (value) => typeof value === "string" && value !== "";
   if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version))) {
     return { ok: false, error: "it has no onDisk.packages list of { name, version } — rerun detect-dependencies.mjs to write it" };
   }
-  if (!["dir", "absent"].includes(onDisk.nodeModules?.kind)) {
-    return { ok: false, error: `the app's node_modules is ${JSON.stringify(onDisk.nodeModules)}, so its packages couldn't be read — fix it, then rerun detect-dependencies.mjs` };
+  if (!["listed", "absent"].includes(onDisk.nodeModules?.kind)) {
+    const why = onDisk.nodeModules?.kind === "incomplete" ? onDisk.nodeModules.reason : `its node_modules verdict is ${JSON.stringify(onDisk.nodeModules)}`;
+    return { ok: false, error: `${why} — fix it, then rerun detect-dependencies.mjs` };
   }
   return { ok: true, packages: onDisk.packages.map(({ name, version }) => ({ name, version })) };
 }

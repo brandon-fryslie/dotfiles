@@ -99,6 +99,24 @@ export function topLevelEntries(nodeModules) {
   return { names: parts.flatMap((part) => part.names), unlisted: [...top.unlisted, ...parts.flatMap((part) => part.unlisted)] };
 }
 
+// [LAW:single-enforcer] An app's node_modules as a reader of its packages can rely on it: each top-level entry with
+// its swap outcome, the directories that couldn't be listed, and one verdict on the whole: absent (the app ships none, as a
+// fully bundled one does), listed (every directory read), or incomplete with the reason, so no consumer can take a
+// tree it couldn't read for one with nothing in it.
+export function readAppNodeModules(nodeModules) {
+  const state = pathState(nodeModules);
+  if (state.kind === "absent") return { verdict: { kind: "absent" }, entries: [], unlisted: [] };
+  if (state.kind !== "dir") return { verdict: { kind: "incomplete", reason: `node_modules is not a directory: ${stateText(state)}` }, entries: [], unlisted: [] };
+  const app = appAt(nodeModules);
+  const { names, unlisted } = topLevelEntries(nodeModules);
+  const entries = names.map((name) => ({ name, dir: path.join(nodeModules, ...pkgPathParts(name)), outcome: swapOutcome(app, name) }));
+  const named = unlisted.map(({ dir, code }) => ({ path: path.relative(path.dirname(nodeModules), dir), code }));
+  const verdict = named.length === 0
+    ? { kind: "listed" }
+    : { kind: "incomplete", reason: `couldn't list ${named.map(({ path: dir, code }) => `${dir} (${code})`).join(", ")}, so the packages inside aren't detected` };
+  return { verdict, entries, unlisted: named };
+}
+
 // What sits at a path without following it: nothing, a directory, a file, a symlink with its readlink text, or a path
 // it can't lstat (with the error code). pathState answers what node finds there once it follows the links.
 export function appPathState(p) {
