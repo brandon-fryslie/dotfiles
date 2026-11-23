@@ -24,3 +24,21 @@ setopt AUTO_PARAM_SLASH
 
 # TODO: move this to a plugin
 zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
+
+# In an ssh session, `code [dir]` opens dir (default: cwd) as a VS Code Remote-SSH
+# project on the machine you came from, by ssh-ing back to it. That machine opts in
+# from its ~/.ssh/config Host block for this host:
+#   SetEnv LC_VSCODE_CLIENT=<how this host reaches it> LC_VSCODE_REMOTE=<its alias for this host>
+# LC_* because that is the only prefix macOS sshd accepts. Read once and unset, so an
+# onward ssh from here (SendEnv LC_*) can't carry them to a host they don't describe.
+typeset -g _vscode_client=$LC_VSCODE_CLIENT _vscode_remote=$LC_VSCODE_REMOTE
+unset LC_VSCODE_CLIENT LC_VSCODE_REMOTE
+code() {
+  [[ -n $_vscode_client ]] || { command code "$@"; return }
+  [[ -n $_vscode_remote ]] || { print -u2 "code: LC_VSCODE_REMOTE not sent; set it beside LC_VSCODE_CLIENT"; return 1 }
+  (( $# <= 1 )) || { print -u2 "code: over ssh, takes one path (got $#)"; return 2 }
+  local target=${${1:-.}:A}
+  [[ -e $target ]] || { print -u2 "code: no such path: $target"; return 1 }
+  ssh -n -o BatchMode=yes -o ConnectTimeout=5 "$_vscode_client" \
+    code --remote "${(q):-ssh-remote+$_vscode_remote}" "${(q)target}"
+}
