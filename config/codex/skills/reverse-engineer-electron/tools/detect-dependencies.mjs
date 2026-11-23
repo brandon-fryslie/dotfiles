@@ -19,6 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
+import { readAppNodeModules } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -102,56 +103,11 @@ function pkgNameFromNodeModulesPath(text) {
   return parts[0];
 }
 
-function readPackageJson(pkgDir) {
-  const packageJsonPath = path.join(pkgDir, "package.json");
-  if (!fs.existsSync(packageJsonPath)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function listOnDiskPackages(appDir) {
-  const nmDir = path.join(appDir, "node_modules");
-  const out = [];
-  if (!fs.existsSync(nmDir) || !fs.statSync(nmDir).isDirectory()) return out;
-
-  const entries = fs.readdirSync(nmDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith(".")) continue;
-
-    if (entry.name.startsWith("@")) {
-      const scopeDir = path.join(nmDir, entry.name);
-      for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-        if (!scoped.isDirectory()) continue;
-        const pkgDir = path.join(scopeDir, scoped.name);
-        const pkg = readPackageJson(pkgDir);
-        if (!pkg?.name || !pkg?.version) continue;
-        out.push({
-          name: pkg.name,
-          version: pkg.version,
-          path: path.relative(appDir, pkgDir),
-          dir: pkgDir,
-        });
-      }
-      continue;
-    }
-
-    const pkgDir = path.join(nmDir, entry.name);
-    const pkg = readPackageJson(pkgDir);
-    if (!pkg?.name || !pkg?.version) continue;
-    out.push({
-      name: pkg.name,
-      version: pkg.version,
-      path: path.relative(appDir, pkgDir),
-      dir: pkgDir,
-    });
-  }
-
-  out.sort((left, right) => left.name.localeCompare(right.name));
-  return out;
+// [LAW:one-source-of-truth] Every top-level entry of the app's node_modules with swapOutcome's answer for it, the one
+// replace-dependency acts on, and readAppNodeModules' verdict on how much of the tree could be read.
+function readOnDisk(appDir) {
+  const { verdict, entries, unlisted } = readAppNodeModules(path.join(appDir, "node_modules"));
+  return { verdict, unlisted, entries: entries.map((entry) => ({ ...entry, path: path.relative(appDir, entry.dir) })) };
 }
 
 function listPackageJsFiles(pkgDir) {
@@ -160,55 +116,42 @@ function listPackageJsFiles(pkgDir) {
     .map((rel) => path.join(pkgDir, rel));
 }
 
+// Each loaded package's shape hashes, and every file or directory that couldn't be read or hashed, so a package that
+// contributed no hashes because it couldn't be read is a parse error, not a package that matched nothing.
+// [LAW:no-silent-failure]
 function indexPackageShapeHashes(packages) {
   const byHash = new Map();
+  const errors = [];
+  const add = (hash, entry) => byHash.set(hash, byHash.get(hash) ?? []).get(hash).push(entry);
+  const attempt = (file, work) => {
+    try {
+      return work();
+    } catch (error) {
+      errors.push({ file, error: String(error?.message || error) });
+      return null;
+    }
+  };
   for (const pkg of packages) {
-    const jsFiles = listPackageJsFiles(pkg.dir);
-    for (const jsFile of jsFiles) {
-      let code = "";
-      try {
-        code = fs.readFileSync(jsFile, "utf8");
-      } catch {
-        continue;
-      }
-      let hash = "";
-      try {
-        hash = extractProgramBodyHash(code);
-      } catch {
-        continue;
-      }
-      const current = byHash.get(hash) || [];
-      current.push({
-        package: pkg.name,
-        version: pkg.version,
-        file: path.relative(pkg.dir, jsFile),
-        kind: "program",
-      });
-      byHash.set(hash, current);
-
-      try {
+    for (const jsFile of attempt(pkg.dir, () => listPackageJsFiles(pkg.dir)) ?? []) {
+      const code = attempt(jsFile, () => fs.readFileSync(jsFile, "utf8"));
+      if (code === null) continue;
+      const entry = (kind) => ({ package: pkg.name, version: pkg.version, file: path.relative(pkg.dir, jsFile), kind });
+      const hash = attempt(jsFile, () => extractProgramBodyHash(code));
+      if (hash === null) continue;
+      add(hash, entry("program"));
+      attempt(jsFile, () => {
         const ast = parseSource(code, "js");
         // [LAW:one-source-of-truth] Reuse the same structural walker for all detached-node hashing so traversal semantics stay consistent.
         walk(ast.program, (node) => {
           if (!isFunctionNode(node)) return;
           const tokens = functionShapeTokens(node.body);
           if (tokens.length < 20) return;
-          const functionHash = tokensToHash(tokens);
-          const items = byHash.get(functionHash) || [];
-          items.push({
-            package: pkg.name,
-            version: pkg.version,
-            file: path.relative(pkg.dir, jsFile),
-            kind: "function",
-          });
-          byHash.set(functionHash, items);
+          add(tokensToHash(tokens), entry("function"));
         });
-      } catch {
-        // Keep file-level hashes even when function-level extraction fails.
-      }
+      });
     }
   }
-  return byHash;
+  return { byHash, errors };
 }
 
 function loadFingerprints() {
@@ -1083,13 +1026,27 @@ function main() {
   const outPath = path.resolve(projectRoot, opts.out);
 
   const fingerprints = loadFingerprints();
-  const onDiskPackages = listOnDiskPackages(appDir);
+  const onDisk = readOnDisk(appDir);
+  // Every copy the app loads, trialable or not, lends its version, its name, and its shape hashes to classification:
+  // once, however many top-level names reach it, and under the name of the package it is, so an alias's code is
+  // credited to the package it aliases and a shared copy's hashes stay unique to it.
+  const loadedPackages = [...new Map(onDisk.entries
+    .filter(({ outcome }) => outcome.loads !== null)
+    .map(({ dir, outcome }) => [fs.realpathSync(dir), { name: outcome.loads.name, version: outcome.loads.version, dir }])).values()];
   const lockfilePackages = loadLockfilePackages(appDir);
-  const packageVersionByName = Object.fromEntries([...lockfilePackages, ...onDiskPackages].map((pkg) => [pkg.name, pkg.version]));
-  const packageShapeHashes = indexPackageShapeHashes(onDiskPackages);
+  const packageVersionByName = Object.fromEntries([...lockfilePackages, ...loadedPackages].map((pkg) => [pkg.name, pkg.version]));
+  const shapeIndex = indexPackageShapeHashes(loadedPackages);
   const knownPackages = Array.from(
-    new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...onDiskPackages.map((pkg) => pkg.name)]),
+    new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackages.map((pkg) => pkg.name)]),
   ).sort((left, right) => right.length - left.length || left.localeCompare(right));
+  const onDiskReport = {
+    nodeModules: onDisk.verdict,
+    packages: onDisk.entries.filter(({ outcome }) => outcome.kind === "trialable")
+      .map(({ name, path: entryPath, outcome }) => ({ name, version: outcome.loads.version, path: entryPath, location: outcome.location })),
+    untrialable: onDisk.entries.filter(({ outcome }) => outcome.kind === "untrialable")
+      .map(({ name, path: entryPath, outcome }) => ({ name, path: entryPath, reason: outcome.reason, loads: outcome.loads })),
+    unlisted: onDisk.unlisted,
+  };
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -1105,13 +1062,7 @@ function main() {
       bareSpecifiers: {},
       nodeBuiltins: {},
     },
-    onDisk: {
-      packages: onDiskPackages.map((pkg) => ({
-        name: pkg.name,
-        version: pkg.version,
-        path: pkg.path,
-      })),
-    },
+    onDisk: onDiskReport,
     lockfile: {
       packages: lockfilePackages.map((pkg) => ({
         name: pkg.name,
@@ -1127,7 +1078,7 @@ function main() {
     bundles: [],
     summary: {
       externalPackagesInCode: 0,
-      externalPackagesOnDisk: onDiskPackages.length,
+      externalPackagesOnDisk: loadedPackages.length,
       externalPackagesInCodeAndOnDisk: 0,
       externalPackagesInCodeMissingOnDisk: 0,
       bundledThirdPartyPackages: 0,
@@ -1138,6 +1089,10 @@ function main() {
       classificationRate: 0,
     },
   };
+
+  for (const { path: entryPath, reason } of onDiskReport.untrialable) report.warnings.push(`${entryPath}: replace-dependency can't trial it (${reason})`);
+  for (const { file, error } of shapeIndex.errors) report.parseErrors.push({ file: fileRel(projectRoot, file), error });
+  if (onDisk.verdict.kind === "incomplete") report.warnings.push(`node_modules can't be fully read: ${onDisk.verdict.reason}`);
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
   if (moduleIndexPath && fs.existsSync(moduleIndexPath)) {
@@ -1163,7 +1118,7 @@ function main() {
 
   const classificationContext = {
     fingerprints,
-    packageShapeHashes,
+    packageShapeHashes: shapeIndex.byHash,
     packageVersionByName,
     knownPackages,
   };
@@ -1192,7 +1147,7 @@ function main() {
   }
 
   const inCode = Object.keys(report.code.bareSpecifiers).sort();
-  const onDiskSet = new Set(onDiskPackages.map((pkg) => pkg.name));
+  const onDiskSet = new Set(loadedPackages.map((pkg) => pkg.name));
   const inBoth = inCode.filter((pkg) => onDiskSet.has(pkg));
   const missing = inCode.filter((pkg) => !onDiskSet.has(pkg));
 
@@ -1236,9 +1191,9 @@ function main() {
   console.log(`- Bundled third-party modules: ${report.summary.bundledThirdPartyModules}`);
   console.log(`- Candidate module classification rate: ${report.summary.classificationRate}`);
   console.log(`- Parse errors: ${report.parseErrors.length}`);
-  if (report.warnings.length > 0) {
-    console.log(`- Warnings: ${report.warnings.length}`);
-  }
+  console.log(`- Packages on disk: ${loadedPackages.length} (trialable: ${onDiskReport.packages.length})`);
+  console.log(`- Warnings: ${report.warnings.length}`);
+  for (const warning of report.warnings) console.log(`  ${warning}`);
 }
 
 main();

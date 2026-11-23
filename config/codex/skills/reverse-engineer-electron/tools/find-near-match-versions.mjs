@@ -19,6 +19,7 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
+import { isNonEmptyString } from "./node-modules.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -104,7 +105,22 @@ function npmViewVersions(pkgName) {
   }
 }
 
-function collectPackageContexts(report) {
+// [LAW:parse-dont-validate] The one reader of detect-dependencies' onDisk section: the packages replace-dependency can
+// trial, each with a name and a version, or why the report holds no such list. Only a node_modules detect-dependencies
+// listed in full, or one the app doesn't ship, lists every package on disk; any other is a tree it couldn't read.
+function parseOnDiskPackages(report) {
+  const onDisk = report?.onDisk;
+  if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version))) {
+    return { ok: false, error: "it has no onDisk.packages list of { name, version } — rerun detect-dependencies.mjs to write it" };
+  }
+  if (!["listed", "absent"].includes(onDisk.nodeModules?.kind)) {
+    const why = onDisk.nodeModules?.kind === "incomplete" ? onDisk.nodeModules.reason : `its node_modules verdict is ${JSON.stringify(onDisk.nodeModules)}`;
+    return { ok: false, error: `${why} — fix it, then rerun detect-dependencies.mjs` };
+  }
+  return { ok: true, packages: onDisk.packages.map(({ name, version }) => ({ name, version })) };
+}
+
+function collectPackageContexts(report, onDiskPackages) {
   const byName = new Map();
 
   function ensure(name) {
@@ -123,13 +139,10 @@ function collectPackageContexts(report) {
     return byName.get(name);
   }
 
-  for (const pkg of report?.onDisk?.packages || []) {
-    if (!pkg?.name) continue;
+  for (const pkg of onDiskPackages) {
     const ctx = ensure(pkg.name);
-    if (typeof pkg.version === "string" && pkg.version.length > 0) {
-      ctx.onDiskVersion = pkg.version;
-      ctx.observedVersion = pkg.version;
-    }
+    ctx.onDiskVersion = pkg.version;
+    ctx.observedVersion = pkg.version;
   }
 
   const bareSpecifiers = report?.code?.bareSpecifiers || {};
@@ -280,7 +293,12 @@ function main() {
   }
 
   const report = readJson(depsPath);
-  const packageContexts = collectPackageContexts(report);
+  const onDisk = parseOnDiskPackages(report);
+  if (!onDisk.ok) {
+    console.error(`Dependency report ${depsPath} can't be used: ${onDisk.error}`);
+    process.exit(2);
+  }
+  const packageContexts = collectPackageContexts(report, onDisk.packages);
   const registryFixture = opts.registryFile ? readJson(path.resolve(projectRoot, opts.registryFile)) : null;
 
   let degradedMode = false;
