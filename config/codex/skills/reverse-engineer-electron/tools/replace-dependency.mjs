@@ -265,11 +265,13 @@ function linkDestination(appPkgDir, target) {
   return canonicalEntry(path.resolve(fs.realpathSync(path.dirname(appPkgDir)), target));
 }
 
-// [LAW:single-enforcer] The one constructor of a location, the form replacement-log.mjs parses: a path in the app's
-// node_modules, measured from its real directory, so an app whose node_modules is itself a symlink still writes one.
-function locationOf(app, dir) {
-  const location = ["node_modules", ...path.relative(app.realNodeModules, canonicalEntry(dir)).split(path.sep)].join("/");
-  if (!isLocation(location)) throw new Error(`${dir} is not inside the app's node_modules (${app.realNodeModules})`);
+// [LAW:single-enforcer] The one constructor of a location, the form replacement-log.mjs parses: the path from a
+// node_modules directory to a package in it, spelled from the app's node_modules. A package's own app path is its name
+// under the app's node_modules, whatever its parents link to; a link's destination is a canonical path, measured
+// from the app's real node_modules, so an app whose node_modules is itself a symlink still writes one.
+function locationOf(nodeModules, dir) {
+  const location = ["node_modules", ...path.relative(nodeModules, dir).split(path.sep)].join("/");
+  if (!isLocation(location)) throw new Error(`${dir} is not inside ${nodeModules}`);
   return location;
 }
 
@@ -284,16 +286,17 @@ function locationDir(app, location) {
 // node_modules, as a workspace package or our link to the root does, or to another package, as an alias does) is
 // itself the swap location: nothing past it is ours to move. Links that loop are a value too, so the caller refuses
 // them the way it refuses every other disk state it can't trial.
-function findSwapLocation(appPkgDir, pkgName, app) {
+function findSwapLocation(pkgName, app) {
   const tail = `${path.sep}${path.join("node_modules", ...pkgPathParts(pkgName))}`;
-  const chain = [appPkgDir];
+  const chain = [locationOf(app.nodeModules, path.join(app.nodeModules, ...pkgPathParts(pkgName)))];
   for (;;) {
-    const dir = chain.at(-1);
+    const dir = locationDir(app, chain.at(-1));
     const state = appPathState(dir);
     const next = state.kind === "link" ? linkDestination(dir, state.target) : null;
-    if (next === null || !next.startsWith(`${app.realNodeModules}${path.sep}`) || !next.endsWith(tail)) return { kind: "found", dir };
-    if (chain.includes(next)) return { kind: "loop", chain: [...chain, next] };
-    chain.push(next);
+    if (next === null || !next.startsWith(`${app.realNodeModules}${path.sep}`) || !next.endsWith(tail)) return { kind: "found", location: chain.at(-1) };
+    const nextLocation = locationOf(app.realNodeModules, next);
+    if (chain.includes(nextLocation)) return { kind: "loop", chain: [...chain, nextLocation] };
+    chain.push(nextLocation);
   }
 }
 
@@ -310,7 +313,7 @@ function locationsByName(app) {
       const name = parent === "node_modules" && !/^[@.]/.test(child.name) ? child.name
         : parent.startsWith("@") && path.basename(path.dirname(dir)) === "node_modules" ? `${parent}/${child.name}`
         : null;
-      if (name !== null) byName.set(name, [...(byName.get(name) ?? []), locationOf(app, childDir)]);
+      if (name !== null) byName.set(name, [...(byName.get(name) ?? []), locationOf(app.nodeModules, childDir)]);
       if (child.isDirectory()) walk(childDir);
     }
   };
@@ -343,9 +346,9 @@ function isOurLink(state, dir, rootPkgDir) {
 
 // Decided before anything moves, and written into the log as the trial's in-flight record. Nothing is created here:
 // setAside makes the backup's directories, so a trial that never moves the original leaves nothing under .original/.
-function originalOf(dir, pkgName, app) {
+function originalOf(location, pkgName, app) {
+  const dir = locationDir(app, location);
   const state = appPathState(dir);
-  const location = locationOf(app, dir);
   if (state.kind === "link") return { kind: "link", location, target: state.target };
   if (state.kind === "absent") throw new Error(`[${pkgName}] nothing is at ${dir} to set aside`);
   // [LAW:types-are-the-program] The UUID makes each trial's backup root unique by construction; a bare per-second
@@ -425,7 +428,7 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
   const { original } = inFlight;
   const { dir } = ctx;
   const trial = `an interrupted trial of ${inFlight.attemptedVersion}`;
-  const interrupted = (recovery) => ({ kind: "interrupted", recovery, inFlight, swapDir: dir });
+  const interrupted = (recovery) => ({ kind: "interrupted", recovery, inFlight, swapLocation: original.location });
   const conflict = (reason) => ({ kind: "conflict", reason });
 
   if (original.kind === "dir") {
@@ -452,18 +455,18 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
 // [LAW:no-silent-failure]
 function priorSwap(entry, ctx, requestedVersion) {
   const status = entry?.status ?? "unresolved";
-  const found = findSwapLocation(ctx.appPkgDir, ctx.pkgName, ctx.app);
+  const found = findSwapLocation(ctx.pkgName, ctx.app);
   if (found.kind === "loop") return { kind: "conflict", reason: `the app's links loop, so no copy of it loads: ${found.chain.join(" -> ")} — fix the links, then rerun` };
-  const current = found.dir;
+  const current = locationDir(ctx.app, found.location);
   if (status === "unresolved") {
-    if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried", swapDir: current };
+    if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried", swapLocation: found.location };
     // Trialing our own link would verify the root package against itself and record a made-up original.
     return { kind: "conflict", reason: `${current} already links to the root package, but ${ctx.app.logPath} records no resolved swap for it — put the original back over the link first (earlier backups are under ${ctx.app.backupsDir}), then rerun` };
   }
 
   const recorded = status === "in-flight" ? entry.inFlight.original : entry.pass.original;
   const dir = locationDir(ctx.app, recorded.location);
-  if (locationOf(ctx.app, current) !== recorded.location) {
+  if (found.location !== recorded.location) {
     return { kind: "conflict", reason: `the log records the ${status} swap at ${dir}, but ${ctx.appPkgDir} now leads to ${current} — make it lead to ${dir} again, then rerun` };
   }
   const state = appPathState(dir);
@@ -580,7 +583,7 @@ function main() {
 
   const toTry = priors.filter(({ pkgName, prior }) => packageList.includes(pkgName) && (prior.kind === "untried" || prior.kind === "interrupted"));
 
-  for (const { pkgName, prior: { swapDir } } of toTry) {
+  for (const { pkgName, prior: { swapLocation } } of toTry) {
     const appPkgDir = appPkgDirOf(pkgName);
     const appPkgJson = path.join(appPkgDir, "package.json");
 
@@ -610,7 +613,7 @@ function main() {
       continue;
     }
 
-    const swapLocation = locationOf(app, swapDir);
+    const swapDir = locationDir(app, swapLocation);
     let resolved = false;
 
     for (const version of candidates) {
@@ -656,7 +659,7 @@ function main() {
 
       // Write-ahead: the log names the original before it moves, so a run killed at any point after this write
       // leaves an in-flight entry the next run can undo exactly, and the gate refuses.
-      const original = originalOf(swapDir, pkgName, app);
+      const original = originalOf(swapLocation, pkgName, app);
       attempt.original = original;
       logState.packages[pkgName] = {
         status: "in-flight",

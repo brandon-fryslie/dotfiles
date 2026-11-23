@@ -613,6 +613,20 @@ test("replace-dependency swaps a scoped package's pnpm store copy, and puts it b
   }
 });
 
+test("replace-dependency swaps a scoped package whose scope directory links out of the app, at its app path", () => {
+  const { tmp, appDir, appPkgDir, rootPkgDir, replace, readLog } = swapProject(VERIFYING_INDEX, { name: "@scope/demo-pkg" });
+  const scopeDir = path.join(appDir, "node_modules", "@scope");
+  fs.renameSync(scopeDir, path.join(tmp, "shared-scope"));
+  linkTo(path.join(tmp, "shared-scope"), scopeDir);
+
+  const result = replace();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const entry = readLog().packages["@scope/demo-pkg"];
+  assert.equal(entry.status, "resolved", JSON.stringify(entry));
+  assert.equal(entry.attempts.at(-1).original.location, "node_modules/@scope/demo-pkg");
+  assert.equal(fs.realpathSync(appPkgDir), fs.realpathSync(rootPkgDir));
+});
+
 test("replace-dependency refuses an app whose links to the package loop, naming the loop", () => {
   const { appPkgDir, logPath, replace } = swapProject(VERIFYING_INDEX);
   fs.rmSync(appPkgDir, { recursive: true });
