@@ -44,4 +44,39 @@ fi
 # reflects the save. "quiet" (save.sh's first positional arg) suppresses the
 # spinner so an automated save never flashes "Saving..." in the live status bar.
 # [LAW:effects-at-boundaries] [LAW:no-silent-failure]
-exec tmux run-shell -t "$target" "$SAVE quiet"
+# With -t, run-shell shows a command's output in that pane rather than printing it here,
+# so the save writes its report to a file this job reads.
+report_file=$(mktemp) || exit 1
+trap 'rm -f "$report_file"' EXIT
+tmux run-shell -t "$target" "$(printf '%q quiet > %q 2>&1' "$SAVE" "$report_file")"
+status=$?
+report=$(<"$report_file")
+printf '%s\n' "$report"  # the launchd log keeps every save's report
+
+# The report says why a save failed, or what a restore will not bring back. A log
+# nobody reads hides it, so it is shown in every attached client: a failure each
+# time, anything else until someone has seen it, then again only when it changes,
+# so a standing condition is told once rather than every interval. [LAW:nothing-unseen]
+if [[ $status -ne 0 && -z "$report" ]]; then
+  report="the save exited $status without saying why"
+fi
+state="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-resurrect-save"
+mkdir -p "$state" || exit 1
+told=""
+if [ -f "$state/told" ]; then
+  told=$(<"$state/told")
+fi
+if [[ -z "$report" ]]; then
+  : > "$state/told" || exit 1  # nothing standing, so the next report is news
+elif [[ $status -ne 0 || "$report" != "$told" ]]; then
+  message="tmux-resurrect: ${report//$'\n'/ | } (log: ~/Library/Logs/com.bmf.tmux-resurrect-save.log)"
+  shown=0
+  while IFS= read -r client; do
+    tmux display-message -c "$client" -d 15000 -l "$message" && shown=1
+  done < <(tmux list-clients -F '#{client_name}')
+  # Told only once a client showed it: with none attached, the next save tells it again.
+  if [[ $shown -eq 1 ]]; then
+    printf '%s' "$report" > "$state/told" || exit 1
+  fi
+fi
+exit "$status"
