@@ -11,9 +11,10 @@
 //   unresolved  { attempts }                       no pass attempt
 //   in-flight   { attempts, inFlight }             a trial was moving the original when the run ended
 //   resolved    { attempts, chosenVersion, pass }  exactly one pass attempt, for chosenVersion
-// The original of a trial (inFlight.original, a pass attempt's original):
-//   { kind: "dir",  backupPath }  the app copy was a directory, renamed into .original/
-//   { kind: "link", target }      the app path was already a symlink; target is its readlink text
+// The original of a trial (inFlight.original, a pass attempt's original), as found at the package's swap entry — the
+// app path, or the .pnpm store entry a pnpm layout's links lead to:
+//   { kind: "dir",  backupPath }  a directory, renamed into .original/
+//   { kind: "link", target }      a symlink leading out of the app's node_modules; target is its readlink text
 // Attempt, by reason:
 //   "interrupted" { recovery: "original-in-place" | "restored", original }  disk alone can't say whether a swap
 //                 happened and was undone before the kill, so it records only what disk showed

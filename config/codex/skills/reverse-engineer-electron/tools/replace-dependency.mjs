@@ -279,6 +279,18 @@ function linkDestination(appPkgDir, target) {
   return canonicalEntry(path.resolve(fs.realpathSync(path.dirname(appPkgDir)), target));
 }
 
+// [LAW:one-source-of-truth] The entry every consumer in the app loads a package through, read off disk the same way
+// before, during, and after a swap: the app path, followed through each link that leads to another entry inside the
+// app's node_modules. A pnpm layout's top-level link and its .pnpm siblings all lead to one store entry, so swapping
+// that entry swaps the package for every consumer of that copy. A link leading out of the app's node_modules (a
+// workspace package, or our link to the root) is itself the entry.
+function swapEntry(appPkgDir, appNodeModules) {
+  const app = appPathState(appPkgDir);
+  if (app.kind !== "link") return appPkgDir;
+  const destination = linkDestination(appPkgDir, app.target);
+  return destination.startsWith(`${fs.realpathSync(appNodeModules)}${path.sep}`) ? swapEntry(destination, appNodeModules) : appPkgDir;
+}
+
 // The link this tool writes at appPkgDir.
 function rootLinkTarget(appPkgDir, rootPkgDir) {
   return path.relative(fs.realpathSync(path.dirname(appPkgDir)), canonicalEntry(rootPkgDir));
@@ -292,12 +304,12 @@ function isOurLink(app, { appPkgDir, rootPkgDir }) {
 
 // Decided before anything moves, and written into the log as the trial's in-flight record. Nothing is created here:
 // setAside makes the backup's directories, so a trial that never moves the original leaves nothing under .original/.
-function originalOf(appPkgDir, appNodeModules, pkgName, logPath) {
+function originalOf(appPkgDir, backupsDir, pkgName, logPath) {
   const app = appPathState(appPkgDir);
   if (app.kind === "link") return { kind: "link", target: app.target };
   // [LAW:types-are-the-program] The UUID makes each trial's backup root unique by construction; a bare per-second
   // stamp collided when a retrial landed in the same second as an earlier swap.
-  const backupRoot = path.join(appNodeModules, ".original", `${safeNowStamp()}-${randomUUID()}`);
+  const backupRoot = path.join(backupsDir, `${safeNowStamp()}-${randomUUID()}`);
   return { kind: "dir", backupPath: toLogPath(logPath, path.join(backupRoot, ...pkgPathParts(pkgName))) };
 }
 
@@ -326,7 +338,7 @@ function setAside(appPkgDir, original, logPath) {
 // app path holds our link or nothing; rmSync without `recursive` throws on a directory instead of deleting it.
 // [LAW:no-silent-failure] Every caller reaches here with the package's entry in flight on disk, so an undo that
 // fails stops the run and leaves that record for the next run to recover from.
-function restoreOriginal(pkgName, appPkgDir, original, logPath) {
+function restoreOriginal(pkgName, appPkgDir, backupsDir, original, logPath) {
   try {
     fs.rmSync(appPkgDir, { force: true });
     if (original.kind === "dir") fs.renameSync(fromLogPath(logPath, original.backupPath), appPkgDir);
@@ -335,18 +347,16 @@ function restoreOriginal(pkgName, appPkgDir, original, logPath) {
     console.error(`Error: [${pkgName}] could not restore ${describeOriginal(original, logPath)} to ${appPkgDir}: ${error.message} — ${logPath} keeps the trial in flight; fix the cause and rerun to recover`);
     process.exit(1);
   }
-  removeBackupRoot(pkgName, appPkgDir, original, logPath);
+  removeBackupRoot(pkgName, backupsDir, original, logPath);
 }
 
 // A dir original's backup root under .original/ belongs to its one trial, so once the original is out of it (or
 // never went in) the root holds nothing worth keeping — empty directories, or a .DS_Store Finder dropped there.
 // The recursive delete is driven by log data, so it refuses any root that is not a direct child of the app's
 // .original/ — a hand-edited backupPath must never reach the log's own directory.
-function removeBackupRoot(pkgName, appPkgDir, original, logPath) {
+function removeBackupRoot(pkgName, backupsDir, original, logPath) {
   if (original.kind !== "dir") return;
-  const up = pkgPathParts(pkgName).map(() => "..");
-  const backupsDir = path.join(appPkgDir, ...up, ".original");
-  const root = path.join(fromLogPath(logPath, original.backupPath), ...up);
+  const root = path.join(fromLogPath(logPath, original.backupPath), ...pkgPathParts(pkgName).map(() => ".."));
   if (path.dirname(root) !== backupsDir) throw new Error(`[${pkgName}] backup root ${root} is not under ${backupsDir}; refusing to delete it`);
   fs.rmSync(root, { recursive: true, force: true });
 }
@@ -455,7 +465,9 @@ function main() {
     process.exit(2);
   }
 
+  const backupsDir = path.join(appNodeModules, ".original");
   const appPkgDirOf = (pkgName) => path.join(appNodeModules, ...pkgPathParts(pkgName));
+  const swapEntryOf = (pkgName) => swapEntry(appPkgDirOf(pkgName), appNodeModules);
   const rootPkgDirOf = (pkgName) => path.join(projectRoot, "node_modules", ...pkgPathParts(pkgName));
 
   // Every in-flight entry is settled, requested or not: an unrequested one still has its original set aside.
@@ -464,7 +476,7 @@ function main() {
     pkgName,
     prior: priorSwap(
       logState.packages[pkgName],
-      { appPkgDir: appPkgDirOf(pkgName), rootPkgDir: rootPkgDirOf(pkgName), backupsDir: path.join(appNodeModules, ".original"), logPath: outPath, deleteEntry: `delete the package's entry from ${outPath}` },
+      { appPkgDir: swapEntryOf(pkgName), rootPkgDir: rootPkgDirOf(pkgName), backupsDir, logPath: outPath, deleteEntry: `delete the package's entry from ${outPath}` },
       opts.pkg === pkgName ? opts.version : "",
     ),
   }));
@@ -480,8 +492,8 @@ function main() {
   const interrupted = priors.filter(({ prior }) => prior.kind === "interrupted");
   for (const { pkgName, prior } of interrupted) {
     const { recovery, inFlight } = prior;
-    if (recovery === "restored") restoreOriginal(pkgName, appPkgDirOf(pkgName), inFlight.original, outPath);
-    else removeBackupRoot(pkgName, appPkgDirOf(pkgName), inFlight.original, outPath);
+    if (recovery === "restored") restoreOriginal(pkgName, swapEntryOf(pkgName), backupsDir, inFlight.original, outPath);
+    else removeBackupRoot(pkgName, backupsDir, inFlight.original, outPath);
     recordAttempt(logState, pkgName, {
       attemptedVersion: inFlight.attemptedVersion,
       startedAt: inFlight.startedAt,
@@ -574,7 +586,8 @@ function main() {
 
       // Write-ahead: the log names the original before it moves, so a run killed at any point after this write
       // leaves an in-flight entry the next run can undo exactly, and the gate refuses.
-      const original = originalOf(appPkgDir, appNodeModules, pkgName, outPath);
+      const entryDir = swapEntryOf(pkgName);
+      const original = originalOf(entryDir, backupsDir, pkgName, outPath);
       attempt.original = original;
       logState.packages[pkgName] = {
         status: "in-flight",
@@ -585,10 +598,10 @@ function main() {
 
       let setAsideDone = false;
       try {
-        const beforeDir = originalDir(appPkgDir, original, outPath);
-        setAside(appPkgDir, original, outPath);
+        const beforeDir = originalDir(entryDir, original, outPath);
+        setAside(entryDir, original, outPath);
         setAsideDone = true;
-        fs.symlinkSync(rootLinkTarget(appPkgDir, rootPkgDir), appPkgDir, "dir");
+        fs.symlinkSync(rootLinkTarget(entryDir, rootPkgDir), entryDir, "dir");
         attempt.swapApplied = true;
 
         const verificationOutAbs = path.join(verificationDir, `${safeIdPart(pkgName)}@${version}.json`);
@@ -609,11 +622,11 @@ function main() {
       }
 
       if (attempt.result === "fail" && setAsideDone) {
-        restoreOriginal(pkgName, appPkgDir, original, outPath);
+        restoreOriginal(pkgName, entryDir, backupsDir, original, outPath);
         attempt.rolledBack = true;
       }
       // A set-aside that threw may have made the backup's directories without moving anything into them.
-      if (!setAsideDone) removeBackupRoot(pkgName, appPkgDir, original, outPath);
+      if (!setAsideDone) removeBackupRoot(pkgName, backupsDir, original, outPath);
       finish();
 
       if (attempt.result === "pass") {
