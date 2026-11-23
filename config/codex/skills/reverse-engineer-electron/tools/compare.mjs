@@ -30,7 +30,7 @@ import {
   functionShapeTokens,
   tokensToHash,
   normalizedFunctionTokens,
-  parseSource,
+  parseMinified,
   parseFile,
   loaderFor,
   minifySource,
@@ -227,7 +227,7 @@ function extractFingerprints(files, shouldMinify, includeLiterals) {
     if (shouldMinify) {
       const m = minifyCode(file.content, file.path);
       if (m == null) { minifyFailures++; continue; }
-      ast = parseSource(m, 'js');
+      ast = parseMinified(m);
     } else {
       ast = parseFile(file.content, file.path);
     }

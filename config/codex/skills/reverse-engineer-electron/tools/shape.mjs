@@ -52,10 +52,18 @@ const LOADERS = Object.freeze({
   tsx: { esbuild: 'tsx', plugins: ['typescript', 'jsx', 'decorators'] },
 });
 
-const LOADER_BY_EXTENSION = Object.freeze({
-  '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js',
-  '.ts': 'ts', '.mts': 'ts', '.cts': 'ts',
-  '.tsx': 'tsx',
+// A file's parse goal is what its name declares: .mjs and .mts are modules, .cjs and .cts scripts. Every other
+// extension declares nothing; whatever loads the file decides (in an Electron app, a renderer's script tag as much
+// as package.json's type), so the file is read under whichever goal accepts it.
+const SOURCE_KIND_BY_EXTENSION = Object.freeze({
+  '.js': { loader: 'js', goal: 'undeclared' },
+  '.mjs': { loader: 'js', goal: 'module' },
+  '.cjs': { loader: 'js', goal: 'script' },
+  '.jsx': { loader: 'js', goal: 'undeclared' },
+  '.ts': { loader: 'ts', goal: 'undeclared' },
+  '.mts': { loader: 'ts', goal: 'module' },
+  '.cts': { loader: 'ts', goal: 'script' },
+  '.tsx': { loader: 'tsx', goal: 'undeclared' },
 });
 
 function loaderSpec(loader) {
@@ -69,7 +77,7 @@ const DECLARATION_FILE = /\.d\.[mc]?ts$/;
 // A file the toolchain reads: one with a loader, and not a declaration file,
 // which parses as ts but declares no bodies.
 export function isSourceFile(filePath) {
-  return !DECLARATION_FILE.test(filePath) && path.extname(filePath) in LOADER_BY_EXTENSION;
+  return !DECLARATION_FILE.test(filePath) && path.extname(filePath) in SOURCE_KIND_BY_EXTENSION;
 }
 
 // [LAW:one-source-of-truth] The walk that feeds every tool. Nine copies drifted
@@ -105,11 +113,13 @@ export function listSourceFiles(rootDir, excludes) {
   return listFiles(rootDir, excludes).filter(isSourceFile);
 }
 
-export function loaderFor(filePath) {
-  const loader = LOADER_BY_EXTENSION[path.extname(filePath)];
-  if (!loader) throw new Error(`no loader for ${filePath}`); // [LAW:no-silent-failure]
-  return loader;
+export function sourceKindOf(filePath) {
+  const kind = SOURCE_KIND_BY_EXTENSION[path.extname(filePath)];
+  if (!kind) throw new Error(`no loader for ${filePath}`); // [LAW:no-silent-failure]
+  return kind;
 }
+
+export const loaderFor = (filePath) => sourceKindOf(filePath).loader;
 
 const parseOptions = (loader, sourceType) => ({
   sourceType,
@@ -120,28 +130,30 @@ const parseOptions = (loader, sourceType) => ({
 // @babel/traverse, whichever way the module system hands over its default export.
 export const traverse = traverseImport.default || traverseImport;
 
-// Babel's reason codes for module syntax met while parsing a script.
-const MODULE_SYNTAX = new Set(['ImportOutsideModule', 'ImportMetaOutsideModule']);
-
-// The parse is made the way an engine reads the file: as a script, sloppy unless
-// it says otherwise, and as a module only when it has module syntax. Code an
-// engine would reject throws; with error recovery, babel would hand back a tree
-// for it (a duplicate `let`, say), and a tree for code that doesn't run is one no
-// tool should hash or analyze. [LAW:no-silent-failure]
-export function parseSource(code, loader) {
+// The parse is made the way an engine reads code under its goal: a script, sloppy
+// unless it says otherwise, or a module; an undeclared goal is a script if the
+// code runs as one, else a module. Code an engine would reject throws; with error
+// recovery, babel would hand back a tree for it (a duplicate `let`, say), and a
+// tree for code that doesn't run is one no tool should hash or analyze.
+// [LAW:no-silent-failure]
+export function parseSource(code, { loader, goal }) {
+  if (goal !== 'undeclared') return parse(code, parseOptions(loader, goal));
   try {
     return parse(code, parseOptions(loader, 'script'));
-  } catch (error) {
-    if (!MODULE_SYNTAX.has(error.reasonCode)) throw error;
-    return parse(code, parseOptions(loader, 'module'));
+  } catch (scriptError) {
+    try {
+      return parse(code, parseOptions(loader, 'module'));
+    } catch (moduleError) {
+      throw new SyntaxError(`as a script: ${scriptError.message}; as a module: ${moduleError.message}`, { cause: moduleError });
+    }
   }
 }
 
-// The parse for code that came from a file: the loader is the file's, and a
-// failure names the file — babel's SyntaxError carries only a line and column.
+// The parse for code that came from a file: the loader and goal are the file's,
+// and a failure names the file — babel's SyntaxError carries only a line and column.
 export function parseFile(code, filePath) {
   try {
-    return parseSource(code, loaderFor(filePath));
+    return parseSource(code, sourceKindOf(filePath));
   } catch (e) {
     throw new Error(`${filePath}: ${e.message}`, { cause: e }); // [LAW:no-silent-failure]
   }
@@ -150,7 +162,7 @@ export function parseFile(code, filePath) {
 // [LAW:one-source-of-truth] The esbuild side of "both readers see one file":
 // the one transform whose output normalizedFunctionTokens and the whole-file
 // fingerprints read back. Output is plain JS for every loader (types stripped,
-// JSX lowered, decorators passed through), so the read-back is parseSource(.., 'js').
+// JSX lowered, decorators passed through) in ESM format, so it reads back as parseMinified does.
 export function minifySource(code, loader) {
   return transformSync(code, {
     loader: loaderSpec(loader).esbuild,
@@ -162,6 +174,9 @@ export function minifySource(code, loader) {
     format: 'esm',
   }).code;
 }
+
+// minifySource's output, parsed: plain JS, and a module, as esbuild's format makes it.
+export const parseMinified = (minified) => parseSource(minified, { loader: 'js', goal: 'module' });
 
 const SKIP_KEYS = new Set([
   'type', 'start', 'end', 'loc', 'leadingComments',
@@ -375,7 +390,7 @@ export function normalizedFunctionTokens(node, code, loader) {
   const wrapper = wrapperFor(node, code.slice(node.start, node.end));
   const wrapped = `export default class extends Object { ${fields} ${wrapper.member} }`;
   const minified = minifySource(wrapped, loader);
-  const ast = parseSource(minified, 'js');
+  const ast = parseMinified(minified);
 
   // The wrapper is ours, so the slice's position in it is known: the one
   // function-bearing member of the sole top-level class (esbuild names the

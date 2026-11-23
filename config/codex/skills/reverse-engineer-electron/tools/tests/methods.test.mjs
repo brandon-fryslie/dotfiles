@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { writeText } from "./fixtures.mjs";
 
-import { walkWithParent, isFunctionNode, resolveFunctionName, normalizedFunctionTokens, parseSource } from "../shape.mjs";
+import { walkWithParent, isFunctionNode, resolveFunctionName, normalizedFunctionTokens, parseFile } from "../shape.mjs";
 
 const TOOLS_DIR = path.resolve(import.meta.dirname, "..");
 
@@ -45,7 +45,7 @@ const NAMELESS_COUNT = 4;
 
 function namedFunctions(code) {
   const names = [];
-  walkWithParent(parseSource(code, "js"), null, (node, parent) => {
+  walkWithParent(parseFile(code, "methods.js"), null, (node, parent) => {
     if (isFunctionNode(node)) names.push(resolveFunctionName(node, parent));
   });
   return names;
@@ -66,7 +66,7 @@ test("normalizedFunctionTokens parses a method slice standalone and bridges a st
   const rewrite = "class A { #k; m(flag) { return flag ? this.#k : 2; } }";
   const tokensOf = (code) => {
     let found = null;
-    walkWithParent(parseSource(code, "js"), null, (node) => {
+    walkWithParent(parseFile(code, "methods.js"), null, (node) => {
       if (!found && node.type === "ClassMethod") found = normalizedFunctionTokens(node, code, "js");
     });
     return found;
@@ -76,7 +76,7 @@ test("normalizedFunctionTokens parses a method slice standalone and bridges a st
 
 // Tokens of the first node of the given kind in code, normalized.
 function normalizedOf(code, type) {
-  const ast = parseSource(code, "js");
+  const ast = parseFile(code, "methods.js");
   let tokens = null;
   walkWithParent(ast, null, (node) => {
     if (!tokens && node.type === type) tokens = normalizedFunctionTokens(node, code, "js");

@@ -171,7 +171,7 @@ function collectPackageContexts(report, onDiskPackages) {
         }
       }
 
-      for (const { package: pkgName, version } of module.hashMatches || []) {
+      for (const { package: pkgName, version } of module.hashMatches) {
         const parsed = pkgName === module.package ? parseSemver(version) : null;
         if (parsed) ctx.hashMatchVersions.add(parsed.normalized);
       }

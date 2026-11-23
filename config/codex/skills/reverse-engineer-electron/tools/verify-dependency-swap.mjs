@@ -15,7 +15,7 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -186,7 +186,7 @@ function buildReachableFileSet(pkgRoot, pkgJson) {
 
     let ast;
     try {
-      ast = parseSource(code, "js");
+      ast = parseFile(code, current);
     } catch {
       continue;
     }
@@ -209,7 +209,7 @@ function buildReachableFileSet(pkgRoot, pkgJson) {
 
 function fileStructuralInfo(absPath) {
   const code = fs.readFileSync(absPath, "utf8");
-  const ast = parseSource(code, "js");
+  const ast = parseFile(code, absPath);
   const programHash = tokensToHash(functionShapeTokens(ast.program));
 
   const functionHashes = [];

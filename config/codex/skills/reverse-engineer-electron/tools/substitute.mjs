@@ -22,7 +22,7 @@ import {
   resolveFunctionName,
   functionShapeTokens,
   tokensToHash,
-  parseSource,
+  parseMinified,
   minifySource,
 } from './shape.mjs';
 
@@ -61,7 +61,7 @@ function minifyCode(code) {
 // --- Function extraction ---
 
 function extractFunctions(code) {
-  const ast = parseSource(code, 'js');
+  const ast = parseMinified(code);
 
   const functions = [];
   walkWithParent(ast, null, (node, parent) => {

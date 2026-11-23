@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
 import { writeText } from "./fixtures.mjs";
-import { parseSource } from "../shape.mjs";
+import { parseFile } from "../shape.mjs";
 
 const TOOLS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -166,11 +166,22 @@ test("every scanned file has exactly one outcome, .mjs and .cjs files among them
   assert.deepEqual(report.code.bareSpecifiers.vend.files, { "build/cjs.cjs": 1, "build/esm.mjs": 1 });
 });
 
-test("every tool's parse reads a file as an engine does: sloppy scripts parse, module syntax makes a module, engine errors throw", () => {
-  assert.equal(parseSource("var mode = 0755; with (o) {}", "js").program.sourceType, "script");
-  assert.equal(parseSource('import x from "y";', "js").program.sourceType, "module");
-  assert.throws(() => parseSource("let a = 1; let a = 2;", "js"), /already been declared/);
-  assert.throws(() => parseSource('import x from "y"; var mode = 0755;', "js"), /octal/i);
+test("a file parses under the goal its extension declares, as an engine reads it", () => {
+  const goalOf = (code, file) => parseFile(code, file).program.sourceType;
+  assert.equal(goalOf("const data = await readThing();\nexport default data;", "main.mjs"), "module");
+  assert.throws(() => parseFile("var mode = 0755;", "main.mjs"), /octal/i);
+  assert.throws(() => parseFile("with (o) {}", "main.mts"), /with/i);
+  assert.equal(goalOf("var mode = 0755; with (o) {}", "main.cjs"), "script");
+  assert.throws(() => parseFile('import x from "y";', "main.cjs"));
+});
+
+test("a file whose extension declares no goal is a script if it runs as one, else a module, and rejected if neither", () => {
+  const goalOf = (code) => parseFile(code, "main.js").program.sourceType;
+  assert.equal(goalOf("var mode = 0755; with (o) {}"), "script");
+  assert.equal(goalOf('import x from "y";'), "module");
+  assert.equal(goalOf("const data = await readThing();"), "module");
+  assert.throws(() => parseFile("let a = 1; let a = 2;", "main.js"), /already been declared/);
+  assert.throws(() => parseFile('import x from "y"; var mode = 0755;', "main.js"), /octal/i);
 });
 
 test("unbundle-index finds the same modules and dependencies detect-dependencies does", () => {

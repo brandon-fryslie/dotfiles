@@ -18,8 +18,8 @@ export function writeJsonWhole(filePath, payload) {
   fs.renameSync(partialPathOf(filePath), filePath);
 }
 
-// [LAW:verifiable-goals] A run's outputs are all from the last run that finished, or absent: a run clears them before
-// any work, so one that fails leaves none, and renames them into place only once every one is written whole.
+// [LAW:verifiable-goals] An output present is whole and from the last run that wrote every output: a run clears its
+// outputs before any work, so one that fails leaves none, and renames them into place only once every one is written.
 export function clearOutputs(filePaths) {
   for (const filePath of filePaths) fs.rmSync(filePath, { force: true });
 }

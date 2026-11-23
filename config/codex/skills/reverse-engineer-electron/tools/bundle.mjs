@@ -7,7 +7,7 @@
 
 import fs from "fs";
 import path from "path";
-import { walk, traverse, parseSource, isSourceFile, loaderFor, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { walk, traverse, parseSource, sourceKindOf, isSourceFile, loaderFor, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const isJsFile = (file) => isSourceFile(file) && loaderFor(file) === "js";
 
@@ -28,7 +28,7 @@ export function readJsFile(file) {
     return { kind: "unreadable", error: error.message };
   }
   try {
-    return { kind: "parsed", code, ast: parseSource(code, "js") };
+    return { kind: "parsed", code, ast: parseSource(code, sourceKindOf(file)) };
   } catch (error) {
     return { kind: "unparsed", error: error.message };
   }
