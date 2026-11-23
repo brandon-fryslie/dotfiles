@@ -14,8 +14,8 @@
  * Exit status: 0 when every copy the run was asked for (every copy of each requested package the walk finds, or the one
  * at --location) is replaced and the whole tree was read; 3 when the run finished but one of those copies still loads
  * something other than its replacement, or the tree couldn't be read in full; 2 when the run refuses before moving
- * anything more; 1 when an error stops it. A requested package with no copy is named, and asks for nothing: nothing in
- * the app loads it.
+ * anything more; 1 when an error stops it. A requested package is the copies that hold it and the copies its name
+ * reaches; one with no copy is named, and asks for nothing: nothing in the app loads it.
  *
  * // [LAW:verifiable-goals] Every attempt is logged with result, rollback state, and verification evidence.
  * // [LAW:one-source-of-truth] deps/replacements.json is the canonical transaction log for dependency swaps, one entry
@@ -31,7 +31,7 @@ import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
 import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, parseLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
-import { appAt, appPathState, canonicalEntry, containerSwappedAt, copiesOf, describeEntry, isNonEmptyString, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
+import { appAt, appPathState, canonicalEntry, containerSwappedAt, copiesOf, describeEntry, entryNameOf, isNonEmptyString, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
 const USAGE = [
   "Usage:",
@@ -153,15 +153,20 @@ function safeNowStamp() {
 
 // [LAW:no-silent-failure] npm's verdict on the replacement: whether it installed. An npm that can't be started or is
 // killed gave no verdict, and every candidate after it would fail the same way, so the run stops; nothing has moved.
+// [LAW:no-silent-failure] Whether npm installed the replacement: { ok: true }, or { ok: false, detail } with the last
+// line npm wrote to stderr (echoed as it runs), so a failed install's log entry says why.
 function installReplacement(npmBin, replacement) {
-  const res = spawnSync(npmBin, ["install", "--silent", "--no-progress", "--save-exact", replacement.spec], {
-    stdio: "inherit",
+  const res = spawnSync(npmBin, ["install", "--loglevel=error", "--no-progress", "--save-exact", replacement.spec], {
+    stdio: ["inherit", "inherit", "pipe"],
+    encoding: "utf8",
   });
   if (res.error || res.signal) {
     console.error(`Error: could not run ${npmBin} install ${replacement.spec}: ${res.error?.message ?? `killed by ${res.signal}`} — fix it, then rerun`);
     process.exit(1);
   }
-  return res.status === 0;
+  process.stderr.write(res.stderr);
+  const lastLine = res.stderr.trim().split("\n").at(-1) || `exit ${res.status}`;
+  return res.status === 0 ? { ok: true } : { ok: false, detail: lastLine };
 }
 
 // [LAW:no-silent-failure] The verifier's verdict, read from the artifact it writes, which its exit status must agree
@@ -426,6 +431,9 @@ function priorSwap(entry, ctx, requestedVersion) {
   return { kind: "resolved", version: chosen };
 }
 
+// A copy is one of name's when it is that package, or name reaches it (as it reaches an npm alias's copy).
+const isCopyOf = (copy, name) => copy.name === name || copy.paths.some((start) => entryNameOf(start) === name);
+
 // Each conflict a set of priors holds, as the line the run refuses with.
 const conflictsOf = (priors) => priors.filter(({ prior }) => prior.kind === "conflict").map(({ copy, prior }) => `[${copyText(copy)}] ${prior.reason}`);
 
@@ -518,8 +526,9 @@ function trialCopy(run, found) {
     console.log(`\n[${copyText(copy)}] Trying candidate ${version}`);
 
     const replacement = replacementOf(projectRoot, name, version);
-    if (!installReplacement(opts.npm, replacement)) {
-      attempt.reason = "npm-install-failed";
+    const install = installReplacement(opts.npm, replacement);
+    if (!install.ok) {
+      attempt.reason = `npm-install-failed:${install.detail}`;
       finish();
       continue;
     }
@@ -618,7 +627,7 @@ function summarize(run, { found, selected, skipped, interrupted }) {
   const leftovers = left.flatMap((copy) => copy.paths.map((start) => ({ name: copy.name, start, loads: loadsText(copy) })));
   // --location asks for one copy; otherwise every copy of the package, a path left loading nothing among them.
   const asked = (copy) => run.opts.location === null || selected.some(({ location }) => location === copy.location);
-  const noCopy = names.filter((name) => !found.some((copy) => copy.name === name));
+  const noCopy = names.filter((name) => !found.some((copy) => isCopyOf(copy, name)));
   const { unlisted, verdict } = end.walk;
 
   console.log(`\nLog: ${path.relative(projectRoot, outPath)}`);
@@ -701,7 +710,7 @@ function main() {
     // Every copy of a requested package, as the tree is now, and the walk that found them.
     requestedCopies: () => {
       const walk = walkStarts(app, names);
-      return { walk, copies: copiesOf(app, walk.starts).filter(({ name }) => names.includes(name)) };
+      return { walk, copies: copiesOf(app, walk.starts).filter((copy) => names.some((name) => isCopyOf(copy, name))) };
     },
   };
 

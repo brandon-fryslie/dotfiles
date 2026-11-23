@@ -174,7 +174,8 @@ function linkTo(target, at) {
 // An npm that records each call's arguments as a line of npm-calls in dir, then exits with status.
 function fakeNpmIn(dir, status) {
   const fakeNpm = path.join(dir, "fake-npm.sh");
-  writeText(fakeNpm, `#!/usr/bin/env bash\necho "$*" >> ${JSON.stringify(path.join(dir, "npm-calls"))}\nexit ${status}\n`);
+  const fails = status === 0 ? "" : `echo "npm error 404 Not Found" >&2\n`;
+  writeText(fakeNpm, `#!/usr/bin/env bash\necho "$*" >> ${JSON.stringify(path.join(dir, "npm-calls"))}\n${fails}exit ${status}\n`);
   fs.chmodSync(fakeNpm, 0o755);
   return fakeNpm;
 }
@@ -275,10 +276,11 @@ function swapProject(rootIndexJs, { layout = "dir", name = "demo-pkg" } = {}) {
     const [script, ...args] = replaceArgs(pkgArgs(version), verifyScript);
     return runNode(script, args, tmp);
   };
-  const replaceAuto = () => {
-    const [script, ...args] = replaceArgs(["--auto-near-match", "--candidate-source", path.join(tmp, "deps", "near-matches.json")], path.join(TOOLS_DIR, "verify-dependency-swap.mjs"));
+  const replaceWith = (selectArgs) => {
+    const [script, ...args] = replaceArgs(selectArgs, path.join(TOOLS_DIR, "verify-dependency-swap.mjs"));
     return runNode(script, args, tmp);
   };
+  const replaceAuto = () => replaceWith(["--auto-near-match", "--candidate-source", path.join(tmp, "deps", "near-matches.json")]);
 
   // Start a run whose verification holds until release(): resolves once the run is mid-trial, holding its locks.
   // The run is killed when the test ends however it ends, and the hold ends with the run it verifies.
@@ -341,7 +343,7 @@ function swapProject(rootIndexJs, { layout = "dir", name = "demo-pkg" } = {}) {
     return { status: result.status, artifact: JSON.parse(fs.readFileSync(out, "utf8")) };
   };
 
-  return { tmp, appDir, appPkgDir, storePkgDir, consumerPkgDir, rootPkgDir, location, logPath, shippedLink, fakeNpm, npmCalls: () => npmCallsIn(tmp), replace, replaceAuto, startHeld, readLog, entry, forgetCopy, killMidVerify, backupOf, gate };
+  return { tmp, appDir, appPkgDir, storePkgDir, consumerPkgDir, rootPkgDir, location, logPath, shippedLink, fakeNpm, npmCalls: () => npmCallsIn(tmp), replace, replaceWith, replaceAuto, startHeld, readLog, entry, forgetCopy, killMidVerify, backupOf, gate };
 }
 
 const VERIFYING_INDEX = "module.exports=function(){return 1};\n";
@@ -1192,14 +1194,14 @@ test("replace-dependency --pkg trials exactly the packages detect-dependencies r
   // The tree holds directories nothing can list, so every run ends with exit 3, its tree unread in full.
   for (const { name, location } of report.onDisk.packages) {
     assert.equal(replace(name).status, 3);
-    assert.deepEqual([lastAttempt(location).attemptedVersion, lastAttempt(location).reason], ["9.9.9", "npm-install-failed"], name);
+    assert.deepEqual([lastAttempt(location).attemptedVersion, lastAttempt(location).reason], ["9.9.9", "npm-install-failed:npm error 404 Not Found"], name);
   }
   for (const { name, location, reason } of report.onDisk.untrialable) {
     const result = replace(name);
     assert.equal(result.status, 3, result.stderr || result.stdout);
     assert.deepEqual([lastAttempt(location).attemptedVersion, lastAttempt(location).reason], [null, reason], name);
   }
-  assert.deepEqual(npmCallsIn(tmp), report.onDisk.packages.map(({ name }) => `install --silent --no-progress --save-exact ${replacementOf(tmp, name, "9.9.9").spec}`));
+  assert.deepEqual(npmCallsIn(tmp), report.onDisk.packages.map(({ name }) => `install --loglevel=error --no-progress --save-exact ${replacementOf(tmp, name, "9.9.9").spec}`));
   assert.deepEqual(outside.map(treeSnapshot), before, "nothing past a link out of the app changes");
 
   // A scope detection can't list still has names replace-dependency can be asked for: under a scope nothing can read
@@ -1209,7 +1211,7 @@ test("replace-dependency --pkg trials exactly the packages detect-dependencies r
   assert.deepEqual([locked.attemptedVersion, locked.reason], [null, "not-a-package:unreadable:EACCES"]);
   assert.equal(replace("@search-scope/x").status, 3);
   const searched = lastAttempt("node_modules/@search-scope/x");
-  assert.deepEqual([searched.attemptedVersion, searched.reason], ["9.9.9", "npm-install-failed"]);
+  assert.deepEqual([searched.attemptedVersion, searched.reason], ["9.9.9", "npm-install-failed:npm error 404 Not Found"]);
 
   const summary = replace("plain").stdout;
   assert.match(summary, /not counting any inside the 4 directories it couldn't list\n/);
@@ -1256,7 +1258,7 @@ test("replace-dependency --auto-near-match resolves a pnpm package beside a scop
   assert.deepEqual(report.onDisk.untrialable, [{ name: "@ws/linked", location: "node_modules/@ws/linked", reason, loads: { name: "@ws/linked", version: "1.0.0" }, paths: ["node_modules/@ws/linked"] }]);
   assert.equal(log.copies[project.location].status, "resolved", JSON.stringify(log));
   assert.deepEqual(log.copies["node_modules/@ws/linked"].attempts.map((attempt) => [attempt.attemptedVersion, attempt.reason]), [[null, reason]]);
-  assert.deepEqual(project.npmCalls(), [`install --silent --no-progress --save-exact ${replacementOf(project.tmp, "demo-pkg", "1.2.3").spec}`]);
+  assert.deepEqual(project.npmCalls(), [`install --loglevel=error --no-progress --save-exact ${replacementOf(project.tmp, "demo-pkg", "1.2.3").spec}`]);
   assert.deepEqual(treeSnapshot(workspace), before);
 });
 
@@ -1451,20 +1453,22 @@ test("replace-dependency names each copy it can't swap with its location and rea
   assert.deepEqual(project.npmCalls(), []);
 });
 
-test("replace-dependency counts a copy as the package it holds, whatever name reaches it", () => {
-  const project = multiCopyApp();
+test("replace-dependency counts a copy as the package it holds, and as one of every name that reaches it", () => {
+  const project = multiCopyApp({ replacements: ["qux@1.0.0"] });
   // c3 requires foo, and what it finds there is a copy of qux.
   const alias = project.at(".pnpm", "c3@1.0.0", "node_modules", "foo");
   project.consumer("c3", project.at(".pnpm", "qux@1.0.0", "node_modules", "qux"));
   fs.renameSync(project.at(".pnpm", "c3@1.0.0", "node_modules", "qux"), alias);
 
-  const asFoo = project.replace(["--pkg", "foo", "--location", path.relative(project.appDir, alias)]);
-  assert.equal(asFoo.status, 2, asFoo.stdout);
-  assert.match(asFoo.stderr, /is not where any copy of foo is reached/);
   const { report } = detect(project.tmp, project.appDir);
   const qux = report.onDisk.packages.find(({ location }) => location === project.copies.qux);
   assert.equal(qux.name, "qux");
   assert.ok(qux.paths.includes(path.relative(project.appDir, alias)), JSON.stringify(qux));
+
+  const asFoo = project.replace(["--pkg", "foo", "--location", path.relative(project.appDir, alias)]);
+  assert.equal(asFoo.status, 0, asFoo.stderr || asFoo.stdout);
+  const entry = project.readLog().copies[project.copies.qux];
+  assert.deepEqual([entry.name, entry.status, entry.chosenVersion], ["qux", "resolved", "1.0.0"]);
 });
 
 test("replace-dependency trials a copy nested in another at the location it has as its trial starts", () => {
@@ -1746,4 +1750,16 @@ test("replace-dependency lists a resolved copy whose replacement is gone as left
   const refused = project.replace(["--pkg", "foo", "--location", project.copies.foo3]);
   assert.equal(refused.status, 2);
   assert.match(refused.stderr, /its replacement .* is now /);
+});
+
+test("replace-dependency --pkg with an alias's name trials the copy that name reaches, as the package it holds", () => {
+  const { tmp, appDir, appPkgDir, replaceWith, readLog } = swapProject(VERIFYING_INDEX);
+  const aliasDir = path.join(appDir, "node_modules", "bar");
+  fs.renameSync(appPkgDir, aliasDir);
+
+  const result = replaceWith(["--pkg", "bar"]);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const entry = readLog().copies["node_modules/bar"];
+  assert.deepEqual([entry.name, entry.status, entry.chosenVersion], ["demo-pkg", "resolved", "1.2.3"], JSON.stringify(entry));
+  assert.equal(fs.realpathSync(aliasDir), fs.realpathSync(replacementOf(tmp, "demo-pkg", "1.2.3").dir));
 });
