@@ -1,9 +1,11 @@
 #!/bin/sh
-# The default command (tmux.conf): the login shell, after marking its pane as a shell
-# pane. The mark is the pane's start command as tmux holds it now. pane-died
-# (tmux-pane-respawn.sh) closes a dead pane whose start command still equals its mark;
-# a later respawn-pane with another command (excise does this) changes the start
-# command, so the mark never outlives the shell that set it.
+# The default command (conf.d/pane-lifecycle.conf): the login shell, after marking its
+# pane as a shell pane. The mark is a copy of the pane's start command, the command
+# tmux started there. The pane-died hook (tmux-pane-respawn.sh) closes a dead pane
+# whose start command still equals the mark. Once respawn-pane starts another command
+# (excise does), the two no longer match and the mark is stale. `exec` inside this
+# shell leaves the start command alone, so a program exec'd from it counts as the
+# shell, and its pane closes on exit as in plain tmux.
 # -t "$TMUX_PANE": without it, a client in a detached session targets no pane.
 tmux set -p -t "$TMUX_PANE" @shell-start "$(tmux display -p -t "$TMUX_PANE" '#{pane_start_command}')" ||
   echo "tmux-shell: pane $TMUX_PANE is not marked as a shell pane, so exiting will respawn it" >&2
