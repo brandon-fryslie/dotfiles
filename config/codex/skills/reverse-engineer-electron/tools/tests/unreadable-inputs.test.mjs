@@ -30,6 +30,8 @@ function dangle(p) {
 
 const DANGLING = "is not a file (dangling:gone)";
 
+const restrictsRoot = { skip: process.getuid?.() === 0 ? "chmod 000 doesn't restrict root" : false };
+
 // An app dir whose package.json is text, beside a src/main.js and a decoy dir the heuristic would pick.
 function appWithManifest(tmp, text) {
   writeText(path.join(tmp, "app", "package.json"), text);
@@ -56,6 +58,8 @@ test("detect-build-dir stops at a package.json it can't use, and finds the entry
   const app = appWithManifest(tmp, "{}");
   const manifest = path.join(app, "package.json");
   writeText(path.join(app, "dist", "index.js"), "1;\n");
+  // A file beside the app named after it is one node would load for the app's bare path; the app's main is not it.
+  writeText(`${app}.js`, "1;\n");
   const detect = (text) => {
     writeText(manifest, text);
     return node("detect-build-dir.mjs", [app], tmp);
@@ -316,28 +320,47 @@ test("the extract gate stops at a project asar shim it can't run, instead of run
   assert.equal(artifact.error, `${shim} ${DANGLING}`);
 });
 
-test("the remove-deps gate compares a working file that is there but can't be read, naming why, instead of aborting", () => {
+const removeDepsGate = (tmp) => {
+  writeText(path.join(tmp, "deps", "near-matches.json"), "{}");
+  writeText(path.join(tmp, "deps", "replacements.json"), JSON.stringify({ schemaVersion: 4, copies: {} }));
+  return gateIn(tmp)(["remove-deps", "--baseline", path.join(tmp, "baseline"), "--working", path.join(tmp, "working"), "--deps-dir", path.join(tmp, "deps")]);
+};
+
+test("the remove-deps gate compares a link by the target it names, so a link where the baseline has a file is a mismatch", () => {
   const tmp = mkTmpDir();
   writeText(path.join(tmp, "baseline", "main.js"), "console.log(1);\n");
   fs.mkdirSync(path.join(tmp, "working"));
   dangle(path.join(tmp, "working", "main.js"));
-  writeText(path.join(tmp, "deps", "near-matches.json"), "{}");
-  const { status, artifact } = gateIn(tmp)(["remove-deps", "--baseline", path.join(tmp, "baseline"), "--working", path.join(tmp, "working"), "--deps-dir", path.join(tmp, "deps")]);
+  const { status, artifact } = removeDepsGate(tmp);
   assert.equal(status, 1);
   assert.deepEqual(artifact.mismatches.missingFiles, []);
-  assert.deepEqual(artifact.mismatches.jsHashMismatches.map(({ file, workingHash }) => [file, workingHash]), [["main.js", `unread: ${DANGLING}`]]);
+  assert.deepEqual(artifact.mismatches.jsHashMismatches.map(({ file, baseline, working }) => [file, baseline.kind, working]), [["main.js", "sha256", { kind: "link", target: "gone" }]]);
   assert.equal(artifact.checks.workingCodeUnchanged, false);
 });
 
-test("a tree walk descends a link to a directory once, so compare reads the files under it and a link cycle ends", () => {
+test("the remove-deps gate never takes two files it couldn't read for the same file", restrictsRoot, () => {
   const tmp = mkTmpDir();
-  for (const side of ["a", "b"]) {
-    writeText(path.join(tmp, side, "lib", "x.js"), "function f() { return 1; }\n");
-    fs.symlinkSync("lib", path.join(tmp, side, "linked.js"));
-    fs.symlinkSync("..", path.join(tmp, side, "lib", "up"));
+  for (const [side, code] of [["baseline", "a();\n"], ["working", "b();\n"]]) {
+    writeText(path.join(tmp, side, "main.js"), code);
+    fs.chmodSync(path.join(tmp, side, "main.js"), 0o000);
   }
-  const result = node("compare.mjs", [path.join(tmp, "a"), path.join(tmp, "b")], tmp);
+  const { status, artifact } = removeDepsGate(tmp);
+  assert.equal(status, 1);
+  const unread = { kind: "unread", reason: "can't be read (EACCES)" };
+  assert.deepEqual(artifact.mismatches.jsHashMismatches, [{ file: "main.js", baseline: unread, working: unread }]);
+  assert.equal(artifact.checks.workingCodeUnchanged, false);
+});
+
+test("a tree walk lists a link by its own name and never descends it, so each file keeps the one path it has", () => {
+  const tmp = mkTmpDir();
+  writeText(path.join(tmp, "app", "lib", "x.js"), "function f() { return 1; }\n");
+  writeText(path.join(tmp, "app", "main.js"), "require('./lib/x.js');\n");
+  fs.symlinkSync("lib", path.join(tmp, "app", "zz"));
+  fs.symlinkSync("..", path.join(tmp, "app", "lib", "up"));
+  const result = node("prepare.mjs", [path.join(tmp, "app"), path.join(tmp, "out")], tmp);
   assert.equal(result.status, 0, result.stderr);
+  const written = fs.readdirSync(path.join(tmp, "out"), { recursive: true }).filter((rel) => rel.endsWith(".js")).sort();
+  assert.deepEqual(written, [path.join("lib", "x.js"), "main.js"]);
 });
 
 test("apply-renames rewrites only the names it is given, keeping a byte order mark the file starts with", () => {

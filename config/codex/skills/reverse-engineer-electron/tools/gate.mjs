@@ -20,14 +20,13 @@
  * // [LAW:dataflow-not-control-flow] Each gate runs a fixed, deterministic sequence of checks every time.
  */
 
-import { createHash } from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { isPlainObject, JSON_SHAPE } from "./json-value.mjs";
-import { inputAt, isUnmet, readBytes, readJson, treeFileText } from "./path-state.mjs";
+import { appPathState, fileDigest, inputAt, isUnmet, readJson, treeFileText } from "./path-state.mjs";
 import { fromLogPath, readLog } from "./replacement-log.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
@@ -89,13 +88,20 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
 }
 
-// [LAW:one-source-of-truth] What a listed entry holds, as every gate compares it: its bytes' sha256, or, for one that
-// is there but can't be read, the reader's reason. A faithful copy, a dangling link to the same target among them,
-// matches its original, and an entry that can't be read where the original is a file is a mismatch naming why.
-function entryDigest(filePath) {
-  const read = readBytes(filePath);
-  return read.kind === "bytes" ? createHash("sha256").update(read.bytes).digest("hex") : `unread: ${read.reason}`;
+// [LAW:types-are-the-program] What a listed entry is, as every gate compares it: a link by the target it names, a file
+// by its bytes' sha256, or an entry that can't be read, with the reader's reason. A link is never read through, so it
+// is not a second name for its target; and an unread entry matches nothing, so a gate never certifies content it
+// didn't read.
+function entryIdentity(filePath) {
+  const at = appPathState(filePath);
+  if (at.kind === "link") return { kind: "link", target: at.target };
+  const digest = fileDigest(filePath);
+  return digest.kind === "sha256" ? digest : { kind: "unread", reason: digest.reason };
 }
+
+const sameEntry = (left, right) =>
+  (left.kind === "link" && right.kind === "link" && left.target === right.target) ||
+  (left.kind === "sha256" && right.kind === "sha256" && left.hex === right.hex);
 
 // The extract gate verifies an extracted dir against the asar's full contents,
 // so it skips only the repo a user may have initialized around their work. The
@@ -111,8 +117,8 @@ const unmetInputs = (inputs) => inputs.filter(([, input]) => isUnmet(input)).map
 
 const problemsText = (problems) => problems.map(({ path: p, reason }) => `${p} ${reason}`).join("; ");
 
-function mapFileHashes(rootDir, relFiles) {
-  return Object.fromEntries(relFiles.map((rel) => [rel, entryDigest(path.join(rootDir, rel))]));
+function mapEntryIdentities(rootDir, relFiles) {
+  return Object.fromEntries(relFiles.map((rel) => [rel, entryIdentity(path.join(rootDir, rel))]));
 }
 
 function setDiff(left, right) {
@@ -194,17 +200,18 @@ function runExtractGate(opts) {
     pass: false,
   };
 
-  const problems = unmetInputs([[upstreamAsar, inputAt(upstreamAsar, "file")], [copiedAsar, inputAt(copiedAsar, "file")], [extractedDir, inputAt(extractedDir, "dir")]]);
+  // Each asar is read for its digest, so one that can't be read is a required input the gate can't use.
+  const upstreamDigest = fileDigest(upstreamAsar);
+  const copiedDigest = fileDigest(copiedAsar);
+  const problems = unmetInputs([[upstreamAsar, upstreamDigest], [copiedAsar, copiedDigest], [extractedDir, inputAt(extractedDir, "dir")]]);
   if (problems.length > 0) {
     artifact.error = `Required extract gate input: ${problemsText(problems)}`;
     return artifact;
   }
 
-  const upstreamHash = entryDigest(upstreamAsar);
-  const copiedHash = entryDigest(copiedAsar);
-  artifact.metrics.upstreamAsarSha256 = upstreamHash;
-  artifact.metrics.copiedAsarSha256 = copiedHash;
-  artifact.checks.asarHashMatch = upstreamHash === copiedHash;
+  artifact.metrics.upstreamAsarSha256 = upstreamDigest.hex;
+  artifact.metrics.copiedAsarSha256 = copiedDigest.hex;
+  artifact.checks.asarHashMatch = upstreamDigest.hex === copiedDigest.hex;
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gate-extract-"));
   try {
@@ -224,16 +231,16 @@ function runExtractGate(opts) {
 
     artifact.checks.extractedFileSetMatch = missingFiles.length === 0 && extraFiles.length === 0;
 
-    const expectedHashes = mapFileHashes(tmpRoot, expectedFiles);
+    const expectedEntries = mapEntryIdentities(tmpRoot, expectedFiles);
     // [LAW:one-source-of-truth] The listing is the gate's picture of each tree: a file is there when the listing has it.
     const actualSet = new Set(actualFiles);
-    const actualHashes = mapFileHashes(extractedDir, expectedFiles.filter((rel) => actualSet.has(rel)));
+    const actualEntries = mapEntryIdentities(extractedDir, expectedFiles.filter((rel) => actualSet.has(rel)));
 
     const hashMismatches = [];
     for (const rel of expectedFiles) {
-      if (!actualHashes[rel]) continue;
-      if (expectedHashes[rel] !== actualHashes[rel]) {
-        hashMismatches.push({ relPath: rel, expected: expectedHashes[rel], actual: actualHashes[rel] });
+      if (!actualEntries[rel]) continue;
+      if (!sameEntry(expectedEntries[rel], actualEntries[rel])) {
+        hashMismatches.push({ relPath: rel, expected: expectedEntries[rel], actual: actualEntries[rel] });
       }
     }
 
@@ -491,10 +498,10 @@ function runRemoveDepsGate(opts) {
     const workingSet = new Set(workingJs);
     for (const rel of baselineJs) {
       if (!workingSet.has(rel)) continue;
-      const leftHash = entryDigest(path.join(baselineDir, rel));
-      const rightHash = entryDigest(path.join(workingDir, rel));
-      if (leftHash !== rightHash) {
-        hashMismatches.push({ file: rel, baselineHash: leftHash, workingHash: rightHash });
+      const baselineEntry = entryIdentity(path.join(baselineDir, rel));
+      const workingEntry = entryIdentity(path.join(workingDir, rel));
+      if (!sameEntry(baselineEntry, workingEntry)) {
+        hashMismatches.push({ file: rel, baseline: baselineEntry, working: workingEntry });
       }
     }
 

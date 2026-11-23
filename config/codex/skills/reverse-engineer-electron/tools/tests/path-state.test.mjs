@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6,7 +7,7 @@ import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
 import { writeText } from "./fixtures.mjs";
 import { JSON_SHAPE } from "../json-value.mjs";
-import { inputAt, pathState, readJson, readText } from "../path-state.mjs";
+import { fileDigest, inputAt, pathState, readJson, readText } from "../path-state.mjs";
 
 const roots = [];
 after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
@@ -100,4 +101,11 @@ test("a file node won't read whole is a fact about the path, not a bug", () => {
   const read = readText(file);
   assert.equal(read.kind, "unusable");
   assert.equal(read.reason, "can't be read (ERR_FS_FILE_TOO_LARGE)");
+});
+
+test("fileDigest is the sha256 of a file's bytes, read across more than one chunk", () => {
+  const bytes = Buffer.alloc(2.5 * 1024 * 1024, "ab");
+  const file = pathMadeBy((file) => fs.writeFileSync(file, bytes));
+  assert.deepEqual(fileDigest(file), { kind: "sha256", hex: createHash("sha256").update(bytes).digest("hex") });
+  assert.equal(fileDigest(path.dirname(file)).reason, "is not a file (dir)");
 });

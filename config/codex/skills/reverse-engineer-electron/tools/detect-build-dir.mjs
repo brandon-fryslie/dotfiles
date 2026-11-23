@@ -40,7 +40,8 @@ function mainBuildDir() {
   if (manifest.kind === "absent") return null;
   if (manifest.kind !== "json") fail(`Error: ${manifestPath} ${manifest.reason}`);
   try {
-    return path.dirname(createRequire(manifestPath).resolve(appDir));
+    // The trailing separator makes node resolve the app as a directory only, so no sibling file named after it wins.
+    return path.dirname(createRequire(manifestPath).resolve(appDir + path.sep));
   } catch (error) {
     if (error.code !== "MODULE_NOT_FOUND") throw error;
     console.error(`  Warning: node finds no entrypoint for ${appDir} (main ${JSON.stringify(manifest.value.main) ?? "unset"}); falling back to heuristic.`);

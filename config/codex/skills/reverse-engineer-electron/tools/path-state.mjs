@@ -2,6 +2,7 @@
 // path-state.mjs — what a path on disk holds, with and without following its links, as a value; and what a tool that
 // wants a directory, a file, its text or its JSON there gets: the thing, nothing at all, or the reason it can't be used.
 
+import { createHash } from "crypto";
 import fs from "fs";
 
 // [LAW:single-enforcer] An fs error as a fact about the path: a system call's error (EACCES, ELOOP, ...; it names the
@@ -101,14 +102,33 @@ export function inputAt(p, want) {
 // reason the reader gave.
 export const isUnmet = (outcome) => outcome.kind === "absent" || outcome.kind === "unusable";
 
-// A file's bytes, or why there are none: { kind: "bytes", bytes }, absent, or unusable.
-export function readBytes(file) {
+// What read gives for a file's contents, or why there are none: absent, or unusable.
+function readFile(file, read) {
   const state = pathState(file);
   if (state.kind === "absent") return state;
   if (state.kind !== "file") return unusable(WANTED.file, state);
-  const read = attempt(() => ({ kind: "bytes", bytes: fs.readFileSync(file) }), () => ABSENT);
-  return read.kind === "unreadable" ? unusable(WANTED.file, read) : read;
+  const outcome = attempt(read, () => ABSENT);
+  return outcome.kind === "unreadable" ? unusable(WANTED.file, outcome) : outcome;
 }
+
+// A file's bytes, or why there are none: { kind: "bytes", bytes }, absent, or unusable.
+export const readBytes = (file) => readFile(file, () => ({ kind: "bytes", bytes: fs.readFileSync(file) }));
+
+const DIGEST_CHUNK_BYTES = 1024 * 1024;
+
+// A file's sha256 as { kind: "sha256", hex }, or why there is none. It is read a chunk at a time, so a file too large
+// to read whole (an asar past 2 GiB) has one too.
+export const fileDigest = (file) => readFile(file, () => {
+  const hash = createHash("sha256");
+  const chunk = Buffer.alloc(DIGEST_CHUNK_BYTES);
+  const fd = fs.openSync(file, "r");
+  try {
+    for (let read = fs.readSync(fd, chunk); read > 0; read = fs.readSync(fd, chunk)) hash.update(chunk.subarray(0, read));
+  } finally {
+    fs.closeSync(fd);
+  }
+  return { kind: "sha256", hex: hash.digest("hex") };
+});
 
 // A file's text exactly as it is on disk, a byte order mark included, so a tool that rewrites the file changes only
 // what it means to; or why there is none.
