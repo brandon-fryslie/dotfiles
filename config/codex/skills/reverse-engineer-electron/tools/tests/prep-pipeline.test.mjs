@@ -284,7 +284,7 @@ function swapProject(rootIndexJs, { layout = "dir", name = "demo-pkg" } = {}) {
 const VERIFYING_INDEX = "module.exports=function(){return 1};\n";
 const FAILING_INDEX = "module.exports=function(){const o={x:2};return o.x};\n";
 
-// Run detect-dependencies over an app whose build is one trivial file; returns the report it wrote.
+// Run detect-dependencies over an app whose build is one trivial file: the report it wrote, and where.
 function detect(tmp, appDir) {
   writeText(path.join(tmp, "app", "main.js"), "console.log(1);\n");
   const out = path.join(tmp, "deps", "detected-dependencies.json");
@@ -294,55 +294,125 @@ function detect(tmp, appDir) {
     tmp,
   );
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  return JSON.parse(fs.readFileSync(out, "utf8"));
+  return { report: JSON.parse(fs.readFileSync(out, "utf8")), out, stdout: result.stdout };
 }
 
-test("detect-dependencies lists every top-level package, through a link or not, with the version it has on disk", () => {
+function placePackage(dir, manifest) {
+  writeJson(path.join(dir, "package.json"), manifest);
+  return dir;
+}
+
+test("detect-dependencies lists every top-level package, through a link or not, with the version it has on disk", (t) => {
   const tmp = mkTmpDir();
   const appDir = path.join(tmp, "resources", "app");
   const nm = path.join(appDir, "node_modules");
-  const place = (dir, name, version) => {
-    writeJson(path.join(dir, "package.json"), { name, version });
-    return dir;
-  };
-  place(path.join(nm, "plain-pkg"), "plain-pkg", "1.0.0");
-  linkTo(place(path.join(nm, ".pnpm", "pnpm-pkg@2.0.0", "node_modules", "pnpm-pkg"), "pnpm-pkg", "2.0.0"), path.join(nm, "pnpm-pkg"));
-  linkTo(
-    place(path.join(nm, ".pnpm", "@scope+scoped-pkg@3.0.0", "node_modules", "@scope", "scoped-pkg"), "@scope/scoped-pkg", "3.0.0"),
-    path.join(nm, "@scope", "scoped-pkg"),
-  );
-  linkTo(place(path.join(tmp, "packages", "workspace-pkg"), "workspace-pkg", "4.0.0"), path.join(nm, "workspace-pkg"));
-  linkTo(path.join(tmp, "gone"), path.join(nm, "gone-pkg"));
+  const at = (...parts) => path.join("node_modules", ...parts);
+  placePackage(path.join(nm, "plain-pkg"), { name: "plain-pkg", version: "1.0.0" });
+  linkTo(placePackage(path.join(nm, ".pnpm", "pnpm-pkg@2.0.0", "node_modules", "pnpm-pkg"), { name: "pnpm-pkg", version: "2.0.0" }), path.join(nm, "pnpm-pkg"));
+  const scopedStore = path.join(nm, ".pnpm", "@scope+scoped-pkg@3.0.0", "node_modules", "@scope", "scoped-pkg");
+  linkTo(placePackage(scopedStore, { name: "@scope/scoped-pkg", version: "3.0.0" }), path.join(nm, "@scope", "scoped-pkg"));
+  linkTo(placePackage(path.join(tmp, "packages", "workspace-pkg"), { name: "workspace-pkg", version: "4.0.0" }), path.join(nm, "workspace-pkg"));
+  // A scope that is itself a link, as a workspace scope can be.
+  placePackage(path.join(tmp, "packages", "@linked", "pkg"), { name: "@linked/pkg", version: "5.0.0" });
+  linkTo(path.join(tmp, "packages", "@linked"), path.join(nm, "@linked"));
 
-  const report = detect(tmp, appDir);
+  // Entries that load no package this pipeline can trial, each a different reason.
+  linkTo(path.join(tmp, "gone"), path.join(nm, "gone-pkg"));
+  linkTo(path.join(tmp, "gone-scoped"), path.join(nm, "@scope", "gone-pkg"));
+  linkTo(path.join(nm, "loop-pkg"), path.join(nm, "loop-pkg"));
+  const lockedDir = path.join(tmp, "locked");
+  placePackage(path.join(lockedDir, "locked-pkg"), { name: "locked-pkg", version: "1.0.0" });
+  linkTo(path.join(lockedDir, "locked-pkg"), path.join(nm, "locked-pkg"));
+  fs.chmodSync(lockedDir, 0o000);
+  t.after(() => fs.chmodSync(lockedDir, 0o755));
+  writeText(path.join(nm, "stray-file"), "");
+  fs.mkdirSync(path.join(nm, "bare-dir"));
+  writeText(path.join(nm, "broken-json", "package.json"), "{bad");
+  placePackage(path.join(nm, "versionless"), { name: "versionless" });
+  linkTo(placePackage(path.join(nm, ".pnpm", "real-name@6.0.0", "node_modules", "real-name"), { name: "real-name", version: "6.0.0" }), path.join(nm, "alias-name"));
+
+  const { report, stdout } = detect(tmp, appDir);
 
   assert.deepEqual(
-    report.onDisk.packages.map(({ name, version, path: at }) => ({ name, version, path: at })),
+    report.onDisk.packages.map(({ name, version, path: where }) => ({ name, version, path: where })),
     [
-      { name: "@scope/scoped-pkg", version: "3.0.0", path: path.join("node_modules", "@scope", "scoped-pkg") },
-      { name: "plain-pkg", version: "1.0.0", path: path.join("node_modules", "plain-pkg") },
-      { name: "pnpm-pkg", version: "2.0.0", path: path.join("node_modules", "pnpm-pkg") },
-      { name: "workspace-pkg", version: "4.0.0", path: path.join("node_modules", "workspace-pkg") },
+      { name: "@linked/pkg", version: "5.0.0", path: at("@linked", "pkg") },
+      { name: "@scope/scoped-pkg", version: "3.0.0", path: at("@scope", "scoped-pkg") },
+      { name: "plain-pkg", version: "1.0.0", path: at("plain-pkg") },
+      { name: "pnpm-pkg", version: "2.0.0", path: at("pnpm-pkg") },
+      { name: "workspace-pkg", version: "4.0.0", path: at("workspace-pkg") },
     ],
   );
-  assert.ok(
-    report.warnings.some((warning) => warning.startsWith(path.join("node_modules", "gone-pkg"))),
-    `a dangling link is reported: ${JSON.stringify(report.warnings)}`,
-  );
+  const skipped = Object.fromEntries(report.onDisk.skipped.map(({ path: where, ...detail }) => [where, detail]));
+  assert.deepEqual(skipped, {
+    [at("gone-pkg")]: { kind: "dangling", target: path.relative(nm, path.join(tmp, "gone")) },
+    [at("@scope", "gone-pkg")]: { kind: "dangling", target: path.relative(path.join(nm, "@scope"), path.join(tmp, "gone-scoped")) },
+    [at("loop-pkg")]: { kind: "unreadable", code: "ELOOP" },
+    [at("locked-pkg")]: { kind: "unreadable", code: "EACCES" },
+    [at("stray-file")]: { kind: "file" },
+    [at("bare-dir")]: { kind: "no-manifest" },
+    [at("broken-json")]: { kind: "invalid-manifest", reason: skipped[at("broken-json")].reason },
+    [at("versionless")]: { kind: "invalid-manifest", reason: "name and version must be strings" },
+    [at("alias-name")]: { kind: "alias", packageName: "real-name", version: "6.0.0" },
+  });
+  assert.match(skipped[at("broken-json")].reason, /JSON/);
+  assert.equal(report.onDisk.nodeModules, "directory");
+  for (const where of Object.keys(skipped)) {
+    assert.ok(report.warnings.some((warning) => warning.startsWith(where)), `${where} is warned: ${JSON.stringify(report.warnings)}`);
+    assert.ok(stdout.includes(`  - ${where}`), `${where} is printed: ${stdout}`);
+  }
+});
+
+test("detect-dependencies tells an app with no node_modules apart from one whose node_modules can't be read", () => {
+  const tmp = mkTmpDir();
+  const bundled = path.join(tmp, "bundled");
+  fs.mkdirSync(bundled, { recursive: true });
+  const absent = detect(tmp, bundled).report;
+  assert.equal(absent.onDisk.nodeModules, "absent");
+  assert.deepEqual(absent.onDisk.skipped, []);
+  assert.deepEqual(absent.warnings, []);
+
+  const broken = path.join(tmp, "broken");
+  linkTo(path.join(tmp, "gone"), path.join(broken, "node_modules"));
+  const dangling = detect(tmp, broken).report;
+  assert.equal(dangling.onDisk.nodeModules, "dangling");
+  assert.deepEqual(dangling.onDisk.skipped, [{ path: "node_modules", kind: "dangling", target: path.relative(broken, path.join(tmp, "gone")) }]);
+  assert.equal(dangling.warnings.length, 1);
+});
+
+test("detect-dependencies reads top-level lockfile versions and reports a lockfile it can't parse", () => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "app-dir");
+  writeJson(path.join(appDir, "package-lock.json"), {
+    packages: {
+      "": { name: "app" },
+      "node_modules/a": { version: "1.0.0" },
+      "node_modules/@scope/b": { version: "2.0.0" },
+      "node_modules/a/node_modules/nested": { version: "3.0.0" },
+      "node_modules/linked": { link: true, resolved: "packages/linked" },
+    },
+  });
+  assert.deepEqual(detect(tmp, appDir).report.lockfile.packages, [
+    { name: "@scope/b", version: "2.0.0", path: "package-lock.json" },
+    { name: "a", version: "1.0.0", path: "package-lock.json" },
+  ]);
+
+  writeText(path.join(appDir, "package-lock.json"), "{truncated");
+  const unparsed = detect(tmp, appDir).report;
+  assert.deepEqual(unparsed.lockfile.packages, []);
+  assert.ok(unparsed.warnings.some((warning) => warning.startsWith("package-lock.json could not be read")), JSON.stringify(unparsed.warnings));
 });
 
 for (const [layout, name] of [["pnpm", "@scope/demo-pkg"], ["linked", "demo-pkg"]]) {
   test(`replace-dependency --auto-near-match trials a ${layout} package that detection found, with no --pkg`, () => {
     const { tmp, appDir, fakeNpm, logPath, readLog } = swapProject(VERIFYING_INDEX, { layout, name });
     const depsDir = path.join(tmp, "deps");
-    const nearMatches = path.join(depsDir, "near-matches.json");
-    // The near-matches this run trials are the ones detection produced, not the project's hand-written ones.
-    fs.rmSync(nearMatches);
-    detect(tmp, appDir);
+    const { out: detected } = detect(tmp, appDir);
+    const nearMatches = path.join(depsDir, "detected-near-matches.json");
     writeJson(path.join(tmp, "registry.json"), { [name]: ["1.2.3"] });
     const near = runNode(
       path.join(TOOLS_DIR, "find-near-match-versions.mjs"),
-      ["--deps", path.join(depsDir, "detected-dependencies.json"), "--app-dir", appDir, "--registry-file", path.join(tmp, "registry.json"), "--out", nearMatches],
+      ["--deps", detected, "--app-dir", appDir, "--registry-file", path.join(tmp, "registry.json"), "--out", nearMatches],
       tmp,
     );
     assert.equal(near.status, 0, near.stderr || near.stdout);

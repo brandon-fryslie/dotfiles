@@ -19,6 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
+import { pathState, readEntry, topLevelEntries } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -102,66 +103,39 @@ function pkgNameFromNodeModulesPath(text) {
   return parts[0];
 }
 
-function readPackageJson(pkgDir) {
-  const packageJsonPath = path.join(pkgDir, "package.json");
-  if (!fs.existsSync(packageJsonPath)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-  } catch {
-    return null;
+// Why a top-level entry of the app's node_modules is not listed as a package, said for the operator.
+function describeSkipped(entry) {
+  switch (entry.kind) {
+    case "dangling": return `${entry.path} is a link to ${entry.target}, which does not exist`;
+    case "unreadable": return `${entry.path} cannot be read (${entry.code})`;
+    case "file": return `${entry.path} is a file, not a package directory`;
+    case "no-manifest": return `${entry.path} has no package.json, so it has no version to trial`;
+    case "invalid-manifest": return `${entry.path}/package.json is not a usable manifest: ${entry.reason}`;
+    case "alias": return `${entry.path} is an alias of ${entry.packageName}@${entry.version}; packages are trialed by the name they load as, so it is not listed`;
   }
+  throw new Error(`unknown node_modules entry kind ${entry.kind} at ${entry.path}`);
 }
 
-// What a node_modules entry is once its link, if any, is followed the way Node follows it. A link whose target is
-// gone is "dangling": the app ships a package there it cannot load.
-function locationKind(location) {
-  try {
-    return fs.statSync(location).isDirectory() ? "directory" : "file";
-  } catch (error) {
-    if (error.code === "ENOENT") return "dangling";
-    throw error;
-  }
-}
-
-// The packages at the app's top-level locations, node_modules/<name> and node_modules/@scope/<name>, each with the
-// version its package.json declares. A location is a package whether it is a directory or a link to one: pnpm,
-// workspace and npm-link packages are all links. Other copies (the .pnpm store, nested node_modules) are not
-// top-level locations.
-function listOnDiskPackages(appDir) {
+// The packages the app loads from its top-level node_modules locations, through a link (pnpm, workspace, npm link) or
+// not, with the version each one has on disk. Copies with no top-level location (the .pnpm store, nested
+// node_modules) are not here.
+// [LAW:no-silent-failure] Every entry is either listed or skipped with its reason; nothing is dropped unseen. An app
+// with no node_modules at all is a fact the report states, not a failure: fully bundled apps ship none.
+function readOnDiskPackages(appDir) {
   const nmDir = path.join(appDir, "node_modules");
-  const packages = [];
-  const warnings = [];
-  if (!fs.existsSync(nmDir) || !fs.statSync(nmDir).isDirectory()) return { packages, warnings };
-
-  const visit = (dir, inScope) => {
-    for (const name of fs.readdirSync(dir)) {
-      if (name.startsWith(".")) continue;
-      const location = path.join(dir, name);
-      const kind = locationKind(location);
-      // [LAW:no-silent-failure] a dangling link is a package the app cannot load, reported rather than dropped.
-      if (kind === "dangling") {
-        warnings.push(`${path.relative(appDir, location)} is a link to ${fs.readlinkSync(location)}, which does not exist`);
-        continue;
-      }
-      if (kind !== "directory") continue;
-      if (!inScope && name.startsWith("@")) {
-        visit(location, true);
-        continue;
-      }
-      const pkg = readPackageJson(location);
-      if (!pkg?.name || !pkg?.version) continue;
-      packages.push({
-        name: pkg.name,
-        version: pkg.version,
-        path: path.relative(appDir, location),
-        dir: location,
-      });
-    }
-  };
-  visit(nmDir, false);
-
-  packages.sort((left, right) => left.name.localeCompare(right.name));
-  return { packages, warnings };
+  const nodeModules = pathState(nmDir);
+  const entries = nodeModules.kind === "directory" ? topLevelEntries(nmDir).map(readEntry)
+    : nodeModules.kind === "absent" ? []
+    : [{ ...nodeModules, dir: nmDir }];
+  const relative = (dir) => path.relative(appDir, dir);
+  const packages = entries
+    .filter((entry) => entry.kind === "package")
+    .map(({ name, version, dir }) => ({ name, version, path: relative(dir), dir }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const skipped = entries
+    .filter((entry) => entry.kind !== "package")
+    .map(({ name, dir, ...detail }) => ({ path: relative(dir), ...detail }));
+  return { nodeModules: nodeModules.kind, packages, skipped };
 }
 
 function listPackageJsFiles(pkgDir) {
@@ -231,38 +205,30 @@ function loadFingerprints() {
   return filtered;
 }
 
+// The versions package-lock.json records for the app's top-level packages. A nested key
+// (node_modules/a/node_modules/b) is another copy of b, not what require("b") loads from the app, and a link entry
+// records no version of its own, so neither is here.
+// [LAW:no-silent-failure] A lockfile that can't be read is reported, never read as one that records nothing.
 function loadLockfilePackages(appDir) {
-  const out = [];
   const packageLockPath = path.join(appDir, "package-lock.json");
-  if (!fs.existsSync(packageLockPath)) return out;
-
+  if (!fs.existsSync(packageLockPath)) return { packages: [], warnings: [] };
+  let packageLock;
   try {
-    const packageLock = JSON.parse(fs.readFileSync(packageLockPath, "utf8"));
-    const pushPackage = (name, version) => {
-      if (!name || !version) return;
-      out.push({ name, version, path: "package-lock.json", dir: null });
-    };
-
-    const rootDeps = packageLock.dependencies || {};
-    for (const [name, meta] of Object.entries(rootDeps)) {
-      pushPackage(name, meta?.version || null);
-    }
-
-    const packages = packageLock.packages || {};
-    for (const [pkgPath, meta] of Object.entries(packages)) {
-      if (!pkgPath.startsWith("node_modules/")) continue;
-      const pkgName = pkgNameFromNodeModulesPath(`/${pkgPath}/index.js`);
-      pushPackage(pkgName, meta?.version || null);
-    }
-  } catch {
-    return [];
+    packageLock = JSON.parse(fs.readFileSync(packageLockPath, "utf8"));
+  } catch (error) {
+    return { packages: [], warnings: [`package-lock.json could not be read, so no lockfile versions were used: ${error.message}`] };
   }
 
-  const deduped = new Map();
-  for (const pkg of out) {
-    if (!deduped.has(pkg.name)) deduped.set(pkg.name, pkg);
+  const topLevelKey = /^node_modules\/((?:@[^/]+\/)?[^/]+)$/;
+  const recorded = [
+    ...Object.entries(packageLock.dependencies || {}).map(([name, meta]) => [name, meta?.version]),
+    ...Object.entries(packageLock.packages || {}).map(([key, meta]) => [topLevelKey.exec(key)?.[1], meta?.version]),
+  ];
+  const byName = new Map();
+  for (const [name, version] of recorded) {
+    if (name && version && !byName.has(name)) byName.set(name, { name, version, path: "package-lock.json", dir: null });
   }
-  return Array.from(deduped.values()).sort((left, right) => left.name.localeCompare(right.name));
+  return { packages: [...byName.values()].sort((left, right) => left.name.localeCompare(right.name)), warnings: [] };
 }
 
 function parseStaticBareSpecifiers(code) {
@@ -1093,8 +1059,11 @@ function main() {
   const outPath = path.resolve(projectRoot, opts.out);
 
   const fingerprints = loadFingerprints();
-  const { packages: onDiskPackages, warnings: onDiskWarnings } = listOnDiskPackages(appDir);
-  const lockfilePackages = loadLockfilePackages(appDir);
+  const onDisk = readOnDiskPackages(appDir);
+  const onDiskPackages = onDisk.packages;
+  const lockfile = loadLockfilePackages(appDir);
+  const lockfilePackages = lockfile.packages;
+  // [LAW:one-source-of-truth] A version on disk is what the app loads, so it outranks the one the lockfile recorded.
   const packageVersionByName = Object.fromEntries([...lockfilePackages, ...onDiskPackages].map((pkg) => [pkg.name, pkg.version]));
   const packageShapeHashes = indexPackageShapeHashes(onDiskPackages);
   const knownPackages = Array.from(
@@ -1106,7 +1075,7 @@ function main() {
     appDir: fileRel(projectRoot, appDir),
     buildDir: fileRel(projectRoot, buildDir),
     out: fileRel(projectRoot, outPath),
-    warnings: [...onDiskWarnings],
+    warnings: [...onDisk.skipped.map(describeSkipped), ...lockfile.warnings],
     parseErrors: [],
     code: {
       filesScanned: 0,
@@ -1116,6 +1085,8 @@ function main() {
       nodeBuiltins: {},
     },
     onDisk: {
+      nodeModules: onDisk.nodeModules,
+      skipped: onDisk.skipped,
       packages: onDiskPackages.map((pkg) => ({
         name: pkg.name,
         version: pkg.version,
@@ -1241,14 +1212,14 @@ function main() {
   console.log(`- Plain JS files: ${report.code.plainFiles}`);
   console.log(`- Bundled JS files: ${report.code.bundledFiles}`);
   console.log(`- External packages in code: ${report.summary.externalPackagesInCode}`);
+  console.log(`- Packages on disk: ${report.summary.externalPackagesOnDisk} (node_modules: ${onDisk.nodeModules})`);
   console.log(`- Bundled third-party packages: ${report.summary.bundledThirdPartyPackages}`);
   console.log(`- Bundled app modules: ${report.summary.bundledAppModules}`);
   console.log(`- Bundled third-party modules: ${report.summary.bundledThirdPartyModules}`);
   console.log(`- Candidate module classification rate: ${report.summary.classificationRate}`);
   console.log(`- Parse errors: ${report.parseErrors.length}`);
-  if (report.warnings.length > 0) {
-    console.log(`- Warnings: ${report.warnings.length}`);
-  }
+  console.log(`- Warnings: ${report.warnings.length}`);
+  for (const warning of report.warnings) console.log(`  - ${warning}`);
 }
 
 main();

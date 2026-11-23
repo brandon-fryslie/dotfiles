@@ -24,6 +24,7 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
+import { topLevelEntries } from "./node-modules.mjs";
 import { emptyLog, fromLogPath, isLocation, parseLog, serializeLog, toLogPath } from "./replacement-log.mjs";
 
 function parseArgs(argv) {
@@ -300,21 +301,18 @@ function findSwapLocation(pkgName, app) {
   }
 }
 
-// Every location in the app's node_modules a package can load from, by package name: each node_modules/<name> and
-// node_modules/@scope/<name>, found by walking real directories. Links are listed but never descended, so a link
-// cycle cannot loop the walk; .original/ holds set-aside backups nothing loads.
+// Every location in the app's node_modules a package can load from, by package name: the top-level entries of each
+// node_modules directory found by walking real directories. Links are listed but never descended, so a link cycle
+// cannot loop the walk; .original/ holds set-aside backups nothing loads.
 function locationsByName(app) {
   const byName = new Map();
   const walk = (dir) => {
+    if (path.basename(dir) === "node_modules") {
+      for (const entry of topLevelEntries(dir)) byName.set(entry.name, [...(byName.get(entry.name) ?? []), locationOf(app.nodeModules, entry.dir)]);
+    }
     for (const child of fs.readdirSync(dir, { withFileTypes: true })) {
       const childDir = path.join(dir, child.name);
-      if (childDir === app.backupsDir || !(child.isDirectory() || child.isSymbolicLink())) continue;
-      const parent = path.basename(dir);
-      const name = parent === "node_modules" && !/^[@.]/.test(child.name) ? child.name
-        : parent.startsWith("@") && path.basename(path.dirname(dir)) === "node_modules" ? `${parent}/${child.name}`
-        : null;
-      if (name !== null) byName.set(name, [...(byName.get(name) ?? []), locationOf(app.nodeModules, childDir)]);
-      if (child.isDirectory()) walk(childDir);
+      if (child.isDirectory() && childDir !== app.backupsDir) walk(childDir);
     }
   };
   walk(app.nodeModules);
