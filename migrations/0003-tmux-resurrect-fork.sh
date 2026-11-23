@@ -4,15 +4,15 @@
 # Created: 2026-11-22
 #
 # Problem:
-#   tmux.conf now loads tmux-resurrect from brandon-fryslie/tmux-resurrect, whose
-#   @resurrect-save-command-strategy accepts a path - the save strategy that records
-#   Claude sessions lives in this repo. tpm installs a plugin only when its directory
-#   is missing, so a machine that already has the tmux-plugins clone keeps it, ignores
-#   the path, and saves with the bundled ps strategy.
+#   tmux.conf now loads tmux-resurrect from brandon-fryslie/tmux-resurrect, whose save
+#   runs @resurrect-save-command-strategy from a path, once per save - the strategy that
+#   records Claude sessions lives in this repo. tpm installs a plugin only when its
+#   directory is missing, so a machine that already has the tmux-plugins clone keeps it
+#   and never runs the strategy.
 #
 # Fix:
-#   Point that clone's origin at the fork and check out the fork's master. A clone
-#   with local changes is refused rather than overwritten.
+#   Point that clone's origin at the fork and check out the fork's master. A clone with
+#   uncommitted changes, or commits on no remote, is refused rather than reset.
 #
 # Safe to delete after:
 #   Every machine has run it (`just migrate-status` on each). Fresh installs clone
@@ -20,22 +20,34 @@
 
 PLUGIN="${HOME}/.config/tmux/plugins/tmux-resurrect"
 FORK="https://github.com/brandon-fryslie/tmux-resurrect"
+# The fork commit after which a save runs a strategy given by path, once with every pane.
+CAPABILITY="becc48ec3e722e5667be2280e98b63e774852a05"
 
 migrate_check() {
-    [[ -d "$PLUGIN/.git" ]] && [[ "$(git -C "$PLUGIN" remote get-url origin)" != "$FORK" ]]
+    # A clone without the commit, which git reports as an unknown object, needs it.
+    [[ -d "$PLUGIN/.git" ]] && ! git -C "$PLUGIN" merge-base --is-ancestor "$CAPABILITY" HEAD 2>/dev/null
 }
 
 migrate_apply() {
     # [LAW:no-silent-failure] the runner's `if migrate_apply` suspends set -e
     # inside this body, so every step must propagate failure explicitly.
-    if [[ -n "$(git -C "$PLUGIN" status --porcelain)" ]]; then
-        echo "[migrate] $PLUGIN has local changes; commit or discard them, then rerun" >&2
+    local changes unpushed
+    changes=$(git -C "$PLUGIN" status --porcelain) || return 1
+    unpushed=$(git -C "$PLUGIN" rev-list HEAD --not --remotes) || return 1
+    if [[ -n "$changes" || -n "$unpushed" ]]; then
+        echo "[migrate] $PLUGIN has uncommitted changes or commits on no remote; push or discard them, then rerun" >&2
+        return 1
+    fi
+    # Fetched before origin moves, so a failure leaves the clone as it was.
+    git -C "$PLUGIN" fetch --quiet "$FORK" master || return 1
+    if ! git -C "$PLUGIN" merge-base --is-ancestor "$CAPABILITY" FETCH_HEAD; then
+        echo "[migrate] $FORK master does not have $CAPABILITY yet; merge its PR #1 first" >&2
         return 1
     fi
     git -C "$PLUGIN" remote set-url origin "$FORK" || return 1
     git -C "$PLUGIN" fetch --quiet origin || return 1
     git -C "$PLUGIN" checkout --quiet -B master origin/master || return 1
 
-    # [LAW:verifiable-goals] a fresh check finds nothing left to do.
+    # [LAW:verifiable-goals] a fresh check finds nothing left to do: the checkout has the capability.
     ! migrate_check
 }

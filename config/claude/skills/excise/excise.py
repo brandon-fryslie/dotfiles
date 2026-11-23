@@ -29,7 +29,7 @@ from pathlib import Path
 
 # The shared reader of how Claude was started, found through this file's symlink into the dotfiles repo.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-from claude_process import claude_options, resumed, started_with  # noqa: E402
+from claude_process import Unreadable, Unresumable, claude_options, resumed, started_with  # noqa: E402
 
 # How long the old Claude has to exit after the pane is replaced before it is killed.
 EXIT_SECONDS = 10.0
@@ -248,5 +248,5 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except (Refused, OSError) as refused:
+    except (Refused, Unreadable, Unresumable) as refused:
         sys.exit(f"excise: {refused}")

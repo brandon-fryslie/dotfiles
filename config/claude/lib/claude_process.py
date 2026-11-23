@@ -11,9 +11,15 @@ import re
 import struct
 import subprocess
 from dataclasses import dataclass
+from itertools import takewhile
 
-# Options that choose which conversation Claude opens; a resume replaces them with its own.
-SESSION_OPTIONS = {"--resume", "--continue", "--session-id", "--fork-session", "--from-pr"}
+
+class Unreadable(Exception):
+    """The kernel would not say how a process was started: it has exited, or is not ours to read."""
+
+
+class Unresumable(Exception):
+    """A launch that cannot be turned into the command that resumes its session as it was started."""
 
 
 @dataclass(frozen=True)
@@ -29,16 +35,18 @@ def started_with(pid: int) -> Process:
     size = ctypes.c_size_t(4)
     argmax = ctypes.c_int()
     if libc.sysctl((ctypes.c_int * 2)(1, 8), 2, ctypes.byref(argmax), ctypes.byref(size), None, 0) != 0:
-        raise OSError(ctypes.get_errno(), f"cannot read the kernel's argument limit: {os.strerror(ctypes.get_errno())}")
+        raise Unreadable(f"cannot read the kernel's argument limit: {os.strerror(ctypes.get_errno())}")
     buffer = ctypes.create_string_buffer(argmax.value)
     size = ctypes.c_size_t(argmax.value)
     if libc.sysctl((ctypes.c_int * 3)(1, 49, pid), 3, buffer, ctypes.byref(size), None, 0) != 0:
-        raise OSError(ctypes.get_errno(), f"cannot read how process {pid} was started: {os.strerror(ctypes.get_errno())}")
+        raise Unreadable(f"cannot read how process {pid} was started: {os.strerror(ctypes.get_errno())}")
     raw = buffer.raw[: size.value]
     (argc,) = struct.unpack_from("i", raw)
     # After argc: the exec path, NUL padding, then argc arguments and the environment, each NUL-terminated.
     path, _, rest = raw[4:].partition(b"\0")
     strings = rest.lstrip(b"\0").split(b"\0")
+    if len(strings) < argc:
+        raise Unreadable(f"process {pid} has {argc} arguments, but the kernel returned {len(strings)}")
     argv = [os.fsdecode(item) for item in strings[:argc]]
     environment = {}
     for item in strings[argc:]:
@@ -55,11 +63,44 @@ class Arity(enum.Enum):
     OPTIONAL = "optional"  # --resume [value]
     VARIADIC = "variadic"  # --add-dir <directories...>
 
+    def values(self, spelling: str, following: list[str]) -> int:
+        """How many of the words `following` an option spelled `spelling` takes, as commander reads them:
+        a required value is the next word, whatever it is; an optional one is the next word unless that is
+        an option; a variadic one is every word up to the next option."""
+        if self is Arity.REQUIRED and not following:
+            raise Unresumable(f"{spelling} takes a value, and the launch ends before it")
+        free = sum(1 for _ in takewhile(lambda word: not word.startswith("-"), following))
+        return {Arity.NONE: 0, Arity.REQUIRED: 1, Arity.OPTIONAL: min(1, free), Arity.VARIADIC: free}[self]
+
 
 @dataclass(frozen=True)
 class Option:
     name: str  # the long name, which its short alias is folded into
     arity: Arity
+
+
+class Kind(enum.Enum):
+    SETTING = "setting"  # how the session behaves; a resume keeps it
+    CONVERSATION = "conversation"  # which conversation opens; a resume chooses its own
+    ACTION = "action"  # something done once at launch; a resume does not do it again
+
+
+# [LAW:types-are-the-program] every option `claude --help` lists, by long name, with what it is to a resume.
+# An option missing here makes a launch that uses it Unresumable, never quietly kept.
+KINDS = {name: Kind.CONVERSATION for name in (
+    "--resume", "--continue", "--session-id", "--fork-session", "--from-pr", "--teleport")} | {name: Kind.ACTION for name in (
+    "--worktree", "--tmux", "--background", "--cloud", "--environment", "--desktop", "--file", "--print", "--help",
+    "--version")} | {name: Kind.SETTING for name in (
+    "--add-dir", "--agent", "--agents", "--allow-dangerously-skip-permissions", "--allowed-tools", "--append-system-prompt",
+    "--autocompact", "--ax-screen-reader", "--bare", "--betas", "--brief", "--chrome", "--dangerously-skip-permissions",
+    "--debug", "--debug-file", "--disable-slash-commands", "--disallowed-tools", "--effort",
+    "--exclude-dynamic-system-prompt-sections", "--fallback-model", "--forward-subagent-text", "--ide",
+    "--include-hook-events", "--include-partial-messages", "--input-format", "--json-schema", "--max-budget-usd",
+    "--mcp-config", "--model", "--name", "--no-chrome", "--no-session-persistence", "--output-format",
+    "--permission-mode", "--permission-prompts", "--plugin-dir", "--plugin-url", "--prompt-suggestions",
+    "--remote-control", "--remote-control-session-name-prefix", "--replay-user-messages", "--restricted", "--safe-mode",
+    "--setting-sources", "--settings", "--strict-mcp-config", "--system-prompt", "--system-prompt-snapshot", "--tools",
+    "--verbose")}
 
 
 # An option line of `claude --help`: "  -r, --resume [value]   Resume ...".
@@ -73,7 +114,7 @@ def options(help_text: str) -> dict[str, Option]:
         if not (match := HELP_OPTION.match(line)):
             continue
         spellings, placeholder = match.group(1).split(", "), match.group(2) or ""
-        arity = (Arity.NONE if not placeholder else Arity.VARIADIC if placeholder.endswith("...>") or placeholder.endswith("...]")
+        arity = (Arity.NONE if not placeholder else Arity.VARIADIC if placeholder[-4:] in ("...>", "...]")
                  else Arity.REQUIRED if placeholder.startswith("<") else Arity.OPTIONAL)
         option = Option(spellings[-1], arity)
         table.update((spelling, option) for spelling in spellings)
@@ -81,37 +122,37 @@ def options(help_text: str) -> dict[str, Option]:
 
 
 def claude_options() -> dict[str, Option]:
+    """The grammar of the `claude` on PATH. A running session's own binary can be gone: an update removes old
+    versions while sessions started from them run on, which is when a session most needs resuming."""
     return options(subprocess.run(["claude", "--help"], check=True, capture_output=True, text=True).stdout)
 
 
 def given_options(argv: list[str], table: dict[str, Option]) -> list[tuple[Option, list[str]]]:
-    """argv's options as Claude's parser (commander) reads them, each with the words it took.
-
-    A required value is the next word; an optional one is the next word unless that is an
-    option; a variadic one is every word up to the next option. A word no option takes is
-    the prompt, which is not an option and is left out.
-    """
+    """argv's options as Claude's parser (commander) reads them, each with the words it took. A word no option
+    takes is the prompt, as is every word after `--`; the prompt is not an option and is left out."""
     given, words, i = [], argv[1:], 0
-    while i < len(words):
+    while i < len(words) and words[i] != "--":
         word = words[i]
         i += 1
         if not word.startswith("-"):
             continue
         spelling, has_value, _ = word.partition("=")
-        option, taken = table[spelling], [word]
-        if option.arity is Arity.REQUIRED and not has_value:
-            taken.append(words[i])
-            i += 1
-        elif option.arity in (Arity.OPTIONAL, Arity.VARIADIC) and not has_value:
-            while i < len(words) and not words[i].startswith("-") and (option.arity is Arity.VARIADIC or len(taken) == 1):
-                taken.append(words[i])
-                i += 1
-        given.append((option, taken))
+        if spelling not in table:
+            raise Unresumable(f"{spelling} is not an option `claude --help` lists")
+        option = table[spelling]
+        taken = 0 if has_value else option.arity.values(spelling, words[i:])
+        given.append((option, words[i - 1:i + taken]))
+        i += taken
     return given
 
 
 def resumed(argv: list[str], session: str, table: dict[str, Option]) -> list[str]:
-    """The command that reopens `session` as `argv` was started: its options, except those that
-    chose a conversation, then `--resume session`. The prompt it was started with is not sent again."""
-    kept = [word for option, taken in given_options(argv, table) if option.name not in SESSION_OPTIONS for word in taken]
+    """The command that reopens `session` as `argv` started it: its settings, then `--resume session`. The options
+    that chose its conversation or acted once at launch, and the prompt it was started with, are not given again."""
+    kept = []
+    for option, words in given_options(argv, table):
+        if option.name not in KINDS:
+            raise Unresumable(f"{option.name} has no kind in claude_process.KINDS, so a resume cannot know whether to keep it")
+        if KINDS[option.name] is Kind.SETTING:
+            kept += words
     return [argv[0], *kept, "--resume", session]
