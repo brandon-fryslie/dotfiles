@@ -54,7 +54,11 @@ def restored_by_resurrect(command):
     script = (f"source {PLUGIN}/variables.sh; source {PLUGIN}/helpers.sh; source {PLUGIN}/process_restore_helpers.sh;"
               ' get_tmux_option() { if [ "$1" = "$restore_processes_option" ]; then printf %s "$PROCESSES";'
               ' else printf %s "$2"; fi; }; _process_on_the_restore_list "$1"')
-    return subprocess.run(["bash", "-c", script, "_", command], env={**os.environ, "PROCESSES": processes}).returncode == 0
+    # variables.sh asks tmux for @resurrect-dir; without TMUX and with an empty TMUX_TMPDIR it finds no server.
+    with tempfile.TemporaryDirectory() as no_server:
+        environment = {**{k: v for k, v in os.environ.items() if k != "TMUX"}, "TMUX_TMPDIR": no_server,
+                       "PROCESSES": processes}
+        return subprocess.run(["bash", "-c", script, "_", command], env=environment).returncode == 0
 
 
 class Recorded(unittest.TestCase):
@@ -196,7 +200,7 @@ class AgainstTmux(unittest.TestCase):
                          ["claude", "--model", "opus"])
         saved = self.saved([pane], [(pane, "S")], listed_in=directory / "agents.json")
         self.assertEqual((saved.returncode, saved.stdout, saved.stderr),
-                         (0, f"env CLAUDE_CONFIG_DIR={directory} claude --model opus --resume S\n", ""))
+                         (0, f"env CLAUDE_CONFIG_DIR={directory.resolve()} claude --model opus --resume S\n", ""))
 
     def test_a_pane_that_cannot_be_read_is_reported_and_the_others_still_saved(self):
         program = self.pane("sleep 300; :", ["zsh", "-c", "sleep 300; :"])

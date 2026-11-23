@@ -6,13 +6,16 @@ cannot read refused.
 Run: just test-claude-lib
 """
 
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from claude_process import (KINDS, Arity, Launch, Option, Process, Unreadable, Unresumable, claude_options, config_dir,
-                            in_config_dir, launch,
+                            config_root, in_config_dir, launch,
                             options, resumed, shell_line, started_with)
 
 # Option lines in the shape `claude --help` prints them, continuation lines included.
@@ -106,6 +109,18 @@ class ConfigDir(unittest.TestCase):
         self.assertEqual(in_config_dir(["claude", "--resume", "S"], config_dir(process)),
                          ["env", "CLAUDE_CONFIG_DIR=/alt", "claude", "--resume", "S"])
         self.assertEqual(in_config_dir(["claude"], config_dir(Process("/v", ["claude"], {}))), ["claude"])
+
+    def test_every_spelling_of_the_default_is_the_default(self):
+        with tempfile.TemporaryDirectory() as home:
+            (Path(home) / ".claude").mkdir()
+            (Path(home) / "link").symlink_to(Path(home) / ".claude")
+            for named in ("", f"{home}/.claude", f"{home}/.claude/", f"{home}/link"):
+                self.assertIsNone(config_dir(Process("/v", ["claude"], {"HOME": home, "CLAUDE_CONFIG_DIR": named})), named)
+            alternate = Path(home) / "alt"
+            alternate.mkdir()
+            self.assertEqual(config_dir(Process("/v", ["claude"], {"HOME": home, "CLAUDE_CONFIG_DIR": f"{home}/link/../alt"})),
+                             os.path.realpath(alternate))
+            self.assertEqual(config_root(str(alternate)), alternate)
 
 
 class Kinds(unittest.TestCase):

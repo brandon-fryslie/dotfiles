@@ -30,8 +30,8 @@ from pathlib import Path
 
 # The shared reader of how Claude was started, found through this file's symlink into the dotfiles repo.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-from claude_process import (Unreadable, Unresumable, claude_options, config_dir, in_config_dir, launch, resumed, shell_line,
-                            started_with)  # noqa: E402
+from claude_process import (Unreadable, Unresumable, claude_options, config_dir, config_root, in_config_dir, launch, resumed,
+                            shell_line, started_with)  # noqa: E402
 
 # How long the old Claude has to exit after the pane is replaced before it is killed.
 EXIT_SECONDS = 10.0
@@ -179,7 +179,9 @@ def restart(cuts_path: Path) -> None:
         raise Refused("this session is not in tmux, so there is no pane to bring it back in")
     pid = int(os.environ["CLAUDE_PID"])
     session = os.environ["CLAUDE_CODE_SESSION_ID"]
-    matches = list((Path.home() / ".claude" / "projects").glob(f"*/{session}.jsonl"))
+    process = started_with(pid)
+    # The session's transcript is in its own config dir, the one its resume names.
+    matches = list((config_root(config_dir(process)) / "projects").glob(f"*/{session}.jsonl"))
     if len(matches) != 1:
         raise Refused(f"expected one transcript for session {session}, found {matches}")
     transcript = matches[0]
@@ -189,7 +191,6 @@ def restart(cuts_path: Path) -> None:
     # Checked now, while the session can still be told: the rewrite runs after it is gone.
     lines = transcript.read_text().splitlines()
     excised(lines, cuts)
-    process = started_with(pid)
     # Where the session last was, which is where its transcript is filed: it can have moved since Claude started.
     cwd = [entry["cwd"] for entry in map(json.loads, lines) if "cwd" in entry][-1]
     argv = in_config_dir(resumed(launch(process), session, claude_options()), config_dir(process))
@@ -214,9 +215,14 @@ def rewrite(plan_path: Path) -> None:
         staged.write_text("".join(line + "\n" for line in lines))
         os.replace(staged, transcript)
         print(f"excised {len(plan.cuts)} string(s); resuming", flush=True)
-        # Typed ahead of the shell below, which reads it at its first prompt, as tmux-resurrect restores a pane.
+        # Typed ahead of the shell below, which reads it at its first prompt. Until then the terminal holds typed
+        # input as one line capped at MAX_CANON (1024 bytes on macOS), and a launch can be longer, so what is typed
+        # is a short line sourcing the resume from a file that deletes itself: Claude still runs in that shell.
+        descriptor, resume = tempfile.mkstemp(prefix="excise-resume-", suffix=".sh")
+        with os.fdopen(descriptor, "w") as out:
+            out.write(f"rm -f -- {shell_line([resume])}\n{shell_line(plan.argv)}\n")
         pane = os.environ["TMUX_PANE"]
-        subprocess.run(["tmux", "send-keys", "-t", pane, "-l", shell_line(plan.argv)], check=True)
+        subprocess.run(["tmux", "send-keys", "-t", pane, "-l", f". {shell_line([resume])}"], check=True)
         subprocess.run(["tmux", "send-keys", "-t", pane, "Enter"], check=True)
     except Exception as error:
         print(f"excise: {error}\nThe transcript was not changed unless this says it was excised.", file=sys.stderr, flush=True)

@@ -159,9 +159,25 @@ def launch(process: Process) -> Launch:
 CONFIG_DIR = "CLAUDE_CONFIG_DIR"
 
 
+def default_config_dir(home: str) -> Path:
+    return Path(home) / ".claude"
+
+
 def config_dir(process: Process) -> str | None:
-    """The config dir `process` keeps its sessions in, None for Claude's default. A session is found only there."""
-    return process.environment.get(CONFIG_DIR)
+    """The config dir `process` keeps its sessions in, None for Claude's default. A session is found only there.
+    Every spelling of the default (unset, empty, ~/.claude itself or a link to it) is None, and any other dir is its
+    real path, so one dir is named one way in every save."""
+    named = process.environment.get(CONFIG_DIR)
+    if not named:
+        return None
+    home = process.environment.get("HOME", str(Path.home()))
+    directory = os.path.realpath(os.path.expanduser(named))
+    return None if directory == os.path.realpath(default_config_dir(home)) else directory
+
+
+def config_root(directory: str | None) -> Path:
+    """Where config dir `directory` (None for the default) is on disk; its transcripts are under `projects`."""
+    return default_config_dir(str(Path.home())) if directory is None else Path(directory)
 
 
 def in_config_dir(command: list[str], directory: str | None) -> list[str]:
