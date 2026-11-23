@@ -16,6 +16,7 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { JSON_SHAPE } from "./json-value.mjs";
+import { packageOf, stateText } from "./node-modules.mjs";
 import { inputAt, isUnmet, readJson, readText } from "./path-state.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
@@ -283,27 +284,32 @@ function main() {
   const manifests = [beforeDir, afterDir].map((dir) => [path.join(dir, "package.json"), readJson(path.join(dir, "package.json"), JSON_SHAPE.object)]);
   const manifestProblems = problemsIn(manifests);
   if (manifestProblems.length > 0) refuseInputs(manifestProblems);
-  const [beforePkg, afterPkg] = manifests.map(([, read]) => read.value);
+  const beforeManifest = manifests[0][1].value;
+  const identities = manifests.map(([file, read]) => [file, packageOf(read.value)]);
+  const identityProblems = identities.filter(([, identity]) => identity.kind !== "package").map(([file, identity]) => `${file} ${stateText(identity)}`);
+  if (identityProblems.length > 0) refuseInputs(identityProblems);
+  const [before, after] = identities.map(([, identity]) => identity);
 
-  artifact.checks.packageNameMatch = beforePkg.name === opts.pkg && afterPkg.name === opts.pkg;
+  artifact.checks.packageNameMatch = before.name === opts.pkg && after.name === opts.pkg;
   if (!artifact.checks.packageNameMatch) {
-    artifact.mismatches.package.push(`package name mismatch: before=${beforePkg.name || "?"} after=${afterPkg.name || "?"}`);
+    artifact.mismatches.package.push(`package name mismatch: before=${before.name} after=${after.name}`);
   }
 
-  const expectedVersion = opts.expectedVersion || beforePkg.version || "";
-  artifact.checks.packageVersionMatch = afterPkg.version === expectedVersion;
+  const expectedVersion = opts.expectedVersion || before.version;
+  artifact.checks.packageVersionMatch = after.version === expectedVersion;
   if (!artifact.checks.packageVersionMatch) {
-    artifact.mismatches.package.push(`version mismatch: expected=${expectedVersion || "?"} actual=${afterPkg.version || "?"}`);
+    artifact.mismatches.package.push(`version mismatch: expected=${expectedVersion} actual=${after.version}`);
   }
 
-  const reachableFiles = buildReachableFileSet(beforeDir, beforePkg);
+  const reachableFiles = buildReachableFileSet(beforeDir, beforeManifest);
   artifact.metrics.reachableFiles = reachableFiles.length;
 
   let exactProgramHashMatches = 0;
   let functionTotalBefore = 0;
   let functionIntersection = 0;
   // [LAW:no-silent-failure] File coverage counts the files compared on both sides: one that is there but can't be read
-  // is never compared, so it counts as uncovered and fails reachableFilesRead.
+  // or parsed is never compared, so it counts as uncovered, and fails reachableFilesRead or the parse check. The walk
+  // that finds the reachable files still drops a module it can't resolve or read; that is lbl.1ik's.
   let comparedFiles = 0;
 
   for (const rel of reachableFiles) {
@@ -318,11 +324,11 @@ function main() {
     const unreadable = [["before", beforeRead], ["after", afterRead]].filter(([, read]) => read.kind !== "text");
     for (const [side, read] of unreadable) artifact.mismatches.unreadableFiles.push({ file: rel, side, reason: read.reason });
     if (unreadable.length > 0) continue;
-    comparedFiles += 1;
 
     try {
       const beforeInfo = fileStructuralInfo(beforeRead.text, beforeFile);
       const afterInfo = fileStructuralInfo(afterRead.text, afterFile);
+      comparedFiles += 1;
 
       if (beforeInfo.programHash === afterInfo.programHash) exactProgramHashMatches += 1;
 

@@ -33,6 +33,7 @@ import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { listDir, pathState } from './path-state.mjs';
 
 // [LAW:one-source-of-truth] The parse that feeds every tool. gate once compared its
 // own parse of a prepared file against prepare's parse of the same file under a
@@ -84,23 +85,31 @@ export function isSourceFile(filePath) {
 // once (ticket 67o: gate skipped only .git while prepare skipped node_modules, so
 // gate prepare demanded files prepare never wrote). The exclude set is data the
 // caller passes [LAW:dataflow-not-control-flow]; the walk and its order are the
-// same for every caller. Readdir failures propagate [LAW:no-silent-failure] — a
-// silently shortened inventory is a gate that passes for the wrong reason.
+// same for every caller. A directory it can't list stops the walk naming it
+// [LAW:no-silent-failure] — a silently shortened inventory is a gate that passes
+// for the wrong reason.
 export const SOURCE_TREE_EXCLUDES = new Set(['node_modules', '.git']);
 
 // Sorted posix-relative paths of every entry under rootDir that is not a
-// directory, not descending into a directory whose name is in excludes. A
-// symlink is listed, never walked, and a dangling one or a special file is listed
-// too: an entry is there whether or not it can be read, and reading it is the
-// caller's job, which names one it can't read rather than taking it for missing.
+// directory, as node reaches them: a directory, or a link to one, is descended
+// once by its real path (so a link cycle ends), unless its name is in excludes.
+// Every other entry is listed, a dangling link or a special file too: it is there
+// whether or not it can be read, and the caller reads it through path-state.mjs,
+// whose reason names one it can't read rather than taking it for missing.
 export function listFiles(rootDir, excludes) {
   const out = [];
+  const walked = new Set();
   const stack = [rootDir];
   while (stack.length > 0) {
     const current = stack.pop();
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+    const real = fs.realpathSync(current);
+    if (walked.has(real)) continue;
+    walked.add(real);
+    const listed = listDir(current);
+    if (listed.kind !== 'listed') throw new Error(`${current} can't be listed (${listed.code})`);
+    for (const entry of listed.entries) {
       const abs = path.join(current, entry.name);
-      if (entry.isDirectory()) {
+      if (entry.isDirectory() || (entry.isSymbolicLink() && pathState(abs).kind === 'dir')) {
         if (!excludes.has(entry.name)) stack.push(abs);
       } else {
         out.push(path.relative(rootDir, abs).split(path.sep).join('/'));

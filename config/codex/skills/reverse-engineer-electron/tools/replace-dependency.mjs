@@ -33,7 +33,7 @@ import { randomUUID } from "crypto";
 import { writeOutputs } from "./artifact.mjs";
 import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, readLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
 import { isNonEmptyString, JSON_SHAPE } from "./json-value.mjs";
-import { appPathState, describeEntry, inputAt, pathErrorCode, readJson } from "./path-state.mjs";
+import { appPathState, describeEntry, inputAt, pathErrorCode, readJson, readText } from "./path-state.mjs";
 import { appAt, canonicalEntry, containerSwappedAt, copiesOf, entryNameOf, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
 const USAGE = [
@@ -130,7 +130,8 @@ function lockTree(lockPath) {
   // Exit 3 means only that another run holds the lock; any other flock failure dies with its errno on stderr.
   const res = spawnSync("perl", ["-MFcntl=:flock", "-e", 'flock(STDIN, LOCK_EX | LOCK_NB) and exit 0; $!{EWOULDBLOCK} and exit 3; die "flock: $!\\n"'], { stdio: [fd, "inherit", "inherit"] });
   if (res.status === 3) {
-    const holder = fs.readFileSync(lockPath, "utf8").trim() || "it has not recorded itself yet";
+    const record = readText(lockPath);
+    const holder = record.kind !== "text" ? `its record ${record.reason}` : record.text.trim() || "it has not recorded itself yet";
     console.error(`Error: ${lockPath} is held by another replace-dependency run (${holder}) — wait for it to finish, or stop it; its locks are released the moment it exits, and the next run recovers any trial it left in flight`);
     process.exit(2);
   }

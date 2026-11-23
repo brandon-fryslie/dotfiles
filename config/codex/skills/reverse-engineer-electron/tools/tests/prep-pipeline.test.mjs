@@ -1928,3 +1928,16 @@ test("verify-dependency-swap names a reachable after-side file that is there but
   assert.equal(artifact.checks.reachableFilesRead, false);
   assert.equal(artifact.metrics.fileCoverage, 0, "a file never compared covers nothing");
 });
+
+test("verify-dependency-swap counts a reachable file that doesn't parse as uncompared", () => {
+  const { result, artifact } = verifyBetween(pkgA(PKG_A), (dir) => { pkgA(PKG_A)(dir); writeText(path.join(dir, "index.js"), "module.exports = (;\n"); });
+  assert.equal(result.status, 1);
+  assert.equal(artifact.mismatches.parseErrors.length, 1);
+  assert.equal(artifact.metrics.fileCoverage, 0);
+});
+
+test("verify-dependency-swap refuses a package.json that names no package, as replace-dependency does", () => {
+  const { result, afterDir, artifact } = verifyBetween(pkgA(PKG_A), pkgA(JSON.stringify({ name: "pkg-a" })));
+  assert.equal(result.status, 1);
+  assert.deepEqual(artifact.mismatches.package, [`${path.join(afterDir, "package.json")} unusable-manifest:no-name-or-version`]);
+});

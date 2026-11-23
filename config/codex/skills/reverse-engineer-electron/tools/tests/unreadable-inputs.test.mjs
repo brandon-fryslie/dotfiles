@@ -51,23 +51,39 @@ test("detect-build-dir reads package.json as every tool does: a byte order mark,
   }
 });
 
-test("detect-build-dir stops at a package.json or main it can't use, and guesses only when there is none", () => {
+test("detect-build-dir stops at a package.json it can't use, and finds the entrypoint node would load", () => {
   const tmp = mkTmpDir();
   const app = appWithManifest(tmp, "{}");
   const manifest = path.join(app, "package.json");
-  const stops = [
-    ["null", `${manifest} is not a JSON object (it holds null)`],
-    [JSON.stringify({ main: 5 }), `${manifest} gives main 5, which is not a path`],
-    [JSON.stringify({ main: "dangling.js" }), `package.json main ${path.join(app, "dangling.js")} ${DANGLING}`],
-  ];
-  dangle(path.join(app, "dangling.js"));
-  for (const [text, message] of stops) {
+  writeText(path.join(app, "dist", "index.js"), "1;\n");
+  const detect = (text) => {
     writeText(manifest, text);
-    const result = node("detect-build-dir.mjs", [app], tmp);
-    assert.equal(result.status, 1, text);
-    assert.ok(result.stderr.includes(message), result.stderr);
-    assert.equal(result.stdout, "");
+    return node("detect-build-dir.mjs", [app], tmp);
+  };
+  const resolved = [
+    [JSON.stringify({ main: "dist" }), "dist"],
+    [JSON.stringify({ main: "src/main" }), "src"],
+    [JSON.stringify({ main: "src/main.js" }), "src"],
+  ];
+  for (const [text, dir] of resolved) {
+    const result = detect(text);
+    assert.equal(result.status, 0, `${text}: ${result.stderr}`);
+    assert.equal(result.stdout.trim(), dir, text);
   }
+  // node loads index.js for a main that is unset or not a path; with none, the heuristic guesses, and says why.
+  for (const text of [JSON.stringify({ main: "" }), JSON.stringify({ main: null }), JSON.stringify({ main: 5 }), JSON.stringify({ main: "gone.js" })]) {
+    const result = detect(text);
+    assert.equal(result.status, 0, `${text}: ${result.stderr}`);
+    assert.equal(result.stdout.trim(), "other", text);
+    assert.match(result.stderr, /node finds no entrypoint/, text);
+  }
+  writeText(path.join(app, "index.js"), "1;\n");
+  assert.equal(detect(JSON.stringify({ main: "" })).stdout.trim(), ".");
+  fs.rmSync(path.join(app, "index.js"));
+
+  const nullManifest = detect("null");
+  assert.equal(nullManifest.status, 1);
+  assert.ok(nullManifest.stderr.includes(`${manifest} is not a JSON object (it holds null)`), nullManifest.stderr);
 
   fs.rmSync(manifest);
   dangle(manifest);
@@ -76,13 +92,19 @@ test("detect-build-dir stops at a package.json or main it can't use, and guesses
   assert.ok(dangling.stderr.includes(`${manifest} ${DANGLING}`), dangling.stderr);
 
   fs.rmSync(manifest);
+  dangle(path.join(app, "other", "c.js"));
+  dangle(path.join(app, "lib", "a.js"));
+  dangle(path.join(app, "lib", "b.js"));
+  dangle(path.join(app, "lib", "c.js"));
   const absent = node("detect-build-dir.mjs", [app], tmp);
   assert.equal(absent.status, 0, absent.stderr);
-  assert.equal(absent.stdout.trim(), "other");
+  assert.equal(absent.stdout.trim(), "other", "a .js link to nothing is not counted");
+  assert.ok(absent.stderr.includes(`${path.join(app, "lib", "a.js")} ${DANGLING}; not counted`), absent.stderr);
 
   const missingApp = node("detect-build-dir.mjs", [dangle(path.join(tmp, "app-link"))], tmp);
   assert.equal(missingApp.status, 1);
   assert.equal(missingApp.stderr.trim(), `Error: ${path.join(tmp, "app-link")} is not a directory (dangling:gone)`);
+  assert.equal(node("detect-build-dir.mjs", [""], tmp).status, 1, "an empty app dir is no app dir");
 });
 
 // An .app with no Electron Framework plist beside an extracted dir whose package.json is text.
@@ -292,4 +314,71 @@ test("the extract gate stops at a project asar shim it can't run, instead of run
   const { status, artifact } = gateIn(tmp)(["extract", "--upstream-asar", path.join(tmp, "upstream.asar"), "--copied-asar", path.join(tmp, "copied.asar"), "--extracted-dir", path.join(tmp, "extracted")]);
   assert.equal(status, 3);
   assert.equal(artifact.error, `${shim} ${DANGLING}`);
+});
+
+test("the remove-deps gate compares a working file that is there but can't be read, naming why, instead of aborting", () => {
+  const tmp = mkTmpDir();
+  writeText(path.join(tmp, "baseline", "main.js"), "console.log(1);\n");
+  fs.mkdirSync(path.join(tmp, "working"));
+  dangle(path.join(tmp, "working", "main.js"));
+  writeText(path.join(tmp, "deps", "near-matches.json"), "{}");
+  const { status, artifact } = gateIn(tmp)(["remove-deps", "--baseline", path.join(tmp, "baseline"), "--working", path.join(tmp, "working"), "--deps-dir", path.join(tmp, "deps")]);
+  assert.equal(status, 1);
+  assert.deepEqual(artifact.mismatches.missingFiles, []);
+  assert.deepEqual(artifact.mismatches.jsHashMismatches.map(({ file, workingHash }) => [file, workingHash]), [["main.js", `unread: ${DANGLING}`]]);
+  assert.equal(artifact.checks.workingCodeUnchanged, false);
+});
+
+test("a tree walk descends a link to a directory once, so compare reads the files under it and a link cycle ends", () => {
+  const tmp = mkTmpDir();
+  for (const side of ["a", "b"]) {
+    writeText(path.join(tmp, side, "lib", "x.js"), "function f() { return 1; }\n");
+    fs.symlinkSync("lib", path.join(tmp, side, "linked.js"));
+    fs.symlinkSync("..", path.join(tmp, side, "lib", "up"));
+  }
+  const result = node("compare.mjs", [path.join(tmp, "a"), path.join(tmp, "b")], tmp);
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("apply-renames rewrites only the names it is given, keeping a byte order mark the file starts with", () => {
+  const tmp = mkTmpDir();
+  const source = path.join(tmp, "source.js");
+  writeText(source, "﻿var a = 1;\n");
+  writeText(path.join(tmp, "spec.json"), JSON.stringify({ a: "count" }));
+  const result = node("apply-renames.mjs", [source, path.join(tmp, "spec.json")], tmp);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(source, "utf8"), "﻿var count = 1;\n");
+});
+
+test("detect-dependencies refuses an --app-dir that is not a directory, rather than reporting an app that ships nothing", () => {
+  const tmp = mkTmpDir();
+  writeText(path.join(tmp, "app", "package.json"), JSON.stringify({ name: "app", version: "1.0.0" }));
+  writeText(path.join(tmp, "build", "main.js"), "console.log(1);\n");
+  const result = node("detect-dependencies.mjs", ["--app-dir", "app/package.json", "--build-dir", "build", "--out", path.join(tmp, "deps.json")], tmp);
+  assert.equal(result.status, 2);
+  assert.equal(result.stderr.trim(), `Error: --app-dir ${path.join(fs.realpathSync(tmp), "app", "package.json")} is not a directory (file)`);
+  assert.equal(fs.existsSync(path.join(tmp, "deps.json")), false);
+});
+
+test("detect-electron-version prints only a spec that names one version, and refuses an empty extracted dir", () => {
+  const cases = [
+    ["^31.0.2", "31.0.2 31"],
+    ["~31.2", "31.2 31"],
+    ["31.0.0-beta.3", "31.0.0-beta.3 31"],
+  ];
+  for (const [spec, out] of cases) {
+    const result = electronApp(mkTmpDir(), JSON.stringify({ devDependencies: { electron: spec } }))();
+    assert.equal(result.status, 0, `${spec}: ${result.stderr}`);
+    assert.equal(result.stdout.trim(), out);
+  }
+  for (const spec of [">=31.0.0 <32", "file:../electron-31.2.0.tgz"]) {
+    const tmp = mkTmpDir();
+    const result = electronApp(tmp, JSON.stringify({ devDependencies: { electron: spec } }))();
+    assert.equal(result.status, 1, spec);
+    assert.equal(result.stdout, "");
+    assert.ok(result.stderr.includes(`gives electron ${JSON.stringify(spec)}, which names no single version`), result.stderr);
+  }
+  const empty = electronApp(mkTmpDir(), "{}")("");
+  assert.equal(empty.status, 1);
+  assert.equal(empty.stdout, "");
 });

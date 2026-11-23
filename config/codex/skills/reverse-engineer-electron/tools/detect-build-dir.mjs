@@ -9,6 +9,8 @@
 // Outputs the relative path from the extracted app root on stdout.
 // Exits 1 if no candidate is found, or if an input is there but can't be used.
 
+import fs from "fs";
+import { createRequire } from "module";
 import path from "path";
 import process from "process";
 import { JSON_SHAPE } from "./json-value.mjs";
@@ -21,35 +23,41 @@ const fail = (message) => {
 };
 
 const appArg = process.argv[2];
-if (appArg === undefined) fail("Usage: node detect-build-dir.mjs <extracted-app-dir>");
-const appDir = path.resolve(appArg);
+if (!appArg) fail("Usage: node detect-build-dir.mjs <extracted-app-dir>");
 
-const app = inputAt(appDir, "dir");
-if (app.kind !== "dir") fail(`Error: ${appDir} ${app.reason}`);
+const app = inputAt(path.resolve(appArg), "dir");
+if (app.kind !== "dir") fail(`Error: ${path.resolve(appArg)} ${app.reason}`);
+// node resolves an entrypoint to its real path, so the app dir is spelled the same way.
+const appDir = fs.realpathSync(path.resolve(appArg));
 
-// [LAW:one-source-of-truth] package.json's main is the app's authoritative entrypoint contract. [LAW:no-silent-failure]
-// Only a package.json that isn't there, one that gives no main, or a main that names nothing falls through to the
-// heuristic; one that is there but can't be used stops the run naming why.
+// [LAW:one-source-of-truth] The app's entrypoint is the file node loads for it: package.json's main resolved as node
+// resolves it (a file, the file with .js, a directory's index.js, and index.js for a main that is unset or not a path).
+// [LAW:no-silent-failure] A package.json that is there but can't be used stops the run naming why; only one that isn't
+// there, or an entrypoint node can't find, falls through to the heuristic, the second with a warning.
 function mainBuildDir() {
   const manifestPath = path.join(appDir, "package.json");
   const manifest = readJson(manifestPath, JSON_SHAPE.object);
   if (manifest.kind === "absent") return null;
   if (manifest.kind !== "json") fail(`Error: ${manifestPath} ${manifest.reason}`);
-  const { main } = manifest.value;
-  if (main === undefined) return null;
-  if (typeof main !== "string" || main.trim() === "") fail(`Error: ${manifestPath} gives main ${JSON.stringify(main)}, which is not a path`);
-  const mainPath = path.join(appDir, main.trim());
-  const entry = inputAt(mainPath, "file");
-  if (entry.kind === "file") return path.dirname(mainPath);
-  if (entry.kind === "unusable") fail(`Error: package.json main ${mainPath} ${entry.reason}`);
-  console.error(`  Warning: package.json main '${main.trim()}' ${entry.reason}; falling back to heuristic.`);
-  return null;
+  try {
+    return path.dirname(createRequire(manifestPath).resolve(appDir));
+  } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND") throw error;
+    console.error(`  Warning: node finds no entrypoint for ${appDir} (main ${JSON.stringify(manifest.value.main) ?? "unset"}); falling back to heuristic.`);
+    return null;
+  }
 }
 
-// The directory holding the most .js files outside node_modules; a tie goes to the path that sorts last.
+// The directory holding the most .js files node could load, outside node_modules; a tie goes to the path that sorts
+// last. A .js entry that can't be read is named, not counted.
 function heuristicBuildDir() {
   const counts = new Map();
-  for (const rel of listFiles(appDir, SOURCE_TREE_EXCLUDES).filter((file) => file.endsWith(".js"))) {
+  const readable = (rel) => {
+    const entry = inputAt(path.join(appDir, rel), "file");
+    if (entry.kind !== "file") console.error(`  Warning: ${path.join(appDir, rel)} ${entry.reason}; not counted.`);
+    return entry.kind === "file";
+  };
+  for (const rel of listFiles(appDir, SOURCE_TREE_EXCLUDES).filter((file) => file.endsWith(".js")).filter(readable)) {
     const dir = path.dirname(rel);
     counts.set(dir, (counts.get(dir) ?? 0) + 1);
   }

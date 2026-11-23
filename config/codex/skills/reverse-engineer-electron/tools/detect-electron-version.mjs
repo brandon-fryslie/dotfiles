@@ -23,7 +23,7 @@ const fail = (message) => {
 };
 
 const [appArg, extractedArg] = process.argv.slice(2);
-if (appArg === undefined) fail("Usage: node detect-electron-version.mjs <path-to-app> [extracted-app-dir]");
+if (!appArg || extractedArg === "") fail("Usage: node detect-electron-version.mjs <path-to-app> [extracted-app-dir]");
 const appPath = path.resolve(appArg);
 
 const app = inputAt(appPath, "dir");
@@ -50,7 +50,10 @@ if (plist.kind === "file") {
   }
 }
 
-// Method 2: the electron dependency package.json declares, its range's leading operators dropped.
+// Method 2: the electron dependency package.json declares, when it names one version: a version, or a caret, tilde or
+// exact range on one. [LAW:parse-dont-validate] Any other spec (a bound, a union, a file or URL) names no version to
+// print, and the run says so rather than printing part of it.
+const SINGLE_VERSION = /^[\^~=v]*(\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?)$/;
 if (extractedArg !== undefined) {
   const extractedDir = path.resolve(extractedArg);
   const extracted = inputAt(extractedDir, "dir");
@@ -64,8 +67,11 @@ if (extractedArg !== undefined) {
       if (!isPlainObject(deps)) fail(`Error: ${manifestPath} gives ${field} ${JSON.stringify(deps)}, which is not an object`);
     }
     const spec = dependencyMaps.map(([, deps]) => deps.electron).find((value) => typeof value === "string" && value.trim() !== "");
-    const version = spec === undefined ? "" : spec.trim().replace(/^[^0-9]*/, "");
-    if (version !== "") found("package.json", version);
+    if (spec !== undefined) {
+      const version = SINGLE_VERSION.exec(spec.trim())?.[1];
+      if (version === undefined) fail(`Error: ${manifestPath} gives electron ${JSON.stringify(spec)}, which names no single version`);
+      found("package.json", version);
+    }
   }
 }
 

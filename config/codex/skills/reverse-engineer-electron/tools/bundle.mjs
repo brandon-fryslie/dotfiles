@@ -5,16 +5,18 @@
 // [LAW:types-are-the-program] A module id is a string in every format, as are its entry and its dependency ids, so
 // an id from one place is compared with an id from another without conversion.
 
-import fs from "fs";
 import path from "path";
 import { walk, traverse, parseSource, sourceKindOf, isSourceFile, loaderFor, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
-import { readText } from "./path-state.mjs";
+import { inputAt, pathState, readText } from "./path-state.mjs";
 
 const isJsFile = (file) => isSourceFile(file) && loaderFor(file) === "js";
 
-// The JS source files a target holds, by shape.mjs's source-file rules: the target itself, or every one under it.
+// The JS source files a target holds, by shape.mjs's source-file rules: the target itself when it is a file, or every
+// one under it. A target that is neither stops the caller with its path and why.
 export function listJsFiles(target) {
-  if (fs.statSync(target).isFile()) return isJsFile(target) ? [target] : [];
+  if (pathState(target).kind === "file") return isJsFile(target) ? [target] : [];
+  const dir = inputAt(target, "dir");
+  if (dir.kind !== "dir") throw new Error(`${target} ${dir.reason}`);
   return listSourceFiles(target, SOURCE_TREE_EXCLUDES)
     .filter(isJsFile)
     .map((rel) => path.join(target, rel));

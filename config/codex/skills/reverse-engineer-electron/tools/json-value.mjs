@@ -9,7 +9,6 @@ export const isNonEmptyString = (value) => typeof value === "string" && value !=
 // [LAW:types-are-the-program] The top-level shape a tool reads a JSON input as, which path-state.mjs's readJson
 // requires of every value it returns, so no tool reads a manifest that is null or a list that is an object.
 export const JSON_SHAPE = {
-  any: { what: "JSON", accepts: () => true },
   object: { what: "a JSON object", accepts: isPlainObject },
   array: { what: "a JSON array", accepts: Array.isArray },
 };

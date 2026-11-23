@@ -27,7 +27,7 @@ import { fileURLToPath } from "url";
 import { appAt, byNameThenLocation, copiesOf, entryNameOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
 import { loadLockfile } from "./package-lock.mjs";
 import { isPlainObject, JSON_SHAPE } from "./json-value.mjs";
-import { readJson } from "./path-state.mjs";
+import { inputAt, readJson } from "./path-state.mjs";
 import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
 import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
@@ -153,14 +153,14 @@ function indexPackageShapeHashes(packages) {
 const isCount = (value) => Number.isInteger(value) && value >= 0;
 
 // [LAW:parse-dont-validate] A module index as unbundle-index.mjs writes one, read for its counts:
-// { kind: "index", counts: { bundlesIndexed, modulesIndexed } }, or the reader's absent or unusable, or unusable when
-// its summary doesn't give both counts.
+// { kind: "index", counts: { bundlesIndexed, modulesIndexed } }, or the reader's absent or unusable, or no-counts when
+// its summary doesn't give both; every outcome but the index carries the reason.
 function readModuleIndex(file) {
   const read = readJson(file, JSON_SHAPE.object);
   if (read.kind !== "json") return read;
   const { summary } = read.value;
   if (!isPlainObject(summary) || !isCount(summary.bundlesDetected) || !isCount(summary.modulesIndexed)) {
-    return { kind: "unusable", reason: "has no summary with bundlesDetected and modulesIndexed counts" };
+    return { kind: "no-counts", reason: "has no summary with bundlesDetected and modulesIndexed counts" };
   }
   return { kind: "index", counts: { bundlesIndexed: summary.bundlesDetected, modulesIndexed: summary.modulesIndexed } };
 }
@@ -708,6 +708,13 @@ function main() {
   const buildDir = path.resolve(projectRoot, opts.buildDir);
   const outPath = path.resolve(projectRoot, opts.out);
   clearOutputs([outPath]);
+  // [LAW:no-silent-failure] Everything below reads under the app dir, and a path under one that isn't a directory
+  // holds nothing, so an app dir that isn't one stops the run rather than reading as an app that ships nothing.
+  const app = inputAt(appDir, "dir");
+  if (app.kind !== "dir") {
+    console.error(`Error: --app-dir ${appDir} ${app.reason}`);
+    process.exit(2);
+  }
 
   const fingerprints = loadFingerprints();
   const onDisk = readOnDisk(appDir, projectRoot);

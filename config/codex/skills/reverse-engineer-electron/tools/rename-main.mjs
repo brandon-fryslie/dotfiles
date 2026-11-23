@@ -3,7 +3,7 @@
  * Applies semantic renames to app/main.js from rename-maps/main.js.json
  * Handles word boundaries, regex flags, string literals, and scoped variables.
  */
-import { readFileSync, writeFileSync } from 'fs';
+import { writeFileSync } from 'fs';
 import { readText } from './path-state.mjs';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
@@ -136,7 +136,8 @@ try {
   const lineMatch = errMsg.match(/:(\d+)/);
   if (lineMatch) {
     const errLine = parseInt(lineMatch[1]);
-    const lines = readFileSync(filePath, 'utf8').split('\n');
+    // The text just written, so the context shows the code the check read.
+    const lines = code.split('\n');
     console.error('\nContext around error:');
     for (let i = Math.max(0, errLine - 3); i < Math.min(lines.length, errLine + 2); i++) {
       console.error(`${i + 1}: ${lines[i]}`);

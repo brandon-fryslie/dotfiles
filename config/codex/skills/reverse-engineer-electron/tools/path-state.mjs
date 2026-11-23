@@ -4,10 +4,12 @@
 
 import fs from "fs";
 
-// [LAW:single-enforcer] An fs error as a fact about the path: a system error code (EACCES, ELOOP, ...) is what the
-// path holds. Anything else, node's own ERR_* argument errors among them, is a bug in the caller, and is thrown.
+// [LAW:single-enforcer] An fs error as a fact about the path: a system call's error (EACCES, ELOOP, ...; it names the
+// syscall) or node's own verdict on a file (ERR_FS_*, e.g. ERR_FS_FILE_TOO_LARGE) is what the path holds. Anything
+// else, node's ERR_INVALID_ARG_* among them, is a bug in the caller, and is thrown.
 export function pathErrorCode(error) {
-  if (typeof error.code !== "string" || error.code.startsWith("ERR_")) throw error;
+  const isPathFact = typeof error.code === "string" && (typeof error.syscall === "string" || error.code.startsWith("ERR_FS_"));
+  if (!isPathFact) throw error;
   return error.code;
 }
 
@@ -37,7 +39,7 @@ const ABSENT = Object.freeze({ kind: "absent", reason: "is missing" });
 export function pathState(p) {
   const lstatFailure = attempt(() => (fs.lstatSync(p), null), () => ABSENT);
   if (lstatFailure !== null) return lstatFailure;
-  return attempt(() => ({ kind: kindOf(fs.statSync(p)) }), () => ({ kind: "dangling", target: fs.readlinkSync(p) }));
+  return attempt(() => ({ kind: kindOf(fs.statSync(p)) }), () => attempt(() => ({ kind: "dangling", target: fs.readlinkSync(p) }), () => ABSENT));
 }
 
 // What sits at a path without following it: nothing, a directory, a file, something else, a symlink with its readlink
@@ -50,10 +52,13 @@ export function appPathState(p) {
   }, () => ABSENT);
 }
 
+// What appPathState found, as the object of "holds": every kind it returns has its words, and any other is an error.
 export function describeEntry(state) {
   if (state.kind === "link") return `a link to ${state.target}`;
   if (state.kind === "unreadable") return `a path it can't read (${state.code})`;
-  return { absent: "nothing", dir: "a directory", file: "a file", special: "a special file" }[state.kind];
+  const words = { absent: "nothing", dir: "a directory", file: "a file", special: "a special file" }[state.kind];
+  if (words === undefined) throw new Error(`appPathState gives no ${state.kind} state`);
+  return words;
 }
 
 // [LAW:types-are-the-program] Each state a path can hold instead of what a tool wants, and the one field that says
@@ -105,11 +110,11 @@ export function readBytes(file) {
   return read.kind === "unreadable" ? unusable(WANTED.file, read) : read;
 }
 
-// A file's text, or why there is none. A leading UTF-8 byte order mark is not text, as npm reads its JSON files and
-// node its modules.
+// A file's text exactly as it is on disk, a byte order mark included, so a tool that rewrites the file changes only
+// what it means to; or why there is none.
 export function readText(file) {
   const read = readBytes(file);
-  return read.kind === "bytes" ? { kind: "text", text: read.bytes.toString("utf8").replace(/^﻿/, "") } : read;
+  return read.kind === "bytes" ? { kind: "text", text: read.bytes.toString("utf8") } : read;
 }
 
 // [LAW:one-source-of-truth] The one JSON reader: a file's value of the shape the tool reads (json-value.mjs's
@@ -120,7 +125,8 @@ export function readJson(file, shape) {
   if (read.kind !== "text") return read;
   let value;
   try {
-    value = JSON.parse(read.text);
+    // A leading UTF-8 byte order mark is not JSON text, as npm reads its JSON files.
+    value = JSON.parse(read.text.replace(/^\uFEFF/, ""));
   } catch (error) {
     return unusable(shape.what, { kind: "invalid-json", error: error.message });
   }

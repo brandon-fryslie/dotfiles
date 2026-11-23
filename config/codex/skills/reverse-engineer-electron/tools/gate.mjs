@@ -89,12 +89,12 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
 }
 
-// A listed file's sha256. One that is there but can't be read stops the gate with its path and why: a file the gate
-// can't hash is one it can't vouch for.
-function sha256File(filePath) {
+// [LAW:one-source-of-truth] What a listed entry holds, as every gate compares it: its bytes' sha256, or, for one that
+// is there but can't be read, the reader's reason. A faithful copy, a dangling link to the same target among them,
+// matches its original, and an entry that can't be read where the original is a file is a mismatch naming why.
+function entryDigest(filePath) {
   const read = readBytes(filePath);
-  if (read.kind !== "bytes") throw new Error(`${filePath} ${read.reason}`);
-  return createHash("sha256").update(read.bytes).digest("hex");
+  return read.kind === "bytes" ? createHash("sha256").update(read.bytes).digest("hex") : `unread: ${read.reason}`;
 }
 
 // The extract gate verifies an extracted dir against the asar's full contents,
@@ -112,12 +112,7 @@ const unmetInputs = (inputs) => inputs.filter(([, input]) => isUnmet(input)).map
 const problemsText = (problems) => problems.map(({ path: p, reason }) => `${p} ${reason}`).join("; ");
 
 function mapFileHashes(rootDir, relFiles) {
-  const hashes = {};
-  for (const rel of relFiles) {
-    const abs = path.join(rootDir, rel);
-    hashes[rel] = sha256File(abs);
-  }
-  return hashes;
+  return Object.fromEntries(relFiles.map((rel) => [rel, entryDigest(path.join(rootDir, rel))]));
 }
 
 function setDiff(left, right) {
@@ -126,7 +121,8 @@ function setDiff(left, right) {
 }
 
 // [LAW:no-silent-failure] The project's own asar when it installs one, or the one on PATH when it doesn't; a shim that
-// is there but can't be run stops the gate rather than letting another asar stand in for it. Returns the binary run.
+// is there but isn't a file it can read stops the gate rather than letting another asar stand in for it, and a binary
+// that won't run is named with the error. Returns the binary run.
 function runAsarExtract(asarPath, outDir) {
   const localAsar = path.resolve(process.cwd(), "node_modules/.bin/asar");
   const local = inputAt(localAsar, "file");
@@ -137,7 +133,7 @@ function runAsarExtract(asarPath, outDir) {
     encoding: "utf8",
   });
   if (result.status !== 0) {
-    throw new Error(`asar extract failed: ${result.stderr || result.stdout || "unknown error"}`);
+    throw new Error(`asar extract (${cmd}) failed: ${result.error?.message ?? (result.stderr || result.stdout || `exit ${result.status}, signal ${result.signal}`)}`);
   }
   return cmd;
 }
@@ -204,8 +200,8 @@ function runExtractGate(opts) {
     return artifact;
   }
 
-  const upstreamHash = sha256File(upstreamAsar);
-  const copiedHash = sha256File(copiedAsar);
+  const upstreamHash = entryDigest(upstreamAsar);
+  const copiedHash = entryDigest(copiedAsar);
   artifact.metrics.upstreamAsarSha256 = upstreamHash;
   artifact.metrics.copiedAsarSha256 = copiedHash;
   artifact.checks.asarHashMatch = upstreamHash === copiedHash;
@@ -495,8 +491,8 @@ function runRemoveDepsGate(opts) {
     const workingSet = new Set(workingJs);
     for (const rel of baselineJs) {
       if (!workingSet.has(rel)) continue;
-      const leftHash = sha256File(path.join(baselineDir, rel));
-      const rightHash = sha256File(path.join(workingDir, rel));
+      const leftHash = entryDigest(path.join(baselineDir, rel));
+      const rightHash = entryDigest(path.join(workingDir, rel));
       if (leftHash !== rightHash) {
         hashMismatches.push({ file: rel, baselineHash: leftHash, workingHash: rightHash });
       }

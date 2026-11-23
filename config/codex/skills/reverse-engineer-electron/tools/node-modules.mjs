@@ -64,7 +64,12 @@ export function packageAt(dir) {
   const read = readJson(path.join(dir, "package.json"), JSON_SHAPE.object);
   if (read.kind === "absent") return { kind: "no-manifest" };
   if (read.kind !== "json") return { kind: "unusable-manifest", reason: pathStateText(read.state) };
-  const manifest = read.value;
+  return packageOf(read.value);
+}
+
+// [LAW:single-enforcer] A package.json object as the package it names: its name and version, or an unusable manifest
+// that lacks one or gives a name no package can have. Every tool that reads a package's identity reads it here.
+export function packageOf(manifest) {
   if (!isNonEmptyString(manifest.name) || !isNonEmptyString(manifest.version)) return { kind: "unusable-manifest", reason: "no-name-or-version" };
   if (!isPackageName(manifest.name)) return { kind: "unusable-manifest", reason: "invalid-name" };
   return { kind: "package", name: manifest.name, version: manifest.version };

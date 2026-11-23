@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import test, { after } from "node:test";
 import { writeText } from "./fixtures.mjs";
 import { JSON_SHAPE } from "../json-value.mjs";
-import { inputAt, pathState, readJson } from "../path-state.mjs";
+import { inputAt, pathState, readJson, readText } from "../path-state.mjs";
 
 const roots = [];
 after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
@@ -20,7 +20,7 @@ function pathMadeBy(make) {
   return file;
 }
 
-const readAt = (make, shape = JSON_SHAPE.any) => readJson(pathMadeBy(make), shape);
+const readAt = (make, shape = JSON_SHAPE.object) => readJson(pathMadeBy(make), shape);
 
 const parseError = (text) => {
   try {
@@ -85,4 +85,19 @@ test("a path through a regular file holds nothing, and a caller's bad argument i
   assert.equal(pathState(path.join(file, "below")).kind, "absent");
   assert.equal(inputAt(path.join(file, "below"), "dir").reason, "is missing");
   assert.throws(() => pathState(123), { code: "ERR_INVALID_ARG_TYPE" });
+});
+
+test("readText gives a file's text as it is on disk, a byte order mark included", () => {
+  const file = pathMadeBy((file) => writeText(file, "﻿var a;"));
+  assert.deepEqual(readText(file), { kind: "text", text: "﻿var a;" });
+});
+
+test("a file node won't read whole is a fact about the path, not a bug", () => {
+  const file = pathMadeBy((file) => {
+    fs.writeFileSync(file, "");
+    fs.truncateSync(file, 3 * 1024 ** 3);
+  });
+  const read = readText(file);
+  assert.equal(read.kind, "unusable");
+  assert.equal(read.reason, "can't be read (ERR_FS_FILE_TOO_LARGE)");
 });
