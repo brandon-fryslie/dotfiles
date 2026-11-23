@@ -1096,6 +1096,7 @@ function everyStateApp(t) {
   fs.mkdirSync(path.join(nm, "nomanifest"));
   writeText(path.join(nm, "badjson", "package.json"), "{");
   writeJson(path.join(nm, "noversion", "package.json"), { name: "noversion" });
+  writeJson(path.join(nm, "badname", "package.json"), { name: "../../evil", version: "1.0.0" });
   fs.mkdirSync(path.join(nm, ".bin"));
   writeText(path.join(nm, ".package-lock.json"), "{}");
   const locked = [pkg(path.join(nm, "locked"), "locked", "8.0.0"), path.dirname(pkg(path.join(nm, "@locked-scope", "x"), "@locked-scope/x", "9.0.0"))];
@@ -1137,6 +1138,7 @@ const EVERY_STATE_ON_DISK = {
     ["@ws/inner", "outside-app:node_modules/@ws/inner", { name: "@ws/inner", version: "6.0.0" }],
     ["afile", "not-a-package:file", null],
     ["badjson", `not-a-package:unusable-manifest:invalid-json (${invalidJsonMessage("{")})`, null],
+    ["badname", "not-a-package:unusable-manifest:invalid-name", null],
     // A link leads to the location it names, here one that is absent.
     ["dangling", "not-a-package:absent", null, "node_modules/gone"],
     ["locked", "not-a-package:unusable-manifest:EACCES", null],
@@ -1711,119 +1713,41 @@ test("replace-dependency says when the candidate source lists no candidates for 
   assert.match(result.stdout, /the candidate source lists no candidates for demo-pkg@1\.2\.3, so it is trialed against its own version only/);
 });
 
-// The report detect-dependencies writes for an app whose package-lock.json path is made by makeLock.
-function detectLockfile(makeLock) {
+// The report detect-dependencies writes for an app whose package-lock.json holds lock.
+function detectLockfile(lock) {
   const tmp = mkTmpDir();
   const appDir = path.join(tmp, "resources", "app");
   fs.mkdirSync(appDir, { recursive: true });
-  makeLock(path.join(appDir, "package-lock.json"));
+  if (lock !== null) writeText(path.join(appDir, "package-lock.json"), lock);
   return detect(tmp, appDir).report;
 }
 
-const lockText = (text) => (lockPath) => writeText(lockPath, text);
-const lockJson = (lock) => lockText(JSON.stringify(lock));
-
-// The warning a report gives for a lockfile it can't fully read, naming the file as the report's lockfile does.
-const lockWarning = (report, reason) => `${report.lockfile.file} can't be fully read: ${reason}`;
-
-test("detect-dependencies names a lockfile's nested entries by the package after their last node_modules", () => {
-  const report = detectLockfile(lockJson({ lockfileVersion: 3, packages: { "": {}, "node_modules/foo": { version: "1.0.0" }, "node_modules/foo/node_modules/bar": { version: "2.0.0" } } }));
+test("detect-dependencies reports the lockfile's packages under the file it read", () => {
+  const report = detectLockfile(JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/foo": { version: "1.0.0" }, "node_modules/foo/node_modules/bar": { version: "2.0.0" } } }));
   assert.equal(report.lockfile.file, path.join(report.appDir, "package-lock.json"));
   assert.deepEqual(report.lockfile.packages, [
     { name: "bar", version: "2.0.0", location: "node_modules/foo/node_modules/bar" },
     { name: "foo", version: "1.0.0", location: "node_modules/foo" },
   ]);
+  assert.deepEqual(report.warnings, []);
 });
 
-test("detect-dependencies reports a package-lock.json it can't use, and takes no version from it", () => {
-  const truncated = '{"lockfileVersion": 3, "packages": {"node_modules/foo": ';
+test("detect-dependencies warns of a package-lock.json it can't use or fully read, and still writes its report", () => {
   const cases = [
-    { makeLock: (lockPath) => fs.symlinkSync("missing-lock.json", lockPath), reason: "it is not a file (dangling:missing-lock.json)" },
-    { makeLock: (lockPath) => fs.mkdirSync(lockPath), reason: "it is not a file (dir)" },
-    { makeLock: (lockPath) => { writeText(lockPath, "{}"); fs.chmodSync(lockPath, 0o000); }, reason: "it can't be read (EACCES)" },
-    { makeLock: lockText(truncated), reason: `it doesn't parse as JSON: ${invalidJsonMessage(truncated)}` },
-    { makeLock: lockText("null"), reason: "it is not a JSON object" },
-    { makeLock: lockJson([{ "node_modules/foo": { version: "1.0.0" } }]), reason: "it is not a JSON object" },
-    { makeLock: lockJson({ packages: { "node_modules/foo": { version: "1.0.0" } } }), reason: "it records no lockfileVersion" },
-    { makeLock: lockJson({ lockfileVersion: "3", packages: {} }), reason: 'its lockfileVersion "3" is not 1, 2 or 3' },
-    { makeLock: lockJson({ lockfileVersion: 3 }), reason: "its packages is missing" },
-    { makeLock: lockJson({ lockfileVersion: 3, packages: null }), reason: "its packages is not an object" },
-    { makeLock: lockJson({ lockfileVersion: 1, dependencies: [] }), reason: "its dependencies is not an object" },
+    { lock: "null", reason: "it is not a JSON object" },
+    { lock: JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/foo": {} } }), reason: "node_modules/foo records no version" },
   ];
-  for (const { makeLock, reason } of cases) {
-    const report = detectLockfile(makeLock);
-    assert.deepEqual(report.lockfile, { file: report.lockfile.file, verdict: { kind: "incomplete", reason }, packages: [], unread: [] }, reason);
-    assert.deepEqual(report.warnings, [lockWarning(report, reason)], reason);
+  for (const { lock, reason } of cases) {
+    const report = detectLockfile(lock);
+    assert.deepEqual(report.lockfile.verdict, { kind: "incomplete", reason }, reason);
+    assert.deepEqual(report.warnings, [`${report.lockfile.file} can't be fully read: ${reason}`], reason);
   }
 });
 
 test("detect-dependencies states that an app has no package-lock.json, without a warning", () => {
-  const report = detectLockfile(() => {});
-  assert.deepEqual(report.lockfile, { file: report.lockfile.file, verdict: { kind: "absent" }, packages: [], unread: [] });
+  const report = detectLockfile(null);
+  assert.deepEqual(report.lockfile.verdict, { kind: "absent" });
   assert.deepEqual(report.warnings, []);
-});
-
-test("detect-dependencies reports each lockfile entry it can't read by its location, and reads every other one", () => {
-  const report = detectLockfile(lockJson({ lockfileVersion: 3, packages: {
-    "": { name: "app" },
-    "packages/workspace": { name: "workspace", version: "0.0.0" },
-    "node_modules/workspace": { link: true, resolved: "packages/workspace" },
-    "node_modules/foo": {},
-    "node_modules/@scope/bar": { resolved: "https://example.test/bar.tgz" },
-    "node_modules/aliased": { name: "real", version: "1.0.0" },
-    "node_modules/evil": { name: "../../evil", version: "1.0.0" },
-    "node_modules/typed": { version: 1 },
-    "node_modules/bare": "1.0.0",
-    "node_modules/baz": { version: "1.0.0" },
-    "node_modules/baz/node_modules/nested": {},
-    "node_modules/trailing/": { version: "1.0.0" },
-  } }));
-  const unread = [
-    { entry: "node_modules/@scope/bar", reason: "records no version" },
-    { entry: "node_modules/bare", reason: "is not an object" },
-    { entry: "node_modules/baz/node_modules/nested", reason: "records no version" },
-    { entry: "node_modules/evil", reason: 'records name "../../evil", which is not a package name' },
-    { entry: "node_modules/foo", reason: "records no version" },
-    { entry: "node_modules/trailing/", reason: "is not a package location" },
-    { entry: "node_modules/typed", reason: "records version 1, which is not a version" },
-  ];
-  const reason = unread.map(({ entry, reason: why }) => `${entry} ${why}`).join(", ");
-  assert.deepEqual(report.lockfile, { file: report.lockfile.file, verdict: { kind: "incomplete", reason }, unread, packages: [
-    { name: "baz", version: "1.0.0", location: "node_modules/baz" },
-    { name: "real", version: "1.0.0", location: "node_modules/aliased" },
-  ] });
-  assert.deepEqual(report.warnings, [lockWarning(report, reason)]);
-});
-
-test("detect-dependencies reads a v2 lockfile's packages section, never its v1 dependencies mirror", () => {
-  const report = detectLockfile(lockJson({
-    lockfileVersion: 2,
-    dependencies: { foo: { version: "1.0.0" }, bar: { version: "3.0.0" } },
-    packages: { "": {}, "node_modules/foo": { version: "2.0.0" } },
-  }));
-  assert.deepEqual(report.lockfile.verdict, { kind: "listed" });
-  assert.deepEqual(report.lockfile.packages, [{ name: "foo", version: "2.0.0", location: "node_modules/foo" }]);
-  assert.deepEqual(report.warnings, []);
-});
-
-test("detect-dependencies reads a v1 lockfile's nested dependencies at their nested locations, with aliases and links", () => {
-  const report = detectLockfile(lockJson({ lockfileVersion: 1, dependencies: {
-    foo: { version: "1.0.0", dependencies: { bar: { version: "2.0.0" }, quux: {} } },
-    aliased: { version: "npm:@scope/real@3.0.0" },
-    linked: { version: "file:../linked" },
-    broken: { version: "1.0.0", dependencies: "bar" },
-  } }));
-  const unread = [
-    { entry: "node_modules/broken", reason: "records dependencies that are not an object" },
-    { entry: "node_modules/foo/node_modules/quux", reason: "records no version" },
-  ];
-  assert.deepEqual(report.lockfile.unread, unread);
-  assert.deepEqual(report.lockfile.packages, [
-    { name: "@scope/real", version: "3.0.0", location: "node_modules/aliased" },
-    { name: "bar", version: "2.0.0", location: "node_modules/foo/node_modules/bar" },
-    { name: "broken", version: "1.0.0", location: "node_modules/broken" },
-    { name: "foo", version: "1.0.0", location: "node_modules/foo" },
-  ]);
 });
 
 test("find-near-match-versions offers a released copy only releases, never a prerelease of its major.minor", () => {

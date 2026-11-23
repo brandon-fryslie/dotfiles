@@ -67,6 +67,7 @@ const analyzed = project({
   "wp5.js": `(function (modules) { return modules; })({
     "./src/a.js": function (module, exports, require) { require("./node_modules/vend/index.js"); },
     "./node_modules/vend/index.js": function (module) { module.exports = 1; },
+    "./node_modules/ghost/index.js": function (module) { module.exports = 2; },
     "./src/logo.png": (e, t, n) => e.exports = n.p + "logo.png"
   });\n`,
   // Plain ES and CommonJS modules, by their extensions.
@@ -139,6 +140,10 @@ test("a module keyed by its node_modules path is credited to the package after i
   const keys = ["/app/node_modules/vend/index.js", "/app/node_modules/.pnpm/vend@1.0.0/node_modules/vend/x.js", "/app/node_modules/host/node_modules/vend/y.js"];
   assert.deepEqual([...keys.map((key) => moduleOf("vendor.js", key).package), moduleOf("wp5.js", "./node_modules/vend/index.js").package], ["vend", "vend", "vend", "vend"]);
   assert.deepEqual([bundleOf("wp5.js").format, moduleOf("wp5.js", "./src/a.js").dependencyIds], ["webpack5", ["./node_modules/vend/index.js"]]);
+});
+
+test("a bundle suggests each package it credits at the version the app ships, and one no source gives a version for at null", () => {
+  assert.deepEqual(bundleOf("wp5.js").suggestedDependencies, { vend: "1.0.0", ghost: null });
 });
 
 test("vendor credit propagates along a chain of wrappers to every one of them, in either module order", () => {

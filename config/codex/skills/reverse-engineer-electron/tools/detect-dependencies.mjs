@@ -24,7 +24,8 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { appAt, compareLocations, copiesOf, entryNameOf, isLocation, isNonEmptyString, isPackageName, isPlainObject, locationDir, mismatchText, pathState, topLevelLocation, verdictOn, walkStarts } from "./node-modules.mjs";
+import { appAt, byNameThenLocation, copiesOf, entryNameOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
+import { loadLockfile } from "./package-lock.mjs";
 import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
 import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
@@ -110,7 +111,6 @@ function readOnDisk(appDir, projectRoot) {
   return { verdict, unlisted, copies: copiesOf(app, starts).map((copy) => ({ ...copy, dir: locationDir(app, copy.location) })) };
 }
 
-const byNameThenLocation = (copies) => [...copies].sort((a, b) => a.name.localeCompare(b.name) || compareLocations(a.location, b.location));
 
 // Each loaded package version's file and function shapes, in the BODY domain a bundle factory is looked up in, and every file
 // or directory that couldn't be listed, read, or parsed, so a package that contributed no shapes because it couldn't
@@ -156,103 +156,6 @@ function loadFingerprints() {
     filtered[key] = Array.isArray(value) ? value : [];
   }
   return filtered;
-}
-
-// The text a file holds, or what its path holds instead, in pathState's vocabulary: an error reading it is the code
-// it carries, as a stat's is.
-function readText(file) {
-  const state = pathState(file);
-  if (state.kind !== "file") return state;
-  try {
-    return { kind: "text", text: fs.readFileSync(file, "utf8") };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unreadable", code: error.code };
-  }
-}
-
-// The section each package-lock.json format records its installed packages in. A v2 lockfile also keeps a v1
-// dependencies mirror for npm 6; npm reads packages from it, and so does this.
-const LOCKFILE_SECTIONS = new Map([[1, "dependencies"], [2, "packages"], [3, "packages"]]);
-
-// [LAW:parse-dont-validate] One record a lockfile holds at a location: the package it names there, or the reason it
-// names none.
-function parseRecord(location, name, version) {
-  if (!isLocation(location)) return { kind: "unread", entry: location, reason: "is not a package location" };
-  if (!isPackageName(name)) return { kind: "unread", entry: location, reason: `records name ${JSON.stringify(name)}, which is not a package name` };
-  if (version === undefined) return { kind: "unread", entry: location, reason: "records no version" };
-  if (!isNonEmptyString(version)) return { kind: "unread", entry: location, reason: `records version ${JSON.stringify(version)}, which is not a version` };
-  return { kind: "package", package: { name, version, location } };
-}
-
-// A v2/v3 packages entry: keyed by its location, with an alias's entry recording the package it is as its name, or a
-// link, or a key outside the app's node_modules (the root project "", a workspace's folder and what it installs),
-// which holds no copy the app loads from there.
-function parsePackagesEntry(key, entry) {
-  if (key.split("/")[0] !== "node_modules") return { kind: "outside" };
-  if (!isPlainObject(entry)) return { kind: "unread", entry: key, reason: "is not an object" };
-  if (entry.link === true) return { kind: "link" };
-  return parseRecord(key, Object.hasOwn(entry, "name") ? entry.name : entryNameOf(key), entry.version);
-}
-
-// A v1 dependencies tree, each entry at the location its nesting puts it: npm 6 nests the packages installed inside a
-// package under that package's own dependencies, and records an alias's version as npm:<name>@<version> and a linked
-// folder's as file:<path>.
-function parseDependencies(records, parent) {
-  return Object.entries(records).flatMap(([key, entry]) => {
-    const location = `${parent}node_modules/${key}`;
-    if (!isPlainObject(entry)) return [{ kind: "unread", entry: location, reason: "is not an object" }];
-    const alias = typeof entry.version === "string" ? /^npm:(.+)@([^@]+)$/.exec(entry.version) : null;
-    const own = typeof entry.version === "string" && entry.version.startsWith("file:") ? { kind: "link" }
-      : alias !== null ? parseRecord(location, alias[1], alias[2])
-      : parseRecord(location, key, entry.version);
-    const nested = entry.dependencies === undefined ? []
-      : isPlainObject(entry.dependencies) ? parseDependencies(entry.dependencies, `${location}/`)
-      : [{ kind: "unread", entry: location, reason: "records dependencies that are not an object" }];
-    return [own, ...nested];
-  });
-}
-
-// [LAW:parse-dont-validate] A package-lock.json's text as every entry its format's install section records, or the
-// reason it can't be read as a lockfile at all.
-function parsePackageLock(text) {
-  let lock;
-  try {
-    lock = JSON.parse(text);
-  } catch (error) {
-    return { kind: "unusable", reason: `it doesn't parse as JSON: ${error.message}` };
-  }
-  if (!isPlainObject(lock)) return { kind: "unusable", reason: "it is not a JSON object" };
-  const section = LOCKFILE_SECTIONS.get(lock.lockfileVersion);
-  if (section === undefined) {
-    return { kind: "unusable", reason: lock.lockfileVersion === undefined ? "it records no lockfileVersion" : `its lockfileVersion ${JSON.stringify(lock.lockfileVersion)} is not 1, 2 or 3` };
-  }
-  if (!isPlainObject(lock[section])) return { kind: "unusable", reason: `its ${section} ${lock[section] === undefined ? "is missing" : "is not an object"}` };
-  const entries = section === "packages"
-    ? Object.entries(lock.packages).map(([key, entry]) => parsePackagesEntry(key, entry))
-    : parseDependencies(lock.dependencies, "");
-  return { kind: "entries", entries };
-}
-
-// [LAW:one-source-of-truth] Every package version the app's package-lock.json records, at the location it records it
-// at, named by the one location grammar node-modules.mjs owns. [LAW:no-silent-failure] Its verdict is the one
-// node_modules gets: absent, listed, or incomplete with the reason, and every entry it can't read is listed by its
-// location as unread. An unusable lockfile is bad input, not a bug in this tool, and the run always writes its report,
-// so the lockfile is reported and never read as one that records nothing.
-function loadLockfile(file) {
-  const read = readText(file);
-  if (read.kind === "absent") return { verdict: { kind: "absent" }, packages: [], unread: [] };
-  const lock = read.kind === "text" ? parsePackageLock(read.text) : { kind: "unusable", reason: `it ${mismatchText("file", read)}` };
-  if (lock.kind === "unusable") return { verdict: { kind: "incomplete", reason: lock.reason }, packages: [], unread: [] };
-  const unread = lock.entries
-    .filter(({ kind }) => kind === "unread")
-    .map(({ entry, reason }) => ({ entry, reason }))
-    .sort((left, right) => compareLocations(left.entry, right.entry));
-  return {
-    verdict: verdictOn(unread, (entries) => entries.map(({ entry, reason }) => `${entry} ${reason}`).join(", ")),
-    packages: byNameThenLocation(lock.entries.filter(({ kind }) => kind === "package").map((entry) => entry.package)),
-    unread,
-  };
 }
 
 function parseStaticBareSpecifiers(ast) {
@@ -519,7 +422,7 @@ function classifyBundleModules(bundle, context) {
   const vendorModule = (pkgName, evidence) => ({
     classification: "thirdParty",
     package: pkgName,
-    version: context.packageVersionByName[pkgName] || null,
+    version: context.packageVersionByName.get(pkgName) ?? null,
     signal: evidence.find((item) => item.package === pkgName)?.signal || null,
   });
 
@@ -726,7 +629,9 @@ function recordBundle(filePath, detected, code, projectRoot, report, context) {
   const classified = classifyBundleModules(bundle, context);
   const suggestedDependencies = {};
   for (const item of classified) {
-    if (item.package && !suggestedDependencies[item.package]) suggestedDependencies[item.package] = item.version || "*";
+    // [LAW:no-silent-failure] A package no source gives a version for is suggested at null, never at a range that
+    // would install whatever version is latest.
+    if (item.package && !Object.hasOwn(suggestedDependencies, item.package)) suggestedDependencies[item.package] = item.version;
   }
   const counts = tally(CLASSIFICATIONS, classified, (item) => item.classification);
   const bytes = tally(CLASSIFICATIONS, classified, (item) => item.classification, (item) => item.bytes);
@@ -798,7 +703,7 @@ function main() {
   const topLevelVersions = loadingCopies
     .filter(({ name, paths }) => paths.includes(topLevelLocation(name)))
     .map(({ name, outcome }) => [name, outcome.loads.version]);
-  const packageVersionByName = Object.fromEntries([
+  const packageVersionByName = new Map([
     ...lockfile.packages.filter(({ name, location }) => location === topLevelLocation(name)).map(({ name, version }) => [name, version]),
     ...topLevelVersions,
   ]);
