@@ -4,11 +4,17 @@
  * Handles word boundaries, regex flags, string literals, and scoped variables.
  */
 import { readFileSync, writeFileSync } from 'fs';
+import { readText } from './path-state.mjs';
 import { execFileSync } from 'child_process';
 import { resolve } from 'path';
 
 const filePath = resolve('app/main.js');
-let code = readFileSync(filePath, 'utf8');
+const source = readText(filePath);
+if (source.kind !== 'text') {
+  console.error(`Error: ${filePath} ${source.reason}`);
+  process.exit(1);
+}
+let code = source.text;
 
 function replaceWord(text, word, replacement) {
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

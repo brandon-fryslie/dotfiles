@@ -13,6 +13,7 @@
 import prettier from 'prettier';
 import fs from 'fs';
 import path from 'path';
+import { treeFileText } from './path-state.mjs';
 
 // [LAW:one-source-of-truth] The shape-token algorithm and the manifest's hash
 // domain live in shape.mjs, shared with report.mjs — see the rationale there.
@@ -44,7 +45,7 @@ function discoverJsFiles(dir) {
   return listSourceFiles(absDir, SOURCE_TREE_EXCLUDES).map(rel => ({
     absPath: path.join(absDir, rel),
     relPath: rel,
-    content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
+    content: treeFileText(path.join(absDir, rel)),
   }));
 }
 

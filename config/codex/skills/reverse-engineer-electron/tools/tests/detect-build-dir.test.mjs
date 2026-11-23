@@ -10,7 +10,7 @@ import { writeText } from "./fixtures.mjs";
 const SCRIPT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
-  "detect-build-dir.sh",
+  "detect-build-dir.mjs",
 );
 
 function mkTmpDir(name) {
@@ -21,7 +21,7 @@ function mkTmpDir(name) {
 }
 
 function runDetect(appDir) {
-  return spawnSync("bash", [SCRIPT, appDir], { encoding: "utf8" });
+  return spawnSync(process.execPath, [SCRIPT, appDir], { encoding: "utf8" });
 }
 
 // stdout contract: last line is the relative build dir (stderr carries the chatter).

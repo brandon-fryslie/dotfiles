@@ -18,7 +18,7 @@ import path from "path";
 import process from "process";
 import { listJsFiles, readBuildFile } from "./bundle.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
-import { mismatchText, pathState } from "./path-state.mjs";
+import { inputAt } from "./path-state.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -51,9 +51,9 @@ function main() {
   const graphPath = path.resolve(projectRoot, opts.graphOut);
   clearOutputs([outPath, graphPath]);
 
-  const buildDirState = pathState(buildDir);
-  if (buildDirState.kind !== "dir") {
-    console.error(`Build directory ${buildDir} ${mismatchText("directory", buildDirState)}`);
+  const buildDirInput = inputAt(buildDir, "dir");
+  if (buildDirInput.kind !== "dir") {
+    console.error(`Build directory ${buildDir} ${buildDirInput.reason}`);
     process.exit(2);
   }
 

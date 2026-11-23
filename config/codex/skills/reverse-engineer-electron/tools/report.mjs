@@ -12,9 +12,9 @@
 // formatted original files. The deminified-dir contains agent-produced source files
 // (any extension isSourceFile in shape.mjs accepts).
 
-import fs from 'fs';
 import path from 'path';
-import { mismatchText, readJson } from './path-state.mjs';
+import { JSON_SHAPE } from './json-value.mjs';
+import { readJson, treeFileText } from './path-state.mjs';
 
 // [LAW:one-source-of-truth] Identity hashes must come from the exact algorithm
 // and domain prepare.mjs wrote into manifest.json; similarity tokens must come
@@ -66,9 +66,9 @@ function parseArgs(argv) {
 
 function buildIndexFromManifest(preparedDir) {
   const manifestPath = path.join(preparedDir, 'manifest.json');
-  const read = readJson(manifestPath);
+  const read = readJson(manifestPath, JSON_SHAPE.array);
   if (read.kind !== 'json') {
-    console.error(`Error: ${manifestPath} ${mismatchText('file', read)}`);
+    console.error(`Error: ${manifestPath} ${read.reason}`);
     process.exit(1);
   }
   const manifest = read.value;
@@ -86,7 +86,7 @@ function buildIndexFromManifest(preparedDir) {
 
   for (const [relPath, entries] of entriesByFile) {
     const filePath = path.join(preparedDir, relPath);
-    const rawCode = fs.readFileSync(filePath, 'utf8');
+    const rawCode = treeFileText(filePath);
 
     const loader = loaderFor(relPath);
     const ast = parseFile(rawCode, relPath);
@@ -158,7 +158,7 @@ function discoverFiles(dir) {
   return listSourceFiles(absDir, DEMINIFIED_EXCLUDES).map(rel => ({
     absPath: path.join(absDir, rel),
     relPath: rel,
-    content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
+    content: treeFileText(path.join(absDir, rel)),
   }));
 }
 

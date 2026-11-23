@@ -15,7 +15,8 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { mismatchText, pathState, readJson, readText } from "./path-state.mjs";
+import { JSON_SHAPE } from "./json-value.mjs";
+import { inputAt, isUnmet, readJson, readText } from "./path-state.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 function parseArgs(argv) {
@@ -245,6 +246,7 @@ function main() {
     checks: {
       packageNameMatch: false,
       packageVersionMatch: false,
+      reachableFilesRead: false,
       structuralCoveragePass: false,
     },
     metrics: {
@@ -274,23 +276,24 @@ function main() {
     writeJson(outPath, artifact);
     process.exit(1);
   };
-  const dirProblems = [beforeDir, afterDir].map((dir) => [dir, pathState(dir)]).filter(([, state]) => state.kind !== "dir").map(([dir, state]) => `${dir} ${mismatchText("directory", state)}`);
+  const problemsIn = (reads) => reads.filter(([, read]) => isUnmet(read)).map(([p, read]) => `${p} ${read.reason}`);
+  const dirProblems = problemsIn([beforeDir, afterDir].map((dir) => [dir, inputAt(dir, "dir")]));
   if (dirProblems.length > 0) refuseInputs(dirProblems);
 
-  const manifests = [beforeDir, afterDir].map((dir) => [path.join(dir, "package.json"), readJson(path.join(dir, "package.json"))]);
-  const manifestProblems = manifests.filter(([, read]) => read.kind !== "json").map(([file, read]) => `${file} ${mismatchText("file", read)}`);
+  const manifests = [beforeDir, afterDir].map((dir) => [path.join(dir, "package.json"), readJson(path.join(dir, "package.json"), JSON_SHAPE.object)]);
+  const manifestProblems = problemsIn(manifests);
   if (manifestProblems.length > 0) refuseInputs(manifestProblems);
   const [beforePkg, afterPkg] = manifests.map(([, read]) => read.value);
 
-  artifact.checks.packageNameMatch = beforePkg?.name === opts.pkg && afterPkg?.name === opts.pkg;
+  artifact.checks.packageNameMatch = beforePkg.name === opts.pkg && afterPkg.name === opts.pkg;
   if (!artifact.checks.packageNameMatch) {
-    artifact.mismatches.package.push(`package name mismatch: before=${beforePkg?.name || "?"} after=${afterPkg?.name || "?"}`);
+    artifact.mismatches.package.push(`package name mismatch: before=${beforePkg.name || "?"} after=${afterPkg.name || "?"}`);
   }
 
-  const expectedVersion = opts.expectedVersion || beforePkg?.version || "";
-  artifact.checks.packageVersionMatch = afterPkg?.version === expectedVersion;
+  const expectedVersion = opts.expectedVersion || beforePkg.version || "";
+  artifact.checks.packageVersionMatch = afterPkg.version === expectedVersion;
   if (!artifact.checks.packageVersionMatch) {
-    artifact.mismatches.package.push(`version mismatch: expected=${expectedVersion || "?"} actual=${afterPkg?.version || "?"}`);
+    artifact.mismatches.package.push(`version mismatch: expected=${expectedVersion || "?"} actual=${afterPkg.version || "?"}`);
   }
 
   const reachableFiles = buildReachableFileSet(beforeDir, beforePkg);
@@ -299,7 +302,9 @@ function main() {
   let exactProgramHashMatches = 0;
   let functionTotalBefore = 0;
   let functionIntersection = 0;
-  let presentReachableFiles = 0;
+  // [LAW:no-silent-failure] File coverage counts the files compared on both sides: one that is there but can't be read
+  // is never compared, so it counts as uncovered and fails reachableFilesRead.
+  let comparedFiles = 0;
 
   for (const rel of reachableFiles) {
     const beforeFile = path.join(beforeDir, rel);
@@ -310,11 +315,10 @@ function main() {
       continue;
     }
 
-    presentReachableFiles += 1;
-
     const unreadable = [["before", beforeRead], ["after", afterRead]].filter(([, read]) => read.kind !== "text");
-    for (const [side, read] of unreadable) artifact.mismatches.unreadableFiles.push({ file: rel, side, reason: mismatchText("file", read) });
+    for (const [side, read] of unreadable) artifact.mismatches.unreadableFiles.push({ file: rel, side, reason: read.reason });
     if (unreadable.length > 0) continue;
+    comparedFiles += 1;
 
     try {
       const beforeInfo = fileStructuralInfo(beforeRead.text, beforeFile);
@@ -342,7 +346,7 @@ function main() {
   artifact.metrics.functionTotalBefore = functionTotalBefore;
   artifact.metrics.functionIntersection = functionIntersection;
 
-  const fileCoverage = reachableFiles.length === 0 ? 1 : presentReachableFiles / reachableFiles.length;
+  const fileCoverage = reachableFiles.length === 0 ? 1 : comparedFiles / reachableFiles.length;
   const functionCoverage = functionTotalBefore === 0 ? 1 : functionIntersection / functionTotalBefore;
   const combinedCoverage = (fileCoverage + functionCoverage) / 2;
 
@@ -350,8 +354,9 @@ function main() {
   artifact.metrics.functionCoverage = Number(functionCoverage.toFixed(6));
   artifact.metrics.combinedCoverage = Number(combinedCoverage.toFixed(6));
   artifact.checks.structuralCoveragePass = combinedCoverage >= opts.threshold;
+  artifact.checks.reachableFilesRead = artifact.mismatches.unreadableFiles.length === 0;
 
-  artifact.pass = Object.values(artifact.checks).every(Boolean) && artifact.mismatches.parseErrors.length === 0 && artifact.mismatches.unreadableFiles.length === 0;
+  artifact.pass = Object.values(artifact.checks).every(Boolean) && artifact.mismatches.parseErrors.length === 0;
 
   writeJson(outPath, artifact);
 

@@ -88,8 +88,11 @@ export function isSourceFile(filePath) {
 // silently shortened inventory is a gate that passes for the wrong reason.
 export const SOURCE_TREE_EXCLUDES = new Set(['node_modules', '.git']);
 
-// Sorted posix-relative paths of every regular file under rootDir, not descending
-// into a directory whose name is in excludes. Symlinks are neither walked nor listed.
+// Sorted posix-relative paths of every entry under rootDir that is not a
+// directory, not descending into a directory whose name is in excludes. A
+// symlink is listed, never walked, and a dangling one or a special file is listed
+// too: an entry is there whether or not it can be read, and reading it is the
+// caller's job, which names one it can't read rather than taking it for missing.
 export function listFiles(rootDir, excludes) {
   const out = [];
   const stack = [rootDir];
@@ -99,7 +102,7 @@ export function listFiles(rootDir, excludes) {
       const abs = path.join(current, entry.name);
       if (entry.isDirectory()) {
         if (!excludes.has(entry.name)) stack.push(abs);
-      } else if (entry.isFile()) {
+      } else {
         out.push(path.relative(rootDir, abs).split(path.sep).join('/'));
       }
     }

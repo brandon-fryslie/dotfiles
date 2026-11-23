@@ -32,8 +32,8 @@ import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
 import { writeOutputs } from "./artifact.mjs";
 import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, readLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
-import { isNonEmptyString } from "./json-value.mjs";
-import { appPathState, describeEntry, mismatchText, pathState, readJson } from "./path-state.mjs";
+import { isNonEmptyString, JSON_SHAPE } from "./json-value.mjs";
+import { appPathState, describeEntry, inputAt, pathErrorCode, readJson } from "./path-state.mjs";
 import { appAt, canonicalEntry, containerSwappedAt, copiesOf, entryNameOf, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
 const USAGE = [
@@ -124,8 +124,7 @@ function lockTree(lockPath) {
     ensureDir(path.dirname(lockPath));
     fd = fs.openSync(lockPath, "a+");
   } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    console.error(`Error: could not open the lock ${lockPath} (${error.code}) — fix its directory, then rerun`);
+    console.error(`Error: the lock ${lockPath} can't be created or opened (${pathErrorCode(error)})`);
     process.exit(2);
   }
   // Exit 3 means only that another run holds the lock; any other flock failure dies with its errno on stderr.
@@ -193,11 +192,11 @@ function runVerifySwap({ verifyScript, pkgName, beforeDir, afterDir, expectedVer
     stdio: "inherit",
   });
   if (result.error || result.signal) return { kind: "error", detail: result.error?.message ?? `killed by ${result.signal}` };
-  const read = readJson(verificationOut);
-  if (read.kind !== "json") return { kind: "error", detail: `exit ${result.status} with no verdict: ${verificationOut} ${mismatchText("file", read)}` };
+  const read = readJson(verificationOut, JSON_SHAPE.object);
+  if (read.kind !== "json") return { kind: "error", detail: `exit ${result.status} with no verdict: ${verificationOut} ${read.reason}` };
   const artifact = read.value;
-  if (typeof artifact?.pass !== "boolean" || artifact.pass !== (result.status === 0)) {
-    return { kind: "error", detail: `exit ${result.status}, but its verdict at ${verificationOut} says pass: ${JSON.stringify(artifact?.pass)}` };
+  if (typeof artifact.pass !== "boolean" || artifact.pass !== (result.status === 0)) {
+    return { kind: "error", detail: `exit ${result.status}, but its verdict at ${verificationOut} says pass: ${JSON.stringify(artifact.pass)}` };
   }
   return { kind: "verdict", pass: artifact.pass };
 }
@@ -208,15 +207,15 @@ function runVerifySwap({ verifyScript, pkgName, beforeDir, afterDir, expectedVer
 // still a name the run is asked about. A path that is there but can't be read as JSON, and a file in any other shape,
 // one an older find-near-match-versions wrote among them, are refused.
 function loadCandidateSource(filePath) {
-  const read = readJson(filePath);
+  const read = readJson(filePath, JSON_SHAPE.object);
   if (read.kind === "absent") return read;
   const refuseSource = (why) => {
     console.error(`Error: ${filePath} ${why} — rerun find-near-match-versions.mjs to write it`);
     process.exit(2);
   };
-  if (read.kind !== "json") refuseSource(mismatchText("file", read));
+  if (read.kind !== "json") refuseSource(read.reason);
   const parsed = read.value;
-  if (!Array.isArray(parsed?.packages)) refuseSource("has no packages list");
+  if (!Array.isArray(parsed.packages)) refuseSource("has no packages list");
   const byName = new Map();
   for (const item of parsed.packages) {
     const itemOk = isPackageName(item?.name)
@@ -238,6 +237,10 @@ function loadLog(logPath) {
   const read = readLog(logPath);
   if (read.kind === "absent") return emptyLog();
   if (read.kind === "log") return read.log;
+  if (read.kind === "unusable") {
+    console.error(`Error: ${logPath} ${read.reason} — the record of earlier swaps is in it; restore it, then rerun`);
+    process.exit(2);
+  }
   for (const error of read.errors) console.error(`Error: ${logPath}: ${JSON.stringify(error)}`);
   process.exit(2);
 }
@@ -369,11 +372,11 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
 
   if (original.kind === "dir") {
     const backup = fromLogPath(ctx.app.logPath, original.backupPath);
-    const backupState = pathState(backup);
-    if (backupState.kind !== "absent" && backupState.kind !== "dir") {
-      return conflict(`${trial} moved the original to ${backup}, which ${mismatchText("directory", backupState)} — make it readable, or put the original back at ${dir}, then ${ctx.deleteEntry}`);
+    const backupInput = inputAt(backup, "dir");
+    if (backupInput.kind === "unusable") {
+      return conflict(`${trial} moved the original to ${backup}, which ${backupInput.reason} — put the original back at ${dir}, then ${ctx.deleteEntry}`);
     }
-    const backupPresent = backupState.kind === "dir";
+    const backupPresent = backupInput.kind === "dir";
     if (state.kind === "dir") {
       if (!backupPresent) return interrupted("original-in-place");
       return conflict(`${trial} left the original at ${backup}, but ${dir} holds a directory too — keep the original at ${dir}, remove the other copy, then ${ctx.deleteEntry}`);
@@ -662,13 +665,9 @@ function main() {
   const verificationDir = path.resolve(projectRoot, opts.verificationDir);
   const candidateSourcePath = path.resolve(projectRoot, opts.candidateSource);
 
-  const nodeModulesState = pathState(appNodeModules);
-  if (nodeModulesState.kind === "absent") {
-    console.error(`Error: ${appNodeModules} does not exist — --app-dir must name an extracted app with its node_modules`);
-    process.exit(2);
-  }
-  if (nodeModulesState.kind !== "dir") {
-    console.error(`Error: ${appNodeModules} ${mismatchText("directory", nodeModulesState)} — --app-dir must name an extracted app with its node_modules`);
+  const nodeModulesInput = inputAt(appNodeModules, "dir");
+  if (nodeModulesInput.kind !== "dir") {
+    console.error(`Error: ${appNodeModules} ${nodeModulesInput.reason} — --app-dir must name an extracted app with its node_modules`);
     process.exit(2);
   }
   if (realExisting(path.join(projectRoot, "node_modules")) === fs.realpathSync(appNodeModules)) {

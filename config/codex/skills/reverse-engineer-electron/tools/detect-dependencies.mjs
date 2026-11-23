@@ -26,7 +26,8 @@ import { builtinModules } from "module";
 import { fileURLToPath } from "url";
 import { appAt, byNameThenLocation, copiesOf, entryNameOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
 import { loadLockfile } from "./package-lock.mjs";
-import { mismatchText, readJson } from "./path-state.mjs";
+import { isPlainObject, JSON_SHAPE } from "./json-value.mjs";
+import { readJson } from "./path-state.mjs";
 import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
 import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
@@ -149,10 +150,25 @@ function indexPackageShapeHashes(packages) {
   return { byHash: new Map([...byHash].map(([hash, versions]) => [hash, [...versions.values()]])), errors };
 }
 
+const isCount = (value) => Number.isInteger(value) && value >= 0;
+
+// [LAW:parse-dont-validate] A module index as unbundle-index.mjs writes one, read for its counts:
+// { kind: "index", counts: { bundlesIndexed, modulesIndexed } }, or the reader's absent or unusable, or unusable when
+// its summary doesn't give both counts.
+function readModuleIndex(file) {
+  const read = readJson(file, JSON_SHAPE.object);
+  if (read.kind !== "json") return read;
+  const { summary } = read.value;
+  if (!isPlainObject(summary) || !isCount(summary.bundlesDetected) || !isCount(summary.modulesIndexed)) {
+    return { kind: "unusable", reason: "has no summary with bundlesDetected and modulesIndexed counts" };
+  }
+  return { kind: "index", counts: { bundlesIndexed: summary.bundlesDetected, modulesIndexed: summary.modulesIndexed } };
+}
+
 function loadFingerprints() {
-  // The skill's own file: one it can't read is a broken install, not an input to report.
-  const read = readJson(FINGERPRINTS_PATH);
-  if (read.kind !== "json") throw new Error(`${FINGERPRINTS_PATH} ${mismatchText("file", read)}`);
+  // [LAW:no-silent-failure] The skill's own file: one it can't read is a broken install, not an input to report.
+  const read = readJson(FINGERPRINTS_PATH, JSON_SHAPE.object);
+  if (read.kind !== "json") throw new Error(`${FINGERPRINTS_PATH} ${read.reason}`);
   const raw = read.value;
   const filtered = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -770,16 +786,13 @@ function main() {
     if (verdict.kind === "incomplete") report.warnings.push(`${source} can't be fully read: ${verdict.reason}`);
   }
 
-  const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
-  // The module index is optional: one that isn't there is skipped, and one that is there but can't be read is a warning.
-  const moduleIndexRead = moduleIndexPath ? readJson(moduleIndexPath) : { kind: "absent" };
-  if (moduleIndexRead.kind === "json") {
-    const moduleIndex = moduleIndexRead.value;
-    report.moduleIndex.file = fileRel(projectRoot, moduleIndexPath);
-    report.moduleIndex.bundlesIndexed = moduleIndex?.summary?.bundlesDetected || 0;
-    report.moduleIndex.modulesIndexed = moduleIndex?.summary?.modulesIndexed || 0;
-  } else if (moduleIndexRead.kind !== "absent") {
-    report.warnings.push(`Could not read module index ${fileRel(projectRoot, moduleIndexPath)}: it ${mismatchText("file", moduleIndexRead)}`);
+  // [LAW:no-silent-failure] --module-index is optional, but an index it names is one the run was asked to read: one
+  // that isn't there, can't be read, or has no counts is a warning, never the report of a run given no index.
+  if (opts.moduleIndex) {
+    const moduleIndexPath = path.resolve(projectRoot, opts.moduleIndex);
+    const moduleIndex = readModuleIndex(moduleIndexPath);
+    if (moduleIndex.kind === "index") Object.assign(report.moduleIndex, { file: fileRel(projectRoot, moduleIndexPath), ...moduleIndex.counts });
+    else report.warnings.push(`Could not read module index ${fileRel(projectRoot, moduleIndexPath)}: it ${moduleIndex.reason}`);
   }
 
   const buildDirRel = report.buildDir.split(path.sep).join("/");

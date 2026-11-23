@@ -8,6 +8,7 @@
 import fs from "fs";
 import path from "path";
 import { walk, traverse, parseSource, sourceKindOf, isSourceFile, loaderFor, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { readText } from "./path-state.mjs";
 
 const isJsFile = (file) => isSourceFile(file) && loaderFor(file) === "js";
 
@@ -21,12 +22,9 @@ export function listJsFiles(target) {
 
 // A JS file's outcome: unreadable or unparsed, with its error, or parsed, with its code and syntax tree.
 export function readJsFile(file) {
-  let code;
-  try {
-    code = fs.readFileSync(file, "utf8");
-  } catch (error) {
-    return { kind: "unreadable", error: error.message };
-  }
+  const read = readText(file);
+  if (read.kind !== "text") return { kind: "unreadable", error: `${file} ${read.reason}` };
+  const code = read.text;
   try {
     return { kind: "parsed", code, ast: parseSource(code, sourceKindOf(file)) };
   } catch (error) {

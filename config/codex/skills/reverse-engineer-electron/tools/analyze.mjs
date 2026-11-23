@@ -21,7 +21,7 @@ import path from "path";
 import process from "process";
 import { execFileSync } from "child_process";
 
-import { mismatchText, pathState } from "./path-state.mjs";
+import { inputAt, readText } from "./path-state.mjs";
 import { parseFile, listSourceFiles, SOURCE_TREE_EXCLUDES, traverse as traverseAst } from "./shape.mjs";
 
 // ---------------------------------------------------------------------------
@@ -591,9 +591,9 @@ function main() {
   const buildDir = path.resolve(opts.buildDir);
   const outPath = opts.out ? path.resolve(opts.out) : path.join(buildDir, "analysis.json");
 
-  const buildDirState = pathState(buildDir);
-  if (buildDirState.kind !== "dir") {
-    console.error(`Error: ${buildDir} ${mismatchText("directory", buildDirState)}`);
+  const buildDirInput = inputAt(buildDir, "dir");
+  if (buildDirInput.kind !== "dir") {
+    console.error(`Error: ${buildDir} ${buildDirInput.reason}`);
     process.exit(1);
   }
 
@@ -610,13 +610,12 @@ function main() {
 
   for (const absPath of sourceFiles) {
     const relPath = path.relative(buildDir, absPath);
-    let code;
-    try {
-      code = fs.readFileSync(absPath, "utf8");
-    } catch (error) {
-      parseErrors.push({ file: relPath, error: String(error?.message || error) });
+    const read = readText(absPath);
+    if (read.kind !== "text") {
+      parseErrors.push({ file: relPath, error: `${absPath} ${read.reason}` });
       continue;
     }
+    const code = read.text;
 
     console.log(`  ${relPath} (${(code.length / 1024).toFixed(0)}KB)`);
 

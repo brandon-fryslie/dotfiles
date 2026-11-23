@@ -20,8 +20,9 @@
  *     ...
  *   }
  */
-import { readFileSync, writeFileSync } from "fs";
-import { mismatchText, readJson } from "./path-state.mjs";
+import { writeFileSync } from "fs";
+import { JSON_SHAPE } from "./json-value.mjs";
+import { readJson, readText } from "./path-state.mjs";
 
 const [, , filePath, specPath, ...flags] = process.argv;
 const dryRun = flags.includes("--dry-run");
@@ -33,9 +34,9 @@ if (!filePath || !specPath) {
   process.exit(1);
 }
 
-const specRead = readJson(specPath);
+const specRead = readJson(specPath, JSON_SHAPE.object);
 if (specRead.kind !== "json") {
-  console.error(`Error: rename spec ${specPath} ${mismatchText("file", specRead)}`);
+  console.error(`Error: rename spec ${specPath} ${specRead.reason}`);
   process.exit(1);
 }
 const raw = specRead.value;
@@ -77,7 +78,12 @@ const re = new RegExp(
   "g",
 );
 
-const content = readFileSync(filePath, "utf8");
+const source = readText(filePath);
+if (source.kind !== "text") {
+  console.error(`Error: ${filePath} ${source.reason}`);
+  process.exit(1);
+}
+const content = source.text;
 const lines = content.split("\n");
 
 // Count replacements per identifier

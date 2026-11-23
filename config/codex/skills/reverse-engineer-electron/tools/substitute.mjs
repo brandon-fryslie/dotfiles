@@ -15,6 +15,7 @@
 // if→ternary) don't affect similarity scores.
 
 import fs from 'fs';
+import { readText } from './path-state.mjs';
 import {
   tokenSimilarity,
   walkWithParent,
@@ -153,8 +154,12 @@ function main() {
     process.exit(1);
   }
 
-  // Read the prepared file
-  const fileContent = fs.readFileSync(filePath, 'utf8');
+  // Read the prepared file and the replacement; either one this can't read stops the run naming it and why.
+  const [fileRead, replacementRead] = [readText(filePath), readText(replacementPath)];
+  const unread = [[filePath, fileRead], [replacementPath, replacementRead]].filter(([, read]) => read.kind !== 'text');
+  for (const [file, read] of unread) console.error(`Error: ${file} ${read.reason}`);
+  if (unread.length > 0) process.exit(1);
+  const fileContent = fileRead.text;
   const lines = fileContent.split('\n');
 
   if (endLine > lines.length) {
@@ -166,8 +171,7 @@ function main() {
   const originalChunkLines = lines.slice(startLine - 1, endLine);
   const originalChunk = originalChunkLines.join('\n');
 
-  // Read replacement
-  const replacement = fs.readFileSync(replacementPath, 'utf8');
+  const replacement = replacementRead.text;
 
   const originalLineCount = originalChunkLines.length;
   const replacementLineCount = replacement.split('\n').length;

@@ -30,9 +30,9 @@
 // cwd reads them the same way.
 
 import path from "path";
-import { isNonEmptyString, isPlainObject } from "./json-value.mjs";
+import { isNonEmptyString, isPlainObject, JSON_SHAPE } from "./json-value.mjs";
 import { isLocation } from "./node-modules.mjs";
-import { mismatchText, readJson } from "./path-state.mjs";
+import { readJson } from "./path-state.mjs";
 
 export const SCHEMA_VERSION = 4;
 
@@ -169,21 +169,18 @@ function parseEntry(raw) {
   return { entry: { name: raw.name, version: raw.version, status: "in-flight", attempts: raw.attempts, inFlight } };
 }
 
-// [LAW:single-enforcer] The log at logPath as its writer and the gate both read it: { kind: "absent" } when nothing is
-// there, { kind: "log", log } with every entry parsed into its status's shape, or { kind: "rejected", errors } naming
-// each problem, a log that is there but can't be read among them. Only an absent log is an empty one.
+// [LAW:single-enforcer] The log at logPath as its writer and the gate both read it: readJson's absent when nothing is
+// there and unusable, with the reason, when what is there is no JSON object; { kind: "log", log } with every entry
+// parsed into its status's shape, or { kind: "rejected", errors } naming each problem in a log it could read. Only an
+// absent log is an empty one.
 export function readLog(logPath) {
-  const read = readJson(logPath);
-  if (read.kind === "absent") return read;
-  if (read.kind === "invalid-json") return rejected([{ type: "replacements-json", path: logPath, error: read.error }]);
-  if (read.kind !== "json") return rejected([{ type: "replacements-unreadable", path: logPath, reason: mismatchText("file", read) }]);
-  return parseLog(read.value, logPath);
+  const read = readJson(logPath, JSON_SHAPE.object);
+  return read.kind === "json" ? parseLog(read.value, logPath) : read;
 }
 
 const rejected = (errors) => ({ kind: "rejected", errors });
 
 function parseLog(raw, logPath) {
-  if (!isPlainObject(raw)) return rejected([{ type: "replacements-type", path: logPath, expected: "object" }]);
   if (raw.schemaVersion !== SCHEMA_VERSION) {
     return rejected([{
       type: "schema-version",

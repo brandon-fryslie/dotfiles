@@ -5,7 +5,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-const SCRIPT = path.join(import.meta.dirname, "..", "detect-electron-version.sh");
+const SCRIPT = path.join(import.meta.dirname, "..", "detect-electron-version.mjs");
 
 // An .app with no Electron Framework plist, so detection falls to the extracted package.json.
 // The default directory name carries a quote, which broke the old splice of the path into JS source.
@@ -17,7 +17,7 @@ function appWithPackageJson(content, extractedName = "it's extracted") {
   fs.mkdirSync(appPath, { recursive: true });
   fs.mkdirSync(extractedDir, { recursive: true });
   fs.writeFileSync(path.join(extractedDir, "package.json"), content);
-  return spawnSync("bash", [SCRIPT, appPath, extractedName], { cwd: root, encoding: "utf8" });
+  return spawnSync(process.execPath, [SCRIPT, appPath, extractedName], { cwd: root, encoding: "utf8" });
 }
 
 test("reads the electron version from package.json in a path containing a quote", () => {

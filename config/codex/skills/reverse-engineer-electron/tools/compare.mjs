@@ -19,8 +19,8 @@
 //   --exclude=<pat>   Additional directory names to exclude (comma-separated)
 //   --include=<pat>   Override default excludes (comma-separated)
 
-import fs from 'fs';
 import path from 'path';
+import { treeFileText } from './path-state.mjs';
 import {
   tokenSimilarity,
   walk,
@@ -103,7 +103,7 @@ function discoverFiles(dir, excludes) {
   const absDir = path.resolve(dir);
   return listSourceFiles(absDir, excludes).map(rel => ({
     path: rel,
-    content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
+    content: treeFileText(path.join(absDir, rel)),
   }));
 }
 

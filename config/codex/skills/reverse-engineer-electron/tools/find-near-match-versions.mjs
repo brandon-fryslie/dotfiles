@@ -19,8 +19,8 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { isNonEmptyString } from "./json-value.mjs";
-import { mismatchText, readJson } from "./path-state.mjs";
+import { isNonEmptyString, JSON_SHAPE } from "./json-value.mjs";
+import { readJson } from "./path-state.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -107,7 +107,7 @@ function npmViewVersions(pkgName) {
 // detect-dependencies listed in full, or one the app doesn't ship, lists every trialable copy; any other is a tree it
 // couldn't read.
 function parseOnDiskPackages(report) {
-  const onDisk = report?.onDisk;
+  const onDisk = report.onDisk;
   if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version) && isNonEmptyString(pkg?.location))) {
     return { ok: false, error: "it has no onDisk.packages list of { name, version, location } — rerun detect-dependencies.mjs to write it" };
   }
@@ -281,9 +281,9 @@ function main() {
 
   // [LAW:no-silent-failure] Each input file's JSON, or the run stops naming the file and why it can't be read.
   const readInput = (what, file) => {
-    const read = readJson(file);
+    const read = readJson(file, JSON_SHAPE.object);
     if (read.kind === "json") return read.value;
-    console.error(`${what} ${file} ${mismatchText("file", read)}`);
+    console.error(`${what} ${file} ${read.reason}`);
     process.exit(2);
   };
   const report = readInput("Dependency report", depsPath);

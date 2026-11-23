@@ -11,8 +11,8 @@
 
 import fs from "fs";
 import path from "path";
-import { isNonEmptyString } from "./json-value.mjs";
-import { appPathState, listDir, mismatchText, pathState, pathStateText, readJson } from "./path-state.mjs";
+import { isNonEmptyString, JSON_SHAPE } from "./json-value.mjs";
+import { appPathState, inputAt, listDir, pathState, pathStateText, readJson } from "./path-state.mjs";
 import { verdictOn } from "./verdict.mjs";
 
 // [LAW:single-enforcer] A package name as npm spells one: a name, or a scope and a name, neither starting with "."
@@ -61,11 +61,11 @@ export function stateText(state) {
 export function packageAt(dir) {
   const state = pathState(dir);
   if (state.kind !== "dir") return state;
-  const read = readJson(path.join(dir, "package.json"));
+  const read = readJson(path.join(dir, "package.json"), JSON_SHAPE.object);
   if (read.kind === "absent") return { kind: "no-manifest" };
-  if (read.kind !== "json") return { kind: "unusable-manifest", reason: pathStateText(read) };
+  if (read.kind !== "json") return { kind: "unusable-manifest", reason: pathStateText(read.state) };
   const manifest = read.value;
-  if (!isNonEmptyString(manifest?.name) || !isNonEmptyString(manifest?.version)) return { kind: "unusable-manifest", reason: "no-name-or-version" };
+  if (!isNonEmptyString(manifest.name) || !isNonEmptyString(manifest.version)) return { kind: "unusable-manifest", reason: "no-name-or-version" };
   if (!isPackageName(manifest.name)) return { kind: "unusable-manifest", reason: "invalid-name" };
   return { kind: "package", name: manifest.name, version: manifest.version };
 }
@@ -106,9 +106,9 @@ export function topLevelEntries(nodeModules) {
 // whole: absent (the app ships none, as a fully bundled one does), listed (every directory read), or incomplete with
 // the reason, so no consumer can take a tree it couldn't read for one with nothing in it.
 export function walkStarts(app, probe = []) {
-  const state = pathState(app.nodeModules);
-  if (state.kind === "absent") return { verdict: { kind: "absent" }, starts: [], unlisted: [] };
-  if (state.kind !== "dir") return { verdict: { kind: "incomplete", reason: `node_modules ${mismatchText("directory", state)}` }, starts: [], unlisted: [] };
+  const input = inputAt(app.nodeModules, "dir");
+  if (input.kind === "absent") return { verdict: { kind: "absent" }, starts: [], unlisted: [] };
+  if (input.kind !== "dir") return { verdict: { kind: "incomplete", reason: `node_modules ${input.reason}` }, starts: [], unlisted: [] };
   const visited = new Set();
   const starts = new Map();
   const unlisted = [];

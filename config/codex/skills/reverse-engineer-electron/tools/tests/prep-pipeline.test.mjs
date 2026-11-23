@@ -1734,7 +1734,7 @@ test("detect-dependencies reports the lockfile's packages under the file it read
 
 test("detect-dependencies warns of a package-lock.json it can't use or fully read, and still writes its report", () => {
   const cases = [
-    { lock: "null", reason: "it is not a JSON object" },
+    { lock: "null", reason: "it is not a JSON object (it holds null)" },
     { lock: JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/foo": {} } }), reason: "node_modules/foo records no version" },
   ];
   for (const { lock, reason } of cases) {
@@ -1810,13 +1810,14 @@ test("replace-dependency and the gate refuse a swap log that is there but can't 
 
     const result = replace();
     assert.equal(result.status, 2, `${what}: ${result.stdout}`);
-    assert.ok(result.stderr.includes(JSON.stringify({ type: "replacements-unreadable", path: logPath, reason })), `${what}: ${result.stderr}`);
+    assert.ok(result.stderr.includes(`Error: ${logPath} ${reason} — the record of earlier swaps is in it`), `${what}: ${result.stderr}`);
     assert.equal(npmCalls().length, callsBefore, `${what}: nothing is trialed`);
     unchanged(logPath);
 
     const { status, artifact } = gate();
     assert.equal(status, 1, what);
-    assert.deepEqual(artifact.mismatches.replacementLogErrors.map((error) => error.type), ["replacements-unreadable"], what);
+    assert.equal(artifact.checks.artifactsPresent, false, what);
+    assert.deepEqual(artifact.mismatches.replacementLogErrors, [{ type: "unusable-required", inputs: [{ path: logPath, reason }] }], what);
   }
 });
 
@@ -1832,14 +1833,14 @@ test("replace-dependency refuses a candidate source that is there but can't be r
   assert.equal(fs.existsSync(project.logPath), false);
 });
 
-test("replace-dependency refuses a lock it can't open, naming it and why", { skip: EVERY_STATE_SKIP }, (t) => {
+test("replace-dependency refuses a lock it can't open, naming it and why", { skip: process.getuid?.() === 0 ? "chmod 000 doesn't restrict root" : false }, (t) => {
   const project = swapProject(VERIFYING_INDEX);
   const depsDir = path.dirname(project.logPath);
   fs.chmodSync(depsDir, 0o000);
   t.after(() => fs.chmodSync(depsDir, 0o755));
   const result = project.replace();
   assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, /could not open the lock .*replacements\.json\.lock \(EACCES\)/);
+  assert.match(result.stderr, /the lock .*replacements\.json\.lock can't be created or opened \(EACCES\)/);
   assert.deepEqual(project.npmCalls(), []);
 });
 
@@ -1909,6 +1910,10 @@ test("verify-dependency-swap names an input that is there but can't be read, and
   assert.equal(dangling.result.status, 1);
   assert.deepEqual(dangling.artifact.mismatches.package, [`${path.join(dangling.afterDir, "package.json")} is not a file (dangling:gone)`]);
 
+  const nullManifest = verifyBetween(pkgA(PKG_A), pkgA("null"));
+  assert.equal(nullManifest.result.status, 1, nullManifest.result.stderr);
+  assert.deepEqual(nullManifest.artifact.mismatches.package, [`${path.join(nullManifest.afterDir, "package.json")} is not a JSON object (it holds null)`]);
+
   const missing = verifyBetween(pkgA(PKG_A), () => {});
   assert.equal(missing.result.status, 1);
   assert.deepEqual(missing.artifact.mismatches.package, [`${missing.afterDir} is missing`]);
@@ -1920,4 +1925,6 @@ test("verify-dependency-swap names a reachable after-side file that is there but
   assert.equal(artifact.pass, false);
   assert.deepEqual(artifact.mismatches.missingFiles, []);
   assert.deepEqual(artifact.mismatches.unreadableFiles, [{ file: "index.js", side: "after", reason: "is not a file (dangling:gone)" }]);
+  assert.equal(artifact.checks.reachableFilesRead, false);
+  assert.equal(artifact.metrics.fileCoverage, 0, "a file never compared covers nothing");
 });
