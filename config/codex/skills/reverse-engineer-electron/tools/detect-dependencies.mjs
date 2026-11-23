@@ -19,7 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { appAt, compareLocations, copiesOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
+import { appAt, compareLocations, copiesOf, entryNameOf, isLocation, isNonEmptyString, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -105,8 +105,8 @@ function pkgNameFromNodeModulesPath(text) {
 
 // [LAW:one-source-of-truth] Every copy of every package node can load from the app's node_modules, with the swap
 // outcome replace-dependency acts on, and the walk's verdict on how much of the tree could be read.
-function readOnDisk(appDir) {
-  const app = appAt(path.join(appDir, "node_modules"));
+function readOnDisk(appDir, projectRoot) {
+  const app = appAt(path.join(appDir, "node_modules"), projectRoot);
   const { verdict, starts, unlisted } = walkStarts(app);
   return { verdict, unlisted, copies: copiesOf(app, starts).map((copy) => ({ ...copy, dir: locationDir(app, copy.location) })) };
 }
@@ -167,38 +167,27 @@ function loadFingerprints() {
   return filtered;
 }
 
+// [LAW:one-source-of-truth] Every package version the app's package-lock.json records, at the location it records it
+// at, named by the one location grammar node-modules.mjs owns: a key's package is the entry after its last
+// node_modules. A lockfile v1's top-level dependencies are at their top-level locations. A lockfile that is there and
+// can't be read stops the run, never reads as one that records nothing. [LAW:no-silent-failure]
 function loadLockfilePackages(appDir) {
-  const out = [];
   const packageLockPath = path.join(appDir, "package-lock.json");
-  if (!fs.existsSync(packageLockPath)) return out;
-
+  if (!fs.existsSync(packageLockPath)) return [];
+  let packageLock;
   try {
-    const packageLock = JSON.parse(fs.readFileSync(packageLockPath, "utf8"));
-    const pushPackage = (name, version) => {
-      if (!name || !version) return;
-      out.push({ name, version, path: "package-lock.json", dir: null });
-    };
-
-    const rootDeps = packageLock.dependencies || {};
-    for (const [name, meta] of Object.entries(rootDeps)) {
-      pushPackage(name, meta?.version || null);
-    }
-
-    const packages = packageLock.packages || {};
-    for (const [pkgPath, meta] of Object.entries(packages)) {
-      if (!pkgPath.startsWith("node_modules/")) continue;
-      const pkgName = pkgNameFromNodeModulesPath(`/${pkgPath}/index.js`);
-      pushPackage(pkgName, meta?.version || null);
-    }
-  } catch {
-    return [];
+    packageLock = JSON.parse(fs.readFileSync(packageLockPath, "utf8"));
+  } catch (error) {
+    throw new Error(`${packageLockPath} is not a readable lockfile: ${error.message}`);
   }
-
-  const deduped = new Map();
-  for (const pkg of out) {
-    if (!deduped.has(pkg.name)) deduped.set(pkg.name, pkg);
-  }
-  return Array.from(deduped.values()).sort((left, right) => left.name.localeCompare(right.name));
+  const recorded = [
+    ...Object.entries(packageLock.dependencies ?? {}).map(([name, meta]) => [topLevelLocation(name), meta?.version]),
+    ...Object.entries(packageLock.packages ?? {}).map(([location, meta]) => [location, meta?.version]),
+  ];
+  const byLocation = new Map(recorded
+    .filter(([location, version]) => isLocation(location) && isNonEmptyString(version))
+    .map(([location, version]) => [location, { name: entryNameOf(location), version, location }]));
+  return [...byLocation.values()].sort((left, right) => left.name.localeCompare(right.name) || compareLocations(left.location, right.location));
 }
 
 function parseStaticBareSpecifiers(code) {
@@ -1029,22 +1018,28 @@ function main() {
   const outPath = path.resolve(projectRoot, opts.out);
 
   const fingerprints = loadFingerprints();
-  const onDisk = readOnDisk(appDir);
-  // Every copy the app loads, trialable or not, lends its name and its shape hashes to classification: once, however
-  // many paths reach it, and under the name of the package it is, so an alias's code is credited to the package it
-  // aliases and a shared copy's hashes stay unique to it.
+  const onDisk = readOnDisk(appDir, projectRoot);
+  // Every copy the app loads, trialable or not, lends its name and its shape hashes to classification: once per
+  // name@version, however many paths or copies reach it, and under the name of the package it is, so an alias's code
+  // is credited to the package it aliases and identical copies' hashes stay unique to the one package version.
   const loadingCopies = onDisk.copies.filter(({ outcome }) => outcome.loads !== null);
-  const loadedPackages = [...new Map(loadingCopies
-    .map(({ dir, outcome }) => [fs.realpathSync(dir), { name: outcome.loads.name, version: outcome.loads.version, dir }])).values()];
+  const loadedPackageVersions = [...new Map(loadingCopies
+    .map(({ dir, outcome }) => [`${outcome.loads.name}@${outcome.loads.version}`, { name: outcome.loads.name, version: outcome.loads.version, dir }])).values()];
+  // A copy on disk is a directory, however many locations reach it.
+  const copiesOnDisk = new Set(loadingCopies.map(({ dir }) => fs.realpathSync(dir))).size;
   const lockfilePackages = loadLockfilePackages(appDir);
-  // A package's version is the one the app's own require loads: the copy its top-level path reaches.
+  // [LAW:one-source-of-truth] A package's version is the one the app's own require loads: the copy at its top-level
+  // location when that copy is the package itself (an alias there is another package's code), else the lockfile's.
   const topLevelVersions = loadingCopies
-    .filter(({ name, paths }) => paths.includes(topLevelLocation(name)))
-    .map(({ outcome }) => ({ name: outcome.loads.name, version: outcome.loads.version }));
-  const packageVersionByName = Object.fromEntries([...lockfilePackages, ...topLevelVersions].map((pkg) => [pkg.name, pkg.version]));
-  const shapeIndex = indexPackageShapeHashes(loadedPackages);
+    .filter(({ name, paths, outcome }) => paths.includes(topLevelLocation(name)) && outcome.loads.name === name)
+    .map(({ name, outcome }) => [name, outcome.loads.version]);
+  const packageVersionByName = Object.fromEntries([
+    ...lockfilePackages.filter(({ name, location }) => location === topLevelLocation(name)).map(({ name, version }) => [name, version]),
+    ...topLevelVersions,
+  ]);
+  const shapeIndex = indexPackageShapeHashes(loadedPackageVersions);
   const knownPackages = Array.from(
-    new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackages.map((pkg) => pkg.name)]),
+    new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackageVersions.map((pkg) => pkg.name)]),
   ).sort((left, right) => right.length - left.length || left.localeCompare(right));
   const onDiskReport = {
     nodeModules: onDisk.verdict,
@@ -1071,11 +1066,7 @@ function main() {
     },
     onDisk: onDiskReport,
     lockfile: {
-      packages: lockfilePackages.map((pkg) => ({
-        name: pkg.name,
-        version: pkg.version,
-        path: pkg.path,
-      })),
+      packages: lockfilePackages,
     },
     moduleIndex: {
       file: null,
@@ -1085,7 +1076,7 @@ function main() {
     bundles: [],
     summary: {
       externalPackagesInCode: 0,
-      externalCopiesOnDisk: loadedPackages.length,
+      externalCopiesOnDisk: copiesOnDisk,
       externalPackagesInCodeAndOnDisk: 0,
       externalPackagesInCodeMissingOnDisk: 0,
       bundledThirdPartyPackages: 0,
@@ -1154,7 +1145,7 @@ function main() {
   }
 
   const inCode = Object.keys(report.code.bareSpecifiers).sort();
-  const onDiskSet = new Set(loadedPackages.map((pkg) => pkg.name));
+  const onDiskSet = new Set(loadedPackageVersions.map((pkg) => pkg.name));
   const inBoth = inCode.filter((pkg) => onDiskSet.has(pkg));
   const missing = inCode.filter((pkg) => !onDiskSet.has(pkg));
 
@@ -1198,7 +1189,7 @@ function main() {
   console.log(`- Bundled third-party modules: ${report.summary.bundledThirdPartyModules}`);
   console.log(`- Candidate module classification rate: ${report.summary.classificationRate}`);
   console.log(`- Parse errors: ${report.parseErrors.length}`);
-  console.log(`- Copies on disk: ${loadedPackages.length} (trialable: ${onDiskReport.packages.length})`);
+  console.log(`- Copies on disk: ${copiesOnDisk} (trialable: ${onDiskReport.packages.length})`);
   console.log(`- Warnings: ${report.warnings.length}`);
   for (const warning of report.warnings) console.log(`  ${warning}`);
 }

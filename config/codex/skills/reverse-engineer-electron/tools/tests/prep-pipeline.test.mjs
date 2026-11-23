@@ -5,6 +5,7 @@ import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 import { appAt, copiesOf, replacementOf, walkStarts } from "../node-modules.mjs";
+import { fromLogPath } from "../replacement-log.mjs";
 
 const TOOLS_DIR = path.join(import.meta.dirname, "..");
 
@@ -811,6 +812,7 @@ test("replace-dependency and the gate refuse a log the parser rejects, with the 
     ["location-invalid", (log, location) => { log.copies["node_modules/demo-pkg/lib"] = log.copies[location]; delete log.copies[location]; }],
     ["attempts-missing", (log, location) => { Object.assign(log.copies[location], { status: "unresolved", chosenVersion: null, attempts: [] }); }],
     ["copy-name-invalid", (log, location) => { log.copies[location].version = null; }],
+    ["copy-name-invalid", (log, location) => { log.copies[location].name = "other-pkg"; }],
   ];
   for (const [type, corrupt] of cases) {
     const { logPath, location, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
@@ -870,13 +872,15 @@ test("replace-dependency settles an interrupted trial of a package it was not as
   const { tmp, appPkgDir, logPath, replace, readLog, killMidVerify, entry } = swapProject(VERIFYING_INDEX);
   killMidVerify();
 
-  // A second package, requested on its own, with nothing to trial.
+  // A second package, requested on its own, with no copy: the run settles the interrupted trial, and nothing it was
+  // asked for is replaced.
   const result = runNode(
     path.join(TOOLS_DIR, "replace-dependency.mjs"),
     ["--pkg", "other-pkg", "--app-dir", path.join(tmp, "resources", "app"), "--out", logPath],
     tmp,
   );
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(result.status, 3, result.stderr || result.stdout);
+  assert.match(result.stdout, /- requested packages with no copy in the directories it could list: 1\n {2}other-pkg\n/);
   assert.match(result.stdout, /\[demo-pkg node_modules\/demo-pkg\] interrupted trial of 1\.2\.3: restored the original/);
   const copy = entry();
   assert.equal(copy.status, "unresolved", JSON.stringify(copy));
@@ -1362,13 +1366,13 @@ const MULTI_REGISTRY = { foo: ["1.0.0", "2.0.0", "3.0.0", "4.0.0"], qux: ["1.0.0
 const MULTI_CODE = 'require("foo");\nrequire("bar");\nrequire("baz");\nrequire("baz2");\nrequire("quux");\n';
 
 test("the walk finds every copy node can load: store copies with all their consumers, nested copies, one copy behind two symlinked node_modules, and no package's own fixtures", () => {
-  const { nm, copies } = multiCopyApp();
-  const app = appAt(nm);
+  const { nm, tmp, copies } = multiCopyApp();
+  const app = appAt(nm, tmp);
   const foo = copiesOf(app, walkStarts(app).starts).filter(({ name }) => name === "foo");
   assert.deepEqual(foo.map(({ location, paths }) => [location, paths]), [
     [copies.foo1, ["node_modules/.pnpm/c1@1.0.0/node_modules/foo", copies.foo1, "node_modules/foo"]],
     [copies.foo2, ["node_modules/.pnpm/c2@1.0.0/node_modules/foo", copies.foo2]],
-    [copies.foo4, ["node_modules/baz/node_modules/foo"]],
+    [copies.foo4, [copies.foo4, "node_modules/baz/node_modules/foo", "node_modules/baz2/node_modules/foo"]],
     [copies.foo3, [copies.foo3]],
     [copies.quuxFoo, [copies.quuxFoo]],
   ].sort(([a], [b]) => (a < b ? -1 : 1)));
@@ -1572,6 +1576,9 @@ test("replace-dependency refuses a flag with no value, an unknown flag, and flag
     [["--pkg", "demo-pkg", "--verison", "1.2.3"], "unknown argument --verison"],
     [["--auto-near-match", "--version", "1.2.3"], "--location and --version choose among --pkg's copies, so they need --pkg"],
     [["--pkg", "demo-pkg", "--auto-near-match"], "give exactly one of --pkg <name> and --auto-near-match"],
+    [["--pkg", "demo-pkg", "--pkg", "other-pkg"], "--pkg is given twice"],
+    [["--pkg", ".."], "--pkg .. is not a package name"],
+    [["--pkg", "demo-pkg", "--bogus", "--help"], "unknown argument --bogus"],
   ]) {
     const result = run(args);
     assert.equal(result.status, 2, args.join(" "));
@@ -1643,7 +1650,7 @@ test("the walk finds a pnpm store's copies by node's lookup paths, whatever the 
   };
   linkTo(storeCopy("top"), path.join(nm, "top"));
   linkTo(storeCopy("hidden"), path.join(nm, ".vstore", "top@1.0.0", "node_modules", "hidden"));
-  const app = appAt(nm);
+  const app = appAt(nm, tmp);
   const walked = walkStarts(app);
   assert.deepEqual(walked.verdict, { kind: "listed" });
   assert.deepEqual(copiesOf(app, walked.starts).map(({ name, location }) => [name, location]), [
@@ -1672,4 +1679,36 @@ test("find-near-match-versions offers a prerelease copy only published versions,
     assert.equal(pkg.bestCandidate.version, pkg.onDiskVersion, pkg.name);
     assert.equal(pkg.recommendation, "exact", pkg.name);
   }
+});
+
+test("replace-dependency reads a container's swap off the tree, so a nested copy whose container's original is back is trialed", () => {
+  const project = multiCopyApp({ replacements: ["bar@1.0.0", "foo@3.0.0"] });
+  assert.equal(project.replace(["--pkg", "bar"]).status, 0);
+  // The container's original put back by hand, as a refusal tells a user to: its log entry still says resolved.
+  const bar = project.at("bar");
+  fs.rmSync(bar);
+  fs.renameSync(fromLogPath(project.logPath, project.readLog().copies["node_modules/bar"].attempts.at(-1).original.backupPath), bar);
+
+  const result = project.replace(["--pkg", "foo", "--location", project.copies.foo3]);
+  assert.doesNotMatch(result.stdout, /replaced with its container/);
+  assert.match(result.stdout, new RegExp(`\\[foo ${project.copies.foo3}\\] resolved with 3\\.0\\.0`));
+  assert.equal(project.readLog().copies[project.copies.foo3].status, "resolved");
+});
+
+test("replace-dependency says when the candidate source lists no candidates for a copy's version", () => {
+  const project = swapProject(VERIFYING_INDEX);
+  writeJson(path.join(project.tmp, "deps", "near-matches.json"), { packages: [{ name: "demo-pkg", onDiskVersion: "1.2.2", candidates: [{ version: "1.2.3" }] }] });
+  const result = project.replaceAuto();
+  assert.match(result.stdout, /the candidate source lists no candidates for demo-pkg@1\.2\.3, so it is trialed against its own version only/);
+});
+
+test("detect-dependencies names a lockfile's nested entries by the package after their last node_modules", () => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "resources", "app");
+  writeJson(path.join(appDir, "package-lock.json"), { packages: { "": {}, "node_modules/foo": { version: "1.0.0" }, "node_modules/foo/node_modules/bar": { version: "2.0.0" } } });
+  const { report } = detect(tmp, appDir);
+  assert.deepEqual(report.lockfile.packages, [
+    { name: "bar", version: "2.0.0", location: "node_modules/foo/node_modules/bar" },
+    { name: "foo", version: "1.0.0", location: "node_modules/foo" },
+  ]);
 });

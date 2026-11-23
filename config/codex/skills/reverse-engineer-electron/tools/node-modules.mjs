@@ -5,21 +5,37 @@
 //
 // [LAW:one-source-of-truth] [LAW:single-enforcer] Whether a copy can be trialed is swapOutcome's answer and no one
 // else's: replace-dependency trials exactly the copies whose outcome is trialable, and detect-dependencies reports every
-// other one with the reason the outcome carries, so the report and the swap tool can't disagree about any layout.
+// other one with the reason the outcome carries, so the two can't disagree about any copy the walk lists. A copy found
+// only by probing a directory that can't be listed is one replace-dependency can trial and detect-dependencies can't
+// name; detect-dependencies reports that directory, and its verdict on the tree is incomplete.
 
 import fs from "fs";
 import path from "path";
 
+// [LAW:parse-dont-validate] A package name as npm spells one: a name, or a scope and a name, neither starting with
+// "." and holding no "/" of its own. It is the one grammar for a --pkg argument, a candidate source's names, and the
+// entry a location ends in.
+export const isPackageName = (value) => typeof value === "string" && /^(?:@[^/@.\s][^/\s]*\/)?[^/@.\s][^/\s]*$/.test(value);
+
+// The entry a node_modules path names after its last node_modules: a package name, or a scope that holds no packages
+// (an entry under its own name), or null when it names neither.
+export function entryNameOf(nodeModulesPath) {
+  const parts = nodeModulesPath.split("/");
+  const last = parts.lastIndexOf("node_modules");
+  if (last === -1) return null;
+  const entry = parts.slice(last + 1);
+  const name = entry.length >= 2 && entry[0].startsWith("@") ? `${entry[0]}/${entry[1]}` : entry[0];
+  return name !== undefined && (isPackageName(name) || /^@[^/@.\s][^/\s]*$/.test(name)) ? name : null;
+}
+
 // A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
-// node_modules/.pnpm/foo@1.0.0/node_modules/foo. It ends in an entry name after its last node_modules: a name, or a
-// scope and a name (a scope that holds no packages is an entry under its own name). replacement-log.mjs parses the
-// locations a log stores with it.
+// node_modules/.pnpm/foo@1.0.0/node_modules/foo. It ends in an entry name after its last node_modules, and in nothing
+// past it. replacement-log.mjs parses the locations a log stores with it.
 export function isLocation(value) {
   if (typeof value !== "string") return false;
   const parts = value.split("/");
-  const entry = parts.slice(parts.lastIndexOf("node_modules") + 1);
-  const entryName = entry.length === 1 || (entry.length === 2 && entry[0].startsWith("@"));
-  return parts[0] === "node_modules" && entryName && parts.every((part) => part !== "" && part !== "." && part !== "..") && !entry.some((part) => part.startsWith("."));
+  const name = entryNameOf(value);
+  return name !== null && parts[0] === "node_modules" && value.endsWith(`node_modules/${name}`) && parts.every((part) => part !== "" && part !== "." && part !== "..");
 }
 
 export function pkgPathParts(name) {
@@ -128,23 +144,30 @@ export function walkStarts(app, probe = []) {
   const visited = new Set();
   const starts = new Map();
   const unlisted = [];
+  // Each spelling of a node_modules is listed for its starts, since every one is a path node loads through; a
+  // directory is descended from only the first time it is reached, which ends a link cycle.
+  const spelled = new Set();
   const visit = (nodeModules) => {
+    if (spelled.has(nodeModules)) return;
+    spelled.add(nodeModules);
     const at = pathState(nodeModules);
     const key = at.kind === "dir" ? fs.realpathSync(nodeModules) : nodeModules;
-    if (visited.has(key)) return;
+    const firstVisit = !visited.has(key);
     visited.add(key);
-    if (at.kind === "unreadable") unlisted.push({ dir: nodeModules, code: at.code });
+    if (at.kind === "unreadable" && firstVisit) unlisted.push({ dir: nodeModules, code: at.code });
     // Anything else that is not a directory (nothing, a file, a dangling link) holds no packages node could load.
     if (at.kind !== "dir") return;
     const top = topLevelEntries(nodeModules);
-    unlisted.push(...top.unlisted);
+    if (firstVisit) unlisted.push(...top.unlisted);
     const probed = probe.filter((name) => appPathState(path.join(nodeModules, ...pkgPathParts(name))).kind !== "absent");
+    const descend = [];
     for (const name of new Set([...top.names, ...probed])) {
       const dir = path.join(nodeModules, ...pkgPathParts(name));
       const start = locationOf(app.nodeModules, dir);
       if (!starts.has(start)) starts.set(start, { name, start });
-      if (pathState(dir).kind === "dir" && isInside(app, fs.realpathSync(dir))) lookupPaths(app, fs.realpathSync(dir)).forEach(visit);
+      if (firstVisit && pathState(dir).kind === "dir" && isInside(app, fs.realpathSync(dir))) descend.push(...lookupPaths(app, fs.realpathSync(dir)));
     }
+    descend.forEach(visit);
   };
   visit(app.nodeModules);
 
@@ -198,10 +221,13 @@ export function replacementOf(projectRoot, name, version) {
     .join("");
   const encoded = `${encode(name)}__${encode(version)}`;
   const alias = `${REPLACEMENT_SCOPE}/${encoded}`;
-  return { alias, spec: `${alias}@npm:${name}@${version}`, dir: path.join(projectRoot, "node_modules", REPLACEMENT_SCOPE, encoded) };
+  return { alias, spec: `${alias}@npm:${name}@${version}`, dir: path.join(replacementScopeDir(projectRoot), encoded) };
 }
 
 export const REPLACEMENT_SCOPE = "@replace-dependency";
+
+// [LAW:one-source-of-truth] The one directory a project's replacements are installed into.
+const replacementScopeDir = (projectRoot) => path.join(projectRoot, "node_modules", REPLACEMENT_SCOPE);
 
 // What sits at a path without following it: nothing, a directory, a file, a symlink with its readlink text, or a path
 // it can't lstat (with the error code). pathState answers what node finds there once it follows the links.
@@ -251,10 +277,11 @@ export function locationOf(nodeModules, dir) {
 }
 
 // [LAW:single-enforcer] The one constructor of the app every location is measured in: its node_modules as named, and
-// that directory's real path, which every inside-the-app check compares canonical paths against. An app that ships no
-// node_modules still has one, so the walk can say so.
-export function appAt(nodeModules) {
-  return { nodeModules, realNodeModules: realExisting(nodeModules) };
+// that directory's real path, which every inside-the-app check compares canonical paths against, and the canonical
+// directory the project at projectRoot installs replacements into. An app that ships no node_modules still has one, so
+// the walk can say so.
+export function appAt(nodeModules, projectRoot) {
+  return { nodeModules, realNodeModules: realExisting(nodeModules), replacementScope: realExisting(replacementScopeDir(projectRoot)) };
 }
 
 export function locationDir(app, location) {
@@ -288,12 +315,21 @@ function findSwapLocation(app, start, pkgName) {
   }
 }
 
-// The replacement a link at dir leads to, when it leads into a replacement scope outside the app: its alias, or null.
+// The replacement a link at dir leads to, when it leads into the project's replacement scope: its alias, or null.
 function replacementLinkedAt(app, dir) {
   const entry = appPathState(dir);
   if (entry.kind !== "link") return null;
   const destination = linkDestination(dir, entry.target);
-  return path.basename(path.dirname(destination)) === REPLACEMENT_SCOPE && !isInside(app, destination) ? `${REPLACEMENT_SCOPE}/${path.basename(destination)}` : null;
+  return path.dirname(destination) === app.replacementScope ? `${REPLACEMENT_SCOPE}/${path.basename(destination)}` : null;
+}
+
+// [LAW:one-source-of-truth] The location of the copy whose swap took the copy at location out of the app, read off the
+// tree: the outermost location containing it that now links to one of the project's replacements, or null when none
+// does. A swap set that container aside with everything nested in it, so nothing in the app loads the copy.
+export function containerSwappedAt(app, location) {
+  const parts = location.split("/");
+  const containers = parts.flatMap((part, index) => (part === "node_modules" && index > 0 ? [parts.slice(0, index).join("/")] : []));
+  return containers.find((container) => isLocation(container) && replacementLinkedAt(app, locationDir(app, container)) !== null) ?? null;
 }
 
 // [LAW:types-are-the-program] Whether, and where, replace-dependency can swap the copy of pkgName reached at start.

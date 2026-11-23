@@ -23,16 +23,12 @@
 //   any other     { swapApplied, rolledBack, original | null, verification }  a trial this run saw end
 // This module builds every entry and attempt the writer stores, so the shapes it writes are the shapes it parses.
 //
-// A copy whose location lies inside a resolved entry's location is retired: that swap set the container aside under
-// .original/ with everything nested in it, so nothing in the app loads the copy. Retirement is read off the log, never
-// stored, so it holds for an entry written before its container was swapped.
-//
 // A location is node-modules.mjs's isLocation: a package's path relative to the app dir, as npm's lockfile spells
 // one. Other stored paths (backupPath, verification.path) are relative to the log's directory, so a run from any
 // cwd reads them the same way.
 
 import path from "path";
-import { isLocation, isNonEmptyString } from "./node-modules.mjs";
+import { entryNameOf, isLocation, isNonEmptyString } from "./node-modules.mjs";
 
 export const SCHEMA_VERSION = 4;
 
@@ -85,11 +81,6 @@ export function settledEntry(prior, copy, attempt) {
 
 // The write-ahead record of a trial about to move the copy's original.
 export const inFlightEntry = (prior, copy, inFlight) => ({ name: copy.name, version: copy.version, status: "in-flight", attempts: prior?.attempts ?? [], inFlight });
-
-// The location of the resolved entry whose swap retired the copy at location, or null when none contains it.
-export function retiredBy(log, location) {
-  return Object.entries(log.copies).find(([container, entry]) => entry.status === "resolved" && location.startsWith(`${container}/`))?.[0] ?? null;
-}
 
 // The on-disk form of a parsed log: `pass` is a reference into `attempts`, so it is derived, never stored.
 export function serializeLog(log) {
@@ -201,9 +192,12 @@ export function parseLog(text, logPath) {
   const copies = {};
   const errors = [];
   for (const [location, rawEntry] of Object.entries(raw.copies)) {
-    const { entry, error } = isLocation(location)
-      ? parseEntry(rawEntry)
-      : { error: { type: "location-invalid", detail: "an entry's key must be a location under node_modules/" } };
+    // A location ends in the name of the package reached there, so an entry's name is its key's.
+    const { entry, error } = !isLocation(location)
+      ? { error: { type: "location-invalid", detail: "an entry's key must be a location under node_modules/" } }
+      : isObject(rawEntry) && rawEntry.name !== entryNameOf(location)
+        ? { error: { type: "copy-name-invalid", detail: `an entry at ${location} names ${JSON.stringify(rawEntry.name)}, not ${entryNameOf(location)}` } }
+        : parseEntry(rawEntry);
     if (error) errors.push({ ...error, location, package: isObject(rawEntry) ? rawEntry.name ?? null : null });
     else copies[location] = entry;
   }

@@ -29,8 +29,8 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
-import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, parseLog, retiredBy, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
-import { appAt, appPathState, canonicalEntry, copiesOf, describeEntry, isNonEmptyString, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
+import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, parseLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
+import { appAt, appPathState, canonicalEntry, containerSwappedAt, copiesOf, describeEntry, isNonEmptyString, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
 const USAGE = [
   "Usage:",
@@ -54,8 +54,9 @@ const VALUE_FLAGS = {
 };
 
 // [LAW:parse-dont-validate] The command line as a run reads it, or every reason it can't be read: an unknown flag,
-// a flag missing its value, or flags that contradict each other are refused, never read as a default. --location
-// and --version choose among --pkg's copies, so they need it; pkg, location and version are null when not given.
+// a flag missing its value or given twice, a --pkg that is no package name, or flags that contradict each other are
+// refused, never read as a default. --location and --version choose among --pkg's copies, so they need it; pkg,
+// location and version are null when not given.
 function parseArgs(argv) {
   const opts = {
     appDir: "resources/app",
@@ -72,9 +73,14 @@ function parseArgs(argv) {
     threshold: "0.8",
   };
   const errors = [];
+  const given = new Set();
+  let help = false;
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "-h" || arg === "--help") return { kind: "help" };
+    if (arg === "-h" || arg === "--help") {
+      help = true;
+      continue;
+    }
     if (arg === "--auto-near-match") {
       opts.autoNearMatch = true;
       continue;
@@ -83,8 +89,14 @@ function parseArgs(argv) {
     const value = argv[i + 1];
     if (key === undefined) errors.push(`unknown argument ${arg}`);
     else if (!isNonEmptyString(value) || value.startsWith("--")) errors.push(`${arg} needs a value`);
-    else opts[key] = argv[++i];
+    else if (given.has(arg)) errors.push(`${arg} is given twice`);
+    else {
+      given.add(arg);
+      opts[key] = argv[++i];
+    }
   }
+  if (help && errors.length === 0) return { kind: "help" };
+  if (opts.pkg !== null && !isPackageName(opts.pkg)) errors.push(`--pkg ${opts.pkg} is not a package name`);
   if ((opts.pkg !== null) === opts.autoNearMatch) errors.push("give exactly one of --pkg <name> and --auto-near-match");
   if (opts.pkg === null && (opts.location !== null || opts.version !== null)) errors.push("--location and --version choose among --pkg's copies, so they need --pkg");
   const threshold = Number(opts.threshold);
@@ -209,7 +221,7 @@ function loadCandidateSource(filePath) {
   if (!Array.isArray(parsed?.packages)) refuseSource("has no packages list");
   const byName = new Map();
   for (const item of parsed.packages) {
-    const itemOk = isNonEmptyString(item?.name)
+    const itemOk = isPackageName(item?.name)
       && (item.onDiskVersion === null || isNonEmptyString(item.onDiskVersion))
       && Array.isArray(item.candidates) && item.candidates.every((candidate) => isNonEmptyString(candidate?.version));
     if (!itemOk) refuseSource(`lists ${JSON.stringify(item)}, which is not { name, onDiskVersion (a version or null), candidates: [{ version }] }`);
@@ -475,8 +487,11 @@ function trialCopy(run, found) {
     recordAttempt(logState, copy, untrialedAttempt(outcome.reason, new Date().toISOString()), outPath);
     return;
   }
-  const listed = run.candidateSource.kind === "read" ? run.candidateSource.byName.get(name)?.get(copy.version) ?? [] : [];
-  const candidates = opts.version !== null ? [opts.version] : [...new Set([copy.version, ...listed])];
+  const listed = run.candidateSource.kind === "read" ? run.candidateSource.byName.get(name)?.get(copy.version) : undefined;
+  if (run.candidateSource.kind === "read" && listed === undefined && opts.version === null) {
+    console.log(`[${copyText(copy)}] the candidate source lists no candidates for ${name}@${copy.version}, so it is trialed against its own version only — rerun find-near-match-versions.mjs if the app changed`);
+  }
+  const candidates = opts.version !== null ? [opts.version] : [...new Set([copy.version, ...(listed ?? [])])];
   const swapDir = locationDir(app, location);
 
   for (const version of candidates) {
@@ -565,13 +580,12 @@ function trialCopy(run, found) {
 // Phase four: what the run leaves, and the exit status it implies. [LAW:one-source-of-truth] It is read from the tree
 // as it is now, judged against the log: a copy is replaced exactly when its location holds the link to the replacement
 // its resolved entry chose, and every path that loads any other copy of a requested package is named with what it
-// loads. A logged copy whose container's swap retired it is listed as retired, not unresolved.
-function summarize(run, { found, selected, skipped, interrupted, retiredThisRun }) {
+// loads. A copy that a container's swap took out of the app, logged or selected, is listed as retired, not unresolved.
+function summarize(run, { found, selected, skipped, interrupted }) {
   const { app, logState, outPath, projectRoot, names, appDir } = run;
-  const retired = new Map(retiredThisRun.map((copy) => [copy.location, copy]));
-  for (const [location, entry] of Object.entries(logState.copies)) {
-    if (retiredBy(logState, location) !== null) retired.set(location, { name: entry.name, location });
-  }
+  const retired = new Map([...Object.entries(logState.copies).map(([location, { name }]) => ({ name, location })), ...selected]
+    .filter(({ location }) => containerSwappedAt(app, location) !== null)
+    .map(({ name, location }) => [location, { name, location }]));
   const unresolved = Object.entries(logState.copies)
     .filter(([location, entry]) => entry.status !== "resolved" && !retired.has(location))
     .map(([location, entry]) => ({ copy: { name: entry.name, location }, reason: entry.attempts.at(-1).reason }))
@@ -593,7 +607,7 @@ function summarize(run, { found, selected, skipped, interrupted, retiredThisRun 
   // --location asks for one copy; otherwise every copy of the package, a path left loading nothing among them.
   const asked = (copy) => run.opts.location === null || selected.some(({ location }) => location === copy.location);
   const noCopy = names.filter((name) => !found.some((copy) => copy.name === name));
-  const { unlisted } = end.walk;
+  const { unlisted, verdict } = end.walk;
 
   console.log(`\nLog: ${path.relative(projectRoot, outPath)}`);
   console.log(`- copies tracked: ${Object.keys(logState.copies).length}`);
@@ -610,7 +624,8 @@ function summarize(run, { found, selected, skipped, interrupted, retiredThisRun 
   console.log("- directories it couldn't list:");
   for (const { path: dir, code } of unlisted) console.log(`  ${path.join(appDir, dir)} (${code})`);
 
-  return left.some(asked) || unlisted.length > 0 ? 3 : 0;
+  // A requested package with no copy, or a tree not read in full, is no package replaced.
+  return left.some(asked) || noCopy.length > 0 || verdict.kind !== "listed" ? 3 : 0;
 }
 
 function main() {
@@ -659,7 +674,7 @@ function main() {
   const names = opts.pkg !== null ? [opts.pkg] : [...candidateSource.byName.keys()].sort((a, b) => a.localeCompare(b));
   if (names.length === 0) refuse([`${candidateSourcePath} lists no packages, so --auto-near-match has nothing to trial`]);
 
-  const app = { ...appAt(appNodeModules), backupsDir: path.join(appNodeModules, ".original"), logPath: outPath };
+  const app = { ...appAt(appNodeModules, projectRoot), backupsDir: path.join(appNodeModules, ".original"), logPath: outPath };
   const run = {
     app,
     appDir,
@@ -685,18 +700,15 @@ function main() {
   const { selected, skipped, toTry } = selectCopies(run, found);
   for (const { copy, prior } of skipped) console.log(`[${copyText(copy)}] already resolved with ${prior.version}; skipped`);
 
-  // A copy nested in one this run replaced went aside with it, so it is named, not trialed.
-  const retiredThisRun = [];
+  // [LAW:no-ambient-temporal-coupling] Read off the tree as each copy's trial starts: a copy nested in one an earlier
+  // trial replaced went aside with it, so it is named, not trialed.
   for (const copy of toTry) {
-    if (retiredBy(logState, copy.location) !== null) {
-      retiredThisRun.push(copy);
-      console.log(`[${copyText(copy)}] replaced with its container: nothing in the app's node_modules loads it any more`);
-      continue;
-    }
-    trialCopy(run, copy);
+    const container = containerSwappedAt(app, copy.location);
+    if (container === null) trialCopy(run, copy);
+    else console.log(`[${copyText(copy)}] replaced with its container ${container}: nothing in the app's node_modules loads it any more`);
   }
 
-  process.exit(summarize(run, { found, selected, skipped, interrupted, retiredThisRun }));
+  process.exit(summarize(run, { found, selected, skipped, interrupted }));
 }
 
 main();
