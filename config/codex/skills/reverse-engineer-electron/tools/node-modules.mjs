@@ -69,7 +69,7 @@ export function listDir(dir) {
 
 // [LAW:types-are-the-program] Each state that is not a package, and the one field that says why, so a reason built
 // from a state names the cause it holds and a state with no entry here is an error, not a reason with a gap in it.
-const STATE_DETAIL = { absent: null, file: null, "no-manifest": null, dangling: "target", unreadable: "code", "unusable-manifest": "reason" };
+const STATE_DETAIL = { absent: null, dir: null, file: null, "no-manifest": null, dangling: "target", unreadable: "code", "unusable-manifest": "reason" };
 
 export function stateText(state) {
   if (!Object.hasOwn(STATE_DETAIL, state.kind)) throw new Error(`a ${state.kind} state has no reason text`);

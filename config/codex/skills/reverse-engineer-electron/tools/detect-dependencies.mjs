@@ -24,7 +24,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { appAt, compareLocations, copiesOf, entryNameOf, isLocation, isNonEmptyString, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
+import { appAt, compareLocations, copiesOf, entryNameOf, isLocation, isNonEmptyString, locationDir, pathState, stateText, topLevelLocation, walkStarts } from "./node-modules.mjs";
 import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
 import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
@@ -158,28 +158,58 @@ function loadFingerprints() {
   return filtered;
 }
 
-// [LAW:one-source-of-truth] Every package version the app's package-lock.json records, at the location it records it
-// at, named by the one location grammar node-modules.mjs owns: a key's package is the entry after its last
-// node_modules, or the name its entry records, for an alias. A lockfile v1's top-level dependencies are at their top-level locations. A lockfile that is there and
-// can't be read stops the run, never reads as one that records nothing. [LAW:no-silent-failure]
-function loadLockfilePackages(appDir) {
-  const packageLockPath = path.join(appDir, "package-lock.json");
-  if (!fs.existsSync(packageLockPath)) return [];
+const isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+
+// The app's package-lock.json as JSON with its two package sections, or the reason it can't be read as one.
+function readPackageLock(packageLockPath) {
+  const state = pathState(packageLockPath);
+  if (state.kind === "absent") return { kind: "absent" };
+  if (state.kind !== "file") return { kind: "unreadable", reason: `it is not a file (${stateText(state)})` };
   let packageLock;
   try {
     packageLock = JSON.parse(fs.readFileSync(packageLockPath, "utf8"));
   } catch (error) {
-    throw new Error(`${packageLockPath} is not a readable lockfile: ${error.message}`);
+    return { kind: "unreadable", reason: `it doesn't parse as JSON: ${error.message}` };
   }
+  if (!isPlainObject(packageLock)) return { kind: "unreadable", reason: "it is not a JSON object" };
+  const sections = { dependencies: packageLock.dependencies ?? {}, packages: packageLock.packages ?? {} };
+  const malformed = Object.keys(sections).filter((section) => !isPlainObject(sections[section]));
+  if (malformed.length > 0) return { kind: "unreadable", reason: `its ${malformed.join(" and ")} is not an object` };
+  return { kind: "read", sections };
+}
+
+// [LAW:one-source-of-truth] Every package version the app's package-lock.json records, at the location it records it
+// at, named by the one location grammar node-modules.mjs owns: a key's package is the entry after its last
+// node_modules, or the name its entry records, for an alias. A lockfile v1's top-level dependencies are at their
+// top-level locations, and a packages entry outranks one at the same location. [LAW:no-silent-failure] The verdict is
+// the one node_modules gets: absent, listed, or incomplete with the reason - a lockfile that can't be read, or a
+// top-level entry that records no version and isn't a link - so a lockfile that can't be read never reads as one that
+// records nothing.
+function loadLockfile(appDir) {
+  const packageLock = readPackageLock(path.join(appDir, "package-lock.json"));
+  if (packageLock.kind === "absent") return { verdict: { kind: "absent" }, packages: [] };
+  if (packageLock.kind === "unreadable") return { verdict: { kind: "incomplete", reason: packageLock.reason }, packages: [] };
+  const { dependencies, packages } = packageLock.sections;
   const recorded = [
-    ...Object.entries(packageLock.dependencies ?? {}).map(([name, meta]) => [topLevelLocation(name), meta?.version]),
+    ...Object.entries(dependencies).map(([name, meta]) => ({ location: topLevelLocation(name), meta, name: undefined })),
     // An alias's entry records the package it is as its name.
-    ...Object.entries(packageLock.packages ?? {}).map(([location, meta]) => [location, meta?.version, isNonEmptyString(meta?.name) ? meta.name : undefined]),
+    ...Object.entries(packages).map(([location, meta]) => ({ location, meta, name: isNonEmptyString(meta?.name) ? meta.name : undefined })),
   ];
   const byLocation = new Map(recorded
-    .filter(([location, version]) => isLocation(location) && isNonEmptyString(version))
-    .map(([location, version, name]) => [location, { name: name ?? entryNameOf(location), version, location }]));
-  return [...byLocation.values()].sort((left, right) => left.name.localeCompare(right.name) || compareLocations(left.location, right.location));
+    .filter(({ location }) => isLocation(location))
+    .map(({ location, meta, name }) => [location, { name: name ?? entryNameOf(location), version: meta?.version, link: meta?.link === true, location }]));
+  const entries = [...byLocation.values()];
+  const unversioned = entries
+    .filter(({ version, link, location }) => !isNonEmptyString(version) && !link && location === topLevelLocation(entryNameOf(location)))
+    .map(({ location }) => location)
+    .sort(compareLocations);
+  return {
+    verdict: unversioned.length === 0 ? { kind: "listed" } : { kind: "incomplete", reason: `${unversioned.join(", ")} records no version` },
+    packages: entries
+      .filter(({ version }) => isNonEmptyString(version))
+      .map(({ name, version, location }) => ({ name, version, location }))
+      .sort((left, right) => left.name.localeCompare(right.name) || compareLocations(left.location, right.location)),
+  };
 }
 
 function parseStaticBareSpecifiers(ast) {
@@ -717,7 +747,8 @@ function main() {
     .map(({ dir, outcome }) => [`${outcome.loads.name}@${outcome.loads.version}`, { name: outcome.loads.name, version: outcome.loads.version, dir }])).values()];
   // A copy on disk is a directory, however many locations reach it.
   const copiesOnDisk = new Set(loadingCopies.map(({ dir }) => fs.realpathSync(dir))).size;
-  const lockfilePackages = loadLockfilePackages(appDir);
+  const lockfile = loadLockfile(appDir);
+  const lockfilePackages = lockfile.packages;
   // [LAW:one-source-of-truth] A package's version is the one the app's own require loads: the copy of it its
   // top-level location reaches (a copy is named for the package it holds, so an alias's is another package's), else
   // the lockfile's.
@@ -755,9 +786,7 @@ function main() {
       nodeBuiltins: {},
     },
     onDisk: onDiskReport,
-    lockfile: {
-      packages: lockfilePackages,
-    },
+    lockfile,
     moduleIndex: {
       file: null,
       bundlesIndexed: 0,
@@ -782,6 +811,7 @@ function main() {
   for (const { location, reason } of onDiskReport.untrialable) report.warnings.push(`${location}: replace-dependency can't trial it (${reason})`);
   for (const { file, error } of shapeIndex.errors) report.parseErrors.push({ file: fileRel(projectRoot, file), error });
   if (onDisk.verdict.kind === "incomplete") report.warnings.push(`node_modules can't be fully read: ${onDisk.verdict.reason}`);
+  if (lockfile.verdict.kind === "incomplete") report.warnings.push(`${fileRel(projectRoot, path.join(appDir, "package-lock.json"))} can't be fully read: ${lockfile.verdict.reason}`);
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
   if (moduleIndexPath && fs.existsSync(moduleIndexPath)) {

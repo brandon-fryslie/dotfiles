@@ -1722,6 +1722,71 @@ test("detect-dependencies names a lockfile's nested entries by the package after
   ]);
 });
 
+// The report detect-dependencies writes for an app whose package-lock.json holds text (or, with link, is a symlink to it).
+function detectLockfile(text, { link = null } = {}) {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "resources", "app");
+  const lockPath = path.join(appDir, "package-lock.json");
+  fs.mkdirSync(appDir, { recursive: true });
+  if (link !== null) fs.symlinkSync(link, lockPath);
+  else writeText(lockPath, text);
+  return detect(tmp, appDir).report;
+}
+
+// The warning a report gives for a lockfile it can't fully read, naming the lockfile as the report names the app dir.
+const lockWarning = (report, reason) => `${path.join(report.appDir, "package-lock.json")} can't be fully read: ${reason}`;
+
+test("detect-dependencies reports a package-lock.json it can't read, and takes no version from it", () => {
+  const cases = [
+    { lock: { link: "missing-lock.json" }, reason: "it is not a file (dangling:missing-lock.json)" },
+    { lock: { text: '{"packages": {"node_modules/foo": ' }, reason: `it doesn't parse as JSON: ${invalidJsonMessage('{"packages": {"node_modules/foo": ')}` },
+    { lock: { text: "null" }, reason: "it is not a JSON object" },
+    { lock: { text: '[{"node_modules/foo": {"version": "1.0.0"}}]' }, reason: "it is not a JSON object" },
+    { lock: { text: '{"packages": "node_modules/foo", "dependencies": []}' }, reason: "its dependencies and packages is not an object" },
+  ];
+  for (const { lock, reason } of cases) {
+    const report = detectLockfile(lock.text, { link: lock.link ?? null });
+    assert.deepEqual(report.lockfile, { verdict: { kind: "incomplete", reason }, packages: [] }, JSON.stringify(lock));
+    assert.deepEqual(report.warnings, [lockWarning(report, reason)], JSON.stringify(lock));
+  }
+});
+
+test("detect-dependencies states that an app has no package-lock.json, without a warning", () => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "resources", "app");
+  fs.mkdirSync(appDir, { recursive: true });
+  const { report } = detect(tmp, appDir);
+  assert.deepEqual(report.lockfile, { verdict: { kind: "absent" }, packages: [] });
+  assert.deepEqual(report.warnings, []);
+});
+
+test("detect-dependencies reports a lockfile's top-level entries that record no version, except a link", () => {
+  const report = detectLockfile(JSON.stringify({ packages: {
+    "": {},
+    "node_modules/foo": {},
+    "node_modules/@scope/bar": { resolved: "https://example.test/bar.tgz" },
+    "node_modules/aliased": { name: "real" },
+    "node_modules/workspace": { link: true, resolved: "packages/workspace" },
+    "node_modules/baz": { version: "1.0.0" },
+    "node_modules/baz/node_modules/nested": {},
+  } }));
+  const reason = "node_modules/@scope/bar, node_modules/aliased, node_modules/foo records no version";
+  assert.deepEqual(report.lockfile, { verdict: { kind: "incomplete", reason }, packages: [{ name: "baz", version: "1.0.0", location: "node_modules/baz" }] });
+  assert.deepEqual(report.warnings, [lockWarning(report, reason)]);
+});
+
+test("detect-dependencies reads a lockfile's packages section over its v1 dependencies mirror", () => {
+  const report = detectLockfile(JSON.stringify({
+    dependencies: { foo: { version: "1.0.0" }, bar: { version: "3.0.0" } },
+    packages: { "": {}, "node_modules/foo": { version: "2.0.0" } },
+  }));
+  assert.deepEqual(report.lockfile, { verdict: { kind: "listed" }, packages: [
+    { name: "bar", version: "3.0.0", location: "node_modules/bar" },
+    { name: "foo", version: "2.0.0", location: "node_modules/foo" },
+  ] });
+  assert.deepEqual(report.warnings, []);
+});
+
 test("find-near-match-versions offers a released copy only releases, never a prerelease of its major.minor", () => {
   const tmp = mkTmpDir();
   const depsPath = path.join(tmp, "deps", "detected-dependencies.json");
