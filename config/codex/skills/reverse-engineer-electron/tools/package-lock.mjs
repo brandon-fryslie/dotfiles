@@ -2,9 +2,9 @@
 // package-lock.mjs — what an app's package-lock.json records: every package version at the location npm installed it
 // at, read the way npm reads each lockfile format, and a verdict on whether every entry could be read.
 
-import { isNonEmptyString, isPlainObject } from "./json-value.mjs";
-import { byNameThenLocation, compareLocations, entryNameOf, isLocation, isPackageName, mismatchText, nestedLocation, parseNpmSpec } from "./node-modules.mjs";
-import { readText } from "./path-state.mjs";
+import { isNonEmptyString, isPlainObject, JSON_SHAPE } from "./json-value.mjs";
+import { byNameThenLocation, compareLocations, entryNameOf, isLocation, isPackageName, nestedLocation, parseNpmSpec } from "./node-modules.mjs";
+import { readJson } from "./path-state.mjs";
 import { verdictOn } from "./verdict.mjs";
 
 const unread = (entry, reason) => ({ kind: "unread", entry, reason });
@@ -67,16 +67,9 @@ const FORMATS = new Map([
   [3, { section: "packages", entries: packagesEntries }],
 ]);
 
-// [LAW:parse-dont-validate] A package-lock.json's text as every entry its format records, or the reason it can't be
-// read as a lockfile at all.
-function parsePackageLock(text) {
-  let lock;
-  try {
-    lock = JSON.parse(text);
-  } catch (error) {
-    return { kind: "unusable", reason: `it doesn't parse as JSON: ${error.message}` };
-  }
-  if (!isPlainObject(lock)) return { kind: "unusable", reason: "it is not a JSON object" };
+// [LAW:parse-dont-validate] A package-lock.json's JSON object as every entry its format records, or the reason it can't
+// be read as a lockfile at all.
+function parsePackageLock(lock) {
   const format = FORMATS.get(lock.lockfileVersion);
   if (format === undefined) {
     return { kind: "unusable", reason: lock.lockfileVersion === undefined ? "it records no lockfileVersion" : `its lockfileVersion ${JSON.stringify(lock.lockfileVersion)} is not 1, 2 or 3` };
@@ -92,9 +85,9 @@ function parsePackageLock(text) {
 // location as unread. An unusable lockfile is bad input, not a bug in the tool reading it, and that tool's run still
 // writes its report, so the lockfile is reported and never read as one that records nothing.
 export function loadLockfile(file) {
-  const read = readText(file);
+  const read = readJson(file, JSON_SHAPE.object);
   if (read.kind === "absent") return { verdict: { kind: "absent" }, packages: [], unread: [] };
-  const lock = read.kind === "text" ? parsePackageLock(read.text) : { kind: "unusable", reason: `it ${mismatchText("file", read)}` };
+  const lock = read.kind === "json" ? parsePackageLock(read.value) : { kind: "unusable", reason: `it ${read.reason}` };
   if (lock.kind === "unusable") return { verdict: { kind: "incomplete", reason: lock.reason }, packages: [], unread: [] };
   const unreadEntries = lock.entries
     .filter(({ kind }) => kind === "unread")

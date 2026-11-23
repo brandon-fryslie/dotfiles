@@ -24,6 +24,8 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
+import { JSON_SHAPE } from "./json-value.mjs";
+import { inputAt, readJson } from "./path-state.mjs";
 import { appAt, byNameThenLocation, copiesOf, entryNameOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
 import { loadLockfile } from "./package-lock.mjs";
 import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
@@ -114,20 +116,23 @@ function readOnDisk(appDir, projectRoot) {
 
 // Each loaded package version's file and function shapes, in the BODY domain a bundle factory is looked up in, and every file
 // or directory that couldn't be listed, read, or parsed, so a package that contributed no shapes because it couldn't
-// be read is a parse error, not a package that matched nothing. [LAW:no-silent-failure]
+// be read is a parse error, not a package that matched nothing, and every JS-named link or special file it didn't
+// read. [LAW:no-silent-failure]
 // A shape maps to the package versions that ship it, each once, at the first of its files that has it.
 function indexPackageShapeHashes(packages) {
   const byHash = new Map();
   const errors = [];
+  const unread = [];
   for (const pkg of packages) {
-    let jsFiles;
+    let listed;
     try {
-      jsFiles = listJsFiles(pkg.dir);
+      listed = listJsFiles(pkg.dir);
     } catch (error) {
       errors.push(fileError(pkg.dir, error));
       continue;
     }
-    for (const jsFile of jsFiles) {
+    unread.push(...listed.unread);
+    for (const jsFile of listed.files) {
       const read = readJsFile(jsFile);
       if (read.kind !== "parsed") {
         errors.push(fileError(jsFile, read.error));
@@ -145,11 +150,13 @@ function indexPackageShapeHashes(packages) {
       }
     }
   }
-  return { byHash: new Map([...byHash].map(([hash, versions]) => [hash, [...versions.values()]])), errors };
+  return { byHash: new Map([...byHash].map(([hash, versions]) => [hash, [...versions.values()]])), errors, unread };
 }
 
 function loadFingerprints() {
-  const raw = JSON.parse(fs.readFileSync(FINGERPRINTS_PATH, "utf8"));
+  const read = readJson(FINGERPRINTS_PATH, JSON_SHAPE.object);
+  if (read.kind !== "json") throw new Error(`${FINGERPRINTS_PATH} ${read.reason}`);
+  const raw = read.value;
   const filtered = {};
   for (const [key, value] of Object.entries(raw)) {
     if (key.startsWith("//")) continue;
@@ -688,6 +695,11 @@ function main() {
   const buildDir = path.resolve(projectRoot, opts.buildDir);
   const outPath = path.resolve(projectRoot, opts.out);
   clearOutputs([outPath]);
+  const buildInput = inputAt(buildDir, "dir", "file");
+  if (buildInput.kind === "absent" || buildInput.kind === "unusable") {
+    console.error(`Error: --build-dir ${buildDir} ${buildInput.reason}`);
+    process.exit(2);
+  }
 
   const fingerprints = loadFingerprints();
   const onDisk = readOnDisk(appDir, projectRoot);
@@ -762,20 +774,21 @@ function main() {
 
   for (const { location, reason } of onDiskReport.untrialable) report.warnings.push(`${location}: replace-dependency can't trial it (${reason})`);
   for (const { file, error } of shapeIndex.errors) report.parseErrors.push({ file: fileRel(projectRoot, file), error });
+  report.warnings.push(...shapeIndex.unread);
   for (const [source, verdict] of [["node_modules", onDisk.verdict], [lockfile.file, lockfile.verdict]]) {
     if (verdict.kind === "incomplete") report.warnings.push(`${source} can't be fully read: ${verdict.reason}`);
   }
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
-  if (moduleIndexPath && fs.existsSync(moduleIndexPath)) {
-    try {
-      const moduleIndex = JSON.parse(fs.readFileSync(moduleIndexPath, "utf8"));
-      report.moduleIndex.file = fileRel(projectRoot, moduleIndexPath);
-      report.moduleIndex.bundlesIndexed = moduleIndex?.summary?.bundlesDetected || 0;
-      report.moduleIndex.modulesIndexed = moduleIndex?.summary?.modulesIndexed || 0;
-    } catch (error) {
-      report.warnings.push(`Could not parse module index (${fileRel(projectRoot, moduleIndexPath)}): ${String(error?.message || error)}`);
-    }
+  // A module index named on the command line is read, or the report says why it wasn't, absent included.
+  const moduleIndexRead = moduleIndexPath === null ? null : readJson(moduleIndexPath, JSON_SHAPE.object);
+  if (moduleIndexRead?.kind === "json") {
+    const moduleIndex = moduleIndexRead.value;
+    report.moduleIndex.file = fileRel(projectRoot, moduleIndexPath);
+    report.moduleIndex.bundlesIndexed = moduleIndex.summary?.bundlesDetected || 0;
+    report.moduleIndex.modulesIndexed = moduleIndex.summary?.modulesIndexed || 0;
+  } else if (moduleIndexRead !== null) {
+    report.warnings.push(`Could not read module index: ${fileRel(projectRoot, moduleIndexPath)} ${moduleIndexRead.reason}`);
   }
 
   const buildDirRel = report.buildDir.split(path.sep).join("/");
@@ -785,7 +798,8 @@ function main() {
     );
   }
 
-  const jsFiles = listJsFiles(buildDir);
+  const { files: jsFiles, unread } = listJsFiles(buildDir);
+  report.warnings.push(...unread);
   report.code.filesScanned = jsFiles.length;
 
   const classificationContext = {

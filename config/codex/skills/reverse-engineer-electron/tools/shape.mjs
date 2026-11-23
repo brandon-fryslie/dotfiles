@@ -33,6 +33,7 @@ import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { describeEntry } from './path-state.mjs';
 
 // [LAW:one-source-of-truth] The parse that feeds every tool. gate once compared its
 // own parse of a prepared file against prepare's parse of the same file under a
@@ -88,30 +89,46 @@ export function isSourceFile(filePath) {
 // silently shortened inventory is a gate that passes for the wrong reason.
 export const SOURCE_TREE_EXCLUDES = new Set(['node_modules', '.git']);
 
-// Sorted posix-relative paths of every regular file under rootDir, not descending
-// into a directory whose name is in excludes. Symlinks are neither walked nor listed.
+// [LAW:types-are-the-program] Every entry under rootDir as it is on disk, sorted by
+// its posix-relative path: { rel, kind: 'file' }, { rel, kind: 'link', target } with
+// the target the link names, or { rel, kind: 'special' } (a FIFO, a socket, a
+// device). Only directories are descended; a link is never followed, so no walk
+// leaves the tree or lists its files twice. An entry whose name is in excludes is
+// not part of the tree, whatever its kind.
 export function listFiles(rootDir, excludes) {
   const out = [];
   const stack = [rootDir];
   while (stack.length > 0) {
     const current = stack.pop();
     for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      if (excludes.has(entry.name)) continue;
       const abs = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (!excludes.has(entry.name)) stack.push(abs);
-      } else if (entry.isFile()) {
-        out.push(path.relative(rootDir, abs).split(path.sep).join('/'));
-      }
+      const rel = path.relative(rootDir, abs).split(path.sep).join('/');
+      if (entry.isDirectory()) stack.push(abs);
+      else if (entry.isSymbolicLink()) out.push({ rel, kind: 'link', target: fs.readlinkSync(abs) });
+      else out.push({ rel, kind: entry.isFile() ? 'file' : 'special' });
     }
   }
-  return out.sort();
+  return out.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
 }
 
-// The source inventory every tool that parses a tree starts from: the walk,
-// narrowed to the files parseFile can load.
+// [LAW:single-enforcer] The link rule, for every tool that parses a tree: it reads
+// a regular file with a source file's name, and nothing else. A source-named link
+// or special file is unread, and the tool names it (unreadText); it is never read
+// through, so code from outside the tree never enters what a tool reports as the
+// tree's. Returns the files' paths and the unread entries.
 export function listSourceFiles(rootDir, excludes) {
-  return listFiles(rootDir, excludes).filter(isSourceFile);
+  const named = listFiles(rootDir, excludes).filter(({ rel }) => isSourceFile(rel));
+  return { files: named.filter(({ kind }) => kind === 'file').map(({ rel }) => rel), unread: named.filter(({ kind }) => kind !== 'file') };
 }
+
+export const unreadText = (rootDir, entry) => `${path.join(rootDir, entry.rel)} is ${describeEntry(entry)}, so it is not read`;
+
+// [LAW:one-source-of-truth] The entries prepare writes and the prepare and
+// remove-deps gates check: every source-named entry, and every link whatever it
+// names, since a link is how the app loads the files it leads to, so prepare
+// writes it as itself and a gate compares its target.
+export const listCodeEntries = (rootDir, excludes) => listFiles(rootDir, excludes).filter((entry) => entry.kind === 'link' || isSourceFile(entry.rel));
 
 export function sourceKindOf(filePath) {
   const kind = SOURCE_KIND_BY_EXTENSION[path.extname(filePath)];

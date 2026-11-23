@@ -21,7 +21,8 @@ import path from "path";
 import process from "process";
 import { execFileSync } from "child_process";
 
-import { parseFile, listSourceFiles, SOURCE_TREE_EXCLUDES, traverse as traverseAst } from "./shape.mjs";
+import { parseFile, listSourceFiles, unreadText, SOURCE_TREE_EXCLUDES, traverse as traverseAst } from "./shape.mjs";
+import { inputAt, readText } from "./path-state.mjs";
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -590,14 +591,17 @@ function main() {
   const buildDir = path.resolve(opts.buildDir);
   const outPath = opts.out ? path.resolve(opts.out) : path.join(buildDir, "analysis.json");
 
-  if (!fs.existsSync(buildDir) || !fs.statSync(buildDir).isDirectory()) {
-    console.error(`Error: ${buildDir} is not a directory`);
+  const input = inputAt(buildDir, "dir");
+  if (input.kind !== "dir") {
+    console.error(`Error: ${buildDir} ${input.reason}`);
     process.exit(1);
   }
 
   console.log(`Analyzing: ${buildDir}`);
 
-  const sourceFiles = listSourceFiles(buildDir, SOURCE_TREE_EXCLUDES).map((rel) => path.join(buildDir, rel));
+  const { files, unread } = listSourceFiles(buildDir, SOURCE_TREE_EXCLUDES);
+  for (const entry of unread) console.warn(`  ${unreadText(buildDir, entry)}`);
+  const sourceFiles = files.map((rel) => path.join(buildDir, rel));
   console.log(`Found ${sourceFiles.length} JS files`);
 
   const fileResults = {};
@@ -608,13 +612,12 @@ function main() {
 
   for (const absPath of sourceFiles) {
     const relPath = path.relative(buildDir, absPath);
-    let code;
-    try {
-      code = fs.readFileSync(absPath, "utf8");
-    } catch (error) {
-      parseErrors.push({ file: relPath, error: String(error?.message || error) });
+    const read = readText(absPath);
+    if (read.kind !== "text") {
+      parseErrors.push({ file: relPath, error: read.reason });
       continue;
     }
+    const code = read.text;
 
     console.log(`  ${relPath} (${(code.length / 1024).toFixed(0)}KB)`);
 

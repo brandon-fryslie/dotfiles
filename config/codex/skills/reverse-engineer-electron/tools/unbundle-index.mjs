@@ -14,10 +14,10 @@
  * // and a parsed file indexes the modules of the bundle it is, none for a file that isn't one.
  */
 
-import fs from "fs";
 import path from "path";
 import process from "process";
 import { listJsFiles, readBuildFile } from "./bundle.mjs";
+import { inputAt } from "./path-state.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
 
 function parseArgs(argv) {
@@ -51,12 +51,14 @@ function main() {
   const graphPath = path.resolve(projectRoot, opts.graphOut);
   clearOutputs([outPath, graphPath]);
 
-  if (!fs.existsSync(buildDir)) {
-    console.error(`Build directory not found: ${buildDir}`);
+  const buildInput = inputAt(buildDir, "dir", "file");
+  if (buildInput.kind === "absent" || buildInput.kind === "unusable") {
+    console.error(`Error: --build-dir ${buildDir} ${buildInput.reason}`);
     process.exit(2);
   }
 
-  const jsFiles = listJsFiles(buildDir);
+  const { files: jsFiles, unread } = listJsFiles(buildDir);
+  for (const line of unread) console.warn(line);
   const bundles = [];
   const graphNodes = [];
   const graphEdges = [];

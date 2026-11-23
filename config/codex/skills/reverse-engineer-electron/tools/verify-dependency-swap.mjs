@@ -15,7 +15,9 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { JSON_SHAPE } from "./json-value.mjs";
+import { inputAt, readJson, readText } from "./path-state.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listSourceFiles, unreadText, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -67,12 +69,12 @@ function multisetIntersectionCount(left, right) {
 
 const SCRIPT_EXTENSIONS = new Set([".js", ".mjs", ".cjs"]);
 
+// A package's script files by shape.mjs's link rule: the files it reads, and the line naming each script-named link or
+// special file it doesn't.
 function listJsFiles(rootDir) {
-  return listFiles(rootDir, SOURCE_TREE_EXCLUDES).filter((rel) => SCRIPT_EXTENSIONS.has(path.extname(rel)));
-}
-
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const isScript = (rel) => SCRIPT_EXTENSIONS.has(path.extname(rel));
+  const { files, unread } = listSourceFiles(rootDir, SOURCE_TREE_EXCLUDES);
+  return { files: files.filter(isScript), unread: unread.filter(({ rel }) => isScript(rel)).map((entry) => unreadText(rootDir, entry)) };
 }
 
 function collectEntrypoints(pkgJson) {
@@ -161,6 +163,8 @@ function collectRelativeSpecifiers(ast) {
   return Array.from(new Set(out));
 }
 
+// The files reachable from a package's entry points, or, when none can be reached, every script file it ships, with
+// the line naming each it can't read.
 function buildReachableFileSet(pkgRoot, pkgJson) {
   const entries = collectEntrypoints(pkgJson);
   const queue = [];
@@ -200,15 +204,20 @@ function buildReachableFileSet(pkgRoot, pkgJson) {
     }
   }
 
-  if (visited.size === 0) {
-    for (const rel of listJsFiles(pkgRoot)) visited.add(rel);
-  }
+  const listed = visited.size === 0 ? listJsFiles(pkgRoot) : { files: [], unread: [] };
+  for (const rel of listed.files) visited.add(rel);
 
-  return Array.from(visited).sort();
+  return { files: Array.from(visited).sort(), unread: listed.unread };
 }
 
-function fileStructuralInfo(absPath) {
-  const code = fs.readFileSync(absPath, "utf8");
+// A file's text, or an error naming it and why it can't be read: a side that can't be read is a parse error, so it
+// never counts as covered.
+function textOf(file, read) {
+  if (read.kind !== "text") throw new Error(`${file} ${read.reason}`);
+  return read.text;
+}
+
+function fileStructuralInfo(absPath, code) {
   const ast = parseFile(code, absPath);
   const programHash = tokensToHash(functionShapeTokens(ast.program));
 
@@ -266,40 +275,39 @@ function main() {
       missingFiles: [],
       fileProgramMismatch: [],
       parseErrors: [],
+      unreadFiles: [],
     },
     pass: false,
   };
 
-  if (!fs.existsSync(beforeDir) || !fs.existsSync(afterDir)) {
-    artifact.mismatches.package.push("before/after directory missing");
+  // Each side's directory and package.json, or the line naming what is missing or can't be used.
+  const dirProblems = [beforeDir, afterDir]
+    .map((dir) => ({ dir, input: inputAt(dir, "dir") }))
+    .filter(({ input }) => input.kind !== "dir")
+    .map(({ dir, input }) => `${dir} ${input.reason}`);
+  const manifests = dirProblems.length > 0 ? [] : [beforeDir, afterDir].map((dir) => ({ file: path.join(dir, "package.json"), read: readJson(path.join(dir, "package.json"), JSON_SHAPE.object) }));
+  const problems = [...dirProblems, ...manifests.filter(({ read }) => read.kind !== "json").map(({ file, read }) => `${file} ${read.reason}`)];
+  if (problems.length > 0) {
+    artifact.mismatches.package.push(...problems);
     writeJson(outPath, artifact);
     process.exit(1);
   }
 
-  const beforePkgJsonPath = path.join(beforeDir, "package.json");
-  const afterPkgJsonPath = path.join(afterDir, "package.json");
+  const [beforePkg, afterPkg] = manifests.map(({ read }) => read.value);
 
-  if (!fs.existsSync(beforePkgJsonPath) || !fs.existsSync(afterPkgJsonPath)) {
-    artifact.mismatches.package.push("package.json missing in before/after dependency directory");
-    writeJson(outPath, artifact);
-    process.exit(1);
-  }
-
-  const beforePkg = readJson(beforePkgJsonPath);
-  const afterPkg = readJson(afterPkgJsonPath);
-
-  artifact.checks.packageNameMatch = beforePkg?.name === opts.pkg && afterPkg?.name === opts.pkg;
+  artifact.checks.packageNameMatch = beforePkg.name === opts.pkg && afterPkg.name === opts.pkg;
   if (!artifact.checks.packageNameMatch) {
-    artifact.mismatches.package.push(`package name mismatch: before=${beforePkg?.name || "?"} after=${afterPkg?.name || "?"}`);
+    artifact.mismatches.package.push(`package name mismatch: before=${beforePkg.name || "?"} after=${afterPkg.name || "?"}`);
   }
 
-  const expectedVersion = opts.expectedVersion || beforePkg?.version || "";
-  artifact.checks.packageVersionMatch = afterPkg?.version === expectedVersion;
+  const expectedVersion = opts.expectedVersion || beforePkg.version || "";
+  artifact.checks.packageVersionMatch = afterPkg.version === expectedVersion;
   if (!artifact.checks.packageVersionMatch) {
-    artifact.mismatches.package.push(`version mismatch: expected=${expectedVersion || "?"} actual=${afterPkg?.version || "?"}`);
+    artifact.mismatches.package.push(`version mismatch: expected=${expectedVersion || "?"} actual=${afterPkg.version || "?"}`);
   }
 
-  const reachableFiles = buildReachableFileSet(beforeDir, beforePkg);
+  const { files: reachableFiles, unread } = buildReachableFileSet(beforeDir, beforePkg);
+  artifact.mismatches.unreadFiles.push(...unread);
   artifact.metrics.reachableFiles = reachableFiles.length;
 
   let exactProgramHashMatches = 0;
@@ -310,7 +318,8 @@ function main() {
   for (const rel of reachableFiles) {
     const beforeFile = path.join(beforeDir, rel);
     const afterFile = path.join(afterDir, rel);
-    if (!fs.existsSync(afterFile)) {
+    const afterRead = readText(afterFile);
+    if (afterRead.kind === "absent") {
       artifact.mismatches.missingFiles.push(rel);
       continue;
     }
@@ -318,8 +327,8 @@ function main() {
     presentReachableFiles += 1;
 
     try {
-      const beforeInfo = fileStructuralInfo(beforeFile);
-      const afterInfo = fileStructuralInfo(afterFile);
+      const beforeInfo = fileStructuralInfo(beforeFile, textOf(beforeFile, readText(beforeFile)));
+      const afterInfo = fileStructuralInfo(afterFile, textOf(afterFile, afterRead));
 
       if (beforeInfo.programHash === afterInfo.programHash) exactProgramHashMatches += 1;
 
@@ -352,7 +361,8 @@ function main() {
   artifact.metrics.combinedCoverage = Number(combinedCoverage.toFixed(6));
   artifact.checks.structuralCoveragePass = combinedCoverage >= opts.threshold;
 
-  artifact.pass = Object.values(artifact.checks).every(Boolean) && artifact.mismatches.parseErrors.length === 0;
+  // [LAW:no-silent-failure] A file it could not read was not verified, so the swap does not pass over it.
+  artifact.pass = Object.values(artifact.checks).every(Boolean) && artifact.mismatches.parseErrors.length === 0 && artifact.mismatches.unreadFiles.length === 0;
 
   writeJson(outPath, artifact);
 
