@@ -33,6 +33,7 @@ import {
   parseMinified,
   parseFile,
   loaderFor,
+  sourceKindOf,
   minifySource,
   listSourceFiles,
 } from './shape.mjs';
@@ -227,7 +228,7 @@ function extractFingerprints(files, shouldMinify, includeLiterals) {
     if (shouldMinify) {
       const m = minifyCode(file.content, file.path);
       if (m == null) { minifyFailures++; continue; }
-      ast = parseMinified(m);
+      ast = parseMinified(m, sourceKindOf(file.path).goal);
     } else {
       ast = parseFile(file.content, file.path);
     }

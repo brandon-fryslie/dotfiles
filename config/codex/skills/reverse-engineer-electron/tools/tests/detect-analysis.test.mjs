@@ -30,8 +30,8 @@ function project(buildFiles) {
   const out = path.join(root, "deps", "detected-dependencies.json");
   const run = (buildDir = path.join(root, "build")) =>
     spawnSync(process.execPath, [path.join(TOOLS_DIR, "detect-dependencies.mjs"), "--app-dir", path.join(root, "app"), "--build-dir", buildDir, "--out", out], { cwd: root, encoding: "utf8" });
-  const unbundle = () =>
-    spawnSync(process.execPath, [path.join(TOOLS_DIR, "unbundle-index.mjs"), "--build-dir", path.join(root, "build"), "--out", "deps/module-index.json", "--graph-out", "deps/module-graph.json"], { cwd: root, encoding: "utf8" });
+  const unbundle = (graphOut = "deps/module-graph.json") =>
+    spawnSync(process.execPath, [path.join(TOOLS_DIR, "unbundle-index.mjs"), "--build-dir", path.join(root, "build"), "--out", "deps/module-index.json", "--graph-out", graphOut], { cwd: root, encoding: "utf8" });
   return { root, out, run, unbundle };
 }
 
@@ -211,15 +211,24 @@ test("an unbundle-index run that fails leaves neither of its artifacts from the 
   assert.deepEqual(["module-index.json", "module-graph.json"].filter((file) => fs.existsSync(path.join(root, "deps", file))), []);
 });
 
-test("an unbundle-index run whose graph can't be written leaves no index either", () => {
+test("an unbundle-index run whose graph can't be written leaves no index either, nor a partial one", () => {
   const { root, unbundle } = project({ "main.js": webpack4([VEND]) });
-  const deps = path.join(root, "deps");
-  fs.mkdirSync(deps);
-  fs.chmodSync(deps, 0o555);
+  const graphDir = path.join(root, "graph");
+  fs.mkdirSync(graphDir);
+  fs.chmodSync(graphDir, 0o555);
   try {
-    assert.notEqual(unbundle().status, 0);
-    assert.deepEqual(fs.readdirSync(deps), []);
+    assert.notEqual(unbundle("graph/module-graph.json").status, 0);
+    assert.deepEqual([fs.readdirSync(path.join(root, "deps")), fs.readdirSync(graphDir)], [[], []]);
   } finally {
-    fs.chmodSync(deps, 0o755);
+    fs.chmodSync(graphDir, 0o755);
   }
+});
+
+test("a file minified and read back keeps its goal: sloppy code an engine runs as a script is compared, not rejected", () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "compare-")));
+  after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const sloppy = "function pick(a, a) { return a + arguments.length * 2 - 1; }\nmodule.exports = pick;\n";
+  for (const side of ["a", "b"]) writeText(path.join(dir, side, "pick.cjs"), sloppy);
+  const run = spawnSync(process.execPath, [path.join(TOOLS_DIR, "compare.mjs"), path.join(dir, "a"), path.join(dir, "b")], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
 });

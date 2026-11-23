@@ -61,7 +61,7 @@ function minifyCode(code) {
 // --- Function extraction ---
 
 function extractFunctions(code) {
-  const ast = parseMinified(code);
+  const ast = parseMinified(code, 'undeclared');
 
   const functions = [];
   walkWithParent(ast, null, (node, parent) => {

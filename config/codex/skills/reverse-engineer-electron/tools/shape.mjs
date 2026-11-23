@@ -162,7 +162,7 @@ export function parseFile(code, filePath) {
 // [LAW:one-source-of-truth] The esbuild side of "both readers see one file":
 // the one transform whose output normalizedFunctionTokens and the whole-file
 // fingerprints read back. Output is plain JS for every loader (types stripped,
-// JSX lowered, decorators passed through) in ESM format, so it reads back as parseMinified does.
+// JSX lowered, decorators passed through), so it reads back as parseMinified does.
 export function minifySource(code, loader) {
   return transformSync(code, {
     loader: loaderSpec(loader).esbuild,
@@ -171,12 +171,12 @@ export function minifySource(code, loader) {
     minifySyntax: true,
     minifyIdentifiers: false,
     target: 'esnext',
-    format: 'esm',
   }).code;
 }
 
-// minifySource's output, parsed: plain JS, and a module, as esbuild's format makes it.
-export const parseMinified = (minified) => parseSource(minified, { loader: 'js', goal: 'module' });
+// minifySource's output, parsed: plain JS, under the goal of the code it minified. The transform converts no module
+// format, so its output has its input's module syntax and its input's goal: a CommonJS file stays a sloppy script.
+export const parseMinified = (minified, goal) => parseSource(minified, { loader: 'js', goal });
 
 const SKIP_KEYS = new Set([
   'type', 'start', 'end', 'loc', 'leadingComments',
@@ -390,12 +390,12 @@ export function normalizedFunctionTokens(node, code, loader) {
   const wrapper = wrapperFor(node, code.slice(node.start, node.end));
   const wrapped = `export default class extends Object { ${fields} ${wrapper.member} }`;
   const minified = minifySource(wrapped, loader);
-  const ast = parseMinified(minified);
+  const ast = parseMinified(minified, 'module');
 
   // The wrapper is ours, so the slice's position in it is known: the one
-  // function-bearing member of the sole top-level class (esbuild names the
-  // class and exports it in a separate statement), then the form's own path.
-  const cls = ast.program.body.find((n) => n.type === 'ClassDeclaration');
+  // function-bearing member of the class the module exports by default, then
+  // the form's own path.
+  const cls = ast.program.body.find((n) => n.type === 'ExportDefaultDeclaration')?.declaration;
   const member = cls?.body.body.find(isFunctionNode);
   const fnNode = member && wrapper.slice(member);
   if (!fnNode || !isFunctionNode(fnNode)) {
