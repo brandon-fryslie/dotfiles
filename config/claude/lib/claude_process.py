@@ -146,13 +146,27 @@ class Launch:
 
 def launch(process: Process) -> Launch:
     """`process`'s argv split into the program that ran Claude and the words Claude was given: after argv[0], or
-    for an interpreter, after the script, which is its first word that is not one of the interpreter's options."""
-    program = 1
-    if Path(process.path).name in SCRIPT_RUNNERS:
-        while program < len(process.argv) and process.argv[program].startswith("-"):
-            program += 1
-        program += 1
-    return Launch(process.argv[:program], process.argv[program:])
+    for an interpreter, after the script it runs. An interpreter given its own options first is refused: which of
+    its words is the script depends on that interpreter's grammar, which this does not read."""
+    if Path(process.path).name not in SCRIPT_RUNNERS:
+        return Launch(process.argv[:1], process.argv[1:])
+    if len(process.argv) < 2 or process.argv[1].startswith("-"):
+        raise Unresumable(f"{shlex.join(process.argv[:2])}: the script {process.argv[0]} runs is not its first word")
+    return Launch(process.argv[:2], process.argv[2:])
+
+
+# Where Claude keeps its sessions, transcripts and agent list; unset means Claude's default (~/.claude).
+CONFIG_DIR = "CLAUDE_CONFIG_DIR"
+
+
+def config_dir(process: Process) -> str | None:
+    """The config dir `process` keeps its sessions in, None for Claude's default. A session is found only there."""
+    return process.environment.get(CONFIG_DIR)
+
+
+def in_config_dir(command: list[str], directory: str | None) -> list[str]:
+    """`command` run with Claude's config dir `directory`, so a resume finds a session kept outside the default."""
+    return command if directory is None else ["env", f"{CONFIG_DIR}={directory}", *command]
 
 
 def given_options(words: list[str], table: dict[str, Option]) -> list[tuple[Option, list[str]]]:

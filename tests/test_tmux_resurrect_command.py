@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,7 +24,7 @@ spec = importlib.util.spec_from_file_location("resurrect_command", SCRIPT)
 strategy = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = strategy  # dataclasses resolve its string annotations there
 spec.loader.exec_module(strategy)
-Process, Session, Record = strategy.Process, strategy.Session, strategy.Record
+Process, Session, Record, Listed = strategy.Process, strategy.Session, strategy.Record, strategy.Listed
 from claude_process import options  # noqa: E402  the strategy put its library on sys.path
 
 CONF = Path(__file__).resolve().parent.parent / "config/tmux/tmux.conf"
@@ -42,8 +43,8 @@ def record(leader, program, sessions=()):
     return strategy.recorded(leader, program, list(sessions), GRAMMAR)
 
 
-def claude(id, pid, *words):
-    return Session(id, pid, Process("/v/2.1.299", ["claude", *words], {}))
+def claude(id, pid, *words, config_dir=None):
+    return Session(Listed(id, config_dir), pid, Process("/v/2.1.299", ["claude", *words], {}))
 
 
 def restored_by_resurrect(command):
@@ -60,6 +61,11 @@ class Recorded(unittest.TestCase):
     def test_a_program_that_is_a_claude_session_is_resumed_with_its_settings(self):
         session = claude("S", 7, "-w", "feat", "--model", "opus", "fix the bug")
         self.assertEqual(record(7, session.process, [session]), Record(["claude", "--model", "opus", "--resume", "S"], session))
+
+    def test_a_session_kept_outside_the_default_config_dir_is_resumed_there(self):
+        session = claude("S", 7, "--model", "opus", config_dir="/Users/u/.hands/brain")
+        self.assertEqual(record(7, session.process, [session]).argv,
+                         ["env", "CLAUDE_CONFIG_DIR=/Users/u/.hands/brain", "claude", "--model", "opus", "--resume", "S"])
 
     def test_the_session_in_the_foreground_is_resumed_not_another_launched_the_same_way(self):
         suspended, live = claude("SUSPENDED", 100), claude("LIVE", 200)
@@ -109,8 +115,9 @@ class AgainstTmux(unittest.TestCase):
         self.addCleanup(bin_dir.cleanup)
         self.agents = Path(bin_dir.name) / "agents.json"
         fake = Path(bin_dir.name) / "claude"
-        fake.write_text(f'#!/bin/sh\ncase "$1" in\n  agents) cat {self.agents} ;;\n  --help) cat <<"EOF"\n{HELP}EOF\n  ;;\n'
-                        '  *) exit 2 ;;\nesac\n')
+        # It lists the agents of the config dir it runs with, as Claude does: each dir keeps its own list.
+        fake.write_text(f'#!/bin/sh\ncase "$1" in\n  agents) cat "${{CLAUDE_CONFIG_DIR:-{bin_dir.name}}}/agents.json" ;;\n'
+                        f'  --help) cat <<"EOF"\n{HELP}EOF\n  ;;\n  *) exit 2 ;;\nesac\n')
         fake.chmod(0o755)
         self.environment = {**os.environ, "PATH": f"{bin_dir.name}:{os.environ['PATH']}",
                             "TMUX": self.tmux("display", "-p", "#{socket_path},0,0").strip()}
@@ -134,8 +141,8 @@ class AgainstTmux(unittest.TestCase):
         except (ValueError, strategy.Unreadable):
             return None
 
-    def saved(self, panes, sessions):
-        self.agents.write_text(json.dumps([{"kind": "background", "sessionId": "B"}] + [
+    def saved(self, panes, sessions, listed_in=None):
+        (listed_in or self.agents).write_text(json.dumps([{"kind": "background", "sessionId": "B"}] + [
             {"kind": "interactive", "pid": pid, "sessionId": session} for pid, session in sessions]))
         return subprocess.run([str(SCRIPT), *map(str, panes)], capture_output=True, text=True, env=self.environment)
 
@@ -175,6 +182,21 @@ class AgainstTmux(unittest.TestCase):
         self.assertEqual((saved.returncode, saved.stdout), (0, "claude --resume LIVE\n"))
         self.assertEqual(saved.stderr, f"tmux-resurrect-command: pane {shell}: a restore does not bring back Claude session"
                                        " SUSPENDED\n")
+
+    def test_a_session_listed_only_in_its_own_config_dir_is_resumed_there(self):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, directory)
+        (self.agents.parent / "agents.json").write_text("[]")
+        # Built here, because macOS reads out no environment for its own system binaries (/bin/sh), and Claude
+        # is not one; homebrew's python re-execs itself and loses the name it was run as.
+        waits = directory / "waits"
+        subprocess.run(["cc", "-x", "c", "-o", str(waits), "-"], input="#include <unistd.h>\nint main(void) { pause(); }\n",
+                       text=True, check=True)
+        pane = self.pane(f"export CLAUDE_CONFIG_DIR={directory}; exec -a claude {waits} --model opus",
+                         ["claude", "--model", "opus"])
+        saved = self.saved([pane], [(pane, "S")], listed_in=directory / "agents.json")
+        self.assertEqual((saved.returncode, saved.stdout, saved.stderr),
+                         (0, f"env CLAUDE_CONFIG_DIR={directory} claude --model opus --resume S\n", ""))
 
     def test_a_pane_that_cannot_be_read_is_reported_and_the_others_still_saved(self):
         program = self.pane("sleep 300; :", ["zsh", "-c", "sleep 300; :"])

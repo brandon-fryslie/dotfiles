@@ -41,8 +41,9 @@ migrate_apply() {
     # inside this body, so every step must propagate failure explicitly.
     local changes unpushed
     changes=$(git -C "$PLUGIN" status --porcelain) || return 1
-    # Every local branch, not just HEAD: `checkout -B master` below moves master wherever HEAD is.
-    unpushed=$(git -C "$PLUGIN" rev-list --branches --not --remotes) || return 1
+    # Every local branch, and HEAD when it is detached: `checkout -B master` below moves master
+    # and HEAD to the fork, so a commit only they reach would be left behind.
+    unpushed=$(git -C "$PLUGIN" rev-list HEAD --branches --not --remotes) || return 1
     if [[ -n "$changes" || -n "$unpushed" ]]; then
         echo "[migrate] $PLUGIN has uncommitted changes or a branch with commits on no remote; push or discard them, then rerun" >&2
         return 1

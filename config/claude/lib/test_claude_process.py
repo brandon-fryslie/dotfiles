@@ -11,7 +11,8 @@ import subprocess
 import sys
 import unittest
 
-from claude_process import (KINDS, Arity, Launch, Option, Process, Unreadable, Unresumable, claude_options, launch,
+from claude_process import (KINDS, Arity, Launch, Option, Process, Unreadable, Unresumable, claude_options, config_dir,
+                            in_config_dir, launch,
                             options, resumed, shell_line, started_with)
 
 # Option lines in the shape `claude --help` prints them, continuation lines included.
@@ -90,13 +91,21 @@ class Resumed(unittest.TestCase):
         started = launch(Process("/opt/homebrew/bin/node", ["node", "/opt/x/cli.js", "--model", "opus", "hi"], {}))
         self.assertEqual(resumed(started, "S", TABLE), ["node", "/opt/x/cli.js", "--model", "opus", "--resume", "S"])
 
-    def test_an_interpreter_option_before_the_script_stays_with_the_program(self):
-        started = launch(Process("/opt/homebrew/bin/node", ["node", "--inspect", "/opt/x/cli.js", "--model", "opus"], {}))
-        self.assertEqual(started, Launch(["node", "--inspect", "/opt/x/cli.js"], ["--model", "opus"]))
+    def test_an_interpreter_given_its_own_options_first_is_refused(self):
+        with self.assertRaises(Unresumable):
+            launch(Process("/opt/homebrew/bin/node", ["node", "--max-old-space-size", "8192", "/opt/x/cli.js"], {}))
 
     def test_claude_as_its_own_executable_is_its_first_word(self):
         started = launch(Process("/v/2.1.299", ["claude", "--model", "opus"], {}))
         self.assertEqual(started, Launch(["claude"], ["--model", "opus"]))
+
+
+class ConfigDir(unittest.TestCase):
+    def test_a_session_outside_the_default_config_dir_is_resumed_naming_it(self):
+        process = Process("/v", ["claude"], {"CLAUDE_CONFIG_DIR": "/alt", "HOME": "/h"})
+        self.assertEqual(in_config_dir(["claude", "--resume", "S"], config_dir(process)),
+                         ["env", "CLAUDE_CONFIG_DIR=/alt", "claude", "--resume", "S"])
+        self.assertEqual(in_config_dir(["claude"], config_dir(Process("/v", ["claude"], {}))), ["claude"])
 
 
 class Kinds(unittest.TestCase):
