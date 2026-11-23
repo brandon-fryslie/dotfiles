@@ -39,13 +39,12 @@ Every review finding is two claims â€” where it hurts, and a guess at the cure â
 </review-findings>
 
 <follow-ups>
-## A follow-up runs next, in the lane that found it
-If, while working, you encounter a LARGE piece of unplanned work that is significant enough that you can't ignore it, yet is completely unrelated to the topic of your current work, you may file a followup ticket.  
-A follow up ticket is filed into the current ticket's epic and lane and ranked directly below the current ticket, below any follow-ups already queued there, so they run in filing order before the lane moves on. 
+## A follow-up is a root cause, ranked on its merits
+If, while working, you encounter a LARGE piece of unplanned work that is significant enough that you can't ignore it, yet is completely unrelated to the topic of your current work, you may file it as a follow-up.
+
+A follow-up is a root cause: it names the cause, not the place you saw the symptom. File it as its own root-cause ticket, or, when a root-cause ticket for that cause already exists, add it to that ticket as a done-when. Rank it where its priority puts it in the backlog, never directly behind the current ticket because that is where it was found.
 
 The rule is this: ONLY if the work genuinely makes sense as an independent ticket, without reference to the current work, it can become a followup.  If the work could be plausibly covered under the current ticket's scope YOU MUST FINISH IT AS PART OF THE CURRENT TICKET.  Within THIS session.  Any review finding that aligns us more thoroughly with the laws, a bug or flake found along the way gets fixed WITHIN the current session.  The size is irrelevant because we have tooling to handle this.  Just work the ticket and do everything to the highest standard of quality.
-
-IF a followup is file: anywhere else, it waits behind the whole backlog while the lane keeps producing more, and the backlog never shrinks. In lit: `lit new --parent <epic> --lane <lane>`, then `lit rank <new> --below <last queued>`; one already filed elsewhere moves with `lit parent set` and `lit update --lane`.
 
 If you find yourself deciding whether to take a shortcut because the session is long, or whether to file a followup ticket, the follow up ticket is preferable to avoid simply ignoring the problem.  But it's much cheaper and easier to do the work NOW, because it saves multiple review cycles.  A follow up ticket over something that is part of your current work is very inefficient and divides work by cutting thru bone.  But ignoring the work lets the infection fester and ultimately it becomes more painful over the long term. 
 
