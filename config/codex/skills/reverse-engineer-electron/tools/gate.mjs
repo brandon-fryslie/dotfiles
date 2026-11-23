@@ -435,7 +435,7 @@ function runRemoveDepsGate(opts) {
       jsMissing: 0,
       jsExtra: 0,
       jsHashMismatches: 0,
-      packagesTracked: 0,
+      copiesTracked: 0,
       attemptsTracked: 0,
       missingVerificationArtifacts: 0,
     },
@@ -486,36 +486,36 @@ function runRemoveDepsGate(opts) {
       missingFiles.length === 0 && extraFiles.length === 0 && hashMismatches.length === 0;
   }
 
-  // [LAW:single-enforcer] The log's shape — one pass per resolved package, none under unresolved, no applied swap
+  // [LAW:single-enforcer] The log's shape — one pass per resolved copy, none under unresolved, no applied swap
   // left un-rolled-back — is replacement-log.mjs's to enforce; the gate adds only what needs disk.
   const replacementLogErrors = artifact.mismatches.replacementLogErrors;
   const missingVerificationArtifacts = [];
   if (fs.existsSync(replacementsPath)) {
     const parsed = parseLog(fs.readFileSync(replacementsPath, "utf8"), replacementsPath);
     if (!parsed.ok) replacementLogErrors.push(...parsed.errors);
-    const entries = parsed.ok ? Object.entries(parsed.log.packages) : [];
+    const entries = parsed.ok ? Object.entries(parsed.log.copies) : [];
     // A rejected log's size is unknown, not zero.
-    artifact.metrics.packagesTracked = parsed.ok ? entries.length : null;
+    artifact.metrics.copiesTracked = parsed.ok ? entries.length : null;
     artifact.metrics.attemptsTracked = parsed.ok ? entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0) : null;
 
     // An in-flight entry is a swap whose original may still be set aside: disk and log disagree until it is recovered.
-    for (const [pkgName, entry] of entries.filter(([, entry]) => entry.status === "in-flight")) {
-      replacementLogErrors.push({ type: "swap-in-flight", package: pkgName, attemptVersion: entry.inFlight.attemptedVersion });
+    for (const [location, entry] of entries.filter(([, entry]) => entry.status === "in-flight")) {
+      replacementLogErrors.push({ type: "swap-in-flight", location, package: entry.name, attemptVersion: entry.inFlight.attemptedVersion });
     }
 
-    for (const [pkgName, entry] of entries.filter(([, entry]) => entry.status === "resolved")) {
+    for (const [location, entry] of entries.filter(([, entry]) => entry.status === "resolved")) {
       const verificationPath = fromLogPath(replacementsPath, entry.pass.verification.path);
       if (!fs.existsSync(verificationPath)) {
-        missingVerificationArtifacts.push({ package: pkgName, attemptVersion: entry.chosenVersion, path: verificationPath });
+        missingVerificationArtifacts.push({ location, package: entry.name, attemptVersion: entry.chosenVersion, path: verificationPath });
         continue;
       }
       try {
         const verification = JSON.parse(fs.readFileSync(verificationPath, "utf8"));
         if (!verification?.pass) {
-          replacementLogErrors.push({ type: "verification-failed", package: pkgName, path: verificationPath });
+          replacementLogErrors.push({ type: "verification-failed", location, package: entry.name, path: verificationPath });
         }
       } catch (error) {
-        replacementLogErrors.push({ type: "verification-read", package: pkgName, path: verificationPath, error: String(error?.message || error) });
+        replacementLogErrors.push({ type: "verification-read", location, package: entry.name, path: verificationPath, error: String(error?.message || error) });
       }
     }
   }

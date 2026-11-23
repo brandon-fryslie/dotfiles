@@ -1,11 +1,11 @@
 //
 // node-modules.mjs — an app's node_modules as detect-dependencies and replace-dependency both read it: what a path
-// holds once node follows its links, the packages its top level offers, and where (and whether) a package can be
-// swapped.
+// holds once node follows its links, every copy of every package node can load from it, where (and whether) each copy
+// can be swapped, and where the project installs a copy's replacement.
 //
-// [LAW:one-source-of-truth] [LAW:single-enforcer] Whether a package can be trialed is swapOutcome's answer and no one
-// else's: replace-dependency trials exactly the outcomes that are trialable, and detect-dependencies reports every other
-// one with the reason the outcome carries, so the report and the swap tool can't disagree about any layout.
+// [LAW:one-source-of-truth] [LAW:single-enforcer] Whether a copy can be trialed is swapOutcome's answer and no one
+// else's: replace-dependency trials exactly the copies whose outcome is trialable, and detect-dependencies reports every
+// other one with the reason the outcome carries, so the report and the swap tool can't disagree about any layout.
 
 import fs from "fs";
 import path from "path";
@@ -102,23 +102,83 @@ export function topLevelEntries(nodeModules) {
   return { names: parts.flatMap((part) => part.names), unlisted: [...top.unlisted, ...parts.flatMap((part) => part.unlisted)] };
 }
 
-// [LAW:single-enforcer] An app's node_modules as a reader of its packages can rely on it: each top-level entry with
-// its swap outcome, the directories that couldn't be listed, and one verdict on the whole: absent (the app ships none, as a
-// fully bundled one does), listed (every directory read), or incomplete with the reason, so no consumer can take a
-// tree it couldn't read for one with nothing in it.
-export function readAppNodeModules(nodeModules) {
-  const state = pathState(nodeModules);
-  if (state.kind === "absent") return { verdict: { kind: "absent" }, entries: [], unlisted: [] };
-  if (state.kind !== "dir") return { verdict: { kind: "incomplete", reason: `node_modules is not a directory: ${stateText(state)}` }, entries: [], unlisted: [] };
-  const app = appAt(nodeModules);
-  const { names, unlisted } = topLevelEntries(nodeModules);
-  const entries = names.map((name) => ({ name, dir: path.join(nodeModules, ...pkgPathParts(name)), outcome: swapOutcome(app, name) }));
-  const named = unlisted.map(({ dir, code }) => ({ path: path.relative(path.dirname(nodeModules), dir), code }));
+// [LAW:single-enforcer] Every place in an app's node_modules a package can load from, found the way node resolves:
+// the app's node_modules, the node_modules pnpm's store packages resolve through (.pnpm/node_modules and each
+// .pnpm/<entry>/node_modules), and the node_modules of each package the app owns. Each is visited once whatever it is
+// reached through, so a symlinked nested node_modules counts and a link cycle ends; a package's own files and anything
+// past a link out of the app (a workspace, a replacement) are never descended. Returns each start (a name and the
+// location it is reached at), each directory that couldn't be listed, and one verdict on the whole: absent (the app
+// ships none, as a fully bundled one does), listed (every directory read), or incomplete with the reason, so no
+// consumer can take a tree it couldn't read for one with nothing in it.
+export function walkStarts(app) {
+  const state = pathState(app.nodeModules);
+  if (state.kind === "absent") return { verdict: { kind: "absent" }, starts: [], unlisted: [] };
+  if (state.kind !== "dir") return { verdict: { kind: "incomplete", reason: `node_modules is not a directory: ${stateText(state)}` }, starts: [], unlisted: [] };
+  const visited = new Set();
+  const starts = [];
+  const unlisted = [];
+  const visit = (nodeModules) => {
+    const at = pathState(nodeModules);
+    if (at.kind === "unreadable") unlisted.push({ dir: nodeModules, code: at.code });
+    // Anything else that is not a directory (nothing, a file, a dangling link) holds no packages node could load.
+    if (at.kind !== "dir" || visited.has(fs.realpathSync(nodeModules))) return;
+    visited.add(fs.realpathSync(nodeModules));
+    const top = topLevelEntries(nodeModules);
+    unlisted.push(...top.unlisted);
+    for (const name of top.names) {
+      const dir = path.join(nodeModules, ...pkgPathParts(name));
+      starts.push({ name, start: locationOf(app.nodeModules, dir) });
+      if (pathState(dir).kind === "dir" && isInside(app, fs.realpathSync(dir))) visit(path.join(dir, "node_modules"));
+    }
+  };
+  visit(app.nodeModules);
+  // The store's own files (its lock.yaml) hold no node_modules.
+  const store = path.join(app.nodeModules, ".pnpm");
+  const storeState = pathState(store);
+  if (storeState.kind === "unreadable") unlisted.push({ dir: store, code: storeState.code });
+  const storeListing = storeState.kind === "dir" ? listDir(store) : { kind: "listed", entries: [] };
+  if (storeListing.kind === "unlistable") unlisted.push({ dir: store, code: storeListing.code });
+  const storeEntries = storeListing.kind === "listed" ? storeListing.entries.filter((entry) => !entry.isFile()) : [];
+  for (const nodeModules of [path.join(store, "node_modules"), ...storeEntries.map((entry) => path.join(store, entry.name, "node_modules"))]) visit(nodeModules);
+
+  const named = unlisted.map(({ dir, code }) => ({ path: path.relative(path.dirname(app.nodeModules), dir), code }));
   const verdict = named.length === 0
     ? { kind: "listed" }
     : { kind: "incomplete", reason: `couldn't list ${named.map(({ path: dir, code }) => `${dir} (${code})`).join(", ")}, so the packages inside aren't detected` };
-  return { verdict, entries, unlisted: named };
+  return { verdict, starts, unlisted: named };
 }
+
+// [LAW:one-source-of-truth] The copies a set of starts reach: each start that holds anything, judged by swapOutcome,
+// grouped by the swap location they lead to, so the top-level link and every pnpm consumer link to one store copy are
+// one copy. A copy is { name, location, outcome, paths }, sorted by location, which puts every copy before the copies
+// nested in it.
+export function copiesOf(app, starts) {
+  const byLocation = new Map();
+  for (const { name, start } of starts) {
+    if (appPathState(locationDir(app, start)).kind === "absent") continue;
+    const outcome = swapOutcome(app, start, name);
+    const copy = byLocation.get(outcome.location) ?? { name, location: outcome.location, outcome, paths: [] };
+    if (!copy.paths.includes(start)) copy.paths.push(start);
+    byLocation.set(outcome.location, copy);
+  }
+  return [...byLocation.values()]
+    .map((copy) => ({ ...copy, paths: copy.paths.sort() }))
+    .sort((a, b) => (a.location < b.location ? -1 : a.location > b.location ? 1 : 0));
+}
+
+// [LAW:types-are-the-program] Where the project installs the replacement for name@version: an npm alias under a scope
+// of its own, so replacements of one package's different versions sit side by side, and none can collide with a
+// package the project installs by its own name. Every byte outside [a-z0-9.-] is written _ and two hex digits, so the
+// alias is a valid npm name and two different name@version pairs never share one.
+export function replacementOf(projectRoot, name, version) {
+  const encoded = [...Buffer.from(`${name}@${version}`, "utf8")]
+    .map((byte) => (/[a-z0-9.-]/.test(String.fromCharCode(byte)) ? String.fromCharCode(byte) : `_${byte.toString(16).padStart(2, "0")}`))
+    .join("");
+  const alias = `${REPLACEMENT_SCOPE}/${encoded}`;
+  return { alias, spec: `${alias}@npm:${name}@${version}`, dir: path.join(projectRoot, "node_modules", REPLACEMENT_SCOPE, encoded) };
+}
+
+export const REPLACEMENT_SCOPE = "@replace-dependency";
 
 // What sits at a path without following it: nothing, a directory, a file, a symlink with its readlink text, or a path
 // it can't lstat (with the error code). pathState answers what node finds there once it follows the links.
@@ -143,7 +203,7 @@ export function describeEntry(state) {
 // An entry path in canonical form: its parent directories resolved through symlinks as far as they exist, so --app-dir
 // and cwd naming one tree through different symlinked prefixes (/var vs /private/var on macOS) agree, and a path into
 // a root scope nothing has been installed into yet still compares. The entry itself stays unresolved, so a workspace
-// or npm-link entry keeps its indirection and a link left dangling by a removed root package is still recognised.
+// or npm-link entry keeps its indirection and a link left dangling by a removed replacement is still recognised.
 export function canonicalEntry(entryPath) {
   return path.join(realExisting(path.dirname(entryPath)), path.basename(entryPath));
 }
@@ -168,38 +228,44 @@ export function locationOf(nodeModules, dir) {
 }
 
 // [LAW:single-enforcer] The one constructor of the app every location is measured in: its node_modules as named, and
-// that directory's real path, which every inside-the-app check compares canonical paths against.
+// that directory's real path, which every inside-the-app check compares canonical paths against. An app that ships no
+// node_modules still has one, so walkStarts can say so.
 export function appAt(nodeModules) {
-  return { nodeModules, realNodeModules: fs.realpathSync(nodeModules) };
+  return { nodeModules, realNodeModules: realExisting(nodeModules) };
 }
 
 export function locationDir(app, location) {
   return path.join(app.nodeModules, ...location.split("/").slice(1));
 }
 
-const isInside = (app, entryPath) => entryPath.startsWith(`${app.realNodeModules}${path.sep}`);
+export const isInside = (app, entryPath) => entryPath.startsWith(`${app.realNodeModules}${path.sep}`);
 
-// [LAW:one-source-of-truth] The swap location: where every consumer of the app's copy loads it through. It is the app
-// path, followed through each link to another location of the same package inside the app's node_modules, so for a
-// pnpm layout, whose top-level link and .pnpm siblings all lead to one store copy, it is that copy's location. A link
-// leading anywhere else (out of the app's node_modules, as a workspace package or our link to the root does, or to
-// another package) is itself the swap location. Links that lead back into the chain are a loop, named by the chain.
-function findSwapLocation(app, pkgName) {
+// [LAW:one-source-of-truth] The swap location: where every consumer of a copy loads it through. It is the start (a
+// location where pkgName is reached), followed through each link to another location of the same package inside the
+// app's node_modules, so for a pnpm layout, whose top-level link and .pnpm siblings all lead to one store copy, it is
+// that copy's location. A link leading anywhere else (out of the app's node_modules, as a workspace package or our
+// link to a replacement does, or to another package) is itself the swap location. A location the app owns is spelled
+// canonically, so a copy reached through a symlinked nested node_modules has one location however it is reached.
+// Links that lead back into the chain are a loop, named by the chain.
+function findSwapLocation(app, start, pkgName) {
   const tail = `${path.sep}${path.join("node_modules", ...pkgPathParts(pkgName))}`;
-  const chain = [locationOf(app.nodeModules, path.join(app.nodeModules, ...pkgPathParts(pkgName)))];
+  const chain = [start];
   for (;;) {
     const dir = locationDir(app, chain.at(-1));
     const entry = appPathState(dir);
     const next = entry.kind === "link" ? linkDestination(dir, entry.target) : null;
-    if (next === null || !isInside(app, next) || !next.endsWith(tail)) return { kind: "location", location: chain.at(-1) };
+    if (next === null || !isInside(app, next) || !next.endsWith(tail)) {
+      const canonical = canonicalEntry(dir);
+      return { kind: "location", location: isInside(app, canonical) ? locationOf(app.realNodeModules, canonical) : chain.at(-1) };
+    }
     const nextLocation = locationOf(app.realNodeModules, next);
     if (chain.includes(nextLocation)) return { kind: "loop", chain: [...chain, nextLocation] };
     chain.push(nextLocation);
   }
 }
 
-// [LAW:types-are-the-program] Whether, and where, replace-dependency can swap the app's copy of a package. Every
-// outcome names the swap location (for a loop, the app path the loop starts from) and the package node loads there,
+// [LAW:types-are-the-program] Whether, and where, replace-dependency can swap the copy of pkgName reached at start.
+// Every outcome names the swap location (for a loop, the start the loop begins at) and the package node loads there,
 // or null when it loads none:
 //   { kind: "trialable", location, loads }                  the app owns the location and it holds pkgName itself
 //   { kind: "untrialable", location, loads, reason, appOwns }
@@ -209,8 +275,8 @@ function findSwapLocation(app, pkgName) {
 //   outside-app:<location>      the app doesn't own the location
 //   not-a-package:<state>       the location holds no usable package.json
 //   alias-of:<name>             the location holds another package (an npm alias), which npm can't install by the load name
-export function swapOutcome(app, pkgName) {
-  const swap = findSwapLocation(app, pkgName);
+export function swapOutcome(app, start, pkgName) {
+  const swap = findSwapLocation(app, start, pkgName);
   const location = swap.kind === "loop" ? swap.chain[0] : swap.location;
   const dir = locationDir(app, location);
   const holds = packageAt(dir);

@@ -68,7 +68,7 @@ test("gate remove-deps passes when the only change is a swapped package", () => 
   const depsDir = path.join(tmp, "deps");
   fs.mkdirSync(depsDir);
   fs.writeFileSync(path.join(depsDir, "near-matches.json"), "{}");
-  fs.writeFileSync(path.join(depsDir, "replacements.json"), JSON.stringify({ schemaVersion: 3, packages: {} }));
+  fs.writeFileSync(path.join(depsDir, "replacements.json"), JSON.stringify({ schemaVersion: 4, copies: {} }));
 
   const gate = runNode(
     "gate.mjs",

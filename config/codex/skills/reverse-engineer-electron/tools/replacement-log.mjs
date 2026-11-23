@@ -7,14 +7,16 @@
 // [LAW:parse-dont-validate] parseLog turns the file into entries whose status decides what they carry, so a
 // resolved entry always has its one pass attempt and an in-flight entry always names its original.
 //
-// Entry, by status:
+// The log holds one entry per copy, keyed by the copy's location: its swap location, the one every consumer of the
+// copy loads it through (node-modules.mjs's swapOutcome decides it). The key is the one place a location is stored.
+// Every entry names the package (name) and the version the app's copy is (version, null when the location held no
+// copy of name that could be trialed); by status it carries:
 //   unresolved  { attempts }                       no pass attempt
 //   in-flight   { attempts, inFlight }             a trial was moving the original when the run ended
 //   resolved    { attempts, chosenVersion, pass }  exactly one pass attempt, for chosenVersion
-// The original of a trial (inFlight.original, a pass attempt's original) is what sat at the package's swap location,
-// the location every consumer of the app's copy loads it through (node-modules.mjs's swapOutcome decides it):
-//   { kind: "dir",  location, backupPath }  a directory, renamed into .original/
-//   { kind: "link", location, target }      a symlink; target is its readlink text
+// The original of a trial (inFlight.original, a pass attempt's original) is what sat at the copy's location:
+//   { kind: "dir",  backupPath }  a directory, renamed into .original/
+//   { kind: "link", target }      a symlink; target is its readlink text
 // Attempt, by reason:
 //   "interrupted" { recovery: "original-in-place" | "restored", original }  disk alone can't say whether a swap
 //                 happened and was undone before the kill, so it records only what disk showed
@@ -25,9 +27,9 @@
 // cwd reads them the same way.
 
 import path from "path";
-import { isLocation } from "./node-modules.mjs";
+import { isLocation, isNonEmptyString } from "./node-modules.mjs";
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const RECOVERIES = new Set(["original-in-place", "restored"]);
 
@@ -40,15 +42,17 @@ export function fromLogPath(logPath, storedPath) {
 }
 
 export function emptyLog() {
-  return { schemaVersion: SCHEMA_VERSION, createdAt: new Date().toISOString(), packages: {} };
+  return { schemaVersion: SCHEMA_VERSION, createdAt: new Date().toISOString(), copies: {} };
 }
 
 // The on-disk form of a parsed log: `pass` is a reference into `attempts`, so it is derived, never stored.
 export function serializeLog(log) {
-  const packages = Object.fromEntries(
-    Object.entries(log.packages).map(([name, entry]) => [
-      name,
+  const copies = Object.fromEntries(
+    Object.entries(log.copies).map(([location, entry]) => [
+      location,
       {
+        name: entry.name,
+        version: entry.version,
         status: entry.status,
         chosenVersion: entry.status === "resolved" ? entry.chosenVersion : null,
         attempts: entry.attempts,
@@ -56,7 +60,7 @@ export function serializeLog(log) {
       },
     ]),
   );
-  return { schemaVersion: log.schemaVersion, createdAt: log.createdAt, updatedAt: new Date().toISOString(), packages };
+  return { schemaVersion: log.schemaVersion, createdAt: log.createdAt, updatedAt: new Date().toISOString(), copies };
 }
 
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -64,7 +68,6 @@ const isString = (value) => typeof value === "string";
 
 function originalError(original) {
   if (!isObject(original)) return "original must be an object";
-  if (!isLocation(original.location)) return `original needs a location under node_modules/, got ${JSON.stringify(original.location)}`;
   if (original.kind === "dir") return isString(original.backupPath) ? null : "a dir original needs backupPath";
   if (original.kind === "link") return isString(original.target) ? null : "a link original needs target";
   return `original kind must be "dir" or "link", got ${JSON.stringify(original.kind)}`;
@@ -92,6 +95,9 @@ function attemptError(attempt) {
 
 function parseEntry(raw) {
   if (!isObject(raw)) return { error: { type: "entry-type" } };
+  if (!isNonEmptyString(raw.name) || !(raw.version === null || isNonEmptyString(raw.version))) {
+    return { error: { type: "copy-name-invalid", detail: `an entry needs a name and a version (or null), got ${JSON.stringify({ name: raw.name, version: raw.version })}` } };
+  }
   if (!Array.isArray(raw.attempts)) return { error: { type: "attempts-missing" } };
   for (const [index, attempt] of raw.attempts.entries()) {
     const error = attemptError(attempt);
@@ -105,11 +111,11 @@ function parseEntry(raw) {
     if (!isString(raw.chosenVersion)) return { error: { type: "resolved-missing-version" } };
     if (passes.length !== 1) return { error: { type: "resolved-success-count", successCount: passes.length } };
     if (passes[0].attemptedVersion !== raw.chosenVersion) return { error: { type: "resolved-version-mismatch", chosenVersion: raw.chosenVersion, passVersion: passes[0].attemptedVersion } };
-    return { entry: { status: "resolved", attempts: raw.attempts, chosenVersion: raw.chosenVersion, pass: passes[0] } };
+    return { entry: { name: raw.name, version: raw.version, status: "resolved", attempts: raw.attempts, chosenVersion: raw.chosenVersion, pass: passes[0] } };
   }
   if (raw.status !== "unresolved" && raw.status !== "in-flight") return { error: { type: "status-invalid", status: raw.status ?? null } };
   if (passes.length > 0) return { error: { type: "unresolved-has-success", status: raw.status } };
-  if (raw.status === "unresolved") return { entry: { status: "unresolved", attempts: raw.attempts } };
+  if (raw.status === "unresolved") return { entry: { name: raw.name, version: raw.version, status: "unresolved", attempts: raw.attempts } };
 
   const inFlight = raw.inFlight;
   if (!isObject(inFlight) || !isString(inFlight.attemptedVersion) || !isString(inFlight.startedAt)) {
@@ -117,7 +123,7 @@ function parseEntry(raw) {
   }
   const error = originalError(inFlight.original);
   if (error) return { error: { type: "in-flight-record-invalid", detail: error } };
-  return { entry: { status: "in-flight", attempts: raw.attempts, inFlight } };
+  return { entry: { name: raw.name, version: raw.version, status: "in-flight", attempts: raw.attempts, inFlight } };
 }
 
 // { ok: true, log } with every entry parsed into its status's shape, or { ok: false, errors } naming each problem.
@@ -137,19 +143,21 @@ export function parseLog(text, logPath) {
         path: logPath,
         found: raw.schemaVersion ?? null,
         expected: SCHEMA_VERSION,
-        detail: `an older replace-dependency wrote this log, and its records can't be read as this version's: put each swapped package's original back over its link (backups are under the app's node_modules/.original/), or re-extract the app, then delete the log and rerun`,
+        detail: `an older replace-dependency wrote this log, and its records can't be read as this version's: put each swapped copy's original back over its link (backups are under the app's node_modules/.original/), or re-extract the app, then delete the log and rerun`,
       }],
     };
   }
-  if (!isObject(raw.packages)) return { ok: false, errors: [{ type: "replacements-packages-missing", path: logPath }] };
+  if (!isObject(raw.copies)) return { ok: false, errors: [{ type: "replacements-copies-missing", path: logPath }] };
 
-  const packages = {};
+  const copies = {};
   const errors = [];
-  for (const [name, rawEntry] of Object.entries(raw.packages)) {
-    const { entry, error } = parseEntry(rawEntry);
-    if (error) errors.push({ ...error, package: name });
-    else packages[name] = entry;
+  for (const [location, rawEntry] of Object.entries(raw.copies)) {
+    const { entry, error } = isLocation(location)
+      ? parseEntry(rawEntry)
+      : { error: { type: "location-invalid", detail: "an entry's key must be a location under node_modules/" } };
+    if (error) errors.push({ ...error, location, package: isObject(rawEntry) ? rawEntry.name ?? null : null });
+    else copies[location] = entry;
   }
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, log: { schemaVersion: raw.schemaVersion, createdAt: raw.createdAt, packages } };
+  return { ok: true, log: { schemaVersion: raw.schemaVersion, createdAt: raw.createdAt, copies } };
 }
