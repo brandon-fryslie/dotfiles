@@ -123,13 +123,10 @@ function collectPackageContexts(report) {
     return byName.get(name);
   }
 
-  for (const pkg of report?.onDisk?.packages || []) {
-    if (!pkg?.name) continue;
+  for (const pkg of report.onDisk.packages) {
     const ctx = ensure(pkg.name);
-    if (typeof pkg.version === "string" && pkg.version.length > 0) {
-      ctx.onDiskVersion = pkg.version;
-      ctx.observedVersion = pkg.version;
-    }
+    ctx.onDiskVersion = pkg.version;
+    ctx.observedVersion = pkg.version;
   }
 
   const bareSpecifiers = report?.code?.bareSpecifiers || {};
@@ -280,6 +277,13 @@ function main() {
   }
 
   const report = readJson(depsPath);
+  // [LAW:parse-dont-validate] detect-dependencies writes each on-disk package with a name and a non-empty version; a
+  // report without that list is from another tool or version, and reading it as "no packages on disk" would hide it.
+  const onDiskPackages = report?.onDisk?.packages;
+  if (!Array.isArray(onDiskPackages) || !onDiskPackages.every((pkg) => typeof pkg?.name === "string" && typeof pkg?.version === "string" && pkg.version !== "")) {
+    console.error(`Dependency report ${depsPath} has no onDisk.packages list of { name, version } — rerun detect-dependencies.mjs to write it`);
+    process.exit(2);
+  }
   const packageContexts = collectPackageContexts(report);
   const registryFixture = opts.registryFile ? readJson(path.resolve(projectRoot, opts.registryFile)) : null;
 

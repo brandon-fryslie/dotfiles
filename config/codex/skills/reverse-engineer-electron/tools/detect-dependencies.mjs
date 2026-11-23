@@ -19,7 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { pathState, pkgPathParts, swapOutcome, topLevelEntries, untrialableReason } from "./node-modules.mjs";
+import { appAt, pathState, pkgPathParts, swapOutcome, topLevelEntries } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -104,23 +104,20 @@ function pkgNameFromNodeModulesPath(text) {
 }
 
 // [LAW:one-source-of-truth] Every top-level entry of the app's node_modules with swapOutcome's answer for it, the one
-// replace-dependency acts on. An app with no node_modules (a fully bundled one ships none) has no entries.
+// replace-dependency acts on, and each directory of entries that couldn't be listed. An app with no node_modules (a
+// fully bundled one ships none) has no entries.
 function readOnDisk(appDir) {
   const nodeModules = path.join(appDir, "node_modules");
   const state = pathState(nodeModules);
-  if (state.kind !== "dir") return { nodeModules: state, entries: [] };
-  const app = { nodeModules, realNodeModules: fs.realpathSync(nodeModules) };
-  const entries = topLevelEntries(nodeModules).map((name) => {
+  if (state.kind !== "dir") return { nodeModules: state, entries: [], unlisted: [] };
+  const app = appAt(nodeModules);
+  const { names, unlisted } = topLevelEntries(nodeModules);
+  const entries = names.map((name) => {
     const dir = path.join(nodeModules, ...pkgPathParts(name));
     return { name, dir, path: path.relative(appDir, dir), outcome: swapOutcome(app, name) };
   });
-  return { nodeModules: state, entries };
+  return { nodeModules: state, entries, unlisted: unlisted.map(({ dir, code }) => ({ path: path.relative(appDir, dir), code })) };
 }
-
-// Where each swap outcome is reported: the packages replace-dependency can trial, the packages it can't, and the
-// entries that hold no package.
-const ON_DISK_LIST = { found: "packages", loop: "untrialable", outside: "untrialable", alias: "untrialable", "not-a-package": "skipped" };
-const ON_DISK_WARNING = { untrialable: "replace-dependency can't trial it", skipped: "not a package" };
 
 function listPackageJsFiles(pkgDir) {
   return listFiles(pkgDir, SOURCE_TREE_EXCLUDES)
@@ -128,55 +125,42 @@ function listPackageJsFiles(pkgDir) {
     .map((rel) => path.join(pkgDir, rel));
 }
 
+// Each loaded package's shape hashes, and every file or directory that couldn't be read or hashed, so a package that
+// contributed no hashes because it couldn't be read is a parse error, not a package that matched nothing.
+// [LAW:no-silent-failure]
 function indexPackageShapeHashes(packages) {
   const byHash = new Map();
+  const errors = [];
+  const add = (hash, entry) => byHash.set(hash, [...(byHash.get(hash) || []), entry]);
+  const attempt = (file, work) => {
+    try {
+      return work();
+    } catch (error) {
+      errors.push({ file, error: String(error?.message || error) });
+      return null;
+    }
+  };
   for (const pkg of packages) {
-    const jsFiles = listPackageJsFiles(pkg.dir);
-    for (const jsFile of jsFiles) {
-      let code = "";
-      try {
-        code = fs.readFileSync(jsFile, "utf8");
-      } catch {
-        continue;
-      }
-      let hash = "";
-      try {
-        hash = extractProgramBodyHash(code);
-      } catch {
-        continue;
-      }
-      const current = byHash.get(hash) || [];
-      current.push({
-        package: pkg.name,
-        version: pkg.version,
-        file: path.relative(pkg.dir, jsFile),
-        kind: "program",
-      });
-      byHash.set(hash, current);
-
-      try {
+    for (const jsFile of attempt(pkg.dir, () => listPackageJsFiles(pkg.dir)) ?? []) {
+      const code = attempt(jsFile, () => fs.readFileSync(jsFile, "utf8"));
+      if (code === null) continue;
+      const entry = (kind) => ({ package: pkg.name, version: pkg.version, file: path.relative(pkg.dir, jsFile), kind });
+      const hash = attempt(jsFile, () => extractProgramBodyHash(code));
+      if (hash === null) continue;
+      add(hash, entry("program"));
+      attempt(jsFile, () => {
         const ast = parseSource(code, "js");
         // [LAW:one-source-of-truth] Reuse the same structural walker for all detached-node hashing so traversal semantics stay consistent.
         walk(ast.program, (node) => {
           if (!isFunctionNode(node)) return;
           const tokens = functionShapeTokens(node.body);
           if (tokens.length < 20) return;
-          const functionHash = tokensToHash(tokens);
-          const items = byHash.get(functionHash) || [];
-          items.push({
-            package: pkg.name,
-            version: pkg.version,
-            file: path.relative(pkg.dir, jsFile),
-            kind: "function",
-          });
-          byHash.set(functionHash, items);
+          add(tokensToHash(tokens), entry("function"));
         });
-      } catch {
-        // Keep file-level hashes even when function-level extraction fails.
-      }
+      });
     }
   }
-  return byHash;
+  return { byHash, errors };
 }
 
 function loadFingerprints() {
@@ -1054,20 +1038,22 @@ function main() {
   const onDisk = readOnDisk(appDir);
   // Every copy the app loads, trialable or not, lends its version, its name, and its shape hashes to classification.
   const loadedPackages = onDisk.entries
-    .filter(({ outcome }) => outcome.kind !== "loop" && outcome.holds.kind === "package")
+    .filter(({ outcome }) => outcome.holds.kind === "package")
     .map(({ name, dir, outcome }) => ({ name, version: outcome.holds.version, dir }));
   const lockfilePackages = loadLockfilePackages(appDir);
   const packageVersionByName = Object.fromEntries([...lockfilePackages, ...loadedPackages].map((pkg) => [pkg.name, pkg.version]));
-  const packageShapeHashes = indexPackageShapeHashes(loadedPackages);
+  const shapeIndex = indexPackageShapeHashes(loadedPackages);
   const knownPackages = Array.from(
     new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackages.map((pkg) => pkg.name)]),
   ).sort((left, right) => right.length - left.length || left.localeCompare(right));
-  const onDiskReport = { nodeModules: onDisk.nodeModules, packages: [], untrialable: [], skipped: [] };
-  for (const { name, path: entryPath, outcome } of onDisk.entries) {
-    onDiskReport[ON_DISK_LIST[outcome.kind]].push(outcome.kind === "found"
-      ? { name, version: outcome.holds.version, path: entryPath, location: outcome.location }
-      : { name, path: entryPath, reason: untrialableReason(outcome) });
-  }
+  const onDiskReport = {
+    nodeModules: onDisk.nodeModules,
+    packages: onDisk.entries.filter(({ outcome }) => outcome.trialable)
+      .map(({ name, path: entryPath, outcome }) => ({ name, version: outcome.holds.version, path: entryPath, location: outcome.location })),
+    untrialable: onDisk.entries.filter(({ outcome }) => !outcome.trialable)
+      .map(({ name, path: entryPath, outcome }) => ({ name, path: entryPath, reason: outcome.reason })),
+    unlisted: onDisk.unlisted,
+  };
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -1111,9 +1097,9 @@ function main() {
     },
   };
 
-  for (const list of ["untrialable", "skipped"]) {
-    for (const { path: entryPath, reason } of onDiskReport[list]) report.warnings.push(`${entryPath}: ${ON_DISK_WARNING[list]} (${reason})`);
-  }
+  for (const { path: entryPath, reason } of onDiskReport.untrialable) report.warnings.push(`${entryPath}: replace-dependency can't trial it (${reason})`);
+  for (const { path: entryPath, code } of onDiskReport.unlisted) report.warnings.push(`${entryPath}: can't be listed (${code}), so no package in it is detected`);
+  for (const { file, error } of shapeIndex.errors) report.parseErrors.push({ file: fileRel(projectRoot, file), error });
   if (!["dir", "absent"].includes(onDisk.nodeModules.kind)) report.warnings.push(`node_modules is not a directory node can list: ${JSON.stringify(onDisk.nodeModules)}`);
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
@@ -1140,7 +1126,7 @@ function main() {
 
   const classificationContext = {
     fingerprints,
-    packageShapeHashes,
+    packageShapeHashes: shapeIndex.byHash,
     packageVersionByName,
     knownPackages,
   };
@@ -1213,7 +1199,7 @@ function main() {
   console.log(`- Bundled third-party modules: ${report.summary.bundledThirdPartyModules}`);
   console.log(`- Candidate module classification rate: ${report.summary.classificationRate}`);
   console.log(`- Parse errors: ${report.parseErrors.length}`);
-  console.log(`- Trialable packages on disk: ${onDiskReport.packages.length}`);
+  console.log(`- Packages on disk: ${loadedPackages.length} (trialable: ${onDiskReport.packages.length})`);
   console.log(`- Warnings: ${report.warnings.length}`);
   for (const warning of report.warnings) console.log(`  ${warning}`);
 }

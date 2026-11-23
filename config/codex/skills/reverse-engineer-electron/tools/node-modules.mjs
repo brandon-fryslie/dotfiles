@@ -4,8 +4,8 @@
 // swapped.
 //
 // [LAW:one-source-of-truth] [LAW:single-enforcer] Whether a package can be trialed is swapOutcome's answer and no one
-// else's: replace-dependency trials exactly the packages it finds, and detect-dependencies reports every other one
-// with the reason untrialableReason gives, so the report and the swap tool can't disagree about any layout.
+// else's: replace-dependency trials exactly the outcomes that are trialable, and detect-dependencies reports every other
+// one with the reason the outcome carries, so the report and the swap tool can't disagree about any layout.
 
 import fs from "fs";
 import path from "path";
@@ -15,21 +15,42 @@ export function pkgPathParts(name) {
   return name.startsWith("@") && name.includes("/") ? name.split("/") : [name];
 }
 
-// What a path holds once node follows its links: a directory it can list, a file, a link leading nowhere, a path it
-// can't read (with the error code, e.g. EACCES or ELOOP), or nothing at all.
+// What a path holds once node follows its links: a directory, a file, a link leading nowhere, a path it can't stat
+// (with the error code, e.g. EACCES or ELOOP), or nothing at all. A directory is one whatever its read bit says: node
+// loads a package through a directory it may search but not list, so whether it can be listed is listDir's question.
 export function pathState(p) {
   try {
     if (!fs.lstatSync(p, { throwIfNoEntry: false })) return { kind: "absent" };
     const stat = fs.statSync(p, { throwIfNoEntry: false });
     if (!stat) return { kind: "dangling", target: fs.readlinkSync(p) };
-    if (!stat.isDirectory()) return { kind: "file" };
-    fs.readdirSync(p);
-    return { kind: "dir" };
+    return { kind: stat.isDirectory() ? "dir" : "file" };
   } catch (error) {
     if (typeof error.code !== "string") throw error;
     return { kind: "unreadable", code: error.code };
   }
 }
+
+// A directory's entries, or the error code that kept them from being read.
+export function listDir(dir) {
+  try {
+    return { kind: "listed", entries: fs.readdirSync(dir, { withFileTypes: true }) };
+  } catch (error) {
+    if (typeof error.code !== "string") throw error;
+    return { kind: "unlistable", code: error.code };
+  }
+}
+
+// [LAW:types-are-the-program] Each state that is not a package, and the one field that says why, so a reason built
+// from a state names the cause it holds and a state with no entry here is an error, not a reason with a gap in it.
+const STATE_DETAIL = { absent: null, file: null, "no-manifest": null, dangling: "target", unreadable: "code", "unusable-manifest": "reason" };
+
+export function stateText(state) {
+  if (!Object.hasOwn(STATE_DETAIL, state.kind)) throw new Error(`a ${state.kind} state has no reason text`);
+  const field = STATE_DETAIL[state.kind];
+  return field === null ? state.kind : `${state.kind}:${state[field]}`;
+}
+
+const isNonEmptyString = (value) => typeof value === "string" && value !== "";
 
 // What a path holds as a package: the name and version its package.json gives, or, when it holds none, the path's
 // own state, a directory with no package.json, or a package.json that can't be read or lacks a name or version.
@@ -50,19 +71,29 @@ export function packageAt(dir) {
   } catch (error) {
     return { kind: "unusable-manifest", reason: `invalid-json (${error.message})` };
   }
-  if (typeof manifest?.name !== "string" || typeof manifest?.version !== "string") return { kind: "unusable-manifest", reason: "no-name-or-version" };
+  if (!isNonEmptyString(manifest?.name) || !isNonEmptyString(manifest?.version)) return { kind: "unusable-manifest", reason: "no-name-or-version" };
   return { kind: "package", name: manifest.name, version: manifest.version };
 }
 
 // The names an app loads from its node_modules top level: node_modules/<name> and node_modules/@scope/<name>, the way
-// node resolves them, through links. A scope that is not a listable directory is an entry under its own name, so its
-// state is reported rather than lost. Dot entries (.bin, .pnpm, .original, .package-lock.json) are tooling.
+// node resolves them, through links, and each directory of them that can't be listed (node_modules or a scope), whose
+// packages no one can name. A scope that is not a directory is an entry under its own name, so its state is reported
+// rather than lost. Dot entries (.bin, .pnpm, .original, .package-lock.json) are tooling.
 export function topLevelEntries(nodeModules) {
-  const names = (dir) => fs.readdirSync(dir).filter((name) => !name.startsWith(".")).sort();
-  return names(nodeModules).flatMap((name) =>
-    name.startsWith("@") && pathState(path.join(nodeModules, name)).kind === "dir"
-      ? names(path.join(nodeModules, name)).map((child) => `${name}/${child}`)
-      : [name]);
+  const listing = (dir) => {
+    const listed = listDir(dir);
+    return listed.kind === "listed"
+      ? { names: listed.entries.map((entry) => entry.name).filter((name) => !name.startsWith(".")).sort(), unlisted: [] }
+      : { names: [], unlisted: [{ dir, code: listed.code }] };
+  };
+  const top = listing(nodeModules);
+  const parts = top.names.map((name) => {
+    const dir = path.join(nodeModules, name);
+    if (!name.startsWith("@") || pathState(dir).kind !== "dir") return { names: [name], unlisted: [] };
+    const scope = listing(dir);
+    return { names: scope.names.map((child) => `${name}/${child}`), unlisted: scope.unlisted };
+  });
+  return { names: parts.flatMap((part) => part.names), unlisted: [...top.unlisted, ...parts.flatMap((part) => part.unlisted)] };
 }
 
 // What sits at a package's path in the app, without following it: nothing, a directory, or a symlink with its
@@ -101,20 +132,25 @@ export function locationOf(nodeModules, dir) {
   return location;
 }
 
-// app is { nodeModules, realNodeModules }: the app's node_modules as named, and its real path.
+// [LAW:single-enforcer] The one constructor of the app every location is measured in: its node_modules as named, and
+// that directory's real path, which every inside-the-app check compares canonical paths against.
+export function appAt(nodeModules) {
+  return { nodeModules, realNodeModules: fs.realpathSync(nodeModules) };
+}
+
 export function locationDir(app, location) {
   return path.join(app.nodeModules, ...location.split("/").slice(1));
 }
 
-// The readlink text at a location, or null when it is not a link node could follow (a directory, a file, nothing, or
-// a path it can't lstat); packageAt reports what such a location holds.
-function linkAt(dir) {
+const isInside = (app, entryPath) => entryPath.startsWith(`${app.realNodeModules}${path.sep}`);
+
+// What sits at a location without following it, a path it can't lstat included.
+function entryAt(dir) {
   try {
-    const state = appPathState(dir);
-    return state.kind === "link" ? state.target : null;
+    return appPathState(dir);
   } catch (error) {
     if (typeof error.code !== "string") throw error;
-    return null;
+    return { kind: "unreadable", code: error.code };
   }
 }
 
@@ -122,48 +158,40 @@ function linkAt(dir) {
 // path, followed through each link to another location of the same package inside the app's node_modules, so for a
 // pnpm layout, whose top-level link and .pnpm siblings all lead to one store copy, it is that copy's location. A link
 // leading anywhere else (out of the app's node_modules, as a workspace package or our link to the root does, or to
-// another package) is itself the swap location.
+// another package) is itself the swap location. Links that lead back into the chain are a loop, named by the chain.
 function findSwapLocation(app, pkgName) {
   const tail = `${path.sep}${path.join("node_modules", ...pkgPathParts(pkgName))}`;
   const chain = [locationOf(app.nodeModules, path.join(app.nodeModules, ...pkgPathParts(pkgName)))];
   for (;;) {
     const dir = locationDir(app, chain.at(-1));
-    const target = linkAt(dir);
-    const next = target === null ? null : linkDestination(dir, target);
-    if (next === null || !next.startsWith(`${app.realNodeModules}${path.sep}`) || !next.endsWith(tail)) return { location: chain.at(-1) };
+    const entry = entryAt(dir);
+    const next = entry.kind === "link" ? linkDestination(dir, entry.target) : null;
+    if (next === null || !isInside(app, next) || !next.endsWith(tail)) return { kind: "location", location: chain.at(-1) };
     const nextLocation = locationOf(app.realNodeModules, next);
-    if (chain.includes(nextLocation)) return { loop: [...chain, nextLocation] };
+    if (chain.includes(nextLocation)) return { kind: "loop", chain: [...chain, nextLocation] };
     chain.push(nextLocation);
   }
 }
 
 // [LAW:types-are-the-program] Whether, and where, replace-dependency can swap the app's copy of a package. Every
-// outcome but a loop names the swap location and what it holds:
-//   found          the location holds pkgName itself: the one outcome replace-dependency trials
-//   loop           the links loop, so no copy loads
-//   outside        the location lies past a link out of the app's real node_modules (a scope linked to a workspace's
-//                  own): setting it aside would move files the app doesn't own
-//   not-a-package  the location holds no usable package.json
-//   alias          the location holds another package (an npm alias), which npm can't install by the load name
+// outcome names the swap location (for a loop, the app path the loop starts from), what it holds, and whether the app
+// owns it: a location past a link out of the app's real node_modules (a scope linked to a workspace's own) holds files
+// nothing may move. An outcome is trialable when the app owns a location holding pkgName itself; any other carries the
+// reason it isn't, in the order replace-dependency would hit them:
+//   loop:<chain>                the links loop, so no copy loads
+//   outside-app:<location>      the app doesn't own the location
+//   not-a-package:<state>       the location holds no usable package.json
+//   alias-of:<name>             the location holds another package (an npm alias), which npm can't install by the load name
 export function swapOutcome(app, pkgName) {
   const swap = findSwapLocation(app, pkgName);
-  if (swap.loop) return { kind: "loop", chain: swap.loop };
-  const { location } = swap;
+  const location = swap.kind === "loop" ? swap.chain[0] : swap.location;
   const dir = locationDir(app, location);
   const holds = packageAt(dir);
-  if (!canonicalEntry(dir).startsWith(`${app.realNodeModules}${path.sep}`)) return { kind: "outside", location, holds };
-  if (holds.kind !== "package") return { kind: "not-a-package", location, holds };
-  if (holds.name !== pkgName) return { kind: "alias", location, holds };
-  return { kind: "found", location, holds };
-}
-
-// The reason an outcome other than found can't be trialed, as replace-dependency records it and detect-dependencies
-// reports it.
-export function untrialableReason(outcome) {
-  if (outcome.kind === "loop") return `loop:${outcome.chain.join(" -> ")}`;
-  if (outcome.kind === "outside") return `outside-app:${outcome.location}`;
-  if (outcome.kind === "alias") return `alias-of:${outcome.holds.name}`;
-  const { holds } = outcome;
-  const detail = holds.code ?? holds.reason ?? holds.target;
-  return `not-a-package:${holds.kind}${detail === undefined ? "" : `:${detail}`}`;
+  const appOwns = isInside(app, canonicalEntry(dir));
+  const reason = swap.kind === "loop" ? `loop:${swap.chain.join(" -> ")}`
+    : !appOwns ? `outside-app:${location}`
+    : holds.kind !== "package" ? `not-a-package:${stateText(holds)}`
+    : holds.name !== pkgName ? `alias-of:${holds.name}`
+    : null;
+  return reason === null ? { trialable: true, location, holds, appOwns } : { trialable: false, reason, location, holds, appOwns };
 }
