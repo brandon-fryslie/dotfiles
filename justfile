@@ -100,6 +100,10 @@ test-skill-installer:
 test-image-gen:
     uv run --with openai==3.49.0 python -m unittest tests/test_image_gen_retries.py
 
+# Assert tmux shell panes close on exit and command panes keep their output and respawn once (private tmux server, the checkout's config)
+test-tmux-pane-lifecycle:
+    ./config/tmux/tests/pane-lifecycle.sh
+
 # Test the Claude Code PreToolUse guard hooks
 test-hooks:
     python3 -m unittest discover -s config/claude/hooks -p 'test_*.py'
