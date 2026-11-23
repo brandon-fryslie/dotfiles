@@ -14,8 +14,9 @@
  * // [LAW:verifiable-goals] Every attempt is logged with result, rollback state, and verification evidence.
  * // [LAW:one-source-of-truth] deps/replacements.json is the canonical transaction log for dependency swaps; its
  * //   shape is replacement-log.mjs's, and each trial is written there before the original moves.
- * // [LAW:dataflow-not-control-flow] Each candidate runs the same steps — install, write-ahead, link, verify, roll back
- * //   on fail — and a candidate whose step fails stops there, its attempt recording which step and why.
+ * // [LAW:dataflow-not-control-flow] exception: a candidate stops at its first failing step (install, the root
+ * //   package check, write-ahead, link, verify), because the steps after it have nothing to act on; its attempt records
+ * //   the step and why, and a candidate that set its original aside is always rolled back.
  */
 
 import fs from "fs";
@@ -23,7 +24,7 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
-import { emptyLog, fromLogPath, migrate, parseLog, serializeLog, toLogPath } from "./replacement-log.mjs";
+import { emptyLog, fromLogPath, isLocation, parseLog, serializeLog, toLogPath } from "./replacement-log.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -183,18 +184,9 @@ function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-// An older log is migrated on load; its text is kept beside the log, because a v1 migration takes cwd to be the v1
-// run's, and a log the migration can't carry over is refused with what it couldn't.
-function loadLog(logPath, cwd) {
+function loadLog(logPath) {
   if (!fs.existsSync(logPath)) return emptyLog();
-  const text = fs.readFileSync(logPath, "utf8");
-  const migrated = migrate(text, logPath, cwd);
-  const parsed = migrated?.errors.length ? { ok: false, errors: migrated.errors } : parseLog(migrated?.text ?? text, logPath);
-  if (parsed.ok && migrated) {
-    fs.writeFileSync(`${logPath}.v${migrated.from}`, text);
-    writeLog(logPath, parsed.log);
-    console.log(`Migrated ${logPath} to schema v${parsed.log.schemaVersion} (v${migrated.from} text kept at ${logPath}.v${migrated.from})`);
-  }
+  const parsed = parseLog(fs.readFileSync(logPath, "utf8"), logPath);
   if (parsed.ok) return parsed.log;
   for (const error of parsed.errors) console.error(`Error: ${logPath}: ${JSON.stringify(error)}`);
   process.exit(2);
@@ -273,34 +265,34 @@ function linkDestination(appPkgDir, target) {
   return canonicalEntry(path.resolve(fs.realpathSync(path.dirname(appPkgDir)), target));
 }
 
-// A location in canonical form: a package's path relative to the app dir, as replacement-log.mjs records it.
+// [LAW:single-enforcer] The one constructor of a location, the form replacement-log.mjs parses: a path in the app's
+// node_modules, measured from its real directory, so an app whose node_modules is itself a symlink still writes one.
 function locationOf(app, dir) {
-  return path.relative(app.realDir, canonicalEntry(dir)).split(path.sep).join("/");
+  const location = ["node_modules", ...path.relative(app.realNodeModules, canonicalEntry(dir)).split(path.sep)].join("/");
+  if (!isLocation(location)) throw new Error(`${dir} is not inside the app's node_modules (${app.realNodeModules})`);
+  return location;
 }
 
 function locationDir(app, location) {
-  return path.join(app.dir, ...location.split("/"));
+  return path.join(app.nodeModules, ...location.split("/").slice(1));
 }
 
-// [LAW:one-source-of-truth] The location every consumer of the app's copy loads it through, read off disk the same
-// way before, during, and after a swap: the app path, followed through each link to another location of the same
-// package inside the app's node_modules. A pnpm layout's top-level link and its .pnpm siblings all lead to one store
-// location, so swapping that one swaps the copy for every consumer. A link leading anywhere else (out of the app's
+// [LAW:one-source-of-truth] The swap location: where every consumer of the app's copy loads it through, read off
+// disk the same way before, during, and after a swap. It is the app path, followed through each link to another
+// location of the same package inside the app's node_modules, so for a pnpm layout, whose top-level link and .pnpm
+// siblings all lead to one store copy, it is that copy's location. A link leading anywhere else (out of the app's
 // node_modules, as a workspace package or our link to the root does, or to another package, as an alias does) is
-// itself the location: nothing past it is ours to move.
-function swapLocation(appPkgDir, pkgName, app) {
-  const inside = `${fs.realpathSync(app.nodeModules)}${path.sep}`;
+// itself the swap location: nothing past it is ours to move. Links that loop are a value too, so the caller refuses
+// them the way it refuses every other disk state it can't trial.
+function findSwapLocation(appPkgDir, pkgName, app) {
   const tail = `${path.sep}${path.join("node_modules", ...pkgPathParts(pkgName))}`;
   const chain = [appPkgDir];
   for (;;) {
     const dir = chain.at(-1);
     const state = appPathState(dir);
     const next = state.kind === "link" ? linkDestination(dir, state.target) : null;
-    if (next === null || !next.startsWith(inside) || !next.endsWith(tail)) return dir;
-    if (chain.includes(next)) {
-      console.error(`Error: [${pkgName}] the app's links loop, so no copy of it loads: ${[...chain, next].join(" -> ")} — fix the links, then rerun`);
-      process.exit(2);
-    }
+    if (next === null || !next.startsWith(`${app.realNodeModules}${path.sep}`) || !next.endsWith(tail)) return { kind: "found", dir };
+    if (chain.includes(next)) return { kind: "loop", chain: [...chain, next] };
     chain.push(next);
   }
 }
@@ -324,6 +316,18 @@ function locationsByName(app) {
   };
   walk(app.nodeModules);
   return byName;
+}
+
+// [LAW:one-source-of-truth] What a resolved package's locations load, read from the tree as it is now, never stored:
+// each location that loads a copy other than the root package, and each that loads nothing (a link left dangling).
+function copiesLeft(pkgName, locations, rootPkgDir, app) {
+  const root = fs.realpathSync(rootPkgDir);
+  const loads = (location) => {
+    const dir = locationDir(app, location);
+    if (!fs.existsSync(dir)) return "nothing";
+    return fs.realpathSync(dir) === root ? "root" : "another copy";
+  };
+  return (locations.get(pkgName) ?? []).map((location) => ({ location, loads: loads(location) })).filter(({ loads }) => loads !== "root");
 }
 
 // The link this tool writes at a swap location.
@@ -384,8 +388,16 @@ function backupRootsOf(pkgName, original, app) {
   return [root];
 }
 
-function removeBackupRoots(roots) {
-  for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+// The original is already where it belongs when this runs, so a failure here is reported as the leftover it is.
+function removeBackupRoots(pkgName, roots) {
+  for (const root of roots) {
+    try {
+      fs.rmSync(root, { recursive: true, force: true });
+    } catch (error) {
+      console.error(`Error: [${pkgName}] the original is in place, but its backup root ${root} could not be removed: ${error.message} — remove it, then rerun`);
+      process.exit(1);
+    }
+  }
 }
 
 // [LAW:single-enforcer] The one undo, for a failed verification, a trial error, and an interrupted run alike. The
@@ -394,16 +406,16 @@ function removeBackupRoots(roots) {
 // fails stops the run and leaves that record for the next run to recover from.
 function restoreOriginal(pkgName, original, app) {
   const dir = locationDir(app, original.location);
+  const roots = backupRootsOf(pkgName, original, app);
   try {
-    const roots = backupRootsOf(pkgName, original, app);
     fs.rmSync(dir, { force: true });
     if (original.kind === "dir") fs.renameSync(fromLogPath(app.logPath, original.backupPath), dir);
     else fs.symlinkSync(original.target, dir, "dir");
-    removeBackupRoots(roots);
   } catch (error) {
     console.error(`Error: [${pkgName}] could not restore ${describeOriginal(original, app.logPath)} to ${dir}: ${error.message} — ${app.logPath} keeps the trial in flight; fix the cause and rerun to recover`);
     process.exit(1);
   }
+  removeBackupRoots(pkgName, roots);
 }
 
 // An in-flight entry, read against disk at the location it records. "original-in-place": the original never moved, or
@@ -413,7 +425,7 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
   const { original } = inFlight;
   const { dir } = ctx;
   const trial = `an interrupted trial of ${inFlight.attemptedVersion}`;
-  const interrupted = (recovery) => ({ kind: "interrupted", recovery, inFlight });
+  const interrupted = (recovery) => ({ kind: "interrupted", recovery, inFlight, swapDir: dir });
   const conflict = (reason) => ({ kind: "conflict", reason });
 
   if (original.kind === "dir") {
@@ -440,9 +452,11 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
 // [LAW:no-silent-failure]
 function priorSwap(entry, ctx, requestedVersion) {
   const status = entry?.status ?? "unresolved";
-  const current = swapLocation(ctx.appPkgDir, ctx.pkgName, ctx.app);
+  const found = findSwapLocation(ctx.appPkgDir, ctx.pkgName, ctx.app);
+  if (found.kind === "loop") return { kind: "conflict", reason: `the app's links loop, so no copy of it loads: ${found.chain.join(" -> ")} — fix the links, then rerun` };
+  const current = found.dir;
   if (status === "unresolved") {
-    if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried" };
+    if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried", swapDir: current };
     // Trialing our own link would verify the root package against itself and record a made-up original.
     return { kind: "conflict", reason: `${current} already links to the root package, but ${ctx.app.logPath} records no resolved swap for it — put the original back over the link first (earlier backups are under ${ctx.app.backupsDir}), then rerun` };
   }
@@ -497,14 +511,15 @@ function main() {
     console.error(`Error: ${appNodeModules} does not exist — --app-dir must name an extracted app with its node_modules`);
     process.exit(2);
   }
-  if (canonicalEntry(path.join(projectRoot, "node_modules")) === canonicalEntry(appNodeModules)) {
+  if (realExisting(path.join(projectRoot, "node_modules")) === fs.realpathSync(appNodeModules)) {
     console.error(`Error: --app-dir ${appDir} is the project root, so npm would install over the app's own copies before the log records them — run from a project root outside the app`);
     process.exit(2);
   }
   // [LAW:no-ambient-temporal-coupling] Every tree a run changes is locked before it reads the log or any package:
   // the project's node_modules (npm writes it and package.json), the app's node_modules (renames, links, .original/),
-  // the verification dir, and the log. Spellings that name one file are locked once, or the run would refuse itself; locks
-  // are taken in path order, so of two runs wanting the same locks the one that loses is refused before it holds any.
+  // the verification dir, and the log. Spellings that name one file are locked once, or the run would refuse itself;
+  // locks are taken in path order, so of two runs wanting the same locks the one that loses is refused before it
+  // holds any.
   const lockPaths = [
     path.join(projectRoot, "node_modules", ".replace-dependency.lock"),
     path.join(appNodeModules, ".replace-dependency.lock"),
@@ -513,8 +528,7 @@ function main() {
   ];
   for (const lockPath of unique(lockPaths.map(canonicalEntry)).sort()) lockTree(lockPath);
 
-  // The log is loaded first, so a v1 log migrates even on a run that finds nothing to trial.
-  const logState = loadLog(outPath, projectRoot);
+  const logState = loadLog(outPath);
 
   const candidateSource = loadCandidateSource(candidateSourcePath);
   const packageList = determinePackageList(opts, candidateSource);
@@ -523,7 +537,7 @@ function main() {
     process.exit(2);
   }
 
-  const app = { dir: appDir, realDir: fs.realpathSync(appDir), nodeModules: appNodeModules, backupsDir: path.join(appNodeModules, ".original"), logPath: outPath };
+  const app = { nodeModules: appNodeModules, realNodeModules: fs.realpathSync(appNodeModules), backupsDir: path.join(appNodeModules, ".original"), logPath: outPath };
   const appPkgDirOf = (pkgName) => path.join(appNodeModules, ...pkgPathParts(pkgName));
   const rootPkgDirOf = (pkgName) => path.join(projectRoot, "node_modules", ...pkgPathParts(pkgName));
 
@@ -550,7 +564,7 @@ function main() {
   for (const { pkgName, prior } of interrupted) {
     const { recovery, inFlight } = prior;
     if (recovery === "restored") restoreOriginal(pkgName, inFlight.original, app);
-    else removeBackupRoots(backupRootsOf(pkgName, inFlight.original, app));
+    else removeBackupRoots(pkgName, backupRootsOf(pkgName, inFlight.original, app));
     recordAttempt(logState, pkgName, {
       attemptedVersion: inFlight.attemptedVersion,
       startedAt: inFlight.startedAt,
@@ -564,19 +578,9 @@ function main() {
     console.log(`[${pkgName}] interrupted trial of ${inFlight.attemptedVersion}: ${outcome}`);
   }
 
-  const toTry = priors
-    .filter(({ pkgName, prior }) => packageList.includes(pkgName) && (prior.kind === "untried" || prior.kind === "interrupted"))
-    .map(({ pkgName }) => pkgName);
+  const toTry = priors.filter(({ pkgName, prior }) => packageList.includes(pkgName) && (prior.kind === "untried" || prior.kind === "interrupted"));
 
-  // Walked once recovery has put every original back: a trial moves what sits at a location, never the locations.
-  const locations = locationsByName(app);
-  // Where the package still loads a copy other than the root package, once a swap is in place.
-  const unreplacedOf = (pkgName, rootPkgDir) => (locations.get(pkgName) ?? []).filter((location) => {
-    const dir = locationDir(app, location);
-    return !fs.existsSync(dir) || fs.realpathSync(dir) !== fs.realpathSync(rootPkgDir);
-  });
-
-  for (const pkgName of toTry) {
+  for (const { pkgName, prior: { swapDir } } of toTry) {
     const appPkgDir = appPkgDirOf(pkgName);
     const appPkgJson = path.join(appPkgDir, "package.json");
 
@@ -606,8 +610,7 @@ function main() {
       continue;
     }
 
-    const swapDir = swapLocation(appPkgDir, pkgName, app);
-    const swapAt = locationOf(app, swapDir);
+    const swapLocation = locationOf(app, swapDir);
     let resolved = false;
 
     for (const version of candidates) {
@@ -628,7 +631,7 @@ function main() {
         recordAttempt(logState, pkgName, attempt, outPath);
       };
 
-      console.log(`\n[${pkgName}] Trying candidate ${version} at ${swapAt}`);
+      console.log(`\n[${pkgName}] Trying candidate ${version} at ${swapLocation}`);
 
       if (!installExact(opts.npm, pkgName, version)) {
         attempt.reason = "npm-install-failed";
@@ -682,7 +685,7 @@ function main() {
         });
         attempt.verification = { path: toLogPath(outPath, verificationOutAbs), pass: verificationPass };
         Object.assign(attempt, verificationPass
-          ? { result: "pass", reason: "verified", unreplaced: unreplacedOf(pkgName, rootPkgDir) }
+          ? { result: "pass", reason: "verified" }
           : { result: "fail", reason: "verification-failed" });
       } catch (error) {
         attempt.reason = `trial-error:${String(error?.message || error)}`;
@@ -693,12 +696,12 @@ function main() {
         attempt.rolledBack = true;
       }
       // A set-aside that threw may have made the backup's directories without moving anything into them.
-      if (!setAsideDone) removeBackupRoots(backupRootsOf(pkgName, original, app));
+      if (!setAsideDone) removeBackupRoots(pkgName, backupRootsOf(pkgName, original, app));
       finish();
 
       if (attempt.result === "pass") {
         resolved = true;
-        console.log(`[${pkgName}] resolved with ${version} at ${swapAt}; still loading another copy: ${attempt.unreplaced.join(", ") || "none"}`);
+        console.log(`[${pkgName}] resolved with ${version} at ${swapLocation}`);
         break;
       }
     }
@@ -721,6 +724,14 @@ function main() {
   if (unresolved.length > 0) {
     console.log(`- unresolved list: ${unresolved.join(", ")}`);
   }
+  // A resolved package's swap replaces one copy; any other copy of it the app ships is named here, read from the tree
+  // the run leaves behind.
+  const locations = locationsByName(app);
+  const copies = packageList
+    .filter((pkgName) => logState.packages[pkgName]?.status === "resolved")
+    .flatMap((pkgName) => copiesLeft(pkgName, locations, rootPkgDirOf(pkgName), app).map((copy) => ({ pkgName, ...copy })));
+  console.log(`- locations of resolved packages loading something other than the root package: ${copies.length}`);
+  for (const { pkgName, location, loads } of copies) console.log(`  [${pkgName}] ${location} loads ${loads}`);
 
   process.exit(0);
 }

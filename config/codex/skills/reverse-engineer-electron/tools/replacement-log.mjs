@@ -12,18 +12,16 @@
 //   in-flight   { attempts, inFlight }             a trial was moving the original when the run ended
 //   resolved    { attempts, chosenVersion, pass }  exactly one pass attempt, for chosenVersion
 // The original of a trial (inFlight.original, a pass attempt's original) is what sat at the package's swap location,
-// the location every consumer of that copy loads it through (replace-dependency's swapLocation decides it):
+// the location every consumer of the app's copy loads it through (replace-dependency's findSwapLocation decides it):
 //   { kind: "dir",  location, backupPath }  a directory, renamed into .original/
 //   { kind: "link", location, target }      a symlink; target is its readlink text
 // Attempt, by reason:
 //   "interrupted" { recovery: "original-in-place" | "restored", original }  disk alone can't say whether a swap
 //                 happened and was undone before the kill, so it records only what disk showed
-//   "verified"    { swapApplied, rolledBack, original, verification, unreplaced }  the pass; unreplaced lists the
-//                 locations where the package still loads a copy other than the root package
 //   any other     { swapApplied, rolledBack, original | null, verification }  a trial this run saw end
 //
 // A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
-// node_modules/.pnpm/foo@1.0.0/node_modules/foo. Other stored paths (backupPath, verification.path) are relative to
+// node_modules/.pnpm/foo@1.0.0/node_modules/foo. isLocation is what replace-dependency's locationOf can write. Other stored paths (backupPath, verification.path) are relative to
 // the log's directory, so a run from any cwd reads them the same way.
 
 import path from "path";
@@ -62,7 +60,7 @@ export function serializeLog(log) {
 
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isString = (value) => typeof value === "string";
-const isLocation = (value) => isString(value) && value.startsWith("node_modules/") && value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
+export const isLocation = (value) => isString(value) && value.startsWith("node_modules/") && value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 
 function originalError(original) {
   if (!isObject(original)) return "original must be an object";
@@ -89,7 +87,6 @@ function attemptError(attempt) {
   }
   if (!attempt.swapApplied || attempt.rolledBack) return "a pass must have its swap applied and kept";
   if (!isString(attempt.verification.path) || attempt.verification.pass !== true) return "a pass needs a passing verification with its path";
-  if (!Array.isArray(attempt.unreplaced) || !attempt.unreplaced.every(isLocation)) return "a pass needs unreplaced, a list of locations";
   return originalError(attempt.original);
 }
 
@@ -123,74 +120,6 @@ function parseEntry(raw) {
   return { entry: { status: "in-flight", attempts: raw.attempts, inFlight } };
 }
 
-// v1 kept a trial's backup as backupPath on the attempt and stored paths relative to the cwd of the run that wrote
-// them, so cwd must be that run's — the project root every documented invocation runs from. A v1 backup is always a
-// directory rename, a renamed link included.
-function v1ToV2(raw, logPath, cwd) {
-  const rebase = (stored) => (isString(stored) ? toLogPath(logPath, path.resolve(cwd, stored)) : stored);
-  const migrateAttempt = ({ backupPath, ...attempt }) => ({
-    ...attempt,
-    original: isString(backupPath) ? { kind: "dir", backupPath: rebase(backupPath) } : null,
-    verification: isObject(attempt.verification) ? { ...attempt.verification, path: rebase(attempt.verification.path) } : attempt.verification,
-  });
-  return mapAttempts(raw, (name, attempt) => migrateAttempt(attempt));
-}
-
-// v2 swapped whatever sat at node_modules/<name>, so a dir original's location is exactly that. A link original is
-// not migrated: in a pnpm layout v2 replaced the top-level link and left the .pnpm store copy every other consumer
-// loads, and v3 must not read that swap as resolved. v2 kept no unreplaced list; [] says no more than v2 checked.
-// v3 drops v2's events list, a second copy of each attempt that nothing read.
-function v2ToV3(raw) {
-  const errors = [];
-  const migrateOriginal = (name, original) => {
-    if (!isObject(original)) return original;
-    const location = `node_modules/${name}`;
-    if (original.kind === "link") {
-      errors.push({
-        type: "v2-link-original",
-        package: name,
-        detail: `v2 swapped the link at ${location} itself, which in a pnpm layout leaves the .pnpm copy its other consumers load; make ${location} the link to ${original.target} again, then delete the package's entry from the log`,
-      });
-    }
-    return { ...original, location };
-  };
-  const migrated = mapAttempts(raw, (name, attempt) => ({
-    ...attempt,
-    original: migrateOriginal(name, attempt.original),
-    ...(attempt.result === "pass" ? { unreplaced: [] } : {}),
-  }));
-  for (const [name, entry] of Object.entries(migrated.packages)) {
-    if (isObject(entry) && isObject(entry.inFlight)) entry.inFlight = { ...entry.inFlight, original: migrateOriginal(name, entry.inFlight.original) };
-  }
-  const { events: _copyOfAttempts, ...v3 } = migrated;
-  return { raw: { ...v3, schemaVersion: SCHEMA_VERSION }, errors };
-}
-
-function mapAttempts(raw, migrateAttempt) {
-  const packages = Object.fromEntries(
-    Object.entries(raw.packages).map(([name, entry]) => [
-      name,
-      isObject(entry) && Array.isArray(entry.attempts) ? { ...entry, attempts: entry.attempts.map((attempt) => (isObject(attempt) ? migrateAttempt(name, attempt) : attempt)) } : entry,
-    ]),
-  );
-  return { ...raw, packages };
-}
-
-// An older log rewritten as the current schema: { from, text, errors }, where errors name what could not be carried
-// over; null when the text is not an older log. Only the shape moves; parseLog still judges the result.
-export function migrate(text, logPath, cwd) {
-  let raw;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!isObject(raw) || !isObject(raw.packages) || (raw.schemaVersion !== 1 && raw.schemaVersion !== 2)) return null;
-  const from = raw.schemaVersion;
-  const { raw: v3, errors } = v2ToV3(from === 1 ? v1ToV2(raw, logPath, cwd) : raw);
-  return { from, text: JSON.stringify(v3), errors };
-}
-
 // { ok: true, log } with every entry parsed into its status's shape, or { ok: false, errors } naming each problem.
 export function parseLog(text, logPath) {
   let raw;
@@ -208,7 +137,7 @@ export function parseLog(text, logPath) {
         path: logPath,
         found: raw.schemaVersion ?? null,
         expected: SCHEMA_VERSION,
-        detail: `replace-dependency migrates an older log when it loads it; to migrate without trialing anything, run it from the directory that wrote the log with --pkg <a package the log resolved>, which is skipped`,
+        detail: `an older replace-dependency wrote this log, and its records can't be read as this version's: put each swapped package's original back over its link (backups are under the app's node_modules/.original/), or re-extract the app, then delete the log and rerun`,
       }],
     };
   }

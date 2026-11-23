@@ -536,8 +536,8 @@ test("replace-dependency swaps a pnpm store copy for every consumer, and the rem
   assert.equal(entry.status, "resolved", JSON.stringify(entry));
   assert.equal(entry.attempts.at(-1).original.kind, "dir");
   const pass = entry.attempts.at(-1);
-  assert.equal(pass.original.location, path.relative(appDir, storePkgDir), "the log names the store location it swapped");
-  assert.deepEqual(pass.unreplaced, []);
+  assert.equal(pass.original.location, path.relative(appDir, storePkgDir), "the log names the store copy's location it swapped");
+  assert.match(result.stdout, /- locations of resolved packages loading something other than the root package: 0/);
   assert.equal(fs.readlinkSync(appPkgDir), shippedLink, "the app's own pnpm link is left as it shipped");
   assert.ok(fs.lstatSync(storePkgDir).isSymbolicLink());
   for (const consumer of [appPkgDir, consumerPkgDir]) assert.equal(fs.realpathSync(consumer), fs.realpathSync(rootPkgDir));
@@ -573,25 +573,31 @@ test("replace-dependency recovers a pnpm store copy whose trial was killed mid-v
   }
 });
 
-test("replace-dependency names the copies of another version a pnpm swap left loading their own code, and the gate reports them", () => {
-  const { appDir, rootPkgDir, replace, readLog, gate } = swapProject(VERIFYING_INDEX, { layout: "pnpm" });
+test("replace-dependency names every other location of a package it resolved: another version, a nested copy, a dangling link", () => {
+  const { appDir, rootPkgDir, replace } = swapProject(VERIFYING_INDEX, { layout: "pnpm" });
+  const nodeModules = path.join(appDir, "node_modules");
   // demo-pkg@2.0.0 in the store too, loaded by its own consumer: a different copy, which 1.2.3's swap leaves alone.
-  const otherStoreDir = path.join(appDir, "node_modules", ".pnpm", "demo-pkg@2.0.0", "node_modules", "demo-pkg");
-  const otherConsumerDir = path.join(appDir, "node_modules", ".pnpm", "dep@1.0.0", "node_modules", "demo-pkg");
+  const otherStoreDir = path.join(nodeModules, ".pnpm", "demo-pkg@2.0.0", "node_modules", "demo-pkg");
+  const otherConsumerDir = path.join(nodeModules, ".pnpm", "dep@1.0.0", "node_modules", "demo-pkg");
   writeJson(path.join(otherStoreDir, "package.json"), { name: "demo-pkg", version: "2.0.0" });
   linkTo(otherStoreDir, otherConsumerDir);
+  // An npm-style copy nested under another package, and a consumer link whose version was pruned.
+  const nestedDir = path.join(nodeModules, "bar", "node_modules", "demo-pkg");
+  writeJson(path.join(nestedDir, "package.json"), { name: "demo-pkg", version: "0.9.0" });
+  const danglingDir = path.join(nodeModules, ".pnpm", "pruned@1.0.0", "node_modules", "demo-pkg");
+  linkTo(path.join(nodeModules, ".pnpm", "demo-pkg@0.1.0", "node_modules", "demo-pkg"), danglingDir);
 
   const result = replace();
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  const unreplaced = [otherConsumerDir, otherStoreDir].map((dir) => path.relative(appDir, dir)).sort();
-  assert.deepEqual([...readLog().packages["demo-pkg"].attempts.at(-1).unreplaced].sort(), unreplaced);
-  for (const location of unreplaced) assert.ok(result.stdout.includes(location), result.stdout);
+  assert.match(result.stdout, /- locations of resolved packages loading something other than the root package: 4/);
+  for (const dir of [otherConsumerDir, otherStoreDir, nestedDir]) assert.ok(result.stdout.includes(`[demo-pkg] ${path.relative(appDir, dir)} loads another copy`), result.stdout);
+  assert.ok(result.stdout.includes(`[demo-pkg] ${path.relative(appDir, danglingDir)} loads nothing`), result.stdout);
   assert.equal(fs.realpathSync(otherConsumerDir), fs.realpathSync(otherStoreDir), "the other copy is untouched");
   assert.notEqual(fs.realpathSync(otherConsumerDir), fs.realpathSync(rootPkgDir));
 
-  const { status, artifact } = gate();
-  assert.equal(status, 0, JSON.stringify(artifact.mismatches));
-  assert.deepEqual(artifact.unreplacedLocations.map(({ location }) => location).sort(), unreplaced);
+  // A rerun reads the same tree and says the same, though it trials nothing.
+  const rerun = replace();
+  assert.match(rerun.stdout, /- locations of resolved packages loading something other than the root package: 4/);
 });
 
 test("replace-dependency swaps a scoped package's pnpm store copy, and puts it back when its trial fails", () => {
@@ -755,77 +761,59 @@ test("replace-dependency removes a backup root that collected stray files once t
   assert.ok(!roots.includes(path.basename(path.dirname(backupOf(inFlight)))));
 });
 
-test("replace-dependency migrates a v1 log, so a package a v1 run resolved stays resolved", () => {
-  const { tmp, logPath, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
-  assert.equal(replace().status, 0);
-  const v2 = readLog();
-
-  // The same swap as v1 recorded it: backupPath on the attempt, every stored path relative to the run's cwd.
-  const fromCwd = (stored) => path.relative(tmp, path.resolve(path.dirname(logPath), stored));
-  const v1 = structuredClone(v2);
-  v1.schemaVersion = 1;
-  for (const attempt of v1.packages["demo-pkg"].attempts) {
-    attempt.backupPath = fromCwd(attempt.original.backupPath);
-    delete attempt.original;
-    attempt.verification.path = fromCwd(attempt.verification.path);
-  }
-  writeJson(logPath, v1);
-
-  const rerun = replace();
-  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
-  assert.match(rerun.stdout, /\[demo-pkg\] already resolved with 1\.2\.3; skipped/);
-  // Each stored path leads to the same file it did under v2, however the migration spelled it.
-  const leadsTo = (stored) => fs.realpathSync(path.resolve(path.dirname(logPath), stored));
-  const [migrated] = readLog().packages["demo-pkg"].attempts;
-  const [original] = v2.packages["demo-pkg"].attempts;
-  assert.equal(readLog().schemaVersion, 3);
-  assert.equal(JSON.parse(fs.readFileSync(`${logPath}.v1`, "utf8")).schemaVersion, 1, "the v1 text is kept");
-  assert.equal(leadsTo(migrated.original.backupPath), leadsTo(original.original.backupPath));
-  assert.equal(leadsTo(migrated.verification.path), leadsTo(original.verification.path));
-  assert.equal(gate().status, 0);
-});
-
-// A log as v2 wrote it: no location on an original, no unreplaced list on a pass, and the events list.
-function asV2(log) {
-  const v2 = structuredClone(log);
-  v2.schemaVersion = 2;
-  v2.events = [];
-  for (const attempt of Object.values(v2.packages).flatMap((entry) => entry.attempts)) {
-    if (attempt.original) delete attempt.original.location;
-    delete attempt.unreplaced;
-  }
-  return v2;
-}
-
-test("replace-dependency migrates a v2 log: a directory it swapped stays resolved at the app path", () => {
+test("replace-dependency and the gate refuse a log an older version wrote, naming the way out", () => {
   const { logPath, replace, readLog, gate } = swapProject(VERIFYING_INDEX);
   assert.equal(replace().status, 0);
-  writeJson(logPath, asV2(readLog()));
-
-  const rerun = replace();
-  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
-  assert.match(rerun.stdout, /\[demo-pkg\] already resolved with 1\.2\.3; skipped/);
-  const log = readLog();
-  assert.equal(log.schemaVersion, 3);
-  assert.equal(log.events, undefined);
-  assert.equal(log.packages["demo-pkg"].attempts.at(-1).original.location, "node_modules/demo-pkg");
-  assert.equal(JSON.parse(fs.readFileSync(`${logPath}.v2`, "utf8")).schemaVersion, 2, "the v2 text is kept");
-  assert.equal(gate().status, 0);
-});
-
-test("replace-dependency refuses a v2 log whose swap set aside a link, since v2 may have left a pnpm store copy unswapped", () => {
-  const { logPath, shippedLink, replace } = swapProject(VERIFYING_INDEX, { layout: "pnpm" });
-  assert.equal(replace().status, 0);
-  // The swap as v2 made it: the app path's own link set aside, the store copy left in place.
-  const v2 = asV2(JSON.parse(fs.readFileSync(logPath, "utf8")));
-  v2.packages["demo-pkg"].attempts.at(-1).original = { kind: "link", target: shippedLink };
-  writeJson(logPath, v2);
+  writeJson(logPath, { ...readLog(), schemaVersion: 2 });
 
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
-  assert.ok(result.stderr.includes(`"type":"v2-link-original"`), result.stderr);
-  assert.ok(result.stderr.includes(`make node_modules/demo-pkg the link to ${shippedLink} again`), result.stderr);
-  assert.equal(JSON.parse(fs.readFileSync(logPath, "utf8")).schemaVersion, 2, "a refused log is left as it was");
+  assert.match(result.stderr, /"type":"schema-version".*put each swapped package's original back over its link/);
+  assert.equal(gate().status, 1);
+});
+
+test("replace-dependency records a location an app whose node_modules is a symlink can read back, and recovers it", () => {
+  const { tmp, appDir, appPkgDir, rootPkgDir, replace, readLog, killMidVerify } = swapProject(VERIFYING_INDEX);
+  const sharedDir = path.join(tmp, "shared-node-modules");
+  fs.renameSync(path.join(appDir, "node_modules"), sharedDir);
+  fs.symlinkSync(sharedDir, path.join(appDir, "node_modules"), "dir");
+
+  assert.equal(killMidVerify().inFlight.original.location, "node_modules/demo-pkg");
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+  assert.equal(fs.realpathSync(appPkgDir), fs.realpathSync(rootPkgDir));
+});
+
+test("replace-dependency refuses an app whose node_modules links to the project's own", () => {
+  const { tmp, appDir, fakeNpm, logPath } = swapProject(VERIFYING_INDEX);
+  fs.rmSync(path.join(appDir, "node_modules"), { recursive: true });
+  fs.symlinkSync(path.join(tmp, "node_modules"), path.join(appDir, "node_modules"), "dir");
+
+  const result = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--version", "1.2.3", "--app-dir", appDir, "--npm", fakeNpm, "--out", logPath], tmp);
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /is the project root, so npm would install over the app's own copies/);
+});
+
+test("replace-dependency reports a backup root it can't remove as a leftover, once the original is back", (t) => {
+  const { appPkgDir, replace, readLog, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const inFlight = killMidVerify();
+  const stuckDir = path.join(path.dirname(backupOf(inFlight)), "stuck");
+  writeText(path.join(stuckDir, "file"), "");
+  fs.chmodSync(stuckDir, 0o555);
+  // The rerun removes the root once it is writable again; until then the temp dir's cleanup needs it writable.
+  t.after(() => fs.existsSync(stuckDir) && fs.chmodSync(stuckDir, 0o755));
+
+  const result = replace();
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /the original is in place, but its backup root \S+ could not be removed/);
+  assert.ok(fs.lstatSync(appPkgDir).isDirectory(), "the original is back at the app path");
+  assert.equal(readLog().packages["demo-pkg"].status, "in-flight", "the record stays until the leftover is gone");
+
+  fs.chmodSync(stuckDir, 0o755);
+  const rerun = replace();
+  assert.equal(rerun.status, 0, rerun.stderr || rerun.stdout);
+  assert.match(rerun.stdout, /interrupted trial of 1\.2\.3: the original was still in place/);
 });
 
 test("replace-dependency recognises a link to the root package however its target is spelled", () => {

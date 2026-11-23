@@ -446,9 +446,6 @@ function runRemoveDepsGate(opts) {
       replacementLogErrors: [],
       missingVerificationArtifacts: [],
     },
-    // Each location where a resolved package still loads a copy other than the root package (another version, or a
-    // layout its swap can't reach). The swap the log records is still true, so these are reported, not failed.
-    unreplacedLocations: [],
     pass: false,
   };
 
@@ -507,7 +504,6 @@ function runRemoveDepsGate(opts) {
     }
 
     for (const [pkgName, entry] of entries.filter(([, entry]) => entry.status === "resolved")) {
-      artifact.unreplacedLocations.push(...entry.pass.unreplaced.map((location) => ({ package: pkgName, location })));
       const verificationPath = fromLogPath(replacementsPath, entry.pass.verification.path);
       if (!fs.existsSync(verificationPath)) {
         missingVerificationArtifacts.push({ package: pkgName, attemptVersion: entry.chosenVersion, path: verificationPath });
