@@ -15,7 +15,7 @@ import path from "path";
 // [LAW:parse-dont-validate] A package name as npm spells one: a name, or a scope and a name, neither starting with
 // "." and holding no "/" of its own. It is the one grammar for a --pkg argument, a candidate source's names, and the
 // entry a location ends in.
-export const isPackageName = (value) => typeof value === "string" && /^(?:@[^/@.\s][^/\s]*\/)?[^/@.\s][^/\s]*$/.test(value);
+export const isPackageName = (value) => typeof value === "string" && /^(?:@[^/@.][^/]*\/)?[^/@.][^/]*$/.test(value);
 
 // The entry a node_modules path names after its last node_modules: a package name, or a scope that holds no packages
 // (an entry under its own name), or null when it names neither.
@@ -25,7 +25,7 @@ export function entryNameOf(nodeModulesPath) {
   if (last === -1) return null;
   const entry = parts.slice(last + 1);
   const name = entry.length >= 2 && entry[0].startsWith("@") ? `${entry[0]}/${entry[1]}` : entry[0];
-  return name !== undefined && (isPackageName(name) || /^@[^/@.\s][^/\s]*$/.test(name)) ? name : null;
+  return name !== undefined && (isPackageName(name) || /^@[^/@.][^/]*$/.test(name)) ? name : null;
 }
 
 // A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
@@ -193,12 +193,13 @@ export const compareLocations = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 // [LAW:one-source-of-truth] The copies a set of starts reach: each start judged by swapOutcome and grouped by the swap
 // location it leads to, so the top-level link and every pnpm consumer link to one store copy are one copy, and a link
-// that leads nowhere is a copy that loads nothing. A copy is { name, location, outcome, paths }, sorted by location.
+// that leads nowhere is a copy that loads nothing. A copy is { name, location, outcome, paths }, sorted by location;
+// its name is the package it holds, or, when it holds none, the name it is reached by.
 export function copiesOf(app, starts) {
   const byLocation = new Map();
   for (const { name, start } of starts) {
-    const outcome = swapOutcome(app, start, name);
-    const copy = byLocation.get(outcome.location) ?? { name, location: outcome.location, outcome, paths: [] };
+    const outcome = swapOutcome(app, start);
+    const copy = byLocation.get(outcome.location) ?? { name: outcome.loads?.name ?? name, location: outcome.location, outcome, paths: [] };
     if (!copy.paths.includes(start)) copy.paths.push(start);
     byLocation.set(outcome.location, copy);
   }
@@ -271,9 +272,15 @@ export function linkDestination(appPkgDir, target) {
 // under the app's node_modules, whatever its parents link to; a link's destination is a canonical path, measured
 // from the app's real node_modules, so an app whose node_modules is itself a symlink still writes one.
 export function locationOf(nodeModules, dir) {
-  const location = ["node_modules", ...path.relative(nodeModules, dir).split(path.sep)].join("/");
-  if (!isLocation(location)) throw new Error(`${dir} is not inside ${nodeModules}`);
+  const location = locationIn(nodeModules, dir);
+  if (location === null) throw new Error(`${dir} is not inside ${nodeModules}`);
   return location;
+}
+
+// The location dir is at in nodeModules, or null when dir is no location there.
+function locationIn(nodeModules, dir) {
+  const location = ["node_modules", ...path.relative(nodeModules, dir).split(path.sep)].join("/");
+  return isLocation(location) ? location : null;
 }
 
 // [LAW:single-enforcer] The one constructor of the app every location is measured in: its node_modules as named, and
@@ -291,14 +298,14 @@ export function locationDir(app, location) {
 export const isInside = (app, entryPath) => entryPath.startsWith(`${app.realNodeModules}${path.sep}`);
 
 // [LAW:one-source-of-truth] The swap location: where every consumer of a copy loads it through. It is the start (a
-// location where pkgName is reached), followed through each link to another location of the same package inside the
-// app's node_modules, so for a pnpm layout, whose top-level link and .pnpm siblings all lead to one store copy, it is
-// that copy's location. A link leading anywhere else (out of the app's node_modules, as a workspace package or our
-// link to a replacement does, or to another package) is itself the swap location. A location the app owns is spelled
-// canonically, so a copy reached through a symlinked nested node_modules has one location however it is reached.
-// Links that lead back into the chain are a loop, named by the chain and located where it begins.
-function findSwapLocation(app, start, pkgName) {
-  const tail = `${path.sep}${path.join("node_modules", ...pkgPathParts(pkgName))}`;
+// location where a package is reached), followed through each link to another location inside the app's
+// node_modules, so for a pnpm layout, whose top-level link and .pnpm siblings all lead to one store copy, it is that
+// copy's location, and an npm alias's link is one more path to the copy it leads to. A link leading anywhere else (out
+// of the app's node_modules, as a workspace package or our link to a replacement does, or into a package's own files)
+// is itself the swap location. A location the app owns is spelled canonically, so a copy reached through a symlinked
+// nested node_modules has one location however it is reached. Links that lead back into the chain are a loop, named by
+// the chain and located where it begins.
+function findSwapLocation(app, start) {
   const canonical = (location) => {
     const entry = canonicalEntry(locationDir(app, location));
     return isInside(app, entry) ? locationOf(app.realNodeModules, entry) : location;
@@ -308,8 +315,8 @@ function findSwapLocation(app, start, pkgName) {
     const dir = locationDir(app, chain.at(-1));
     const entry = appPathState(dir);
     const next = entry.kind === "link" ? linkDestination(dir, entry.target) : null;
-    if (next === null || !isInside(app, next) || !next.endsWith(tail)) return { kind: "location", location: canonical(chain.at(-1)) };
-    const nextLocation = locationOf(app.realNodeModules, next);
+    const nextLocation = next !== null && isInside(app, next) ? locationIn(app.realNodeModules, next) : null;
+    if (nextLocation === null) return { kind: "location", location: canonical(chain.at(-1)) };
     if (chain.includes(nextLocation)) return { kind: "loop", location: canonical(start), chain: [...chain, nextLocation] };
     chain.push(nextLocation);
   }
@@ -332,9 +339,9 @@ export function containerSwappedAt(app, location) {
   return containers.find((container) => isLocation(container) && replacementLinkedAt(app, locationDir(app, container)) !== null) ?? null;
 }
 
-// [LAW:types-are-the-program] Whether, and where, replace-dependency can swap the copy of pkgName reached at start.
+// [LAW:types-are-the-program] Whether, and where, replace-dependency can swap the copy reached at start.
 // Every outcome names the swap location and the package node loads there, or null when it loads none:
-//   { kind: "trialable", location, loads }                         the app owns the location and it holds pkgName itself
+//   { kind: "trialable", location, loads }                         the app owns the location and it holds a package
 //   { kind: "untrialable", location, loads, cause, reason, appOwns }
 // appOwns is false for a location past a link out of the app's real node_modules (a scope linked to a workspace's
 // own), which holds files nothing may move. The cause is the first of these replace-dependency would hit, and the
@@ -343,9 +350,10 @@ export function containerSwappedAt(app, location) {
 //   outside-app    outside-app:<location>      the app doesn't own the location
 //   replacement    replacement:<alias>         the location already links to a replacement of this tool's
 //   not-a-package  not-a-package:<state>       the location holds no usable package.json
-//   alias-of       alias-of:<name>             the location holds another package (an npm alias), which npm can't install by the load name
-export function swapOutcome(app, start, pkgName) {
-  const swap = findSwapLocation(app, start, pkgName);
+// A location that holds a package other than the name it is reached by (an npm alias) is trialable as the package it
+// holds: its replacement is installed under an alias of its own, whatever name loads it.
+export function swapOutcome(app, start) {
+  const swap = findSwapLocation(app, start);
   const { location } = swap;
   const dir = locationDir(app, location);
   const holds = packageAt(dir);
@@ -356,7 +364,6 @@ export function swapOutcome(app, start, pkgName) {
     : !appOwns ? ["outside-app", location]
     : replacement !== null ? ["replacement", replacement]
     : loads === null ? ["not-a-package", stateText(holds)]
-    : loads.name !== pkgName ? ["alias-of", loads.name]
     : [null, null];
   return cause === null ? { kind: "trialable", location, loads } : { kind: "untrialable", location, loads, cause, reason: `${cause}:${detail}`, appOwns };
 }

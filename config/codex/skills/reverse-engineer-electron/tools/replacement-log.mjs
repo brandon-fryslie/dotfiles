@@ -9,7 +9,9 @@
 //
 // The log holds one entry per copy, keyed by the copy's location: its swap location, the one every consumer of the
 // copy loads it through (node-modules.mjs's swapOutcome decides it). The key is the one place a location is stored.
-// Every entry names the package (name) and the version the app's copy is (version, null when the location held no
+// Every entry names the package the copy is (name: the one its location's package.json names, which differs from the
+// name the location is reached by at an npm alias, or that name when it held none) and the version the app's copy is
+// (version, null when the location held no
 // copy of name that could be trialed, so only an unresolved entry can have none); by status it carries:
 //   unresolved  { attempts }                       at least one attempt, and no pass
 //   in-flight   { attempts, inFlight }             a trial was moving the original when the run ended
@@ -28,7 +30,7 @@
 // cwd reads them the same way.
 
 import path from "path";
-import { entryNameOf, isLocation, isNonEmptyString } from "./node-modules.mjs";
+import { isLocation, isNonEmptyString } from "./node-modules.mjs";
 
 export const SCHEMA_VERSION = 4;
 
@@ -192,12 +194,9 @@ export function parseLog(text, logPath) {
   const copies = {};
   const errors = [];
   for (const [location, rawEntry] of Object.entries(raw.copies)) {
-    // A location ends in the name of the package reached there, so an entry's name is its key's.
-    const { entry, error } = !isLocation(location)
-      ? { error: { type: "location-invalid", detail: "an entry's key must be a location under node_modules/" } }
-      : isObject(rawEntry) && rawEntry.name !== entryNameOf(location)
-        ? { error: { type: "copy-name-invalid", detail: `an entry at ${location} names ${JSON.stringify(rawEntry.name)}, not ${entryNameOf(location)}` } }
-        : parseEntry(rawEntry);
+    const { entry, error } = isLocation(location)
+      ? parseEntry(rawEntry)
+      : { error: { type: "location-invalid", detail: "an entry's key must be a location under node_modules/" } };
     if (error) errors.push({ ...error, location, package: isObject(rawEntry) ? rawEntry.name ?? null : null });
     else copies[location] = entry;
   }

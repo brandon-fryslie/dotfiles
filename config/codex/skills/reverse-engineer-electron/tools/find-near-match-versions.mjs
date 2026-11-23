@@ -258,9 +258,11 @@ function rankCandidates(ctx, registryVersions) {
   const observed = parseSemver(ctx.observedVersion || "");
   if (!observed) return [];
 
+  // A prerelease is offered only as the copy's own version: a near match is a published release of its major.minor.
   const sameMinor = registryVersions.filter((version) => {
     const parsed = parseSemver(version);
-    return parsed !== null && parsed.major === observed.major && parsed.minor === observed.minor;
+    const release = !version.replace(/\+.*$/, "").includes("-");
+    return parsed !== null && release && parsed.major === observed.major && parsed.minor === observed.minor;
   });
   const unique = Array.from(new Set([...sameMinor, ctx.observedVersion]));
 

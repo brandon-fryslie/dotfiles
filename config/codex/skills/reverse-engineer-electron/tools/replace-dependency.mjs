@@ -11,10 +11,11 @@
  * Usage (auto near-match over candidate source):
  *   node replace-dependency.mjs --auto-near-match --candidate-source deps/near-matches.json --app-dir resources/app
  *
- * Exit status: 0 when every copy the run was asked for (every copy of the package, or the one at --location) is replaced
- * and the whole tree was read; 3 when the run finished but one of those copies still loads something other than its
- * replacement, or a directory couldn't be listed; 2 when the run refuses before moving anything more; 1 when an error
- * stops it.
+ * Exit status: 0 when every copy the run was asked for (every copy of each requested package the walk finds, or the one
+ * at --location) is replaced and the whole tree was read; 3 when the run finished but one of those copies still loads
+ * something other than its replacement, or the tree couldn't be read in full; 2 when the run refuses before moving
+ * anything more; 1 when an error stops it. A requested package with no copy is named, and asks for nothing: nothing in
+ * the app loads it.
  *
  * // [LAW:verifiable-goals] Every attempt is logged with result, rollback state, and verification evidence.
  * // [LAW:one-source-of-truth] deps/replacements.json is the canonical transaction log for dependency swaps, one entry
@@ -269,6 +270,17 @@ function rootLinkTarget(dir, replacementDir) {
 // log status: it is exactly when the link there leads to that replacement's directory.
 const isLinkTo = (state, dir, replacementDir) => state.kind === "link" && linkDestination(dir, state.target) === canonicalEntry(replacementDir);
 
+// [LAW:single-enforcer] Whether a resolved copy is replaced, the one answer priorSwap and the summary both read: its
+// location links to the replacement its entry chose, and that replacement holds the chosen package.
+//   { kind: "held", replacement } | { kind: "unlinked", replacement } | { kind: "not-installed", replacement, root }
+function replacementHeld(app, projectRoot, location, entry) {
+  const dir = locationDir(app, location);
+  const replacement = replacementOf(projectRoot, entry.name, entry.chosenVersion);
+  if (!isLinkTo(appPathState(dir), dir, replacement.dir)) return { kind: "unlinked", replacement };
+  const root = packageAt(replacement.dir);
+  return isInstalled(root, entry.name, entry.chosenVersion) ? { kind: "held", replacement } : { kind: "not-installed", replacement, root };
+}
+
 // Decided before anything moves, and written into the log as the trial's in-flight record. Nothing is created here:
 // setAside makes the backup's directories, so a trial that never moves the original leaves nothing under .original/.
 function originalOf(copy, app) {
@@ -382,33 +394,34 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
 // [LAW:no-silent-failure]
 function priorSwap(entry, ctx, requestedVersion) {
   const { app, copy, projectRoot } = ctx;
-  const outcome = swapOutcome(app, copy.location, copy.name);
+  const outcome = swapOutcome(app, copy.location);
   const dir = locationDir(app, copy.location);
   const why = outcome.kind === "untrialable" ? ` (${outcome.reason})` : "";
   if (outcome.kind === "untrialable" && !outcome.appOwns) {
     return { kind: "conflict", reason: `the log records the ${entry.status} swap at ${dir}, but that copy can't be swapped (${outcome.reason}), so undoing it would touch files the app doesn't own — put the original back by hand, then ${ctx.deleteEntry}` };
   }
-  if (outcome.location !== copy.location) {
-    return { kind: "conflict", reason: `the log records the ${entry.status} swap at ${dir}, but ${dir} now leads on to ${locationDir(app, outcome.location)}${why} — put back what the swap left at ${dir}, then rerun` };
-  }
+  // An interrupted trial is settled by what sits at its own location, whatever that leads on to.
   const state = appPathState(dir);
   if (entry.status === "in-flight") {
     const ours = isLinkTo(state, dir, replacementOf(projectRoot, copy.name, entry.inFlight.attemptedVersion).dir);
     return classifyInterrupted(entry.inFlight, state, ours, { ...ctx, dir });
   }
+  if (outcome.location !== copy.location) {
+    return { kind: "conflict", reason: `the log records the ${entry.status} swap at ${dir}, but ${dir} now leads on to ${locationDir(app, outcome.location)}${why} — put back what the swap left at ${dir}, then rerun` };
+  }
 
   const chosen = entry.chosenVersion;
-  const replacement = replacementOf(projectRoot, copy.name, chosen);
-  if (!isLinkTo(state, dir, replacement.dir)) {
+  const held = replacementHeld(app, projectRoot, copy.location, entry);
+  const { replacement } = held;
+  if (held.kind === "unlinked") {
     return { kind: "conflict", reason: `resolved with ${chosen} in the log, but ${dir} is not linked to its replacement${why} (re-extracted app with an old log?) — to trial this app copy, ${ctx.deleteEntry}` };
   }
   const restore = `to trial it again, replace the link at ${dir} with ${describeOriginal(entry.pass.original, app.logPath)} and ${ctx.deleteEntry}`;
   if (requestedVersion !== null && requestedVersion !== chosen) {
     return { kind: "conflict", reason: `already resolved with ${chosen}; --version ${requestedVersion} is a retrial — ${restore}` };
   }
-  const root = packageAt(replacement.dir);
-  if (!isInstalled(root, copy.name, chosen)) {
-    return { kind: "conflict", reason: `resolved with ${chosen}, but its replacement ${replacement.dir} is now ${packageText(root)} — reinstall it (npm install ${replacement.spec}), or ${restore}` };
+  if (held.kind === "not-installed") {
+    return { kind: "conflict", reason: `resolved with ${chosen}, but its replacement ${replacement.dir} is now ${packageText(held.root)} — reinstall it (npm install ${replacement.spec}), or ${restore}` };
   }
   return { kind: "resolved", version: chosen };
 }
@@ -594,8 +607,7 @@ function summarize(run, { found, selected, skipped, interrupted }) {
   const end = run.requestedCopies();
   const replaced = (copy) => {
     const entry = logState.copies[copy.location];
-    const dir = locationDir(app, copy.location);
-    return entry?.status === "resolved" && isLinkTo(appPathState(dir), dir, replacementOf(projectRoot, copy.name, entry.chosenVersion).dir);
+    return entry?.status === "resolved" && replacementHeld(app, projectRoot, copy.location, entry).kind === "held";
   };
   const loadsText = ({ location, outcome }) => {
     if (outcome.loads === null) return `nothing (${outcome.reason})`;
@@ -624,8 +636,7 @@ function summarize(run, { found, selected, skipped, interrupted }) {
   console.log("- directories it couldn't list:");
   for (const { path: dir, code } of unlisted) console.log(`  ${path.join(appDir, dir)} (${code})`);
 
-  // A requested package with no copy, or a tree not read in full, is no package replaced.
-  return left.some(asked) || noCopy.length > 0 || verdict.kind !== "listed" ? 3 : 0;
+  return left.some(asked) || verdict.kind !== "listed" ? 3 : 0;
 }
 
 function main() {
@@ -690,7 +701,7 @@ function main() {
     // Every copy of a requested package, as the tree is now, and the walk that found them.
     requestedCopies: () => {
       const walk = walkStarts(app, names);
-      return { walk, copies: copiesOf(app, walk.starts.filter(({ name }) => names.includes(name))) };
+      return { walk, copies: copiesOf(app, walk.starts).filter(({ name }) => names.includes(name)) };
     },
   };
 

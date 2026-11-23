@@ -169,7 +169,7 @@ function loadFingerprints() {
 
 // [LAW:one-source-of-truth] Every package version the app's package-lock.json records, at the location it records it
 // at, named by the one location grammar node-modules.mjs owns: a key's package is the entry after its last
-// node_modules. A lockfile v1's top-level dependencies are at their top-level locations. A lockfile that is there and
+// node_modules, or the name its entry records, for an alias. A lockfile v1's top-level dependencies are at their top-level locations. A lockfile that is there and
 // can't be read stops the run, never reads as one that records nothing. [LAW:no-silent-failure]
 function loadLockfilePackages(appDir) {
   const packageLockPath = path.join(appDir, "package-lock.json");
@@ -182,11 +182,12 @@ function loadLockfilePackages(appDir) {
   }
   const recorded = [
     ...Object.entries(packageLock.dependencies ?? {}).map(([name, meta]) => [topLevelLocation(name), meta?.version]),
-    ...Object.entries(packageLock.packages ?? {}).map(([location, meta]) => [location, meta?.version]),
+    // An alias's entry records the package it is as its name.
+    ...Object.entries(packageLock.packages ?? {}).map(([location, meta]) => [location, meta?.version, isNonEmptyString(meta?.name) ? meta.name : undefined]),
   ];
   const byLocation = new Map(recorded
     .filter(([location, version]) => isLocation(location) && isNonEmptyString(version))
-    .map(([location, version]) => [location, { name: entryNameOf(location), version, location }]));
+    .map(([location, version, name]) => [location, { name: name ?? entryNameOf(location), version, location }]));
   return [...byLocation.values()].sort((left, right) => left.name.localeCompare(right.name) || compareLocations(left.location, right.location));
 }
 
@@ -1028,10 +1029,11 @@ function main() {
   // A copy on disk is a directory, however many locations reach it.
   const copiesOnDisk = new Set(loadingCopies.map(({ dir }) => fs.realpathSync(dir))).size;
   const lockfilePackages = loadLockfilePackages(appDir);
-  // [LAW:one-source-of-truth] A package's version is the one the app's own require loads: the copy at its top-level
-  // location when that copy is the package itself (an alias there is another package's code), else the lockfile's.
+  // [LAW:one-source-of-truth] A package's version is the one the app's own require loads: the copy of it its
+  // top-level location reaches (a copy is named for the package it holds, so an alias's is another package's), else
+  // the lockfile's.
   const topLevelVersions = loadingCopies
-    .filter(({ name, paths, outcome }) => paths.includes(topLevelLocation(name)) && outcome.loads.name === name)
+    .filter(({ name, paths }) => paths.includes(topLevelLocation(name)))
     .map(({ name, outcome }) => [name, outcome.loads.version]);
   const packageVersionByName = Object.fromEntries([
     ...lockfilePackages.filter(({ name, location }) => location === topLevelLocation(name)).map(({ name, version }) => [name, version]),
