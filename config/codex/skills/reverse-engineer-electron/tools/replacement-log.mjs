@@ -12,7 +12,7 @@
 //   in-flight   { attempts, inFlight }             a trial was moving the original when the run ended
 //   resolved    { attempts, chosenVersion, pass }  exactly one pass attempt, for chosenVersion
 // The original of a trial (inFlight.original, a pass attempt's original) is what sat at the package's swap location,
-// the location every consumer of the app's copy loads it through (replace-dependency's findSwapLocation decides it):
+// the location every consumer of the app's copy loads it through (node-modules.mjs's swapOutcome decides it):
 //   { kind: "dir",  location, backupPath }  a directory, renamed into .original/
 //   { kind: "link", location, target }      a symlink; target is its readlink text
 // Attempt, by reason:
@@ -21,7 +21,7 @@
 //   any other     { swapApplied, rolledBack, original | null, verification }  a trial this run saw end
 //
 // A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
-// node_modules/.pnpm/foo@1.0.0/node_modules/foo. isLocation is what replace-dependency's locationOf can write. Other stored paths (backupPath, verification.path) are relative to
+// node_modules/.pnpm/foo@1.0.0/node_modules/foo. isLocation is what node-modules.mjs's locationOf can write. Other stored paths (backupPath, verification.path) are relative to
 // the log's directory, so a run from any cwd reads them the same way.
 
 import path from "path";

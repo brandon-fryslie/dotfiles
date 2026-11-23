@@ -24,7 +24,8 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
-import { emptyLog, fromLogPath, isLocation, parseLog, serializeLog, toLogPath } from "./replacement-log.mjs";
+import { emptyLog, fromLogPath, parseLog, serializeLog, toLogPath } from "./replacement-log.mjs";
+import { appPathState, canonicalEntry, linkDestination, locationDir, locationOf, pathState, pkgPathParts, realExisting, swapOutcome, untrialableReason } from "./node-modules.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -97,14 +98,6 @@ function lockTree(lockPath) {
   }
   fs.ftruncateSync(fd, 0);
   fs.writeSync(fd, `pid ${process.pid}, started ${new Date().toISOString()}, in ${process.cwd()}: ${process.argv.join(" ")}\n`);
-}
-
-function isScoped(name) {
-  return name.startsWith("@") && name.includes("/");
-}
-
-function pkgPathParts(name) {
-  return isScoped(name) ? name.split("/") : [name];
 }
 
 function safeNowStamp() {
@@ -240,69 +233,10 @@ function determineCandidatesForPackage(opts, pkgName, candidateSource, onDiskVer
   return unique(candidates);
 }
 
-// What sits at a package's path in the app: nothing, a directory, or a symlink with its readlink text.
-function appPathState(appPkgDir) {
-  const stat = fs.lstatSync(appPkgDir, { throwIfNoEntry: false });
-  if (!stat) return { kind: "absent" };
-  if (stat.isSymbolicLink()) return { kind: "link", target: fs.readlinkSync(appPkgDir) };
-  return { kind: "dir" };
-}
-
-// An entry path in canonical form: its parent directories resolved through symlinks as far as they exist, so --app-dir
-// and cwd naming one tree through different symlinked prefixes (/var vs /private/var on macOS) agree, and a path into
-// a root scope nothing has been installed into yet still compares. The entry itself stays unresolved, so a workspace
-// or npm-link entry keeps its indirection and a link left dangling by a removed root package is still recognised.
-function canonicalEntry(entryPath) {
-  return path.join(realExisting(path.dirname(entryPath)), path.basename(entryPath));
-}
-
-function realExisting(dir) {
-  return fs.existsSync(dir) ? fs.realpathSync(dir) : path.join(realExisting(path.dirname(dir)), path.basename(dir));
-}
-
-// Where a symlink at appPkgDir with this readlink text leads: a relative target resolves from the link's real directory.
-function linkDestination(appPkgDir, target) {
-  return canonicalEntry(path.resolve(fs.realpathSync(path.dirname(appPkgDir)), target));
-}
-
-// [LAW:single-enforcer] The one constructor of a location, the form replacement-log.mjs parses: the path from a
-// node_modules directory to a package in it, spelled from the app's node_modules. A package's own app path is its name
-// under the app's node_modules, whatever its parents link to; a link's destination is a canonical path, measured
-// from the app's real node_modules, so an app whose node_modules is itself a symlink still writes one.
-function locationOf(nodeModules, dir) {
-  const location = ["node_modules", ...path.relative(nodeModules, dir).split(path.sep)].join("/");
-  if (!isLocation(location)) throw new Error(`${dir} is not inside ${nodeModules}`);
-  return location;
-}
-
-function locationDir(app, location) {
-  return path.join(app.nodeModules, ...location.split("/").slice(1));
-}
-
-// [LAW:one-source-of-truth] The swap location: where every consumer of the app's copy loads it through, read off
-// disk the same way before, during, and after a swap. It is the app path, followed through each link to another
-// location of the same package inside the app's node_modules, so for a pnpm layout, whose top-level link and .pnpm
-// siblings all lead to one store copy, it is that copy's location. A link leading anywhere else (out of the app's
-// node_modules, as a workspace package or our link to the root does, or to another package, as an alias does) is
-// itself the swap location: nothing past it is ours to move. Links that loop are a value too, so the caller refuses
-// them the way it refuses every other disk state it can't trial.
-function findSwapLocation(pkgName, app) {
-  const tail = `${path.sep}${path.join("node_modules", ...pkgPathParts(pkgName))}`;
-  const chain = [locationOf(app.nodeModules, path.join(app.nodeModules, ...pkgPathParts(pkgName)))];
-  for (;;) {
-    const dir = locationDir(app, chain.at(-1));
-    const state = appPathState(dir);
-    const next = state.kind === "link" ? linkDestination(dir, state.target) : null;
-    if (next === null || !next.startsWith(`${app.realNodeModules}${path.sep}`) || !next.endsWith(tail)) return { kind: "found", location: chain.at(-1) };
-    const nextLocation = locationOf(app.realNodeModules, next);
-    if (chain.includes(nextLocation)) return { kind: "loop", chain: [...chain, nextLocation] };
-    chain.push(nextLocation);
-  }
-}
-
 // Every location in the app's node_modules a package can load from, by package name: each node_modules/<name> and
 // node_modules/@scope/<name>, found by walking real directories. Links are listed but never descended, so a link
-// cycle cannot loop the walk; .original/ holds set-aside backups nothing loads.
+// cycle cannot loop the walk; .original/ holds set-aside backups nothing loads; a directory node can't list loads
+// nothing from inside it.
 function locationsByName(app) {
   const byName = new Map();
   const walk = (dir) => {
@@ -314,7 +248,7 @@ function locationsByName(app) {
         : parent.startsWith("@") && path.basename(path.dirname(dir)) === "node_modules" ? `${parent}/${child.name}`
         : null;
       if (name !== null) byName.set(name, [...(byName.get(name) ?? []), locationOf(app.nodeModules, childDir)]);
-      if (child.isDirectory()) walk(childDir);
+      if (child.isDirectory() && pathState(childDir).kind === "dir") walk(childDir);
     }
   };
   walk(app.nodeModules);
@@ -428,7 +362,7 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
   const { original } = inFlight;
   const { dir } = ctx;
   const trial = `an interrupted trial of ${inFlight.attemptedVersion}`;
-  const interrupted = (recovery) => ({ kind: "interrupted", recovery, inFlight, swapLocation: original.location });
+  const interrupted = (recovery) => ({ kind: "interrupted", recovery, inFlight });
   const conflict = (reason) => ({ kind: "conflict", reason });
 
   if (original.kind === "dir") {
@@ -452,21 +386,26 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
 // not trial the package again (the log allows exactly one pass per resolved package). Disk has to agree with the
 // record in both directions — the app path still leads to the location the record swapped, and that location holds
 // our link — and when it doesn't, neither side can be trusted to win, so the run refuses and names the way out.
-// [LAW:no-silent-failure]
+// An untried package is "untried" whatever its swap outcome; the trial records any outcome it can't trial. A recorded
+// swap the outcome now places outside the app or at an alias is refused, since undoing it would touch what the app
+// doesn't own. [LAW:no-silent-failure]
 function priorSwap(entry, ctx, requestedVersion) {
   const status = entry?.status ?? "unresolved";
-  const found = findSwapLocation(ctx.pkgName, ctx.app);
-  if (found.kind === "loop") return { kind: "conflict", reason: `the app's links loop, so no copy of it loads: ${found.chain.join(" -> ")} — fix the links, then rerun` };
-  const current = locationDir(ctx.app, found.location);
+  const outcome = swapOutcome(ctx.app, ctx.pkgName);
+  if (outcome.kind === "loop") return { kind: "conflict", reason: `the app's links loop, so no copy of it loads: ${outcome.chain.join(" -> ")} — fix the links, then rerun` };
+  const current = locationDir(ctx.app, outcome.location);
   if (status === "unresolved") {
-    if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried", swapLocation: found.location };
+    if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried" };
     // Trialing our own link would verify the root package against itself and record a made-up original.
     return { kind: "conflict", reason: `${current} already links to the root package, but ${ctx.app.logPath} records no resolved swap for it — put the original back over the link first (earlier backups are under ${ctx.app.backupsDir}), then rerun` };
   }
 
   const recorded = status === "in-flight" ? entry.inFlight.original : entry.pass.original;
   const dir = locationDir(ctx.app, recorded.location);
-  if (found.location !== recorded.location) {
+  if (outcome.kind === "outside" || outcome.kind === "alias") {
+    return { kind: "conflict", reason: `the log records the ${status} swap at ${dir}, but that copy can't be swapped (${untrialableReason(outcome)}), so undoing it would touch files the app doesn't own — put the original back by hand, then ${ctx.deleteEntry}` };
+  }
+  if (outcome.location !== recorded.location) {
     return { kind: "conflict", reason: `the log records the ${status} swap at ${dir}, but ${ctx.appPkgDir} now leads to ${current} — make it lead to ${dir} again, then rerun` };
   }
   const state = appPathState(dir);
@@ -583,14 +522,13 @@ function main() {
 
   const toTry = priors.filter(({ pkgName, prior }) => packageList.includes(pkgName) && (prior.kind === "untried" || prior.kind === "interrupted"));
 
-  for (const { pkgName, prior: { swapLocation } } of toTry) {
+  for (const { pkgName } of toTry) {
     const appPkgDir = appPkgDirOf(pkgName);
-    const appPkgJson = path.join(appPkgDir, "package.json");
-
-    const onDiskVersion = readPkgVersion(appPkgJson);
-    const candidates = determineCandidatesForPackage(opts, pkgName, candidateSource, onDiskVersion);
+    // Read after recovery has put any interrupted original back, so it sees the app as the trial will.
+    const outcome = swapOutcome(app, pkgName);
 
     const untrialable = (reason) => {
+      console.log(`[${pkgName}] not trialed: ${reason}`);
       const now = new Date().toISOString();
       recordAttempt(logState, pkgName, {
         attemptedVersion: null,
@@ -604,15 +542,17 @@ function main() {
         verification: { path: null, pass: false },
       }, outPath);
     };
-    if (!fs.existsSync(appPkgJson)) {
-      untrialable("on-disk-package-missing");
+    if (outcome.kind !== "found") {
+      untrialable(untrialableReason(outcome));
       continue;
     }
+    const candidates = determineCandidatesForPackage(opts, pkgName, candidateSource, outcome.holds.version);
     if (candidates.length === 0) {
       untrialable("no-candidates");
       continue;
     }
 
+    const swapLocation = outcome.location;
     const swapDir = locationDir(app, swapLocation);
     let resolved = false;
 

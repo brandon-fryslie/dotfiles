@@ -19,6 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
+import { pathState, pkgPathParts, swapOutcome, topLevelEntries, untrialableReason } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -102,57 +103,24 @@ function pkgNameFromNodeModulesPath(text) {
   return parts[0];
 }
 
-function readPackageJson(pkgDir) {
-  const packageJsonPath = path.join(pkgDir, "package.json");
-  if (!fs.existsSync(packageJsonPath)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
-  } catch {
-    return null;
-  }
+// [LAW:one-source-of-truth] Every top-level entry of the app's node_modules with swapOutcome's answer for it, the one
+// replace-dependency acts on. An app with no node_modules (a fully bundled one ships none) has no entries.
+function readOnDisk(appDir) {
+  const nodeModules = path.join(appDir, "node_modules");
+  const state = pathState(nodeModules);
+  if (state.kind !== "dir") return { nodeModules: state, entries: [] };
+  const app = { nodeModules, realNodeModules: fs.realpathSync(nodeModules) };
+  const entries = topLevelEntries(nodeModules).map((name) => {
+    const dir = path.join(nodeModules, ...pkgPathParts(name));
+    return { name, dir, path: path.relative(appDir, dir), outcome: swapOutcome(app, name) };
+  });
+  return { nodeModules: state, entries };
 }
 
-function listOnDiskPackages(appDir) {
-  const nmDir = path.join(appDir, "node_modules");
-  const out = [];
-  if (!fs.existsSync(nmDir) || !fs.statSync(nmDir).isDirectory()) return out;
-
-  const entries = fs.readdirSync(nmDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith(".")) continue;
-
-    if (entry.name.startsWith("@")) {
-      const scopeDir = path.join(nmDir, entry.name);
-      for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-        if (!scoped.isDirectory()) continue;
-        const pkgDir = path.join(scopeDir, scoped.name);
-        const pkg = readPackageJson(pkgDir);
-        if (!pkg?.name || !pkg?.version) continue;
-        out.push({
-          name: pkg.name,
-          version: pkg.version,
-          path: path.relative(appDir, pkgDir),
-          dir: pkgDir,
-        });
-      }
-      continue;
-    }
-
-    const pkgDir = path.join(nmDir, entry.name);
-    const pkg = readPackageJson(pkgDir);
-    if (!pkg?.name || !pkg?.version) continue;
-    out.push({
-      name: pkg.name,
-      version: pkg.version,
-      path: path.relative(appDir, pkgDir),
-      dir: pkgDir,
-    });
-  }
-
-  out.sort((left, right) => left.name.localeCompare(right.name));
-  return out;
-}
+// Where each swap outcome is reported: the packages replace-dependency can trial, the packages it can't, and the
+// entries that hold no package.
+const ON_DISK_LIST = { found: "packages", loop: "untrialable", outside: "untrialable", alias: "untrialable", "not-a-package": "skipped" };
+const ON_DISK_WARNING = { untrialable: "replace-dependency can't trial it", skipped: "not a package" };
 
 function listPackageJsFiles(pkgDir) {
   return listFiles(pkgDir, SOURCE_TREE_EXCLUDES)
@@ -1083,13 +1051,23 @@ function main() {
   const outPath = path.resolve(projectRoot, opts.out);
 
   const fingerprints = loadFingerprints();
-  const onDiskPackages = listOnDiskPackages(appDir);
+  const onDisk = readOnDisk(appDir);
+  // Every copy the app loads, trialable or not, lends its version, its name, and its shape hashes to classification.
+  const loadedPackages = onDisk.entries
+    .filter(({ outcome }) => outcome.kind !== "loop" && outcome.holds.kind === "package")
+    .map(({ name, dir, outcome }) => ({ name, version: outcome.holds.version, dir }));
   const lockfilePackages = loadLockfilePackages(appDir);
-  const packageVersionByName = Object.fromEntries([...lockfilePackages, ...onDiskPackages].map((pkg) => [pkg.name, pkg.version]));
-  const packageShapeHashes = indexPackageShapeHashes(onDiskPackages);
+  const packageVersionByName = Object.fromEntries([...lockfilePackages, ...loadedPackages].map((pkg) => [pkg.name, pkg.version]));
+  const packageShapeHashes = indexPackageShapeHashes(loadedPackages);
   const knownPackages = Array.from(
-    new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...onDiskPackages.map((pkg) => pkg.name)]),
+    new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackages.map((pkg) => pkg.name)]),
   ).sort((left, right) => right.length - left.length || left.localeCompare(right));
+  const onDiskReport = { nodeModules: onDisk.nodeModules, packages: [], untrialable: [], skipped: [] };
+  for (const { name, path: entryPath, outcome } of onDisk.entries) {
+    onDiskReport[ON_DISK_LIST[outcome.kind]].push(outcome.kind === "found"
+      ? { name, version: outcome.holds.version, path: entryPath, location: outcome.location }
+      : { name, path: entryPath, reason: untrialableReason(outcome) });
+  }
 
   const report = {
     generatedAt: new Date().toISOString(),
@@ -1105,13 +1083,7 @@ function main() {
       bareSpecifiers: {},
       nodeBuiltins: {},
     },
-    onDisk: {
-      packages: onDiskPackages.map((pkg) => ({
-        name: pkg.name,
-        version: pkg.version,
-        path: pkg.path,
-      })),
-    },
+    onDisk: onDiskReport,
     lockfile: {
       packages: lockfilePackages.map((pkg) => ({
         name: pkg.name,
@@ -1127,7 +1099,7 @@ function main() {
     bundles: [],
     summary: {
       externalPackagesInCode: 0,
-      externalPackagesOnDisk: onDiskPackages.length,
+      externalPackagesOnDisk: loadedPackages.length,
       externalPackagesInCodeAndOnDisk: 0,
       externalPackagesInCodeMissingOnDisk: 0,
       bundledThirdPartyPackages: 0,
@@ -1138,6 +1110,11 @@ function main() {
       classificationRate: 0,
     },
   };
+
+  for (const list of ["untrialable", "skipped"]) {
+    for (const { path: entryPath, reason } of onDiskReport[list]) report.warnings.push(`${entryPath}: ${ON_DISK_WARNING[list]} (${reason})`);
+  }
+  if (!["dir", "absent"].includes(onDisk.nodeModules.kind)) report.warnings.push(`node_modules is not a directory node can list: ${JSON.stringify(onDisk.nodeModules)}`);
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
   if (moduleIndexPath && fs.existsSync(moduleIndexPath)) {
@@ -1192,7 +1169,7 @@ function main() {
   }
 
   const inCode = Object.keys(report.code.bareSpecifiers).sort();
-  const onDiskSet = new Set(onDiskPackages.map((pkg) => pkg.name));
+  const onDiskSet = new Set(loadedPackages.map((pkg) => pkg.name));
   const inBoth = inCode.filter((pkg) => onDiskSet.has(pkg));
   const missing = inCode.filter((pkg) => !onDiskSet.has(pkg));
 
@@ -1236,9 +1213,9 @@ function main() {
   console.log(`- Bundled third-party modules: ${report.summary.bundledThirdPartyModules}`);
   console.log(`- Candidate module classification rate: ${report.summary.classificationRate}`);
   console.log(`- Parse errors: ${report.parseErrors.length}`);
-  if (report.warnings.length > 0) {
-    console.log(`- Warnings: ${report.warnings.length}`);
-  }
+  console.log(`- Trialable packages on disk: ${onDiskReport.packages.length}`);
+  console.log(`- Warnings: ${report.warnings.length}`);
+  for (const warning of report.warnings) console.log(`  ${warning}`);
 }
 
 main();
