@@ -29,7 +29,7 @@ from pathlib import Path
 
 # The shared reader of how Claude was started, found through this file's symlink into the dotfiles repo.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-from claude_process import Unreadable, Unresumable, claude_options, resumed, started_with  # noqa: E402
+from claude_process import Unreadable, Unresumable, claude_options, launch, resumed, started_with  # noqa: E402
 
 # How long the old Claude has to exit after the pane is replaced before it is killed.
 EXIT_SECONDS = 10.0
@@ -190,7 +190,7 @@ def restart(cuts_path: Path) -> None:
     process = started_with(pid)
     # Where the session last was, which is where its transcript is filed: it can have moved since Claude started.
     cwd = [entry["cwd"] for entry in map(json.loads, lines) if "cwd" in entry][-1]
-    plan = Plan(pid, str(transcript), cuts, resumed(process.argv, session, claude_options()), {**process.environment, "PWD": cwd}, cwd)
+    plan = Plan(pid, str(transcript), cuts, resumed(launch(process), session, claude_options()), {**process.environment, "PWD": cwd}, cwd)
     descriptor, plan_path = tempfile.mkstemp(prefix="excise-", suffix=".json")
     with os.fdopen(descriptor, "w") as out:
         json.dump(asdict(plan), out)

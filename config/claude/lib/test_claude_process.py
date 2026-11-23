@@ -6,11 +6,13 @@ cannot read refused.
 Run: just test-claude-lib
 """
 
+import shutil
 import subprocess
 import sys
 import unittest
 
-from claude_process import KINDS, Arity, Option, Unreadable, Unresumable, options, resumed, started_with
+from claude_process import (KINDS, Arity, Launch, Option, Process, Unreadable, Unresumable, claude_options, launch,
+                            options, resumed, started_with)
 
 # Option lines in the shape `claude --help` prints them, continuation lines included.
 HELP = """Usage: claude [options] [command] [prompt]
@@ -48,8 +50,8 @@ class Options(unittest.TestCase):
 
 
 class Resumed(unittest.TestCase):
-    def resume(self, *argv):
-        return resumed(["claude", *argv], "S", TABLE)
+    def resume(self, *words):
+        return resumed(Launch(["claude"], list(words)), "S", TABLE)
 
     def test_launch_options_are_kept(self):
         self.assertEqual(self.resume("--dangerously-skip-permissions", "--settings", '{"a": 1}'),
@@ -82,16 +84,23 @@ class Resumed(unittest.TestCase):
     def test_an_option_of_no_known_kind_is_refused_not_kept(self):
         table = options("  --brand-new                     An option KINDS has not met\n")
         with self.assertRaisesRegex(Unresumable, "--brand-new"):
-            resumed(["claude", "--brand-new"], "S", table)
+            resumed(Launch(["claude"], ["--brand-new"]), "S", table)
+
+    def test_a_script_run_by_node_keeps_its_script(self):
+        started = launch(Process("/opt/homebrew/bin/node", ["node", "/opt/x/cli.js", "--model", "opus", "hi"], {}))
+        self.assertEqual(resumed(started, "S", TABLE), ["node", "/opt/x/cli.js", "--model", "opus", "--resume", "S"])
+
+    def test_claude_as_its_own_executable_is_its_first_word(self):
+        started = launch(Process("/v/2.1.299", ["claude", "--model", "opus"], {}))
+        self.assertEqual(started, Launch(["claude"], ["--model", "opus"]))
 
 
 class Kinds(unittest.TestCase):
     def test_every_option_the_installed_claude_lists_has_a_kind(self):
         """Fails when a Claude update adds an option, which then needs a kind before a launch using it resumes."""
-        help_text = subprocess.run(["claude", "--help"], capture_output=True, text=True).stdout
-        if not help_text:
+        if shutil.which("claude") is None:
             self.skipTest("no claude on PATH")
-        self.assertEqual({option.name for option in options(help_text).values()} - KINDS.keys(), set())
+        self.assertEqual({option.name for option in claude_options().values()} - KINDS.keys(), set())
 
 
 class StartedWith(unittest.TestCase):

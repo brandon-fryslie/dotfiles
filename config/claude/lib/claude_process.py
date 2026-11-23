@@ -4,6 +4,8 @@ Imported by path by its callers (excise, the tmux-resurrect save strategy), each
 resolves its own symlink back into the dotfiles repo to find this directory.
 """
 
+from __future__ import annotations
+
 import ctypes
 import enum
 import os
@@ -12,6 +14,7 @@ import struct
 import subprocess
 from dataclasses import dataclass
 from itertools import takewhile
+from pathlib import Path
 
 
 class Unreadable(Exception):
@@ -124,13 +127,32 @@ def options(help_text: str) -> dict[str, Option]:
 def claude_options() -> dict[str, Option]:
     """The grammar of the `claude` on PATH. A running session's own binary can be gone: an update removes old
     versions while sessions started from them run on, which is when a session most needs resuming."""
-    return options(subprocess.run(["claude", "--help"], check=True, capture_output=True, text=True).stdout)
+    try:
+        return options(subprocess.run(["claude", "--help"], check=True, capture_output=True, text=True).stdout)
+    except (OSError, subprocess.CalledProcessError) as failure:
+        raise Unresumable(f"cannot read Claude's options from `claude --help`: {failure}") from failure
 
 
-def given_options(argv: list[str], table: dict[str, Option]) -> list[tuple[Option, list[str]]]:
-    """argv's options as Claude's parser (commander) reads them, each with the words it took. A word no option
-    takes is the prompt, as is every word after `--`; the prompt is not an option and is left out."""
-    given, words, i = [], argv[1:], 0
+# Interpreters that run Claude as a script (npm's install: `node /…/cli.js`) rather than as its own executable.
+SCRIPT_RUNNERS = {"node"}
+
+
+@dataclass(frozen=True)
+class Launch:
+    program: list[str]  # what ran Claude: `claude`, or `node /…/cli.js`
+    words: list[str]  # what Claude itself parses: its options and prompt
+
+
+def launch(process: Process) -> Launch:
+    """`process`'s argv split into the program that ran Claude and the words Claude was given."""
+    program = 2 if Path(process.path).name in SCRIPT_RUNNERS else 1
+    return Launch(process.argv[:program], process.argv[program:])
+
+
+def given_options(words: list[str], table: dict[str, Option]) -> list[tuple[Option, list[str]]]:
+    """The options in Claude's `words` as its parser (commander) reads them, each with the words it took. A word no
+    option takes is the prompt, as is every word after `--`; the prompt is not an option and is left out."""
+    given, i = [], 0
     while i < len(words) and words[i] != "--":
         word = words[i]
         i += 1
@@ -146,13 +168,13 @@ def given_options(argv: list[str], table: dict[str, Option]) -> list[tuple[Optio
     return given
 
 
-def resumed(argv: list[str], session: str, table: dict[str, Option]) -> list[str]:
-    """The command that reopens `session` as `argv` started it: its settings, then `--resume session`. The options
-    that chose its conversation or acted once at launch, and the prompt it was started with, are not given again."""
+def resumed(started: Launch, session: str, table: dict[str, Option]) -> list[str]:
+    """The command that reopens `session` as `started`: its program and settings, then `--resume session`. The
+    options that chose its conversation or acted once at launch, and its prompt, are not given again."""
     kept = []
-    for option, words in given_options(argv, table):
+    for option, words in given_options(started.words, table):
         if option.name not in KINDS:
             raise Unresumable(f"{option.name} has no kind in claude_process.KINDS, so a resume cannot know whether to keep it")
         if KINDS[option.name] is Kind.SETTING:
             kept += words
-    return [argv[0], *kept, "--resume", session]
+    return [*started.program, *kept, "--resume", session]

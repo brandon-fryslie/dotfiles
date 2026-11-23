@@ -104,9 +104,9 @@ test-image-gen:
 test-tmux-pane-lifecycle:
     ./config/tmux/tests/pane-lifecycle.sh
 
-# Test what the tmux-resurrect save strategy records for each kind of pane
+# Test what the tmux-resurrect save strategy records for each kind of pane, and what a periodic save tells you
 test-tmux-resurrect:
-    python3 -m unittest tests/test_tmux_resurrect_command.py
+    python3 -m unittest tests/test_tmux_resurrect_command.py tests/test_tmux_resurrect_save.py
 
 # Test reading a Claude process's launch and building its session's resume
 test-claude-lib:

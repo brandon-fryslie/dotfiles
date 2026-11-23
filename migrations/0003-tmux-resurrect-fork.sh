@@ -12,7 +12,7 @@
 #
 # Fix:
 #   Point that clone's origin at the fork and check out the fork's master. A clone with
-#   uncommitted changes, or commits on no remote, is refused rather than reset.
+#   uncommitted changes, or a branch with commits on no remote, is refused rather than reset.
 #
 # Safe to delete after:
 #   Every machine has run it (`just migrate-status` on each). Fresh installs clone
@@ -20,12 +20,20 @@
 
 PLUGIN="${HOME}/.config/tmux/plugins/tmux-resurrect"
 FORK="https://github.com/brandon-fryslie/tmux-resurrect"
-# The fork commit after which a save runs a strategy given by path, once with every pane.
+# The fork commit after which a save runs a strategy given by path, once with every pane. It
+# reached the fork's master through a merge commit, which keeps it; a squash would not.
 CAPABILITY="becc48ec3e722e5667be2280e98b63e774852a05"
 
+has_capability() {
+    # `rev-parse -q --verify` is silent only about the commit being absent, which is what an
+    # unmigrated clone looks like; any other git failure still prints.
+    git -C "$PLUGIN" rev-parse -q --verify "$CAPABILITY^{commit}" >/dev/null &&
+        git -C "$PLUGIN" merge-base --is-ancestor "$CAPABILITY" HEAD
+}
+
 migrate_check() {
-    # A clone without the commit, which git reports as an unknown object, needs it.
-    [[ -d "$PLUGIN/.git" ]] && ! git -C "$PLUGIN" merge-base --is-ancestor "$CAPABILITY" HEAD 2>/dev/null
+    # No plugin directory is a machine tpm has not installed it on yet; it clones the fork.
+    [[ -e "$PLUGIN" ]] && ! has_capability
 }
 
 migrate_apply() {
@@ -33,9 +41,10 @@ migrate_apply() {
     # inside this body, so every step must propagate failure explicitly.
     local changes unpushed
     changes=$(git -C "$PLUGIN" status --porcelain) || return 1
-    unpushed=$(git -C "$PLUGIN" rev-list HEAD --not --remotes) || return 1
+    # Every local branch, not just HEAD: `checkout -B master` below moves master wherever HEAD is.
+    unpushed=$(git -C "$PLUGIN" rev-list --branches --not --remotes) || return 1
     if [[ -n "$changes" || -n "$unpushed" ]]; then
-        echo "[migrate] $PLUGIN has uncommitted changes or commits on no remote; push or discard them, then rerun" >&2
+        echo "[migrate] $PLUGIN has uncommitted changes or a branch with commits on no remote; push or discard them, then rerun" >&2
         return 1
     fi
     # Fetched before origin moves, so a failure leaves the clone as it was.
