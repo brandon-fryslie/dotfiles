@@ -11,4 +11,5 @@ tmux capture-pane -p -e -J -S - -t "$pane" |
   awk '{ l[NR] = $0 } /[^[:space:]]/ { last = NR } END { for (i = 1; i <= last; i++) print l[i] }' > "$dump"
 cmd="$(tmux show -gv default-command)"
 tmux clear-history -t "$pane"
-tmux respawn-pane -t "$pane" "cat '$dump'; rm -f '$dump'; exec $cmd"
+# default-command is a shell command line (tmux.conf), so it runs as-is, not under exec.
+tmux respawn-pane -t "$pane" "cat '$dump'; rm -f '$dump'; $cmd"
