@@ -284,6 +284,90 @@ function swapProject(rootIndexJs, { layout = "dir", name = "demo-pkg" } = {}) {
 const VERIFYING_INDEX = "module.exports=function(){return 1};\n";
 const FAILING_INDEX = "module.exports=function(){const o={x:2};return o.x};\n";
 
+// Run detect-dependencies over an app whose build is one trivial file; returns the report it wrote.
+function detect(tmp, appDir) {
+  writeText(path.join(tmp, "app", "main.js"), "console.log(1);\n");
+  const out = path.join(tmp, "deps", "detected-dependencies.json");
+  const result = runNode(
+    path.join(TOOLS_DIR, "detect-dependencies.mjs"),
+    ["--app-dir", appDir, "--build-dir", path.join(tmp, "app"), "--out", out],
+    tmp,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return JSON.parse(fs.readFileSync(out, "utf8"));
+}
+
+test("detect-dependencies lists every top-level package, through a link or not, with the version it has on disk", () => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "resources", "app");
+  const nm = path.join(appDir, "node_modules");
+  const place = (dir, name, version) => {
+    writeJson(path.join(dir, "package.json"), { name, version });
+    return dir;
+  };
+  place(path.join(nm, "plain-pkg"), "plain-pkg", "1.0.0");
+  linkTo(place(path.join(nm, ".pnpm", "pnpm-pkg@2.0.0", "node_modules", "pnpm-pkg"), "pnpm-pkg", "2.0.0"), path.join(nm, "pnpm-pkg"));
+  linkTo(
+    place(path.join(nm, ".pnpm", "@scope+scoped-pkg@3.0.0", "node_modules", "@scope", "scoped-pkg"), "@scope/scoped-pkg", "3.0.0"),
+    path.join(nm, "@scope", "scoped-pkg"),
+  );
+  linkTo(place(path.join(tmp, "packages", "workspace-pkg"), "workspace-pkg", "4.0.0"), path.join(nm, "workspace-pkg"));
+  linkTo(path.join(tmp, "gone"), path.join(nm, "gone-pkg"));
+
+  const report = detect(tmp, appDir);
+
+  assert.deepEqual(
+    report.onDisk.packages.map(({ name, version, path: at }) => ({ name, version, path: at })),
+    [
+      { name: "@scope/scoped-pkg", version: "3.0.0", path: path.join("node_modules", "@scope", "scoped-pkg") },
+      { name: "plain-pkg", version: "1.0.0", path: path.join("node_modules", "plain-pkg") },
+      { name: "pnpm-pkg", version: "2.0.0", path: path.join("node_modules", "pnpm-pkg") },
+      { name: "workspace-pkg", version: "4.0.0", path: path.join("node_modules", "workspace-pkg") },
+    ],
+  );
+  assert.ok(
+    report.warnings.some((warning) => warning.startsWith(path.join("node_modules", "gone-pkg"))),
+    `a dangling link is reported: ${JSON.stringify(report.warnings)}`,
+  );
+});
+
+for (const [layout, name] of [["pnpm", "@scope/demo-pkg"], ["linked", "demo-pkg"]]) {
+  test(`replace-dependency --auto-near-match trials a ${layout} package that detection found, with no --pkg`, () => {
+    const { tmp, appDir, fakeNpm, logPath, readLog } = swapProject(VERIFYING_INDEX, { layout, name });
+    const depsDir = path.join(tmp, "deps");
+    const nearMatches = path.join(depsDir, "near-matches.json");
+    // The near-matches this run trials are the ones detection produced, not the project's hand-written ones.
+    fs.rmSync(nearMatches);
+    detect(tmp, appDir);
+    writeJson(path.join(tmp, "registry.json"), { [name]: ["1.2.3"] });
+    const near = runNode(
+      path.join(TOOLS_DIR, "find-near-match-versions.mjs"),
+      ["--deps", path.join(depsDir, "detected-dependencies.json"), "--app-dir", appDir, "--registry-file", path.join(tmp, "registry.json"), "--out", nearMatches],
+      tmp,
+    );
+    assert.equal(near.status, 0, near.stderr || near.stdout);
+
+    const result = runNode(
+      path.join(TOOLS_DIR, "replace-dependency.mjs"),
+      [
+        "--auto-near-match", "--candidate-source", nearMatches,
+        "--app-dir", appDir,
+        "--npm", fakeNpm,
+        "--verify-script", path.join(TOOLS_DIR, "verify-dependency-swap.mjs"),
+        "--verification-dir", path.join(depsDir, "verification"),
+        "--out", logPath,
+        "--threshold", "0.99",
+      ],
+      tmp,
+    );
+
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const entry = readLog().packages[name];
+    assert.equal(entry.status, "resolved", JSON.stringify(entry));
+    assert.equal(entry.attempts.at(-1).attemptedVersion, "1.2.3");
+  });
+}
+
 test("replace-dependency rolls back failed verified swap and logs transaction", () => {
   const { appPkgDir, replace, readLog } = swapProject(FAILING_INDEX);
   const result = replace();

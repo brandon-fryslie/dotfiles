@@ -112,46 +112,56 @@ function readPackageJson(pkgDir) {
   }
 }
 
+// What a node_modules entry is once its link, if any, is followed the way Node follows it. A link whose target is
+// gone is "dangling": the app ships a package there it cannot load.
+function locationKind(location) {
+  try {
+    return fs.statSync(location).isDirectory() ? "directory" : "file";
+  } catch (error) {
+    if (error.code === "ENOENT") return "dangling";
+    throw error;
+  }
+}
+
+// The packages at the app's top-level locations, node_modules/<name> and node_modules/@scope/<name>, each with the
+// version its package.json declares. A location is a package whether it is a directory or a link to one: pnpm,
+// workspace and npm-link packages are all links. Other copies (the .pnpm store, nested node_modules) are not
+// top-level locations.
 function listOnDiskPackages(appDir) {
   const nmDir = path.join(appDir, "node_modules");
-  const out = [];
-  if (!fs.existsSync(nmDir) || !fs.statSync(nmDir).isDirectory()) return out;
+  const packages = [];
+  const warnings = [];
+  if (!fs.existsSync(nmDir) || !fs.statSync(nmDir).isDirectory()) return { packages, warnings };
 
-  const entries = fs.readdirSync(nmDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name.startsWith(".")) continue;
-
-    if (entry.name.startsWith("@")) {
-      const scopeDir = path.join(nmDir, entry.name);
-      for (const scoped of fs.readdirSync(scopeDir, { withFileTypes: true })) {
-        if (!scoped.isDirectory()) continue;
-        const pkgDir = path.join(scopeDir, scoped.name);
-        const pkg = readPackageJson(pkgDir);
-        if (!pkg?.name || !pkg?.version) continue;
-        out.push({
-          name: pkg.name,
-          version: pkg.version,
-          path: path.relative(appDir, pkgDir),
-          dir: pkgDir,
-        });
+  const visit = (dir, inScope) => {
+    for (const name of fs.readdirSync(dir)) {
+      if (name.startsWith(".")) continue;
+      const location = path.join(dir, name);
+      const kind = locationKind(location);
+      // [LAW:no-silent-failure] a dangling link is a package the app cannot load, reported rather than dropped.
+      if (kind === "dangling") {
+        warnings.push(`${path.relative(appDir, location)} is a link to ${fs.readlinkSync(location)}, which does not exist`);
+        continue;
       }
-      continue;
+      if (kind !== "directory") continue;
+      if (!inScope && name.startsWith("@")) {
+        visit(location, true);
+        continue;
+      }
+      const pkg = readPackageJson(location);
+      if (!pkg?.name || !pkg?.version) continue;
+      packages.push({
+        name: pkg.name,
+        version: pkg.version,
+        path: path.relative(appDir, location),
+        dir: location,
+      });
     }
+  };
+  visit(nmDir, false);
 
-    const pkgDir = path.join(nmDir, entry.name);
-    const pkg = readPackageJson(pkgDir);
-    if (!pkg?.name || !pkg?.version) continue;
-    out.push({
-      name: pkg.name,
-      version: pkg.version,
-      path: path.relative(appDir, pkgDir),
-      dir: pkgDir,
-    });
-  }
-
-  out.sort((left, right) => left.name.localeCompare(right.name));
-  return out;
+  packages.sort((left, right) => left.name.localeCompare(right.name));
+  return { packages, warnings };
 }
 
 function listPackageJsFiles(pkgDir) {
@@ -1083,7 +1093,7 @@ function main() {
   const outPath = path.resolve(projectRoot, opts.out);
 
   const fingerprints = loadFingerprints();
-  const onDiskPackages = listOnDiskPackages(appDir);
+  const { packages: onDiskPackages, warnings: onDiskWarnings } = listOnDiskPackages(appDir);
   const lockfilePackages = loadLockfilePackages(appDir);
   const packageVersionByName = Object.fromEntries([...lockfilePackages, ...onDiskPackages].map((pkg) => [pkg.name, pkg.version]));
   const packageShapeHashes = indexPackageShapeHashes(onDiskPackages);
@@ -1096,7 +1106,7 @@ function main() {
     appDir: fileRel(projectRoot, appDir),
     buildDir: fileRel(projectRoot, buildDir),
     out: fileRel(projectRoot, outPath),
-    warnings: [],
+    warnings: [...onDiskWarnings],
     parseErrors: [],
     code: {
       filesScanned: 0,
