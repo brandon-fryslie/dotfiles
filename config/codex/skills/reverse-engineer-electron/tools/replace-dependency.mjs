@@ -30,6 +30,7 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
+import { writeOutputs } from "./artifact.mjs";
 import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, parseLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
 import { appAt, appPathState, canonicalEntry, containerSwappedAt, copiesOf, describeEntry, entryNameOf, isNonEmptyString, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
@@ -112,14 +113,6 @@ function ensureDir(p) {
 
 function readJson(p) {
   return JSON.parse(fs.readFileSync(p, "utf8"));
-}
-
-// Write-then-rename: an interrupted write leaves the previous file whole, never a truncated one.
-function writeJson(filePath, payload) {
-  ensureDir(path.dirname(filePath));
-  const tmpPath = `${filePath}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(payload, null, 2));
-  fs.renameSync(tmpPath, filePath);
 }
 
 // [LAW:one-source-of-truth] A tree is locked exactly while the run that locked it lives. The flock belongs to the
@@ -249,7 +242,7 @@ function loadLog(logPath) {
 }
 
 function writeLog(logPath, logState) {
-  writeJson(logPath, serializeLog(logState));
+  writeOutputs([[logPath, serializeLog(logState)]]);
 }
 
 // A copy as the log and the console name it: { name, location, version }, version the app copy's own or null.

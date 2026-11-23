@@ -20,10 +20,8 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { execFileSync } from "child_process";
-import traverseImport from "@babel/traverse";
-import { parseFile, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
-const traverseAst = traverseImport.default || traverseImport;
+import { parseFile, listSourceFiles, SOURCE_TREE_EXCLUDES, traverse as traverseAst } from "./shape.mjs";
 
 // ---------------------------------------------------------------------------
 // CLI

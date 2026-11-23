@@ -9,9 +9,14 @@
  * This uses AST parsing plus structural hashing. It does not use regex-based
  * code parsing for important decisions.
  *
- * // [LAW:verifiable-goals] Always emits a machine-readable report with explicit signals and parse errors.
- * // [LAW:one-source-of-truth] Bundle classification is derived from code, comments, and package metadata already on disk.
- * // [LAW:dataflow-not-control-flow] Every file goes through the same fixed analysis pipeline; variability is only in the resulting data.
+ * // [LAW:verifiable-goals] A run that finishes writes a machine-readable report with explicit signals and errors, and
+ * // one that fails leaves no report at --out: the previous run's is removed first, and this run's is renamed into
+ * // place whole, so a report at --out is always the last finished run's.
+ * // [LAW:one-source-of-truth] Bundle classification is derived from code, comments, and package metadata already on disk,
+ * // and from the hand-curated third-party-fingerprints.json beside this script.
+ * // [LAW:dataflow-not-control-flow] Every build file has one outcome: unreadable, unparsed (with its syntax errors), or
+ * // parsed. Every parsed file goes through the same two analyses, static bare specifiers and bundle detection, on
+ * // its one syntax tree; what varies is the data they find.
  */
 
 import fs from "fs";
@@ -20,15 +25,39 @@ import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
 import { appAt, compareLocations, copiesOf, entryNameOf, isLocation, isNonEmptyString, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
-import traverseImport from "@babel/traverse";
+import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
+import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
+import { clearOutputs, writeOutputs } from "./artifact.mjs";
 
-const traverseAst = traverseImport.default || traverseImport;
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FINGERPRINTS_PATH = path.join(SCRIPT_DIR, "third-party-fingerprints.json");
-const BUNDLE_FORMAT_UNKNOWN = "plain";
 const BUILTIN_SET = new Set(builtinModules.map((item) => (item.startsWith("node:") ? item.slice(5) : item)));
 const LOADER_RUNTIME_PACKAGES = new Set(["style-loader", "css-loader", "file-loader", "url-loader"]);
+// The body-token count under which a file's or function's shape is too common to name its package.
+const MIN_FUNCTION_SHAPE_TOKENS = 20;
+// [LAW:one-type-per-behavior] A wrapper rule credits a module that isn't yet classified with the package that
+// dominates its vendor neighbours of one kind. A wrapper is a small module, so a module at or over sourceLimit
+// characters has no neighbours to the rule, and a large module that requires vendor code is not credited to it.
+const WRAPPER_RULES = [
+  { signal: "dep-wrapper", neighbours: "deps", sourceLimit: 2500, weight: () => 4 },
+  { signal: "parent-wrapper", neighbours: "parents", sourceLimit: 2200, weight: (vendor) => (vendor.deps.length === 0 ? 3 : 2) },
+];
+// [LAW:types-are-the-program] The values a module's classification and a build file's outcome take; each is counted
+// under its own name, and tally refuses any other value.
+const CLASSIFICATIONS = ["app", "thirdParty", "asset"];
+const FILE_OUTCOMES = ["unreadable", "unparsed", "plain", "bundled"];
+// The sum of amountOf over the items under each name keyOf gives, with every name present.
+function tally(names, items, keyOf, amountOf = () => 1) {
+  const totals = Object.fromEntries(names.map((name) => [name, 0]));
+  for (const item of items) {
+    const name = keyOf(item);
+    if (!(name in totals)) throw new Error(`${JSON.stringify(name)} is not one of ${names.join(", ")}`);
+    totals[name] += amountOf(item);
+  }
+  return totals;
+}
+// One record per file that couldn't be read, parsed, or listed, in report.parseErrors.
+const fileError = (file, error) => ({ file, error: String(error?.message || error) });
 function parseArgs(argv) {
   const opts = {
     appDir: "resources/app",
@@ -47,28 +76,6 @@ function parseArgs(argv) {
   }
 
   return { help: false, opts };
-}
-
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function listJsFiles(targetPath) {
-  const stats = fs.statSync(targetPath);
-  if (stats.isFile()) {
-    return path.extname(targetPath) === ".js" ? [targetPath] : [];
-  }
-  return listPackageJsFiles(targetPath);
-}
-
-function extractProgramBodyHash(code) {
-  const ast = parseSource(code, "js");
-  return tokensToHash(functionShapeTokens(ast.program));
-}
-
-function extractFunctionBodyHash(node) {
-  const targetBody = node && node.body ? node.body : node;
-  return tokensToHash(functionShapeTokens(targetBody));
 }
 
 function isBareSpecifier(specifier) {
@@ -91,20 +98,12 @@ function pkgNameFromSpecifier(specifier) {
   return slashIndex === -1 ? specifier : specifier.slice(0, slashIndex);
 }
 
-function pkgNameFromNodeModulesPath(text) {
-  const marker = "/node_modules/";
-  const normalized = text.split("\\").join("/");
-  const idx = normalized.indexOf(marker);
-  if (idx === -1) return null;
-  const tail = normalized.slice(idx + marker.length);
-  const parts = tail.split("/").filter(Boolean);
-  if (parts.length === 0) return null;
-  if (parts[0].startsWith("@")) return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null;
-  return parts[0];
-}
+// The package a path names: the entry after its last node_modules, by node-modules.mjs's grammar.
+const packageOfPath = (text) => entryNameOf(text.split("\\").join("/"));
 
-// [LAW:one-source-of-truth] Every copy of every package node can load from the app's node_modules, with the swap
-// outcome replace-dependency acts on, and the walk's verdict on how much of the tree could be read.
+// [LAW:one-source-of-truth] Every copy of every package node finds in the app's node_modules, with the swap outcome
+// replace-dependency acts on (including what it loads, or that it loads nothing), and the walk's verdict on how much
+// of the tree could be read.
 function readOnDisk(appDir, projectRoot) {
   const app = appAt(path.join(appDir, "node_modules"), projectRoot);
   const { verdict, starts, unlisted } = walkStarts(app);
@@ -113,48 +112,40 @@ function readOnDisk(appDir, projectRoot) {
 
 const byNameThenLocation = (copies) => [...copies].sort((a, b) => a.name.localeCompare(b.name) || compareLocations(a.location, b.location));
 
-function listPackageJsFiles(pkgDir) {
-  return listFiles(pkgDir, SOURCE_TREE_EXCLUDES)
-    .filter((rel) => path.extname(rel) === ".js")
-    .map((rel) => path.join(pkgDir, rel));
-}
-
-// Each loaded package's shape hashes, and every file or directory that couldn't be read or hashed, so a package that
-// contributed no hashes because it couldn't be read is a parse error, not a package that matched nothing.
-// [LAW:no-silent-failure]
+// Each loaded package version's file and function shapes, in the BODY domain a bundle factory is looked up in, and every file
+// or directory that couldn't be listed, read, or parsed, so a package that contributed no shapes because it couldn't
+// be read is a parse error, not a package that matched nothing. [LAW:no-silent-failure]
+// A shape maps to the package versions that ship it, each once, at the first of its files that has it.
 function indexPackageShapeHashes(packages) {
   const byHash = new Map();
   const errors = [];
-  const add = (hash, entry) => byHash.set(hash, byHash.get(hash) ?? []).get(hash).push(entry);
-  const attempt = (file, work) => {
-    try {
-      return work();
-    } catch (error) {
-      errors.push({ file, error: String(error?.message || error) });
-      return null;
-    }
-  };
   for (const pkg of packages) {
-    for (const jsFile of attempt(pkg.dir, () => listPackageJsFiles(pkg.dir)) ?? []) {
-      const code = attempt(jsFile, () => fs.readFileSync(jsFile, "utf8"));
-      if (code === null) continue;
-      const entry = (kind) => ({ package: pkg.name, version: pkg.version, file: path.relative(pkg.dir, jsFile), kind });
-      const hash = attempt(jsFile, () => extractProgramBodyHash(code));
-      if (hash === null) continue;
-      add(hash, entry("program"));
-      attempt(jsFile, () => {
-        const ast = parseSource(code, "js");
-        // [LAW:one-source-of-truth] Reuse the same structural walker for all detached-node hashing so traversal semantics stay consistent.
-        walk(ast.program, (node) => {
-          if (!isFunctionNode(node)) return;
-          const tokens = functionShapeTokens(node.body);
-          if (tokens.length < 20) return;
-          add(tokensToHash(tokens), entry("function"));
-        });
+    let jsFiles;
+    try {
+      jsFiles = listJsFiles(pkg.dir);
+    } catch (error) {
+      errors.push(fileError(pkg.dir, error));
+      continue;
+    }
+    for (const jsFile of jsFiles) {
+      const read = readJsFile(jsFile);
+      if (read.kind !== "parsed") {
+        errors.push(fileError(jsFile, read.error));
+        continue;
+      }
+      const entry = { package: pkg.name, version: pkg.version, file: path.relative(pkg.dir, jsFile) };
+      const statementLists = [read.ast.program.body];
+      walk(read.ast.program, (node) => {
+        if (isFunctionNode(node)) statementLists.push(bodyStatements(node));
       });
+      for (const shape of statementLists.map(statementsShape).filter(({ size }) => size >= MIN_FUNCTION_SHAPE_TOKENS)) {
+        const versions = byHash.get(shape.hash) ?? new Map();
+        if (!versions.has(`${pkg.name}@${pkg.version}`)) versions.set(`${pkg.name}@${pkg.version}`, entry);
+        byHash.set(shape.hash, versions);
+      }
     }
   }
-  return { byHash, errors };
+  return { byHash: new Map([...byHash].map(([hash, versions]) => [hash, [...versions.values()]])), errors };
 }
 
 function loadFingerprints() {
@@ -191,11 +182,10 @@ function loadLockfilePackages(appDir) {
   return [...byLocation.values()].sort((left, right) => left.name.localeCompare(right.name) || compareLocations(left.location, right.location));
 }
 
-function parseStaticBareSpecifiers(code) {
-  const ast = parseSource(code, "js");
+function parseStaticBareSpecifiers(ast) {
   const specifiers = [];
 
-  traverseAst(ast, {
+  traverse(ast, {
     ImportDeclaration(p) {
       const source = p.node.source?.value;
       if (typeof source === "string") specifiers.push(source);
@@ -226,209 +216,6 @@ function parseStaticBareSpecifiers(code) {
   });
 
   return specifiers;
-}
-
-function collectCandidateCalls(node, out) {
-  if (!node || typeof node !== "object") return;
-  if (node.type === "CallExpression" && node.arguments && node.arguments.length > 0) {
-    for (const arg of node.arguments) {
-      if (arg?.type === "ArrayExpression" || arg?.type === "ObjectExpression") {
-        out.push(node);
-        break;
-      }
-    }
-  }
-  for (const key of Object.keys(node)) {
-    const value = node[key];
-    if (Array.isArray(value)) {
-      for (const item of value) collectCandidateCalls(item, out);
-      continue;
-    }
-    if (value && typeof value === "object") collectCandidateCalls(value, out);
-  }
-}
-
-function countModuleLikeEntries(node) {
-  if (!node) return 0;
-  if (node.type === "ArrayExpression") {
-    let count = 0;
-    for (const element of node.elements) {
-      if (!element) continue;
-      if (element.type === "FunctionExpression" || element.type === "ArrowFunctionExpression") count += 1;
-    }
-    return count;
-  }
-  if (node.type === "ObjectExpression") {
-    let count = 0;
-    for (const property of node.properties) {
-      if (property.type !== "ObjectProperty") continue;
-      if (property.value.type === "FunctionExpression" || property.value.type === "ArrowFunctionExpression") count += 1;
-      if (property.value.type === "ArrayExpression") {
-        const first = property.value.elements?.[0];
-        if (first && (first.type === "FunctionExpression" || first.type === "ArrowFunctionExpression")) count += 1;
-      }
-    }
-    return count;
-  }
-  return 0;
-}
-
-function pickBestCandidateCall(ast) {
-  const calls = [];
-  collectCandidateCalls(ast.program, calls);
-  let best = null;
-  let bestScore = -1;
-  for (const call of calls) {
-    let score = 0;
-    for (const arg of call.arguments) score = Math.max(score, countModuleLikeEntries(arg));
-    if (score > bestScore) {
-      best = call;
-      bestScore = score;
-    }
-  }
-  return best;
-}
-
-function propertyKeyValue(keyNode) {
-  if (!keyNode) return null;
-  if (keyNode.type === "Identifier") return keyNode.name;
-  if (keyNode.type === "StringLiteral") return keyNode.value;
-  if (keyNode.type === "NumericLiteral") return String(keyNode.value);
-  return null;
-}
-
-function entryModuleFromCode(code) {
-  const marker = ".s=";
-  let idx = code.indexOf(marker);
-  while (idx !== -1) {
-    let pos = idx + marker.length;
-    let value = "";
-    while (pos < code.length) {
-      const ch = code[pos];
-      if (ch >= "0" && ch <= "9") {
-        value += ch;
-        pos += 1;
-        continue;
-      }
-      break;
-    }
-    if (value.length > 0) return Number(value);
-    idx = code.indexOf(marker, idx + marker.length);
-  }
-  return null;
-}
-
-function detectBundle(filePath, code) {
-  const ast = parseSource(code, "js");
-  const call = pickBestCandidateCall(ast);
-  if (!call) return null;
-
-  let firstArg = null;
-  let bestArgScore = -1;
-  for (const arg of call.arguments) {
-    const score = countModuleLikeEntries(arg);
-    if (score > bestArgScore) {
-      firstArg = arg;
-      bestArgScore = score;
-    }
-  }
-  if (!firstArg) return null;
-
-  if (firstArg.type === "ArrayExpression") {
-    const modules = [];
-    for (let index = 0; index < firstArg.elements.length; index++) {
-      const element = firstArg.elements[index];
-      if (!element) continue;
-      if (element.type !== "FunctionExpression" && element.type !== "ArrowFunctionExpression") continue;
-      modules.push({
-        id: index,
-        key: String(index),
-        source: code.slice(element.start, element.end),
-        startOffset: element.start,
-        endOffset: element.end,
-        functionNode: element,
-        containerNode: element,
-        explicitPackage: null,
-      });
-    }
-    if (modules.length > 0) {
-      return {
-        format: "webpack4",
-        entryModuleId: entryModuleFromCode(code),
-        modules,
-      };
-    }
-  }
-
-  if (firstArg.type === "ObjectExpression") {
-    const browserifyModules = [];
-    const webpackModules = [];
-
-    for (const property of firstArg.properties) {
-      if (property.type !== "ObjectProperty") continue;
-      const key = propertyKeyValue(property.key);
-      if (key === null) continue;
-
-      if (property.value.type === "ArrayExpression") {
-        const firstItem = property.value.elements?.[0];
-        if (firstItem && (firstItem.type === "FunctionExpression" || firstItem.type === "ArrowFunctionExpression")) {
-          browserifyModules.push({
-            id: key,
-            key,
-            source: code.slice(property.start, property.end),
-            startOffset: property.start,
-            endOffset: property.end,
-            functionNode: firstItem,
-            containerNode: property,
-            explicitPackage: null,
-          });
-        }
-        continue;
-      }
-
-      if (property.value.type === "FunctionExpression" || property.value.type === "ArrowFunctionExpression") {
-        webpackModules.push({
-          id: key,
-          key,
-          source: code.slice(property.start, property.end),
-          startOffset: property.start,
-          endOffset: property.end,
-          functionNode: property.value,
-          containerNode: property,
-          explicitPackage: pkgNameFromNodeModulesPath(key),
-        });
-      }
-    }
-
-    if (browserifyModules.length > 0) {
-      let entryModuleId = null;
-      const maybeEntries = call.arguments[2];
-      if (maybeEntries?.type === "ArrayExpression" && maybeEntries.elements?.length > 0) {
-        const firstEntry = maybeEntries.elements[0];
-        if (firstEntry?.type === "NumericLiteral") entryModuleId = firstEntry.value;
-        if (firstEntry?.type === "StringLiteral") entryModuleId = firstEntry.value;
-      }
-      return {
-        format: "browserify",
-        entryModuleId,
-        modules: browserifyModules,
-      };
-    }
-
-    if (webpackModules.length > 0) {
-      return {
-        format: "webpack5",
-        entryModuleId: null,
-        modules: webpackModules,
-      };
-    }
-  }
-
-  return {
-    format: BUNDLE_FORMAT_UNKNOWN,
-    entryModuleId: null,
-    modules: [],
-  };
 }
 
 function findFingerprintMatches(text, fingerprints) {
@@ -529,7 +316,7 @@ function findWebpackCommentSignal(text) {
     if (idx === -1) continue;
     const lineEnd = text.indexOf("\n", idx);
     const rawLine = lineEnd === -1 ? text.slice(idx) : text.slice(idx, lineEnd);
-    const pkgName = pkgNameFromNodeModulesPath(rawLine);
+    const pkgName = packageOfPath(rawLine);
     if (!pkgName) continue;
     return {
       package: pkgName,
@@ -554,6 +341,13 @@ function addScore(scoreMap, evidenceList, pkgName, points, signal, detail) {
   evidenceList.push({ package: pkgName, score: points, signal, detail: detail || null });
 }
 
+// How many of the given module states are each package's.
+function countPackages(states) {
+  const counts = {};
+  for (const { package: pkgName } of states) counts[pkgName] = (counts[pkgName] || 0) + 1;
+  return counts;
+}
+
 function pickTopPackage(scoreMap) {
   const entries = Object.entries(scoreMap);
   if (entries.length === 0) return null;
@@ -566,13 +360,6 @@ function pickTopPackage(scoreMap) {
     margin: score - runnerUp,
     tied: runnerUp === score,
   };
-}
-
-function literalValue(node) {
-  if (!node) return null;
-  if (node.type === "StringLiteral") return node.value;
-  if (node.type === "NumericLiteral") return String(node.value);
-  return null;
 }
 
 function packageBaseName(pkgName) {
@@ -610,127 +397,77 @@ function scoreAppAnchors(stringLiterals) {
   return score;
 }
 
-function isEmptyObjectExportModule(moduleRecord) {
-  const statements = moduleRecord.functionNode.body?.body || [];
-  if (statements.length !== 1) return false;
-  const statement = statements[0];
-  if (statement.type !== "ExpressionStatement") return false;
-  const expression = statement.expression;
-  if (expression?.type !== "AssignmentExpression") return false;
-  return expression.right?.type === "ObjectExpression" && expression.right.properties.length === 0;
+// The one expression a factory's body is: its one statement's expression, or the value it returns.
+function soleExpression(functionNode) {
+  const statements = bodyStatements(functionNode);
+  if (statements.length !== 1) return null;
+  const [statement] = statements;
+  if (statement.type === "ExpressionStatement") return statement.expression;
+  return statement.type === "ReturnStatement" ? statement.argument : null;
 }
 
+function isEmptyObjectExportModule(moduleRecord) {
+  const expression = soleExpression(moduleRecord.functionNode);
+  return expression?.type === "AssignmentExpression" && expression.right.type === "ObjectExpression" && expression.right.properties.length === 0;
+}
+
+// A webpack factory that exports the bundle's public path (its require binding's `p`) plus a file name.
 function isWebpackPublicPathAssetModule(moduleRecord) {
-  const statements = moduleRecord.functionNode.body?.body || [];
-  if (statements.length !== 1) return false;
-  const statement = statements[0];
-  if (statement.type !== "ExpressionStatement") return false;
-  const expression = statement.expression;
+  const expression = soleExpression(moduleRecord.functionNode);
   if (expression?.type !== "AssignmentExpression") return false;
-  if (expression.right?.type !== "BinaryExpression" || expression.right.operator !== "+") return false;
-  if (expression.right.right?.type !== "StringLiteral") return false;
-  const publicPathOwner = moduleRecord.functionNode.params?.[2];
+  if (expression.right.type !== "BinaryExpression" || expression.right.operator !== "+") return false;
+  if (expression.right.right.type !== "StringLiteral") return false;
   const publicPath = expression.right.left;
   return (
-    publicPathOwner?.type === "Identifier" &&
-    publicPath?.type === "MemberExpression" &&
+    moduleRecord.require !== null &&
+    publicPath.type === "MemberExpression" &&
     !publicPath.computed &&
-    publicPath.object?.type === "Identifier" &&
-    publicPath.object.name === publicPathOwner.name &&
-    publicPath.property?.type === "Identifier" &&
+    publicPath.object.type === "Identifier" &&
+    publicPath.object.name === moduleRecord.require.name &&
+    publicPath.property.type === "Identifier" &&
     publicPath.property.name === "p"
   );
 }
 
-function extractBundleDependencyInfo(moduleRecord, bundleFormat) {
-  const dependencyIds = [];
-  const dependencySpecifiers = [];
-
-  const requireParam =
-    bundleFormat === "browserify"
-      ? moduleRecord.functionNode.params?.[0]?.type === "Identifier"
-        ? moduleRecord.functionNode.params[0].name
-        : null
-      : moduleRecord.functionNode.params?.[2]?.type === "Identifier"
-        ? moduleRecord.functionNode.params[2].name
-        : null;
-
-  if (requireParam) {
-    // [LAW:dataflow-not-control-flow] Dependency extraction always walks the module body; matches become data instead of alternate traversal paths.
-    walk(moduleRecord.functionNode.body || moduleRecord.functionNode, (node) => {
-      if (node.type !== "CallExpression") return;
-      if (node.callee?.type !== "Identifier" || node.callee.name !== requireParam) return;
-      const firstArg = node.arguments?.[0];
-      const value = literalValue(firstArg);
-      if (value === null) return;
-      dependencyIds.push(value);
-    });
-  }
-
-  if (bundleFormat === "browserify" && moduleRecord.containerNode?.value?.type === "ArrayExpression") {
-    const depMap = moduleRecord.containerNode.value.elements?.[1];
-    if (depMap?.type === "ObjectExpression") {
-      for (const property of depMap.properties) {
-        if (property.type !== "ObjectProperty") continue;
-        const key = propertyKeyValue(property.key);
-        const value = literalValue(property.value);
-        if (key) dependencySpecifiers.push(key);
-        if (value !== null) dependencyIds.push(value);
-      }
-    }
-  }
-
-  return {
-    dependencyIds: uniqueStrings(dependencyIds),
-    dependencySpecifiers: uniqueStrings(dependencySpecifiers),
-  };
-}
-
+// Each module record by id, and the ids of the modules that require each one.
 function buildBundleGraph(bundle) {
-  const byId = new Map();
-  const parentsById = new Map();
-  const edgesById = new Map();
-
-  for (const moduleRecord of bundle.modules) {
-    const depInfo = extractBundleDependencyInfo(moduleRecord, bundle.format);
-    const enriched = { ...moduleRecord, ...depInfo };
-    byId.set(String(moduleRecord.id), enriched);
-    edgesById.set(String(moduleRecord.id), depInfo.dependencyIds.map(String));
-    parentsById.set(String(moduleRecord.id), []);
+  const byId = new Map(bundle.modules.map((record) => [record.id, record]));
+  const parentsById = new Map(bundle.modules.map((record) => [record.id, []]));
+  for (const record of bundle.modules) {
+    for (const depId of record.dependencyIds) parentsById.get(depId).push(record.id);
   }
-
-  for (const [fromId, deps] of edgesById.entries()) {
-    for (const depId of deps) {
-      if (!parentsById.has(depId)) continue;
-      parentsById.get(depId).push(fromId);
-    }
-  }
-
-  return { byId, edgesById, parentsById };
+  return { byId, parentsById };
 }
 
 function classifyBundleModules(bundle, context) {
   const graph = buildBundleGraph(bundle);
   const states = [];
-  const stateById = new Map();
+  // A vendor module's classification, credited to the package its evidence names.
+  const vendorModule = (pkgName, evidence) => ({
+    classification: "thirdParty",
+    package: pkgName,
+    version: context.packageVersionByName[pkgName] || null,
+    signal: evidence.find((item) => item.package === pkgName)?.signal || null,
+  });
 
   for (const moduleRecord of bundle.modules) {
-    const graphRecord = graph.byId.get(String(moduleRecord.id));
+    const graphRecord = graph.byId.get(moduleRecord.id);
     const moduleText = moduleRecord.source;
     const webpackCommentSignal = findWebpackCommentSignal(moduleText);
     const licenseSignal = findLicenseSignal(moduleText, context.knownPackages);
     const fingerprintMatches = findFingerprintMatches(moduleText, context.fingerprints);
-    const shapeHash = extractFunctionBodyHash(moduleRecord.functionNode);
-    const hashMatches = context.packageShapeHashes.get(shapeHash) || [];
-    const uniqueHashPackage = hashMatches.length === 1 ? hashMatches[0] : null;
-    const stringLiterals = collectStringLiterals(moduleRecord.functionNode.body || moduleRecord.functionNode);
+    const shapeHash = statementsShape(bodyStatements(moduleRecord.functionNode)).hash;
+    const hashMatches = context.packageShapeHashes.get(shapeHash) ?? [];
+    // A shape names a package when every package version that ships it is a version of that one package.
+    const uniqueHashPackage = new Set(hashMatches.map((item) => item.package)).size === 1 ? hashMatches[0] : null;
+    const stringLiterals = collectStringLiterals(moduleRecord.functionNode.body);
     const appAnchorScore = scoreAppAnchors(stringLiterals);
     const generatedAssetModule = isWebpackPublicPathAssetModule(moduleRecord);
     const scores = {};
     const evidence = [];
 
     if (moduleRecord.explicitPackage) {
-      addScore(scores, evidence, moduleRecord.explicitPackage, 10, "module-path", moduleRecord.key);
+      addScore(scores, evidence, moduleRecord.explicitPackage, 10, "module-path", moduleRecord.id);
     }
 
     if (webpackCommentSignal) {
@@ -742,7 +479,7 @@ function classifyBundleModules(bundle, context) {
     }
 
     if (uniqueHashPackage) {
-      addScore(scores, evidence, uniqueHashPackage.package, uniqueHashPackage.kind === "program" ? 9 : 7, "shape-hash", uniqueHashPackage.file);
+      addScore(scores, evidence, uniqueHashPackage.package, 7, "shape-hash", uniqueHashPackage.file);
     }
 
     for (const [pkgName, matchInfo] of Object.entries(fingerprintMatches)) {
@@ -773,9 +510,21 @@ function classifyBundleModules(bundle, context) {
       appAnchorScore === 0 &&
       Object.keys(scores).length === 1;
     const initialThreshold = lowAnchorTinyModule ? 4 : 6;
+    const vendorTop =
+      initialTop && !initialTop.tied && (initialTop.score >= initialThreshold || loaderRuntimeModule || strongSinglePackageFingerprint)
+        ? initialTop
+        : null;
+    // [LAW:types-are-the-program] A module is an asset, a vendor module with its package, or app code; only a vendor
+    // module has a package.
+    const initial = generatedAssetModule
+      ? { classification: "asset", package: null, version: null, signal: "asset-export" }
+      : vendorTop
+        ? vendorModule(vendorTop.package, evidence)
+        : { classification: "app", package: null, version: null, signal: null };
     const state = {
       id: moduleRecord.id,
       moduleRecord: graphRecord,
+      own: { scores, evidence },
       scores,
       evidence,
       shapeHash,
@@ -785,112 +534,47 @@ function classifyBundleModules(bundle, context) {
       hashMatches,
       stringLiterals,
       appAnchorScore,
-      generatedAssetModule,
-      classification:
-        generatedAssetModule
-          ? "thirdParty"
-          : initialTop &&
-              !initialTop.tied &&
-              (initialTop.score >= initialThreshold || loaderRuntimeModule || strongSinglePackageFingerprint)
-            ? "thirdParty"
-            : "app",
-      package:
-        generatedAssetModule
-          ? null
-          : initialTop &&
-              !initialTop.tied &&
-              (initialTop.score >= initialThreshold || loaderRuntimeModule || strongSinglePackageFingerprint)
-          ? initialTop.package
-          : null,
-      version:
-        generatedAssetModule
-          ? null
-          : initialTop &&
-              !initialTop.tied &&
-              (initialTop.score >= initialThreshold || loaderRuntimeModule || strongSinglePackageFingerprint)
-          ? context.packageVersionByName[initialTop.package] || null
-          : null,
-      signal:
-        generatedAssetModule
-          ? "asset-export"
-          : initialTop &&
-              !initialTop.tied &&
-              (initialTop.score >= initialThreshold || loaderRuntimeModule || strongSinglePackageFingerprint)
-          ? evidence.find((item) => item.package === initialTop.package)?.signal || null
-          : null,
+      ...initial,
       initialThreshold,
     };
     states.push(state);
-    stateById.set(String(moduleRecord.id), state);
   }
 
   // Propagate vendor classification across wrapper/runtime modules.
-  // // [LAW:dataflow-not-control-flow] Propagation always runs a fixed number of passes; only the score data changes.
-  for (let pass = 0; pass < 3; pass++) {
-    for (const state of states) {
-      if (state.classification === "thirdParty") continue;
-
-      const depStates = state.moduleRecord.dependencyIds
-        .map((id) => stateById.get(String(id)))
-        .filter(Boolean);
-      const parentStates = (graph.parentsById.get(String(state.id)) || [])
-        .map((id) => stateById.get(String(id)))
-        .filter(Boolean);
-
-      const thirdPartyDeps = depStates.filter((item) => item.classification === "thirdParty" && item.package);
-      const thirdPartyParents = parentStates.filter((item) => item.classification === "thirdParty" && item.package);
-
-      if (thirdPartyDeps.length > 0 && state.moduleRecord.source.length < 2500) {
-        const depPackages = thirdPartyDeps.map((item) => item.package);
-        const dominantDepPackage = pickTopPackage(
-          depPackages.reduce((acc, pkgName) => {
-            acc[pkgName] = (acc[pkgName] || 0) + 1;
-            return acc;
-          }, {}),
-        );
-        if (dominantDepPackage && dominantDepPackage.score >= 1) {
-          addScore(state.scores, state.evidence, dominantDepPackage.package, 4, "dep-wrapper", `${thirdPartyDeps.length} vendor deps`);
-        }
+  // [LAW:dataflow-not-control-flow] Propagation is a fixpoint over the bundle graph. Each round scores every module
+  // still classified as app code afresh: its own evidence, plus what every wrapper rule credits it from the vendor
+  // neighbours the previous round left. The modules that pass their threshold are promoted together, and rounds
+  // repeat until none is, so the result depends on the graph alone, not on module order.
+  for (let promoted = true; promoted; ) {
+    const vendorById = new Map(states.filter((item) => item.classification === "thirdParty").map((item) => [item.id, item]));
+    const vendorIn = (ids) => ids.map((id) => vendorById.get(id)).filter(Boolean);
+    const promotions = states.filter((item) => item.classification === "app").flatMap((state) => {
+      const scores = { ...state.own.scores };
+      const evidence = [...state.own.evidence];
+      const vendor = { deps: vendorIn(state.moduleRecord.dependencyIds), parents: vendorIn(graph.parentsById.get(state.id)) };
+      for (const rule of WRAPPER_RULES) {
+        const neighbours = state.moduleRecord.source.length < rule.sourceLimit ? vendor[rule.neighbours] : [];
+        // Neighbours split evenly between packages name none of them.
+        const dominant = pickTopPackage(countPackages(neighbours));
+        if (dominant && !dominant.tied) addScore(scores, evidence, dominant.package, rule.weight(vendor), rule.signal, `${neighbours.length} vendor ${rule.neighbours}`);
       }
-
-      if (thirdPartyParents.length > 0 && state.moduleRecord.source.length < 2200) {
-        const parentPackages = thirdPartyParents.map((item) => item.package);
-        const dominantParentPackage = pickTopPackage(
-          parentPackages.reduce((acc, pkgName) => {
-            acc[pkgName] = (acc[pkgName] || 0) + 1;
-            return acc;
-          }, {}),
-        );
-        if (dominantParentPackage && dominantParentPackage.score >= 1) {
-          addScore(
-            state.scores,
-            state.evidence,
-            dominantParentPackage.package,
-            thirdPartyDeps.length === 0 ? 3 : 2,
-            "parent-wrapper",
-            `${thirdPartyParents.length} vendor parents`,
-          );
-        }
+      if (state.appAnchorScore === 0 && isEmptyObjectExportModule(state.moduleRecord) && vendor.parents.length === 1) {
+        addScore(scores, evidence, vendor.parents[0].package, 4, "single-parent-helper", "empty object export");
       }
+      state.scores = scores;
+      state.evidence = evidence;
 
-      if (state.appAnchorScore === 0 && isEmptyObjectExportModule(state.moduleRecord) && thirdPartyParents.length === 1) {
-        addScore(state.scores, state.evidence, thirdPartyParents[0].package, 4, "single-parent-helper", "empty object export");
-      }
-
-      const top = pickTopPackage(state.scores);
+      const top = pickTopPackage(scores);
       const promotionThreshold =
         state.appAnchorScore === 0 && state.moduleRecord.source.length <= 120
           ? 3
           : state.appAnchorScore === 0 && state.moduleRecord.source.length <= 500
             ? 4
             : 6;
-      if (top && top.score >= promotionThreshold && !top.tied) {
-        state.classification = "thirdParty";
-        state.package = top.package;
-        state.version = context.packageVersionByName[top.package] || null;
-        state.signal = state.evidence.find((item) => item.package === top.package)?.signal || null;
-      }
-    }
+      return top && top.score >= promotionThreshold && !top.tied ? [[state, top.package]] : [];
+    });
+    for (const [state, pkgName] of promotions) Object.assign(state, vendorModule(pkgName, state.evidence));
+    promoted = promotions.length > 0;
   }
 
   const bundlePackageTotals = {};
@@ -909,13 +593,11 @@ function classifyBundleModules(bundle, context) {
     (bundleBaseName.includes(dominantBundlePackage.package.replace("@", "").split("/").pop().toLowerCase()) ||
       states.filter((item) => item.package === dominantBundlePackage.package).length >= 5);
 
+  // A single-vendor bundle's code modules are all that vendor's; its assets stay assets.
   if (bundleLooksLikeSingleVendor) {
-    for (const state of states) {
-      state.classification = "thirdParty";
-      state.package = dominantBundlePackage.package;
-      state.version = context.packageVersionByName[dominantBundlePackage.package] || null;
-      state.signal = state.signal || "bundle-family";
+    for (const state of states.filter((item) => item.classification !== "asset")) {
       addScore(state.scores, state.evidence, dominantBundlePackage.package, 5, "bundle-family", bundle.format);
+      Object.assign(state, vendorModule(dominantBundlePackage.package, state.evidence), { signal: state.signal || "bundle-family" });
     }
   }
 
@@ -931,10 +613,9 @@ function classifyBundleModules(bundle, context) {
       shapeHash: state.shapeHash,
       fingerprintHits: state.fingerprintMatches,
       appAnchorScore: state.appAnchorScore,
-      generatedAssetModule: state.generatedAssetModule,
-      hashMatchCount: state.hashMatches.length,
-      hashMatchPackages: state.hashMatches.map((item) => `${item.package}@${item.version}:${item.kind}`),
+      hashMatches: state.hashMatches.map(({ package: pkgName, version }) => ({ package: pkgName, version })),
       dependencyIds: state.moduleRecord.dependencyIds,
+      unresolvedDependencyIds: state.moduleRecord.unresolvedDependencyIds,
       dependencySpecifiers: state.moduleRecord.dependencySpecifiers,
       topScore: best ? best.score : 0,
       evidence: state.evidence,
@@ -942,8 +623,8 @@ function classifyBundleModules(bundle, context) {
   });
 }
 
-function analyzePlainJsFile(filePath, code, projectRoot, report) {
-  const specifiers = parseStaticBareSpecifiers(code);
+function analyzePlainJsFile(filePath, ast, projectRoot, report) {
+  const specifiers = parseStaticBareSpecifiers(ast);
   for (const rawSpecifier of specifiers) {
     if (!isBareSpecifier(rawSpecifier)) continue;
     const normalized = normalizeBareSpecifier(rawSpecifier);
@@ -960,28 +641,23 @@ function analyzePlainJsFile(filePath, code, projectRoot, report) {
   }
 }
 
-function analyzeBundleFile(filePath, code, projectRoot, report, context) {
-  const bundle = detectBundle(filePath, code);
-  if (!bundle || bundle.modules.length === 0 || bundle.format === BUNDLE_FORMAT_UNKNOWN) return false;
-  bundle.fileHint = filePath;
+// Records a bundle a build file is, with its classified modules.
+function recordBundle(filePath, detected, code, projectRoot, report, context) {
+  // A module keyed by its node_modules path (webpack5's, or browserify's with full paths) names its package.
+  const bundle = {
+    ...detected,
+    fileHint: filePath,
+    modules: detected.modules.map((record) => ({ ...record, explicitPackage: packageOfPath(record.id) })),
+  };
 
   const classified = classifyBundleModules(bundle, context);
   const suggestedDependencies = {};
-  let appCount = 0;
-  let thirdPartyCount = 0;
-  let appBytes = 0;
-  let thirdPartyBytes = 0;
-
   for (const item of classified) {
-    if (item.classification === "thirdParty") {
-      thirdPartyCount += 1;
-      thirdPartyBytes += item.bytes;
-      if (item.package && !suggestedDependencies[item.package]) suggestedDependencies[item.package] = item.version || "*";
-      continue;
-    }
-    appCount += 1;
-    appBytes += item.bytes;
+    if (item.package && !suggestedDependencies[item.package]) suggestedDependencies[item.package] = item.version || "*";
   }
+  const counts = tally(CLASSIFICATIONS, classified, (item) => item.classification);
+  const bytes = tally(CLASSIFICATIONS, classified, (item) => item.classification, (item) => item.bytes);
+  const extractedModuleBytes = bytes.app + bytes.thirdParty + bytes.asset;
 
   report.bundles.push({
     file: fileRel(projectRoot, filePath),
@@ -990,18 +666,30 @@ function analyzeBundleFile(filePath, code, projectRoot, report, context) {
     totalModules: classified.length,
     modules: classified,
     summary: {
-      app: appCount,
-      thirdParty: thirdPartyCount,
-      appBytes,
-      thirdPartyBytes,
-      extractedModuleBytes: appBytes + thirdPartyBytes,
+      ...counts,
+      appBytes: bytes.app,
+      thirdPartyBytes: bytes.thirdParty,
+      assetBytes: bytes.asset,
+      extractedModuleBytes,
       sourceBytes: code.length,
-      extractionCoverageRatio:
-        code.length === 0 ? 0 : Number(((appBytes + thirdPartyBytes) / code.length).toFixed(6)),
+      extractionCoverageRatio: code.length === 0 ? 0 : Number((extractedModuleBytes / code.length).toFixed(6)),
     },
     suggestedDependencies,
   });
-  return true;
+}
+
+// A build file's outcome, after recording what it found: unreadable or unparsed (its errors recorded), or a parsed
+// file whose static bare specifiers are recorded, and that is plain or bundled.
+function analyzeBuildFile(jsFile, projectRoot, report, context) {
+  const read = readBuildFile(jsFile);
+  if (read.kind !== "parsed") {
+    report.parseErrors.push(fileError(fileRel(projectRoot, jsFile), read.error));
+    return read.kind;
+  }
+  analyzePlainJsFile(jsFile, read.ast, projectRoot, report);
+  if (read.bundle === null) return "plain";
+  recordBundle(jsFile, read.bundle, read.code, projectRoot, report, context);
+  return "bundled";
 }
 
 function main() {
@@ -1017,6 +705,7 @@ function main() {
   const appDir = path.resolve(projectRoot, opts.appDir);
   const buildDir = path.resolve(projectRoot, opts.buildDir);
   const outPath = path.resolve(projectRoot, opts.out);
+  clearOutputs([outPath]);
 
   const fingerprints = loadFingerprints();
   const onDisk = readOnDisk(appDir, projectRoot);
@@ -1061,8 +750,7 @@ function main() {
     parseErrors: [],
     code: {
       filesScanned: 0,
-      plainFiles: 0,
-      bundledFiles: 0,
+      files: tally(FILE_OUTCOMES, [], () => null),
       bareSpecifiers: {},
       nodeBuiltins: {},
     },
@@ -1084,6 +772,7 @@ function main() {
       bundledThirdPartyPackages: 0,
       bundledAppModules: 0,
       bundledThirdPartyModules: 0,
+      bundledAssetModules: 0,
       totalModuleCandidates: 0,
       classifiedCandidates: 0,
       classificationRate: 0,
@@ -1123,28 +812,8 @@ function main() {
     knownPackages,
   };
 
-  for (const jsFile of jsFiles) {
-    let code = "";
-    try {
-      code = fs.readFileSync(jsFile, "utf8");
-    } catch (error) {
-      report.parseErrors.push({ file: fileRel(projectRoot, jsFile), error: String(error?.message || error) });
-      continue;
-    }
-
-    try {
-      // [LAW:dataflow-not-control-flow] Always collect static bare specifiers for every file; bundle detection only adds extra module-level evidence.
-      analyzePlainJsFile(jsFile, code, projectRoot, report);
-      const isBundle = analyzeBundleFile(jsFile, code, projectRoot, report, classificationContext);
-      if (isBundle) {
-        report.code.bundledFiles += 1;
-      } else {
-        report.code.plainFiles += 1;
-      }
-    } catch (error) {
-      report.parseErrors.push({ file: fileRel(projectRoot, jsFile), error: String(error?.message || error) });
-    }
-  }
+  const outcomes = jsFiles.map((jsFile) => analyzeBuildFile(jsFile, projectRoot, report, classificationContext));
+  report.code.files = tally(FILE_OUTCOMES, outcomes, (outcome) => outcome);
 
   const inCode = Object.keys(report.code.bareSpecifiers).sort();
   const onDiskSet = new Set(loadedPackageVersions.map((pkg) => pkg.name));
@@ -1154,9 +823,11 @@ function main() {
   const bundledThirdPartyPackages = new Set();
   let bundledThirdPartyModules = 0;
   let bundledAppModules = 0;
+  let bundledAssetModules = 0;
   for (const bundle of report.bundles) {
     bundledThirdPartyModules += bundle.summary.thirdParty;
     bundledAppModules += bundle.summary.app;
+    bundledAssetModules += bundle.summary.asset;
     for (const pkgName of Object.keys(bundle.suggestedDependencies)) bundledThirdPartyPackages.add(pkgName);
     if (bundle.summary.extractionCoverageRatio < 0.05) {
       report.warnings.push(
@@ -1171,24 +842,25 @@ function main() {
   report.summary.bundledThirdPartyPackages = bundledThirdPartyPackages.size;
   report.summary.bundledAppModules = bundledAppModules;
   report.summary.bundledThirdPartyModules = bundledThirdPartyModules;
-  report.summary.totalModuleCandidates = bundledAppModules + bundledThirdPartyModules;
-  report.summary.classifiedCandidates = bundledThirdPartyModules;
+  report.summary.bundledAssetModules = bundledAssetModules;
+  report.summary.totalModuleCandidates = bundledAppModules + bundledThirdPartyModules + bundledAssetModules;
+  report.summary.classifiedCandidates = bundledThirdPartyModules + bundledAssetModules;
   report.summary.classificationRate =
     report.summary.totalModuleCandidates === 0
       ? 0
       : Number((report.summary.classifiedCandidates / report.summary.totalModuleCandidates).toFixed(6));
 
-  ensureDir(path.dirname(outPath));
-  fs.writeFileSync(outPath, JSON.stringify(report, null, 2));
+  writeOutputs([[outPath, report]]);
 
   console.log(`Wrote ${fileRel(projectRoot, outPath)}`);
-  console.log(`- JS files scanned: ${report.code.filesScanned}`);
-  console.log(`- Plain JS files: ${report.code.plainFiles}`);
-  console.log(`- Bundled JS files: ${report.code.bundledFiles}`);
+  console.log(`- JS files scanned: ${report.code.filesScanned} (unreadable: ${report.code.files.unreadable}, unparsed: ${report.code.files.unparsed})`);
+  console.log(`- Plain JS files: ${report.code.files.plain}`);
+  console.log(`- Bundled JS files: ${report.code.files.bundled}`);
   console.log(`- External packages in code: ${report.summary.externalPackagesInCode}`);
   console.log(`- Bundled third-party packages: ${report.summary.bundledThirdPartyPackages}`);
   console.log(`- Bundled app modules: ${report.summary.bundledAppModules}`);
   console.log(`- Bundled third-party modules: ${report.summary.bundledThirdPartyModules}`);
+  console.log(`- Bundled asset modules: ${report.summary.bundledAssetModules}`);
   console.log(`- Candidate module classification rate: ${report.summary.classificationRate}`);
   console.log(`- Parse errors: ${report.parseErrors.length}`);
   console.log(`- Copies on disk: ${copiesOnDisk} (trialable: ${onDiskReport.packages.length})`);

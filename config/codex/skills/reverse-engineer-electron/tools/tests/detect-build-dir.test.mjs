@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { writeText } from "./fixtures.mjs";
 
 const SCRIPT = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -17,11 +18,6 @@ function mkTmpDir(name) {
   const appDir = path.join(root, name);
   fs.mkdirSync(appDir, { recursive: true });
   return appDir;
-}
-
-function writeText(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content);
 }
 
 function runDetect(appDir) {

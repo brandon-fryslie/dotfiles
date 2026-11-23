@@ -171,12 +171,8 @@ function collectPackageContexts(report, onDiskPackages) {
         }
       }
 
-      for (const item of module.hashMatchPackages || []) {
-        const marker = `${module.package}@`;
-        const pos = String(item).indexOf(marker);
-        if (pos === -1) continue;
-        const versionPart = String(item).slice(pos + marker.length).split(":")[0];
-        const parsed = parseSemver(versionPart);
+      for (const { package: pkgName, version } of module.hashMatches) {
+        const parsed = pkgName === module.package ? parseSemver(version) : null;
         if (parsed) ctx.hashMatchVersions.add(parsed.normalized);
       }
     }

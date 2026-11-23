@@ -9,12 +9,17 @@
 // the formatted AST while report hashed a re-minified one — ticket .22); a shared
 // module makes "same algorithm" structural rather than disciplinary.
 //
-// Two distinct token domains, deliberately kept apart:
+// Three distinct token domains, deliberately kept apart:
 //
 //   - IDENTITY (functionShapeTokens over the source AST): stable for one file as
 //     written. prepare.mjs records it in manifest.json; gate.mjs and report.mjs
 //     re-derive it from the same file to look entries up. Never run through a
 //     transformer — any syntax rewrite breaks the contract with the manifest.
+//
+//   - BODY (statementsShape): IDENTITY's tokens over a list of statements alone,
+//     a function's body or a whole file's, so a bundled module factory, whose
+//     parameters the bundler chose, matches the package file or function it was
+//     built from.
 //
 //   - SIMILARITY (normalizedFunctionTokens): esbuild-minified so that stylistic
 //     differences (if/else vs ternary, statement merging) between the original
@@ -22,6 +27,7 @@
 //     ever compared against tokens produced by this same function.
 
 import { parse } from '@babel/parser';
+import traverseImport from '@babel/traverse';
 import { isFunction, isClassMethod, isClassPrivateMethod, isObjectMethod } from '@babel/types';
 import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
@@ -39,17 +45,25 @@ import path from 'path';
 // JSX on both sides — JSX only claims a `<` where plain JS has no legal reading,
 // so it rejects nothing a js loader accepts — which is why .jsx is not its own
 // loader. [LAW:dataflow-not-control-flow] the per-loader differences are data;
-// every loader parses as 'unambiguous' with error recovery.
+// every loader parses the way an engine reads the file (parseSource).
 const LOADERS = Object.freeze({
   js: { esbuild: 'jsx', plugins: ['jsx', 'decorators'] },
   ts: { esbuild: 'ts', plugins: ['typescript', 'decorators'] },
   tsx: { esbuild: 'tsx', plugins: ['typescript', 'jsx', 'decorators'] },
 });
 
-const LOADER_BY_EXTENSION = Object.freeze({
-  '.js': 'js', '.mjs': 'js', '.cjs': 'js', '.jsx': 'js',
-  '.ts': 'ts', '.mts': 'ts', '.cts': 'ts',
-  '.tsx': 'tsx',
+// A file's parse goal is what its name declares: .mjs and .mts are modules, .cjs and .cts scripts. Every other
+// extension declares nothing; whatever loads the file decides (in an Electron app, a renderer's script tag as much
+// as package.json's type), so the file is read under whichever goal accepts it.
+const SOURCE_KIND_BY_EXTENSION = Object.freeze({
+  '.js': { loader: 'js', goal: 'undeclared' },
+  '.mjs': { loader: 'js', goal: 'module' },
+  '.cjs': { loader: 'js', goal: 'script' },
+  '.jsx': { loader: 'js', goal: 'undeclared' },
+  '.ts': { loader: 'ts', goal: 'undeclared' },
+  '.mts': { loader: 'ts', goal: 'module' },
+  '.cts': { loader: 'ts', goal: 'script' },
+  '.tsx': { loader: 'tsx', goal: 'undeclared' },
 });
 
 function loaderSpec(loader) {
@@ -63,7 +77,7 @@ const DECLARATION_FILE = /\.d\.[mc]?ts$/;
 // A file the toolchain reads: one with a loader, and not a declaration file,
 // which parses as ts but declares no bodies.
 export function isSourceFile(filePath) {
-  return !DECLARATION_FILE.test(filePath) && path.extname(filePath) in LOADER_BY_EXTENSION;
+  return !DECLARATION_FILE.test(filePath) && path.extname(filePath) in SOURCE_KIND_BY_EXTENSION;
 }
 
 // [LAW:one-source-of-truth] The walk that feeds every tool. Nine copies drifted
@@ -99,26 +113,47 @@ export function listSourceFiles(rootDir, excludes) {
   return listFiles(rootDir, excludes).filter(isSourceFile);
 }
 
-export function loaderFor(filePath) {
-  const loader = LOADER_BY_EXTENSION[path.extname(filePath)];
-  if (!loader) throw new Error(`no loader for ${filePath}`); // [LAW:no-silent-failure]
-  return loader;
+export function sourceKindOf(filePath) {
+  const kind = SOURCE_KIND_BY_EXTENSION[path.extname(filePath)];
+  if (!kind) throw new Error(`no loader for ${filePath}`); // [LAW:no-silent-failure]
+  return kind;
 }
 
-export function parseSource(code, loader) {
-  return parse(code, {
-    sourceType: 'unambiguous',
-    plugins: loaderSpec(loader).plugins,
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-  });
+export const loaderFor = (filePath) => sourceKindOf(filePath).loader;
+
+const parseOptions = (loader, sourceType) => ({
+  sourceType,
+  plugins: loaderSpec(loader).plugins,
+  allowReturnOutsideFunction: true,
+});
+
+// @babel/traverse, whichever way the module system hands over its default export.
+export const traverse = traverseImport.default || traverseImport;
+
+// The parse is made the way an engine reads code under its goal: a script, sloppy
+// unless it says otherwise, or a module; an undeclared goal is a script if the
+// code runs as one, else a module. Code an engine would reject throws; with error
+// recovery, babel would hand back a tree for it (a duplicate `let`, say), and a
+// tree for code that doesn't run is one no tool should hash or analyze.
+// [LAW:no-silent-failure]
+export function parseSource(code, { loader, goal }) {
+  if (goal !== 'undeclared') return parse(code, parseOptions(loader, goal));
+  try {
+    return parse(code, parseOptions(loader, 'script'));
+  } catch (scriptError) {
+    try {
+      return parse(code, parseOptions(loader, 'module'));
+    } catch (moduleError) {
+      throw new SyntaxError(`as a script: ${scriptError.message}; as a module: ${moduleError.message}`, { cause: moduleError });
+    }
+  }
 }
 
-// The parse for code that came from a file: the loader is the file's, and a
-// failure names the file — babel's SyntaxError carries only a line and column.
+// The parse for code that came from a file: the loader and goal are the file's,
+// and a failure names the file — babel's SyntaxError carries only a line and column.
 export function parseFile(code, filePath) {
   try {
-    return parseSource(code, loaderFor(filePath));
+    return parseSource(code, sourceKindOf(filePath));
   } catch (e) {
     throw new Error(`${filePath}: ${e.message}`, { cause: e }); // [LAW:no-silent-failure]
   }
@@ -127,7 +162,7 @@ export function parseFile(code, filePath) {
 // [LAW:one-source-of-truth] The esbuild side of "both readers see one file":
 // the one transform whose output normalizedFunctionTokens and the whole-file
 // fingerprints read back. Output is plain JS for every loader (types stripped,
-// JSX lowered, decorators passed through), so the read-back is parseSource(.., 'js').
+// JSX lowered, decorators passed through), so it reads back as parseMinified does.
 export function minifySource(code, loader) {
   return transformSync(code, {
     loader: loaderSpec(loader).esbuild,
@@ -136,9 +171,12 @@ export function minifySource(code, loader) {
     minifySyntax: true,
     minifyIdentifiers: false,
     target: 'esnext',
-    format: 'esm',
   }).code;
 }
+
+// minifySource's output, parsed: plain JS, under the goal of the code it minified. The transform converts no module
+// format, so its output has its input's module syntax and its input's goal: a CommonJS file stays a sloppy script.
+export const parseMinified = (minified, goal) => parseSource(minified, { loader: 'js', goal });
 
 const SKIP_KEYS = new Set([
   'type', 'start', 'end', 'loc', 'leadingComments',
@@ -251,6 +289,18 @@ export function tokensToHash(tokens) {
   return createHash('sha256').update(tokens.join(',')).digest('hex').slice(0, 16);
 }
 
+// A function's body as statements: a block's own, or an expression body as the
+// one statement that returns it, which is what `=> x` means.
+export function bodyStatements(fn) {
+  return fn.body.type === 'BlockStatement' ? fn.body.body : [{ type: 'ReturnStatement', argument: fn.body }];
+}
+
+// The BODY domain: the tokens of a list of statements, with their count and their hash.
+export function statementsShape(statements) {
+  const tokens = statements.flatMap(functionShapeTokens);
+  return { size: tokens.length, hash: tokensToHash(tokens) };
+}
+
 export function extractStrings(node) {
   const strings = [];
   walk(node, (n) => {
@@ -340,12 +390,12 @@ export function normalizedFunctionTokens(node, code, loader) {
   const wrapper = wrapperFor(node, code.slice(node.start, node.end));
   const wrapped = `export default class extends Object { ${fields} ${wrapper.member} }`;
   const minified = minifySource(wrapped, loader);
-  const ast = parseSource(minified, 'js');
+  const ast = parseMinified(minified, 'module');
 
   // The wrapper is ours, so the slice's position in it is known: the one
-  // function-bearing member of the sole top-level class (esbuild names the
-  // class and exports it in a separate statement), then the form's own path.
-  const cls = ast.program.body.find((n) => n.type === 'ClassDeclaration');
+  // function-bearing member of the class the module exports by default, then
+  // the form's own path.
+  const cls = ast.program.body.find((n) => n.type === 'ExportDefaultDeclaration')?.declaration;
   const member = cls?.body.body.find(isFunctionNode);
   const fnNode = member && wrapper.slice(member);
   if (!fnNode || !isFunctionNode(fnNode)) {
