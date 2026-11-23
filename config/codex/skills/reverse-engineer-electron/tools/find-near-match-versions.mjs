@@ -19,7 +19,7 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { isNonEmptyString } from "./node-modules.mjs";
+import { isNonEmptyString } from "./json-value.mjs";
 
 function parseArgs(argv) {
   const opts = {

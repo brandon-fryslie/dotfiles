@@ -11,11 +11,17 @@
 
 import fs from "fs";
 import path from "path";
+import { isNonEmptyString } from "./json-value.mjs";
+import { appPathState, listDir, pathState, readText } from "./path-state.mjs";
+import { verdictOn } from "./verdict.mjs";
 
-// [LAW:parse-dont-validate] A package name as npm spells one: a name, or a scope and a name, neither starting with
-// "." and holding no "/" of its own. It is the one grammar for a --pkg argument, a candidate source's names, and the
-// entry a location ends in.
-export const isPackageName = (value) => typeof value === "string" && /^(?:@[^/@.][^/]*\/)?[^/@.][^/]*$/.test(value);
+// [LAW:single-enforcer] A package name as npm spells one: a name, or a scope and a name, neither starting with "."
+// and holding no "/" of its own. It is the one grammar for a --pkg argument, a candidate source's names, a lockfile's
+// names, and the entry a location ends in; a scope is its first half.
+const SCOPE = "@[^/@.][^/]*";
+const PACKAGE_NAME = new RegExp(`^(?:${SCOPE}/)?[^/@.][^/]*$`);
+const SCOPE_NAME = new RegExp(`^${SCOPE}$`);
+export const isPackageName = (value) => typeof value === "string" && PACKAGE_NAME.test(value);
 
 // The entry a node_modules path names after its last node_modules: a package name, or a scope that holds no packages
 // (an entry under its own name), or null when it names neither.
@@ -25,7 +31,7 @@ export function entryNameOf(nodeModulesPath) {
   if (last === -1) return null;
   const entry = parts.slice(last + 1);
   const name = entry.length >= 2 && entry[0].startsWith("@") ? `${entry[0]}/${entry[1]}` : entry[0];
-  return name !== undefined && (isPackageName(name) || /^@[^/@.][^/]*$/.test(name)) ? name : null;
+  return name !== undefined && (isPackageName(name) || SCOPE_NAME.test(name)) ? name : null;
 }
 
 // A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
@@ -42,34 +48,9 @@ export function pkgPathParts(name) {
   return name.startsWith("@") && name.includes("/") ? name.split("/") : [name];
 }
 
-// What a path holds once node follows its links: a directory, a file, a link leading nowhere, a path it can't stat
-// (with the error code, e.g. EACCES or ELOOP), or nothing at all. A directory is one whatever its read bit says: node
-// loads a package through a directory it may search but not list, so whether it can be listed is listDir's question.
-export function pathState(p) {
-  try {
-    if (!fs.lstatSync(p, { throwIfNoEntry: false })) return { kind: "absent" };
-    const stat = fs.statSync(p, { throwIfNoEntry: false });
-    if (!stat) return { kind: "dangling", target: fs.readlinkSync(p) };
-    return { kind: stat.isDirectory() ? "dir" : "file" };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unreadable", code: error.code };
-  }
-}
-
-// A directory's entries, or the error code that kept them from being read.
-export function listDir(dir) {
-  try {
-    return { kind: "listed", entries: fs.readdirSync(dir, { withFileTypes: true }) };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unlistable", code: error.code };
-  }
-}
-
 // [LAW:types-are-the-program] Each state that is not a package, and the one field that says why, so a reason built
 // from a state names the cause it holds and a state with no entry here is an error, not a reason with a gap in it.
-const STATE_DETAIL = { absent: null, file: null, "no-manifest": null, dangling: "target", unreadable: "code", "unusable-manifest": "reason" };
+const STATE_DETAIL = { absent: null, dir: null, file: null, special: null, "no-manifest": null, dangling: "target", unreadable: "code", "unusable-manifest": "reason" };
 
 export function stateText(state) {
   if (!Object.hasOwn(STATE_DETAIL, state.kind)) throw new Error(`a ${state.kind} state has no reason text`);
@@ -77,28 +58,26 @@ export function stateText(state) {
   return field === null ? state.kind : `${state.kind}:${state[field]}`;
 }
 
-export const isNonEmptyString = (value) => typeof value === "string" && value !== "";
+// Why a path that should hold a kind of thing doesn't: it holds another kind, or it can't be read to tell.
+export const mismatchText = (expected, state) => (state.kind === "unreadable" ? `can't be read (${state.code})` : `is not a ${expected} (${stateText(state)})`);
 
 // What a path holds as a package: the name and version its package.json gives, or, when it holds none, the path's
-// own state, a directory with no package.json, or a package.json that can't be read or lacks a name or version.
+// own state, a directory with no package.json, or a package.json that can't be read, lacks a name or version, or
+// gives a name no package can have.
 export function packageAt(dir) {
   const state = pathState(dir);
   if (state.kind !== "dir") return state;
-  let text;
-  try {
-    text = fs.readFileSync(path.join(dir, "package.json"), "utf8");
-  } catch (error) {
-    if (error.code === "ENOENT") return { kind: "no-manifest" };
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unusable-manifest", reason: error.code };
-  }
+  const read = readText(path.join(dir, "package.json"));
+  if (read.kind === "absent") return { kind: "no-manifest" };
+  if (read.kind !== "text") return { kind: "unusable-manifest", reason: read.kind === "unreadable" ? read.code : stateText(read) };
   let manifest;
   try {
-    manifest = JSON.parse(text);
+    manifest = JSON.parse(read.text);
   } catch (error) {
     return { kind: "unusable-manifest", reason: `invalid-json (${error.message})` };
   }
   if (!isNonEmptyString(manifest?.name) || !isNonEmptyString(manifest?.version)) return { kind: "unusable-manifest", reason: "no-name-or-version" };
+  if (!isPackageName(manifest.name)) return { kind: "unusable-manifest", reason: "invalid-name" };
   return { kind: "package", name: manifest.name, version: manifest.version };
 }
 
@@ -130,8 +109,8 @@ export function topLevelEntries(nodeModules) {
 // require: the app's node_modules, then, for each package the app owns, every node_modules on that package's lookup
 // path (its own, and one beside each directory above it that is not itself a node_modules) inside the app's
 // node_modules. A pnpm store's dependencies are siblings in the store entry's node_modules, so node finds them that way,
-// whatever the store is named. Each node_modules is visited once whatever it is reached through, so a symlinked nested
-// node_modules counts and a link cycle ends; a package's own files and anything past a link out of the app (a
+// whatever the store is named. Each spelling of a node_modules is listed, and each directory is descended once whatever
+// it is reached through, so a symlinked nested node_modules counts and a link cycle ends; a package's own files and anything past a link out of the app (a
 // workspace, a replacement) are never descended. node resolves a name without listing a directory, so each name in
 // `probe` is looked up in every node_modules visited, listable or not. Returns each start (a name and the location it
 // is reached at, always a path that holds something), each directory that couldn't be listed, and one verdict on the
@@ -140,7 +119,7 @@ export function topLevelEntries(nodeModules) {
 export function walkStarts(app, probe = []) {
   const state = pathState(app.nodeModules);
   if (state.kind === "absent") return { verdict: { kind: "absent" }, starts: [], unlisted: [] };
-  if (state.kind !== "dir") return { verdict: { kind: "incomplete", reason: `node_modules is not a directory: ${stateText(state)}` }, starts: [], unlisted: [] };
+  if (state.kind !== "dir") return { verdict: { kind: "incomplete", reason: `node_modules ${mismatchText("directory", state)}` }, starts: [], unlisted: [] };
   const visited = new Set();
   const starts = new Map();
   const unlisted = [];
@@ -172,9 +151,7 @@ export function walkStarts(app, probe = []) {
   visit(app.nodeModules);
 
   const named = unlisted.map(({ dir, code }) => ({ path: path.relative(path.dirname(app.nodeModules), dir), code }));
-  const verdict = named.length === 0
-    ? { kind: "listed" }
-    : { kind: "incomplete", reason: `couldn't list ${named.map(({ path: dir, code }) => `${dir} (${code})`).join(", ")}, so the packages inside aren't detected` };
+  const verdict = verdictOn(named, (dirs) => `couldn't list ${dirs.map(({ path: dir, code }) => `${dir} (${code})`).join(", ")}, so the packages inside aren't detected`);
   return { verdict, starts: [...starts.values()], unlisted: named };
 }
 
@@ -190,6 +167,9 @@ function lookupPaths(app, pkgReal) {
 
 // Locations in path order, which puts every copy before the copies nested in it.
 export const compareLocations = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// Packages or copies by name, then by location.
+export const byNameThenLocation = (items) => [...items].sort((a, b) => a.name.localeCompare(b.name) || compareLocations(a.location, b.location));
 
 // [LAW:one-source-of-truth] The copies a set of starts reach: each start judged by swapOutcome and grouped by the swap
 // location it leads to, so the top-level link and every pnpm consumer link to one store copy are one copy, and a link
@@ -208,8 +188,18 @@ export function copiesOf(app, starts) {
     .sort((a, b) => compareLocations(a.location, b.location));
 }
 
-// The location node's require of name from the app loads, before any link is followed.
-export const topLevelLocation = (name) => ["node_modules", ...pkgPathParts(name)].join("/");
+// The location of name installed in the node_modules of the package at parent, or, with no parent, the location
+// node's require of name from the app loads, before any link is followed.
+export const nestedLocation = (parent, name) => [...(parent === null ? [] : [parent]), "node_modules", ...pkgPathParts(name)].join("/");
+export const topLevelLocation = (name) => nestedLocation(null, name);
+
+// [LAW:one-source-of-truth] An npm alias spec, npm:<name>@<version>: the form a replacement is installed under, and
+// the form a v1 lockfile records an alias's version in.
+const npmSpec = (name, version) => `npm:${name}@${version}`;
+export function parseNpmSpec(spec) {
+  const match = /^npm:(.+)@([^@]+)$/.exec(spec);
+  return match !== null && isPackageName(match[1]) ? { name: match[1], version: match[2] } : null;
+}
 
 // [LAW:types-are-the-program] Where the project installs the replacement for name@version: an npm alias under a scope
 // of its own, so replacements of one package's different versions sit side by side, and none can collide with a
@@ -222,33 +212,13 @@ export function replacementOf(projectRoot, name, version) {
     .join("");
   const encoded = `${encode(name)}__${encode(version)}`;
   const alias = `${REPLACEMENT_SCOPE}/${encoded}`;
-  return { alias, spec: `${alias}@npm:${name}@${version}`, dir: path.join(replacementScopeDir(projectRoot), encoded) };
+  return { alias, spec: `${alias}@${npmSpec(name, version)}`, dir: path.join(replacementScopeDir(projectRoot), encoded) };
 }
 
 export const REPLACEMENT_SCOPE = "@replace-dependency";
 
 // [LAW:one-source-of-truth] The one directory a project's replacements are installed into.
 const replacementScopeDir = (projectRoot) => path.join(projectRoot, "node_modules", REPLACEMENT_SCOPE);
-
-// What sits at a path without following it: nothing, a directory, a file, a symlink with its readlink text, or a path
-// it can't lstat (with the error code). pathState answers what node finds there once it follows the links.
-export function appPathState(p) {
-  try {
-    const stat = fs.lstatSync(p, { throwIfNoEntry: false });
-    if (!stat) return { kind: "absent" };
-    if (stat.isSymbolicLink()) return { kind: "link", target: fs.readlinkSync(p) };
-    return { kind: stat.isDirectory() ? "dir" : "file" };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unreadable", code: error.code };
-  }
-}
-
-export function describeEntry(state) {
-  if (state.kind === "link") return `a link to ${state.target}`;
-  if (state.kind === "unreadable") return `a path it can't read (${state.code})`;
-  return { absent: "nothing", dir: "a directory", file: "a file" }[state.kind];
-}
 
 // An entry path in canonical form: its parent directories resolved through symlinks as far as they exist, so --app-dir
 // and cwd naming one tree through different symlinked prefixes (/var vs /private/var on macOS) agree, and a path into
@@ -267,8 +237,8 @@ export function linkDestination(appPkgDir, target) {
   return canonicalEntry(path.resolve(fs.realpathSync(path.dirname(appPkgDir)), target));
 }
 
-// [LAW:single-enforcer] The one constructor of a location, the form replacement-log.mjs parses: the path from a
-// node_modules directory to a package in it, spelled from the app's node_modules. A package's own app path is its name
+// [LAW:single-enforcer] The one place a directory becomes a location, the form replacement-log.mjs parses: the path
+// from a node_modules directory to a package in it, spelled from the app's node_modules. A package's own app path is its name
 // under the app's node_modules, whatever its parents link to; a link's destination is a canonical path, measured
 // from the app's real node_modules, so an app whose node_modules is itself a symlink still writes one.
 export function locationOf(nodeModules, dir) {

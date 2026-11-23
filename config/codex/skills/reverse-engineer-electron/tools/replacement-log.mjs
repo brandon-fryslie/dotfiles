@@ -30,7 +30,8 @@
 // cwd reads them the same way.
 
 import path from "path";
-import { isLocation, isNonEmptyString } from "./node-modules.mjs";
+import { isNonEmptyString, isPlainObject } from "./json-value.mjs";
+import { isLocation } from "./node-modules.mjs";
 
 export const SCHEMA_VERSION = 4;
 
@@ -102,18 +103,17 @@ export function serializeLog(log) {
   return { schemaVersion: log.schemaVersion, createdAt: log.createdAt, updatedAt: new Date().toISOString(), copies };
 }
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isString = (value) => typeof value === "string";
 
 function originalError(original) {
-  if (!isObject(original)) return "original must be an object";
+  if (!isPlainObject(original)) return "original must be an object";
   if (original.kind === "dir") return isString(original.backupPath) ? null : "a dir original needs backupPath";
   if (original.kind === "link") return isString(original.target) ? null : "a link original needs target";
   return `original kind must be "dir" or "link", got ${JSON.stringify(original.kind)}`;
 }
 
 function attemptError(attempt) {
-  if (!isObject(attempt)) return "attempt must be an object";
+  if (!isPlainObject(attempt)) return "attempt must be an object";
   if (attempt.result !== "pass" && attempt.result !== "fail") return `result must be "pass" or "fail", got ${JSON.stringify(attempt.result)}`;
   if (attempt.reason === "interrupted") {
     if (attempt.result !== "fail") return "an interrupted attempt must be a fail";
@@ -121,7 +121,7 @@ function attemptError(attempt) {
     return originalError(attempt.original);
   }
   if (typeof attempt.swapApplied !== "boolean" || typeof attempt.rolledBack !== "boolean") return "swapApplied and rolledBack must be booleans";
-  if (!isObject(attempt.verification)) return "verification must be an object";
+  if (!isPlainObject(attempt.verification)) return "verification must be an object";
   if (attempt.result === "fail") {
     // A failed undo leaves the entry in-flight instead, so a recorded fail whose swap stayed applied is corrupt.
     if (attempt.swapApplied && !attempt.rolledBack) return "rollback-missing";
@@ -133,7 +133,7 @@ function attemptError(attempt) {
 }
 
 function parseEntry(raw) {
-  if (!isObject(raw)) return { error: { type: "entry-type" } };
+  if (!isPlainObject(raw)) return { error: { type: "entry-type" } };
   if (!isNonEmptyString(raw.name) || !(raw.version === null || isNonEmptyString(raw.version))) {
     return { error: { type: "copy-name-invalid", detail: `an entry needs a name and a version (or null), got ${JSON.stringify({ name: raw.name, version: raw.version })}` } };
   }
@@ -160,7 +160,7 @@ function parseEntry(raw) {
   if (raw.status === "unresolved") return { entry: { name: raw.name, version: raw.version, status: "unresolved", attempts: raw.attempts } };
 
   const inFlight = raw.inFlight;
-  if (!isObject(inFlight) || !isString(inFlight.attemptedVersion) || !isString(inFlight.startedAt)) {
+  if (!isPlainObject(inFlight) || !isString(inFlight.attemptedVersion) || !isString(inFlight.startedAt)) {
     return { error: { type: "in-flight-record-invalid", detail: "inFlight needs attemptedVersion and startedAt" } };
   }
   const error = originalError(inFlight.original);
@@ -176,7 +176,7 @@ export function parseLog(text, logPath) {
   } catch (error) {
     return { ok: false, errors: [{ type: "replacements-json", path: logPath, error: error.message }] };
   }
-  if (!isObject(raw)) return { ok: false, errors: [{ type: "replacements-type", path: logPath, expected: "object" }] };
+  if (!isPlainObject(raw)) return { ok: false, errors: [{ type: "replacements-type", path: logPath, expected: "object" }] };
   if (raw.schemaVersion !== SCHEMA_VERSION) {
     return {
       ok: false,
@@ -189,7 +189,7 @@ export function parseLog(text, logPath) {
       }],
     };
   }
-  if (!isObject(raw.copies)) return { ok: false, errors: [{ type: "replacements-copies-missing", path: logPath }] };
+  if (!isPlainObject(raw.copies)) return { ok: false, errors: [{ type: "replacements-copies-missing", path: logPath }] };
 
   const copies = {};
   const errors = [];
@@ -197,7 +197,7 @@ export function parseLog(text, logPath) {
     const { entry, error } = isLocation(location)
       ? parseEntry(rawEntry)
       : { error: { type: "location-invalid", detail: "an entry's key must be a location under node_modules/" } };
-    if (error) errors.push({ ...error, location, package: isObject(rawEntry) ? rawEntry.name ?? null : null });
+    if (error) errors.push({ ...error, location, package: isPlainObject(rawEntry) ? rawEntry.name ?? null : null });
     else copies[location] = entry;
   }
   if (errors.length > 0) return { ok: false, errors };

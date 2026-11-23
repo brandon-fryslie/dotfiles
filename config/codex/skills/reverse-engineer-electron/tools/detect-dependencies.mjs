@@ -24,7 +24,8 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { appAt, compareLocations, copiesOf, entryNameOf, isLocation, isNonEmptyString, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
+import { appAt, byNameThenLocation, copiesOf, entryNameOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
+import { loadLockfile } from "./package-lock.mjs";
 import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
 import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
@@ -110,7 +111,6 @@ function readOnDisk(appDir, projectRoot) {
   return { verdict, unlisted, copies: copiesOf(app, starts).map((copy) => ({ ...copy, dir: locationDir(app, copy.location) })) };
 }
 
-const byNameThenLocation = (copies) => [...copies].sort((a, b) => a.name.localeCompare(b.name) || compareLocations(a.location, b.location));
 
 // Each loaded package version's file and function shapes, in the BODY domain a bundle factory is looked up in, and every file
 // or directory that couldn't be listed, read, or parsed, so a package that contributed no shapes because it couldn't
@@ -156,30 +156,6 @@ function loadFingerprints() {
     filtered[key] = Array.isArray(value) ? value : [];
   }
   return filtered;
-}
-
-// [LAW:one-source-of-truth] Every package version the app's package-lock.json records, at the location it records it
-// at, named by the one location grammar node-modules.mjs owns: a key's package is the entry after its last
-// node_modules, or the name its entry records, for an alias. A lockfile v1's top-level dependencies are at their top-level locations. A lockfile that is there and
-// can't be read stops the run, never reads as one that records nothing. [LAW:no-silent-failure]
-function loadLockfilePackages(appDir) {
-  const packageLockPath = path.join(appDir, "package-lock.json");
-  if (!fs.existsSync(packageLockPath)) return [];
-  let packageLock;
-  try {
-    packageLock = JSON.parse(fs.readFileSync(packageLockPath, "utf8"));
-  } catch (error) {
-    throw new Error(`${packageLockPath} is not a readable lockfile: ${error.message}`);
-  }
-  const recorded = [
-    ...Object.entries(packageLock.dependencies ?? {}).map(([name, meta]) => [topLevelLocation(name), meta?.version]),
-    // An alias's entry records the package it is as its name.
-    ...Object.entries(packageLock.packages ?? {}).map(([location, meta]) => [location, meta?.version, isNonEmptyString(meta?.name) ? meta.name : undefined]),
-  ];
-  const byLocation = new Map(recorded
-    .filter(([location, version]) => isLocation(location) && isNonEmptyString(version))
-    .map(([location, version, name]) => [location, { name: name ?? entryNameOf(location), version, location }]));
-  return [...byLocation.values()].sort((left, right) => left.name.localeCompare(right.name) || compareLocations(left.location, right.location));
 }
 
 function parseStaticBareSpecifiers(ast) {
@@ -335,21 +311,25 @@ function uniqueStrings(values) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+// [LAW:types-are-the-program] Report objects keyed by package name have no prototype, so a package named constructor
+// or __proto__ is a key like any other.
+const byName = () => Object.create(null);
+
 function addScore(scoreMap, evidenceList, pkgName, points, signal, detail) {
   if (!pkgName || !Number.isFinite(points) || points <= 0) return;
-  scoreMap[pkgName] = (scoreMap[pkgName] || 0) + points;
+  scoreMap.set(pkgName, (scoreMap.get(pkgName) ?? 0) + points);
   evidenceList.push({ package: pkgName, score: points, signal, detail: detail || null });
 }
 
 // How many of the given module states are each package's.
 function countPackages(states) {
-  const counts = {};
-  for (const { package: pkgName } of states) counts[pkgName] = (counts[pkgName] || 0) + 1;
+  const counts = new Map();
+  for (const { package: pkgName } of states) counts.set(pkgName, (counts.get(pkgName) ?? 0) + 1);
   return counts;
 }
 
 function pickTopPackage(scoreMap) {
-  const entries = Object.entries(scoreMap);
+  const entries = [...scoreMap];
   if (entries.length === 0) return null;
   entries.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
   const [pkgName, score] = entries[0];
@@ -446,7 +426,7 @@ function classifyBundleModules(bundle, context) {
   const vendorModule = (pkgName, evidence) => ({
     classification: "thirdParty",
     package: pkgName,
-    version: context.packageVersionByName[pkgName] || null,
+    version: context.packageVersionByName.get(pkgName) ?? null,
     signal: evidence.find((item) => item.package === pkgName)?.signal || null,
   });
 
@@ -463,7 +443,7 @@ function classifyBundleModules(bundle, context) {
     const stringLiterals = collectStringLiterals(moduleRecord.functionNode.body);
     const appAnchorScore = scoreAppAnchors(stringLiterals);
     const generatedAssetModule = isWebpackPublicPathAssetModule(moduleRecord);
-    const scores = {};
+    const scores = new Map();
     const evidence = [];
 
     if (moduleRecord.explicitPackage) {
@@ -508,7 +488,7 @@ function classifyBundleModules(bundle, context) {
       !initialTop.tied &&
       initialTop.score >= 4 &&
       appAnchorScore === 0 &&
-      Object.keys(scores).length === 1;
+      scores.size === 1;
     const initialThreshold = lowAnchorTinyModule ? 4 : 6;
     const vendorTop =
       initialTop && !initialTop.tied && (initialTop.score >= initialThreshold || loaderRuntimeModule || strongSinglePackageFingerprint)
@@ -549,7 +529,7 @@ function classifyBundleModules(bundle, context) {
     const vendorById = new Map(states.filter((item) => item.classification === "thirdParty").map((item) => [item.id, item]));
     const vendorIn = (ids) => ids.map((id) => vendorById.get(id)).filter(Boolean);
     const promotions = states.filter((item) => item.classification === "app").flatMap((state) => {
-      const scores = { ...state.own.scores };
+      const scores = new Map(state.own.scores);
       const evidence = [...state.own.evidence];
       const vendor = { deps: vendorIn(state.moduleRecord.dependencyIds), parents: vendorIn(graph.parentsById.get(state.id)) };
       for (const rule of WRAPPER_RULES) {
@@ -577,11 +557,11 @@ function classifyBundleModules(bundle, context) {
     promoted = promotions.length > 0;
   }
 
-  const bundlePackageTotals = {};
+  const bundlePackageTotals = new Map();
   for (const state of states) {
     const top = pickTopPackage(state.scores);
     if (!top) continue;
-    bundlePackageTotals[top.package] = (bundlePackageTotals[top.package] || 0) + top.score;
+    bundlePackageTotals.set(top.package, (bundlePackageTotals.get(top.package) ?? 0) + top.score);
   }
   const dominantBundlePackage = pickTopPackage(bundlePackageTotals);
   const bundleBaseName = path.basename(bundle.fileHint || "", ".js").toLowerCase();
@@ -633,7 +613,7 @@ function analyzePlainJsFile(filePath, ast, projectRoot, report) {
       continue;
     }
     const pkgName = pkgNameFromSpecifier(normalized);
-    const current = report.code.bareSpecifiers[pkgName] || { count: 0, files: {} };
+    const current = report.code.bareSpecifiers[pkgName] || { count: 0, files: byName() };
     current.count += 1;
     const rel = fileRel(projectRoot, filePath);
     current.files[rel] = (current.files[rel] || 0) + 1;
@@ -651,9 +631,11 @@ function recordBundle(filePath, detected, code, projectRoot, report, context) {
   };
 
   const classified = classifyBundleModules(bundle, context);
-  const suggestedDependencies = {};
+  const suggestedDependencies = byName();
   for (const item of classified) {
-    if (item.package && !suggestedDependencies[item.package]) suggestedDependencies[item.package] = item.version || "*";
+    // [LAW:no-silent-failure] A package no source gives a version for is suggested at null, never at a range that
+    // would install whatever version is latest.
+    if (item.package && !Object.hasOwn(suggestedDependencies, item.package)) suggestedDependencies[item.package] = item.version;
   }
   const counts = tally(CLASSIFICATIONS, classified, (item) => item.classification);
   const bytes = tally(CLASSIFICATIONS, classified, (item) => item.classification, (item) => item.bytes);
@@ -717,20 +699,21 @@ function main() {
     .map(({ dir, outcome }) => [`${outcome.loads.name}@${outcome.loads.version}`, { name: outcome.loads.name, version: outcome.loads.version, dir }])).values()];
   // A copy on disk is a directory, however many locations reach it.
   const copiesOnDisk = new Set(loadingCopies.map(({ dir }) => fs.realpathSync(dir))).size;
-  const lockfilePackages = loadLockfilePackages(appDir);
+  const lockfilePath = path.join(appDir, "package-lock.json");
+  const lockfile = { file: fileRel(projectRoot, lockfilePath), ...loadLockfile(lockfilePath) };
   // [LAW:one-source-of-truth] A package's version is the one the app's own require loads: the copy of it its
   // top-level location reaches (a copy is named for the package it holds, so an alias's is another package's), else
   // the lockfile's.
   const topLevelVersions = loadingCopies
     .filter(({ name, paths }) => paths.includes(topLevelLocation(name)))
     .map(({ name, outcome }) => [name, outcome.loads.version]);
-  const packageVersionByName = Object.fromEntries([
-    ...lockfilePackages.filter(({ name, location }) => location === topLevelLocation(name)).map(({ name, version }) => [name, version]),
+  const packageVersionByName = new Map([
+    ...lockfile.packages.filter(({ name, location }) => location === topLevelLocation(name)).map(({ name, version }) => [name, version]),
     ...topLevelVersions,
   ]);
   const shapeIndex = indexPackageShapeHashes(loadedPackageVersions);
   const knownPackages = Array.from(
-    new Set([...Object.keys(fingerprints), ...lockfilePackages.map((pkg) => pkg.name), ...loadedPackageVersions.map((pkg) => pkg.name)]),
+    new Set([...Object.keys(fingerprints), ...lockfile.packages.map((pkg) => pkg.name), ...loadedPackageVersions.map((pkg) => pkg.name)]),
   ).sort((left, right) => right.length - left.length || left.localeCompare(right));
   const onDiskReport = {
     nodeModules: onDisk.verdict,
@@ -751,13 +734,11 @@ function main() {
     code: {
       filesScanned: 0,
       files: tally(FILE_OUTCOMES, [], () => null),
-      bareSpecifiers: {},
-      nodeBuiltins: {},
+      bareSpecifiers: byName(),
+      nodeBuiltins: byName(),
     },
     onDisk: onDiskReport,
-    lockfile: {
-      packages: lockfilePackages,
-    },
+    lockfile,
     moduleIndex: {
       file: null,
       bundlesIndexed: 0,
@@ -781,7 +762,9 @@ function main() {
 
   for (const { location, reason } of onDiskReport.untrialable) report.warnings.push(`${location}: replace-dependency can't trial it (${reason})`);
   for (const { file, error } of shapeIndex.errors) report.parseErrors.push({ file: fileRel(projectRoot, file), error });
-  if (onDisk.verdict.kind === "incomplete") report.warnings.push(`node_modules can't be fully read: ${onDisk.verdict.reason}`);
+  for (const [source, verdict] of [["node_modules", onDisk.verdict], [lockfile.file, lockfile.verdict]]) {
+    if (verdict.kind === "incomplete") report.warnings.push(`${source} can't be fully read: ${verdict.reason}`);
+  }
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
   if (moduleIndexPath && fs.existsSync(moduleIndexPath)) {
