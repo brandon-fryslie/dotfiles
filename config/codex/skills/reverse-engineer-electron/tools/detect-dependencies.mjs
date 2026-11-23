@@ -9,9 +9,13 @@
  * This uses AST parsing plus structural hashing. It does not use regex-based
  * code parsing for important decisions.
  *
- * // [LAW:verifiable-goals] Always emits a machine-readable report with explicit signals and parse errors.
- * // [LAW:one-source-of-truth] Bundle classification is derived from code, comments, and package metadata already on disk.
- * // [LAW:dataflow-not-control-flow] Every file goes through the same fixed analysis pipeline; variability is only in the resulting data.
+ * // [LAW:verifiable-goals] A run that finishes writes a machine-readable report with explicit signals and parse errors;
+ * // one that fails writes none, and the previous run's report at --out is removed before any work, so a report there is
+ * // always the last finished run's.
+ * // [LAW:one-source-of-truth] Bundle classification is derived from code, comments, and package metadata already on disk,
+ * // and from the hand-curated third-party-fingerprints.json beside this script.
+ * // [LAW:dataflow-not-control-flow] Every file goes through the same analysis passes, each on its own, so one pass that
+ * // throws records a parse error without skipping the other; variability is only in the resulting data.
  */
 
 import fs from "fs";
@@ -29,6 +33,8 @@ const FINGERPRINTS_PATH = path.join(SCRIPT_DIR, "third-party-fingerprints.json")
 const BUNDLE_FORMAT_UNKNOWN = "plain";
 const BUILTIN_SET = new Set(builtinModules.map((item) => (item.startsWith("node:") ? item.slice(5) : item)));
 const LOADER_RUNTIME_PACKAGES = new Set(["style-loader", "css-loader", "file-loader", "url-loader"]);
+// The source length, in characters, under which a module is small enough to be a wrapper of its vendor deps or parents.
+const WRAPPER_SOURCE_LIMIT = { deps: 2500, parents: 2200 };
 function parseArgs(argv) {
   const opts = {
     appDir: "resources/app",
@@ -61,14 +67,11 @@ function listJsFiles(targetPath) {
   return listPackageJsFiles(targetPath);
 }
 
-function extractProgramBodyHash(code) {
-  const ast = parseSource(code, "js");
-  return tokensToHash(functionShapeTokens(ast.program));
-}
-
-function extractFunctionBodyHash(node) {
-  const targetBody = node && node.body ? node.body : node;
-  return tokensToHash(functionShapeTokens(targetBody));
+// [LAW:one-source-of-truth] The one shape formula, for the package index and the bundle lookup alike: the structural
+// tokens of a function's body, or of a whole program, with their count and their hash.
+function shapeOf(node) {
+  const tokens = functionShapeTokens(isFunctionNode(node) ? node.body : node);
+  return { size: tokens.length, hash: tokensToHash(tokens) };
 }
 
 function isBareSpecifier(specifier) {
@@ -139,17 +142,17 @@ function indexPackageShapeHashes(packages) {
       const code = attempt(jsFile, () => fs.readFileSync(jsFile, "utf8"));
       if (code === null) continue;
       const entry = (kind) => ({ package: pkg.name, version: pkg.version, file: path.relative(pkg.dir, jsFile), kind });
-      const hash = attempt(jsFile, () => extractProgramBodyHash(code));
-      if (hash === null) continue;
-      add(hash, entry("program"));
+      const ast = attempt(jsFile, () => parseSource(code, "js"));
+      if (ast === null) continue;
+      const program = attempt(jsFile, () => shapeOf(ast.program));
+      if (program === null) continue;
+      add(program.hash, entry("program"));
       attempt(jsFile, () => {
-        const ast = parseSource(code, "js");
-        // [LAW:one-source-of-truth] Reuse the same structural walker for all detached-node hashing so traversal semantics stay consistent.
         walk(ast.program, (node) => {
           if (!isFunctionNode(node)) return;
-          const tokens = functionShapeTokens(node.body);
-          if (tokens.length < 20) return;
-          add(tokensToHash(tokens), entry("function"));
+          // A function this small has a shape too common to name its package.
+          const shape = shapeOf(node);
+          if (shape.size >= 20) add(shape.hash, entry("function"));
         });
       });
     }
@@ -646,26 +649,19 @@ function extractBundleDependencyInfo(moduleRecord, bundleFormat) {
   const dependencyIds = [];
   const dependencySpecifiers = [];
 
-  const requireParam =
-    bundleFormat === "browserify"
-      ? moduleRecord.functionNode.params?.[0]?.type === "Identifier"
-        ? moduleRecord.functionNode.params[0].name
-        : null
-      : moduleRecord.functionNode.params?.[2]?.type === "Identifier"
-        ? moduleRecord.functionNode.params[2].name
-        : null;
+  // The name the factory binds its require slot to: a plain parameter, or one with a default. Any other slot (absent,
+  // or a pattern) binds no callable name, so the module can't call require and has no dependency ids from calls.
+  const slot = moduleRecord.functionNode.params?.[bundleFormat === "browserify" ? 0 : 2];
+  const bound = slot?.type === "AssignmentPattern" ? slot.left : slot;
+  const requireParam = bound?.type === "Identifier" ? bound.name : null;
 
-  if (requireParam) {
-    // [LAW:dataflow-not-control-flow] Dependency extraction always walks the module body; matches become data instead of alternate traversal paths.
-    walk(moduleRecord.functionNode.body || moduleRecord.functionNode, (node) => {
-      if (node.type !== "CallExpression") return;
-      if (node.callee?.type !== "Identifier" || node.callee.name !== requireParam) return;
-      const firstArg = node.arguments?.[0];
-      const value = literalValue(firstArg);
-      if (value === null) return;
-      dependencyIds.push(value);
-    });
-  }
+  // [LAW:dataflow-not-control-flow] Dependency extraction always walks the module body; matches become data instead of alternate traversal paths.
+  walk(moduleRecord.functionNode.body || moduleRecord.functionNode, (node) => {
+    if (node.type !== "CallExpression") return;
+    if (node.callee?.type !== "Identifier" || node.callee.name !== requireParam) return;
+    const value = literalValue(node.arguments?.[0]);
+    if (value !== null) dependencyIds.push(value);
+  });
 
   if (bundleFormat === "browserify" && moduleRecord.containerNode?.value?.type === "ArrayExpression") {
     const depMap = moduleRecord.containerNode.value.elements?.[1];
@@ -720,7 +716,7 @@ function classifyBundleModules(bundle, context) {
     const webpackCommentSignal = findWebpackCommentSignal(moduleText);
     const licenseSignal = findLicenseSignal(moduleText, context.knownPackages);
     const fingerprintMatches = findFingerprintMatches(moduleText, context.fingerprints);
-    const shapeHash = extractFunctionBodyHash(moduleRecord.functionNode);
+    const shapeHash = shapeOf(moduleRecord.functionNode).hash;
     const hashMatches = context.packageShapeHashes.get(shapeHash) || [];
     const uniqueHashPackage = hashMatches.length === 1 ? hashMatches[0] : null;
     const stringLiterals = collectStringLiterals(moduleRecord.functionNode.body || moduleRecord.functionNode);
@@ -825,7 +821,9 @@ function classifyBundleModules(bundle, context) {
   }
 
   // Propagate vendor classification across wrapper/runtime modules.
-  // // [LAW:dataflow-not-control-flow] Propagation always runs a fixed number of passes; only the score data changes.
+  // [LAW:dataflow-not-control-flow] Propagation always runs a fixed number of passes; only the score data changes.
+  // A module scores as a wrapper of its vendor deps (or parents) only while its source is under WRAPPER_SOURCE_LIMIT:
+  // a wrapper is a small module, so a large one that requires vendor code is not credited to it.
   for (let pass = 0; pass < 3; pass++) {
     for (const state of states) {
       if (state.classification === "thirdParty") continue;
@@ -840,7 +838,7 @@ function classifyBundleModules(bundle, context) {
       const thirdPartyDeps = depStates.filter((item) => item.classification === "thirdParty" && item.package);
       const thirdPartyParents = parentStates.filter((item) => item.classification === "thirdParty" && item.package);
 
-      if (thirdPartyDeps.length > 0 && state.moduleRecord.source.length < 2500) {
+      if (thirdPartyDeps.length > 0 && state.moduleRecord.source.length < WRAPPER_SOURCE_LIMIT.deps) {
         const depPackages = thirdPartyDeps.map((item) => item.package);
         const dominantDepPackage = pickTopPackage(
           depPackages.reduce((acc, pkgName) => {
@@ -853,7 +851,7 @@ function classifyBundleModules(bundle, context) {
         }
       }
 
-      if (thirdPartyParents.length > 0 && state.moduleRecord.source.length < 2200) {
+      if (thirdPartyParents.length > 0 && state.moduleRecord.source.length < WRAPPER_SOURCE_LIMIT.parents) {
         const parentPackages = thirdPartyParents.map((item) => item.package);
         const dominantParentPackage = pickTopPackage(
           parentPackages.reduce((acc, pkgName) => {
@@ -1017,6 +1015,8 @@ function main() {
   const appDir = path.resolve(projectRoot, opts.appDir);
   const buildDir = path.resolve(projectRoot, opts.buildDir);
   const outPath = path.resolve(projectRoot, opts.out);
+  // A report left at --out by an earlier run would read as this run's if this one fails.
+  fs.rmSync(outPath, { force: true });
 
   const fingerprints = loadFingerprints();
   const onDisk = readOnDisk(appDir, projectRoot);
@@ -1132,17 +1132,19 @@ function main() {
       continue;
     }
 
+    // [LAW:dataflow-not-control-flow] Both passes run on every file, each on its own: static bare specifiers always, and
+    // bundle detection adding module-level evidence. A pass that throws is that file's parse error, not the other's.
+    const parseError = (error) => report.parseErrors.push({ file: fileRel(projectRoot, jsFile), error: String(error?.message || error) });
     try {
-      // [LAW:dataflow-not-control-flow] Always collect static bare specifiers for every file; bundle detection only adds extra module-level evidence.
       analyzePlainJsFile(jsFile, code, projectRoot, report);
-      const isBundle = analyzeBundleFile(jsFile, code, projectRoot, report, classificationContext);
-      if (isBundle) {
-        report.code.bundledFiles += 1;
-      } else {
-        report.code.plainFiles += 1;
-      }
     } catch (error) {
-      report.parseErrors.push({ file: fileRel(projectRoot, jsFile), error: String(error?.message || error) });
+      parseError(error);
+    }
+    try {
+      if (analyzeBundleFile(jsFile, code, projectRoot, report, classificationContext)) report.code.bundledFiles += 1;
+      else report.code.plainFiles += 1;
+    } catch (error) {
+      parseError(error);
     }
   }
 
