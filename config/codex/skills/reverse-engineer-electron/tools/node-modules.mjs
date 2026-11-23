@@ -11,6 +11,9 @@
 
 import fs from "fs";
 import path from "path";
+import { isNonEmptyString } from "./json-value.mjs";
+import { appPathState, listDir, pathState, readText } from "./path-state.mjs";
+import { verdictOn } from "./verdict.mjs";
 
 // [LAW:single-enforcer] A package name as npm spells one: a name, or a scope and a name, neither starting with "."
 // and holding no "/" of its own. It is the one grammar for a --pkg argument, a candidate source's names, a lockfile's
@@ -31,9 +34,6 @@ export function entryNameOf(nodeModulesPath) {
   return name !== undefined && (isPackageName(name) || SCOPE_NAME.test(name)) ? name : null;
 }
 
-// A JSON object: neither null nor an array.
-export const isPlainObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-
 // A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
 // node_modules/.pnpm/foo@1.0.0/node_modules/foo. It ends in an entry name after its last node_modules, and in nothing
 // past it. replacement-log.mjs parses the locations a log stores with it.
@@ -48,43 +48,6 @@ export function pkgPathParts(name) {
   return name.startsWith("@") && name.includes("/") ? name.split("/") : [name];
 }
 
-// What a path holds once node follows its links: a directory, a regular file, something else (a FIFO, a socket, a
-// device), a link leading nowhere, a path it can't stat (with the error code, e.g. EACCES or ELOOP), or nothing at all. A directory is one whatever its read bit says: node
-// loads a package through a directory it may search but not list, so whether it can be listed is listDir's question.
-export function pathState(p) {
-  try {
-    if (!fs.lstatSync(p, { throwIfNoEntry: false })) return { kind: "absent" };
-    const stat = fs.statSync(p, { throwIfNoEntry: false });
-    if (!stat) return { kind: "dangling", target: fs.readlinkSync(p) };
-    return { kind: stat.isDirectory() ? "dir" : stat.isFile() ? "file" : "special" };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unreadable", code: error.code };
-  }
-}
-
-// The text a file holds, or what its path holds instead: an error reading it is the code it carries, as a stat's is.
-export function readText(file) {
-  const state = pathState(file);
-  if (state.kind !== "file") return state;
-  try {
-    return { kind: "text", text: fs.readFileSync(file, "utf8") };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unreadable", code: error.code };
-  }
-}
-
-// A directory's entries, or the error code that kept them from being read.
-export function listDir(dir) {
-  try {
-    return { kind: "listed", entries: fs.readdirSync(dir, { withFileTypes: true }) };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unlistable", code: error.code };
-  }
-}
-
 // [LAW:types-are-the-program] Each state that is not a package, and the one field that says why, so a reason built
 // from a state names the cause it holds and a state with no entry here is an error, not a reason with a gap in it.
 const STATE_DETAIL = { absent: null, dir: null, file: null, special: null, "no-manifest": null, dangling: "target", unreadable: "code", "unusable-manifest": "reason" };
@@ -97,12 +60,6 @@ export function stateText(state) {
 
 // Why a path that should hold a kind of thing doesn't: it holds another kind, or it can't be read to tell.
 export const mismatchText = (expected, state) => (state.kind === "unreadable" ? `can't be read (${state.code})` : `is not a ${expected} (${stateText(state)})`);
-
-// [LAW:one-source-of-truth] The verdict on a source read in parts: listed when every part was read, else incomplete
-// with the reason the unread parts give.
-export const verdictOn = (unread, reasonOf) => (unread.length === 0 ? { kind: "listed" } : { kind: "incomplete", reason: reasonOf(unread) });
-
-export const isNonEmptyString = (value) => typeof value === "string" && value !== "";
 
 // What a path holds as a package: the name and version its package.json gives, or, when it holds none, the path's
 // own state, a directory with no package.json, or a package.json that can't be read, lacks a name or version, or
@@ -262,26 +219,6 @@ export const REPLACEMENT_SCOPE = "@replace-dependency";
 
 // [LAW:one-source-of-truth] The one directory a project's replacements are installed into.
 const replacementScopeDir = (projectRoot) => path.join(projectRoot, "node_modules", REPLACEMENT_SCOPE);
-
-// What sits at a path without following it: nothing, a directory, a file, a symlink with its readlink text, or a path
-// it can't lstat (with the error code). pathState answers what node finds there once it follows the links.
-export function appPathState(p) {
-  try {
-    const stat = fs.lstatSync(p, { throwIfNoEntry: false });
-    if (!stat) return { kind: "absent" };
-    if (stat.isSymbolicLink()) return { kind: "link", target: fs.readlinkSync(p) };
-    return { kind: stat.isDirectory() ? "dir" : "file" };
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unreadable", code: error.code };
-  }
-}
-
-export function describeEntry(state) {
-  if (state.kind === "link") return `a link to ${state.target}`;
-  if (state.kind === "unreadable") return `a path it can't read (${state.code})`;
-  return { absent: "nothing", dir: "a directory", file: "a file" }[state.kind];
-}
 
 // An entry path in canonical form: its parent directories resolved through symlinks as far as they exist, so --app-dir
 // and cwd naming one tree through different symlinked prefixes (/var vs /private/var on macOS) agree, and a path into

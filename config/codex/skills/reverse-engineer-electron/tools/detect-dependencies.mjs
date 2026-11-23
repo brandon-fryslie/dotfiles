@@ -311,21 +311,25 @@ function uniqueStrings(values) {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+// [LAW:types-are-the-program] Report objects keyed by package name have no prototype, so a package named constructor
+// or __proto__ is a key like any other.
+const byName = () => Object.create(null);
+
 function addScore(scoreMap, evidenceList, pkgName, points, signal, detail) {
   if (!pkgName || !Number.isFinite(points) || points <= 0) return;
-  scoreMap[pkgName] = (scoreMap[pkgName] || 0) + points;
+  scoreMap.set(pkgName, (scoreMap.get(pkgName) ?? 0) + points);
   evidenceList.push({ package: pkgName, score: points, signal, detail: detail || null });
 }
 
 // How many of the given module states are each package's.
 function countPackages(states) {
-  const counts = {};
-  for (const { package: pkgName } of states) counts[pkgName] = (counts[pkgName] || 0) + 1;
+  const counts = new Map();
+  for (const { package: pkgName } of states) counts.set(pkgName, (counts.get(pkgName) ?? 0) + 1);
   return counts;
 }
 
 function pickTopPackage(scoreMap) {
-  const entries = Object.entries(scoreMap);
+  const entries = [...scoreMap];
   if (entries.length === 0) return null;
   entries.sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
   const [pkgName, score] = entries[0];
@@ -439,7 +443,7 @@ function classifyBundleModules(bundle, context) {
     const stringLiterals = collectStringLiterals(moduleRecord.functionNode.body);
     const appAnchorScore = scoreAppAnchors(stringLiterals);
     const generatedAssetModule = isWebpackPublicPathAssetModule(moduleRecord);
-    const scores = {};
+    const scores = new Map();
     const evidence = [];
 
     if (moduleRecord.explicitPackage) {
@@ -484,7 +488,7 @@ function classifyBundleModules(bundle, context) {
       !initialTop.tied &&
       initialTop.score >= 4 &&
       appAnchorScore === 0 &&
-      Object.keys(scores).length === 1;
+      scores.size === 1;
     const initialThreshold = lowAnchorTinyModule ? 4 : 6;
     const vendorTop =
       initialTop && !initialTop.tied && (initialTop.score >= initialThreshold || loaderRuntimeModule || strongSinglePackageFingerprint)
@@ -525,7 +529,7 @@ function classifyBundleModules(bundle, context) {
     const vendorById = new Map(states.filter((item) => item.classification === "thirdParty").map((item) => [item.id, item]));
     const vendorIn = (ids) => ids.map((id) => vendorById.get(id)).filter(Boolean);
     const promotions = states.filter((item) => item.classification === "app").flatMap((state) => {
-      const scores = { ...state.own.scores };
+      const scores = new Map(state.own.scores);
       const evidence = [...state.own.evidence];
       const vendor = { deps: vendorIn(state.moduleRecord.dependencyIds), parents: vendorIn(graph.parentsById.get(state.id)) };
       for (const rule of WRAPPER_RULES) {
@@ -553,11 +557,11 @@ function classifyBundleModules(bundle, context) {
     promoted = promotions.length > 0;
   }
 
-  const bundlePackageTotals = {};
+  const bundlePackageTotals = new Map();
   for (const state of states) {
     const top = pickTopPackage(state.scores);
     if (!top) continue;
-    bundlePackageTotals[top.package] = (bundlePackageTotals[top.package] || 0) + top.score;
+    bundlePackageTotals.set(top.package, (bundlePackageTotals.get(top.package) ?? 0) + top.score);
   }
   const dominantBundlePackage = pickTopPackage(bundlePackageTotals);
   const bundleBaseName = path.basename(bundle.fileHint || "", ".js").toLowerCase();
@@ -609,7 +613,7 @@ function analyzePlainJsFile(filePath, ast, projectRoot, report) {
       continue;
     }
     const pkgName = pkgNameFromSpecifier(normalized);
-    const current = report.code.bareSpecifiers[pkgName] || { count: 0, files: {} };
+    const current = report.code.bareSpecifiers[pkgName] || { count: 0, files: byName() };
     current.count += 1;
     const rel = fileRel(projectRoot, filePath);
     current.files[rel] = (current.files[rel] || 0) + 1;
@@ -627,7 +631,7 @@ function recordBundle(filePath, detected, code, projectRoot, report, context) {
   };
 
   const classified = classifyBundleModules(bundle, context);
-  const suggestedDependencies = {};
+  const suggestedDependencies = byName();
   for (const item of classified) {
     // [LAW:no-silent-failure] A package no source gives a version for is suggested at null, never at a range that
     // would install whatever version is latest.
@@ -730,8 +734,8 @@ function main() {
     code: {
       filesScanned: 0,
       files: tally(FILE_OUTCOMES, [], () => null),
-      bareSpecifiers: {},
-      nodeBuiltins: {},
+      bareSpecifiers: byName(),
+      nodeBuiltins: byName(),
     },
     onDisk: onDiskReport,
     lockfile,

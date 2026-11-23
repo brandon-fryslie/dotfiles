@@ -30,7 +30,8 @@
 // cwd reads them the same way.
 
 import path from "path";
-import { isLocation, isNonEmptyString, isPlainObject } from "./node-modules.mjs";
+import { isNonEmptyString, isPlainObject } from "./json-value.mjs";
+import { isLocation } from "./node-modules.mjs";
 
 export const SCHEMA_VERSION = 4;
 

@@ -2,7 +2,10 @@
 // package-lock.mjs — what an app's package-lock.json records: every package version at the location npm installed it
 // at, read the way npm reads each lockfile format, and a verdict on whether every entry could be read.
 
-import { byNameThenLocation, compareLocations, entryNameOf, isLocation, isNonEmptyString, isPackageName, isPlainObject, mismatchText, nestedLocation, parseNpmSpec, readText, verdictOn } from "./node-modules.mjs";
+import { isNonEmptyString, isPlainObject } from "./json-value.mjs";
+import { byNameThenLocation, compareLocations, entryNameOf, isLocation, isPackageName, mismatchText, nestedLocation, parseNpmSpec } from "./node-modules.mjs";
+import { readText } from "./path-state.mjs";
+import { verdictOn } from "./verdict.mjs";
 
 const unread = (entry, reason) => ({ kind: "unread", entry, reason });
 

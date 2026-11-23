@@ -95,6 +95,11 @@ test("a v3 lockfile lists every package it records by location, and each entry i
   assert.deepEqual(lockfile.verdict, { kind: "incomplete", reason: "node_modules/ is not a package location, node_modules/@scope is not a package location, node_modules/@scope/bar records no version, node_modules/bare is not an object, node_modules/baz/node_modules/nested records no version, node_modules/evil records name \"../../evil\", which is not a package name, node_modules/foo records no version, node_modules/trailing/ is not a package location, node_modules/typed records version 1, which is not a version" });
 });
 
+test("a lockfile that begins with a UTF-8 byte order mark is read as npm reads it", () => {
+  const lockfile = lockfileAt(lockText(`\uFEFF${JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/foo": { version: "1.0.0" } } })}`));
+  assert.deepEqual(lockfile, { verdict: { kind: "listed" }, packages: [{ name: "foo", version: "1.0.0", location: "node_modules/foo" }], unread: [] });
+});
+
 test("a v2 lockfile is read from its packages section, never its v1 dependencies mirror", () => {
   const lockfile = lockfileAt(lockJson({
     lockfileVersion: 2,

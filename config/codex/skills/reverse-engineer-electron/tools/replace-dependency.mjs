@@ -32,7 +32,9 @@ import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
 import { writeOutputs } from "./artifact.mjs";
 import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, parseLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
-import { appAt, appPathState, canonicalEntry, containerSwappedAt, copiesOf, describeEntry, entryNameOf, isNonEmptyString, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
+import { isNonEmptyString } from "./json-value.mjs";
+import { appPathState, describeEntry } from "./path-state.mjs";
+import { appAt, canonicalEntry, containerSwappedAt, copiesOf, entryNameOf, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
 const USAGE = [
   "Usage:",

@@ -73,6 +73,8 @@ const analyzed = project({
   // Plain ES and CommonJS modules, by their extensions.
   "esm.mjs": 'import vend from "vend";\nexport default vend;\n',
   "cjs.cjs": 'module.exports = require("vend");\n',
+  // Requires of packages whose names are an object's own built-in keys.
+  "builtin-names.cjs": 'require("constructor"); require("__proto__"); require("constructor");\n',
   // Four small wrappers, each requiring the next, the last requiring vend's helper, in one module order and its reverse.
   "chain-forward.js": webpack4(["function (e, t, n) { e.exports = n(1); }", "function (e, t, n) { e.exports = n(2); }", "function (e, t, n) { e.exports = n(3); }", "function (e, t, n) { e.exports = n(4); }", VEND]),
   "chain-reverse.js": webpack4([VEND, "function (e, t, n) { e.exports = n(0); }", "function (e, t, n) { e.exports = n(1); }", "function (e, t, n) { e.exports = n(2); }", "function (e, t, n) { e.exports = n(3); }"]),
@@ -146,6 +148,11 @@ test("a bundle suggests each package it credits at the version the app ships, an
   assert.deepEqual(bundleOf("wp5.js").suggestedDependencies, { vend: "1.0.0", ghost: null });
 });
 
+test("a package named like an object's built-in key is counted like any other", () => {
+  assert.deepEqual(report.code.bareSpecifiers.constructor, { count: 2, files: { "build/builtin-names.cjs": 2 } });
+  assert.deepEqual(report.code.bareSpecifiers.__proto__, { count: 1, files: { "build/builtin-names.cjs": 1 } });
+});
+
 test("vendor credit propagates along a chain of wrappers to every one of them, in either module order", () => {
   const wrappers = (file) => bundleOf(file).modules.map(({ classification, package: pkg }) => [classification, pkg]);
   assert.deepEqual(wrappers("chain-forward.js"), Array(5).fill(["thirdParty", "vend"]));
@@ -166,8 +173,8 @@ test("a file that can't be parsed, or that an engine would reject, has its synta
 });
 
 test("every scanned file has exactly one outcome, .mjs and .cjs files among them", () => {
-  assert.equal(report.code.filesScanned, 10);
-  assert.deepEqual(report.code.files, { unreadable: 0, unparsed: 2, plain: 2, bundled: 6 });
+  assert.equal(report.code.filesScanned, 11);
+  assert.deepEqual(report.code.files, { unreadable: 0, unparsed: 2, plain: 3, bundled: 6 });
   assert.deepEqual(report.code.bareSpecifiers.vend.files, { "build/cjs.cjs": 1, "build/esm.mjs": 1 });
 });
 
