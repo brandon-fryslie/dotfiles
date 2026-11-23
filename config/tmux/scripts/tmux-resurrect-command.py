@@ -9,8 +9,8 @@ program runs is printed as the command that resumes it. Each line is one shell c
 because restore types it into a shell.
 
 What a restore will not bring back is reported on stderr: a pane whose program cannot be read
-(it gets an empty line; the other panes are still recorded), and a Claude session outside the
-program its pane shows (a suspended job, say). A fact the whole save needs - the process
+(it gets an empty line; the other panes are still recorded), and a Claude session the line
+does not resume - unless another Claude session started it, which makes it that session's. A fact the whole save needs - the process
 table, the agent list, Claude's options - that cannot be read fails the strategy, and
 resurrect then keeps the last save.
 """
@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
 import subprocess
 import sys
@@ -29,13 +28,11 @@ from pathlib import Path
 # [LAW:one-way-deps] the shared reader of how Claude was started, found through this file's symlink into the
 # dotfiles repo. A missing module fails the strategy, and with it the save, loudly.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "claude" / "lib"))
-from claude_process import Launch, Option, Process, Unreadable, Unresumable, claude_options, launch, resumed, started_with  # noqa: E402
+from claude_process import Option, Process, Unreadable, Unresumable, claude_options, launch, resumed, shell_line, started_with  # noqa: E402
 
 # The kinds `claude agents --json` reports. One it doesn't know fails the save: a renamed kind would
 # otherwise drop every session from the save without a word.
 AGENT_KINDS = {"interactive", "background"}
-# Characters a shell word cannot carry on one line as they are, nor inside $'...' unescaped.
-UNSAFE = re.compile(r"[\\'\x00-\x1f\x7f]")
 
 
 class Failed(Exception):
@@ -46,7 +43,7 @@ class Failed(Exception):
 class Session:
     id: str
     pid: int
-    started: Launch
+    process: Process
 
 
 @dataclass(frozen=True)
@@ -77,55 +74,55 @@ def at_prompt(program: Process, executable: str, shell: str) -> bool:
     return executable == shell and all(word.startswith("-") for word in program.argv[1:])
 
 
-def recorded(program: Process, sessions: list[Session], grammar: dict[str, Option]) -> Record:
-    """What a restore runs for a pane showing `program`, given the Claude sessions running under it, nearest first.
+def recorded(leader: int, program: Process, sessions: list[Session], grammar: dict[str, Option]) -> Record:
+    """What a restore runs for a pane showing `program` (process `leader`), given the Claude sessions under it.
 
-    The nearest whose words end the program's argv is the session the program runs: the program itself, or a
-    wrapper that passes Claude's command line through (`fritter ... -- claude`, `npx claude`). It is replaced by
-    its resume. The others the program started itself (remote-control's conversations, a session's own
-    `claude -p`), and they come back with it. A program running no session is kept as it was launched.
+    The program runs a session in one of two ways, both read from the process rather than guessed from its
+    words: it is the session's own process, or it passes a command line after `--` (`fritter ... -- claude ...`)
+    that is the session's whole argv. Either way the session is resumed in its place. A program running no
+    session is kept as it was launched.
     """
     for session in sessions:
-        head = len(program.argv) - len(session.started.words)
-        if head >= 0 and program.argv[head:] == session.started.words:
-            return Record(resumed(Launch(program.argv[:head], session.started.words), session.id, grammar), session)
+        if session.pid == leader:
+            return Record(resumed(launch(program), session.id, grammar), session)
+    for session in sessions:
+        given = len(session.process.argv)
+        if program.argv[-given - 1:] == ["--", *session.process.argv]:
+            return Record([*program.argv[:-given], *resumed(launch(session.process), session.id, grammar)], session)
     return Record(program.argv, None)
 
 
-def runs_under(pid: int, ancestor: int, parent: dict[int, int], pane: int) -> bool:
-    """Whether `ancestor` is `pid` or one of its ancestors, within the pane's process tree."""
-    while pid != ancestor and pid != pane:
+def runs_under(pid: int, ancestors: set[int], parent: dict[int, int], pane: int) -> bool:
+    """Whether one of `ancestors` is `pid` or an ancestor of it, within the pane's process tree."""
+    while pid not in ancestors and pid != pane:
         pid = parent[pid]
-    return pid == ancestor
+    return pid in ancestors
 
 
 def pane_record(snapshot: Snapshot, pane: int) -> tuple[Record | Unrecorded, list[int]]:
-    """What a restore runs for `pane`, and the pids of the Claude sessions in it that a restore does not bring back."""
+    """What a restore runs for `pane`, and the pids of the Claude sessions in it that a restore does not bring back:
+    every one the record does not resume, except those another Claude session started, which are that session's."""
     if pane not in snapshot.foreground:
         return Unrecorded("its process exited during the save"), []
     tree = [pane]
     for pid in tree:
         tree += snapshot.children.get(pid, [])
     in_pane = [pid for pid in tree if pid in snapshot.sessions]
+    # The pane's own process has no ancestor in the pane, so no session there can have started it.
+    owned = [pid for pid in in_pane if pid != pane and runs_under(snapshot.parent[pid], set(in_pane), snapshot.parent, pane)]
     leader = snapshot.foreground[pane]
     try:
         program = started_with(leader)
         if at_prompt(program, os.path.realpath(program.path), snapshot.shell):
-            return Record([], None), in_pane
-        # [LAW:one-source-of-truth] ancestry alone says which sessions belong to the program the pane shows.
-        under = [pid for pid in in_pane if runs_under(pid, leader, snapshot.parent, pane)]
-        sessions = [Session(snapshot.sessions[pid], pid, launch(started_with(pid))) for pid in under]
-        record = recorded(program, sessions, snapshot.grammar)
+            record = Record([], None)
+        else:
+            under = [pid for pid in in_pane if runs_under(pid, {leader}, snapshot.parent, pane)]
+            sessions = [Session(snapshot.sessions[pid], pid, started_with(pid)) for pid in under]
+            record = recorded(leader, program, sessions, snapshot.grammar)
     except (Unreadable, Unresumable) as failure:
-        return Unrecorded(str(failure)), in_pane
-    return record, [pid for pid in in_pane if pid not in under]
-
-
-def shell_word(word: str) -> str:
-    """`word` quoted for a POSIX shell on one line: ANSI-C $'...' with \\xHH escapes when plain quoting can't."""
-    if not re.search(r"[\x00-\x1f\x7f]", word):
-        return shlex.quote(word)
-    return "$'" + UNSAFE.sub(lambda match: f"\\x{ord(match[0]):02x}", word) + "'"
+        return Unrecorded(str(failure)), [pid for pid in in_pane if pid not in owned]
+    kept = {record.session.pid} if record.session else set()
+    return record, [pid for pid in in_pane if pid not in kept and pid not in owned]
 
 
 def run(*command: str) -> str:
@@ -165,9 +162,9 @@ def main(panes: list[int]) -> None:
             print(f"tmux-resurrect-command: pane {pane}: cannot record its program ({record.reason}); a restore"
                   " starts a shell there", file=sys.stderr)
         for pid in lost:
-            print(f"tmux-resurrect-command: pane {pane}: Claude session {save.sessions[pid]} runs outside what the"
-                  " pane shows; a restore does not bring it back", file=sys.stderr)
-        print(" ".join(map(shell_word, record.argv)) if isinstance(record, Record) else "")
+            print(f"tmux-resurrect-command: pane {pane}: a restore does not bring back Claude session"
+                  f" {save.sessions[pid]}", file=sys.stderr)
+        print(shell_line(record.argv) if isinstance(record, Record) else "")
 
 
 if __name__ == "__main__":

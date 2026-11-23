@@ -1,6 +1,6 @@
 """What the periodic save wrapper tells an attached tmux client about a save: a failure every time,
-and any other report only when it differs from the last save's, so a standing condition is told
-once rather than every interval. The exit status is the save's.
+and any other report until a client has shown it, then again only when it changes, so a standing
+condition is told once rather than every interval. The exit status is the save's.
 
 Run: just test-tmux-resurrect
 """
@@ -31,10 +31,14 @@ class SaveReport(unittest.TestCase):
         self.tmux("-f", "/dev/null", "new-session", "-d", "-s", "t")
         self.addCleanup(self.tmux, "kill-session", "-t", "t")
         self.client_output = self.root / "client"
-        client = subprocess.Popen(["tmux", "-C", "attach", "-t", "t"], stdin=subprocess.PIPE,
-                                  stdout=self.client_output.open("w"), env=self.environment)
+
+    def attach(self):
+        output = self.client_output.open("w")
+        self.addCleanup(output.close)
+        client = subprocess.Popen(["tmux", "-C", "attach", "-t", "t"], stdin=subprocess.PIPE, stdout=output,
+                                  env=self.environment)
         self.addCleanup(client.wait)
-        self.addCleanup(client.stdin.close)  # an empty line on stdin ends a control client
+        self.addCleanup(client.stdin.close)  # closing stdin ends a control client
         deadline = time.monotonic() + 10
         while "1" not in self.tmux("list-clients", "-F", "#{client_control_mode}"):
             self.assertLess(time.monotonic(), deadline, "the control client did not attach")
@@ -59,15 +63,25 @@ class SaveReport(unittest.TestCase):
                 if line.startswith("%message ") and line != "%message MARK"]
 
     def test_a_report_is_shown_when_it_changes(self):
+        self.attach()
         self.assertEqual([self.save("pane 1: lost S\n"), self.save("pane 1: lost S\n"), self.save("")], [0, 0, 0])
         log = " (log: ~/Library/Logs/com.bmf.tmux-resurrect-save.log)"
         self.assertEqual(self.shown(), [f"tmux-resurrect: pane 1: lost S{log}"])
 
     def test_a_failure_is_shown_every_time_and_is_the_exit_status(self):
-        self.assertEqual([self.save("save aborted\n", 1), self.save("save aborted\n", 1)], [1, 1])
-        self.assertEqual(len(self.shown()), 2)
+        self.attach()
+        self.assertEqual([self.save("save aborted\n", 1), self.save("", 1)], [1, 1])
+        self.assertEqual([message.split(" (log")[0] for message in self.shown()],
+                         ["tmux-resurrect: save aborted", "tmux-resurrect: the save exited 1 without saying why"])
+
+    def test_a_report_no_client_saw_is_shown_once_one_is_attached(self):
+        self.assertEqual(self.save("pane 1: lost S\n"), 0)
+        self.attach()
+        self.assertEqual([self.save("pane 1: lost S\n"), self.save("pane 1: lost S\n")], [0, 0])
+        self.assertEqual(len(self.shown()), 1)
 
     def test_a_save_with_nothing_to_report_shows_nothing(self):
+        self.attach()
         self.assertEqual(self.save(""), 0)
         self.assertEqual(self.shown(), [])
 

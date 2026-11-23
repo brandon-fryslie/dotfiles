@@ -55,19 +55,28 @@ printf '%s\n' "$report"  # the launchd log keeps every save's report
 
 # The report says why a save failed, or what a restore will not bring back. A log
 # nobody reads hides it, so it is shown in every attached client: a failure each
-# time, anything else when it differs from the last save's, so a standing condition
-# is told once rather than every interval. [LAW:nothing-unseen]
+# time, anything else until someone has seen it, then again only when it changes,
+# so a standing condition is told once rather than every interval. [LAW:nothing-unseen]
+if [[ $status -ne 0 && -z "$report" ]]; then
+  report="the save exited $status without saying why"
+fi
 state="${XDG_STATE_HOME:-$HOME/.local/state}/tmux-resurrect-save"
 mkdir -p "$state" || exit 1
-last=""
-if [ -f "$state/report" ]; then
-  last=$(<"$state/report")
+told=""
+if [ -f "$state/told" ]; then
+  told=$(<"$state/told")
 fi
-printf '%s' "$report" > "$state/report" || exit 1
-if [[ -n "$report" && ( $status -ne 0 || "$report" != "$last" ) ]]; then
+if [[ -z "$report" ]]; then
+  : > "$state/told" || exit 1  # nothing standing, so the next report is news
+elif [[ $status -ne 0 || "$report" != "$told" ]]; then
   message="tmux-resurrect: ${report//$'\n'/ | } (log: ~/Library/Logs/com.bmf.tmux-resurrect-save.log)"
-  tmux list-clients -F '#{client_name}' | while IFS= read -r client; do
-    tmux display-message -c "$client" -d 15000 -l "$message"
-  done
+  shown=0
+  while IFS= read -r client; do
+    tmux display-message -c "$client" -d 15000 -l "$message" && shown=1
+  done < <(tmux list-clients -F '#{client_name}')
+  # Told only once a client showed it: with none attached, the next save tells it again.
+  if [[ $shown -eq 1 ]]; then
+    printf '%s' "$report" > "$state/told" || exit 1
+  fi
 fi
 exit "$status"

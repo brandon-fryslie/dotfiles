@@ -10,6 +10,7 @@ import ctypes
 import enum
 import os
 import re
+import shlex
 import struct
 import subprocess
 from dataclasses import dataclass
@@ -144,8 +145,13 @@ class Launch:
 
 
 def launch(process: Process) -> Launch:
-    """`process`'s argv split into the program that ran Claude and the words Claude was given."""
-    program = 2 if Path(process.path).name in SCRIPT_RUNNERS else 1
+    """`process`'s argv split into the program that ran Claude and the words Claude was given: after argv[0], or
+    for an interpreter, after the script, which is its first word that is not one of the interpreter's options."""
+    program = 1
+    if Path(process.path).name in SCRIPT_RUNNERS:
+        while program < len(process.argv) and process.argv[program].startswith("-"):
+            program += 1
+        program += 1
     return Launch(process.argv[:program], process.argv[program:])
 
 
@@ -178,3 +184,17 @@ def resumed(started: Launch, session: str, table: dict[str, Option]) -> list[str
         if KINDS[option.name] is Kind.SETTING:
             kept += words
     return [*started.program, *kept, "--resume", session]
+
+
+# Characters a shell word cannot carry on one line as they are, nor inside $'...' unescaped.
+UNSAFE = re.compile(r"[\\'\x00-\x1f\x7f]")
+
+
+def shell_line(argv: list[str]) -> str:
+    """`argv` as one line a POSIX shell reads back into the same words, for typing into a shell: each word quoted,
+    in ANSI-C $'...' with \\xHH escapes when it holds a character plain quoting cannot keep on one line."""
+    def word(text: str) -> str:
+        if not re.search(r"[\x00-\x1f\x7f]", text):
+            return shlex.quote(text)
+        return "$'" + UNSAFE.sub(lambda match: f"\\x{ord(match[0]):02x}", text) + "'"
+    return " ".join(map(word, argv))

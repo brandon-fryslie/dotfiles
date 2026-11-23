@@ -12,7 +12,7 @@ import sys
 import unittest
 
 from claude_process import (KINDS, Arity, Launch, Option, Process, Unreadable, Unresumable, claude_options, launch,
-                            options, resumed, started_with)
+                            options, resumed, shell_line, started_with)
 
 # Option lines in the shape `claude --help` prints them, continuation lines included.
 HELP = """Usage: claude [options] [command] [prompt]
@@ -90,6 +90,10 @@ class Resumed(unittest.TestCase):
         started = launch(Process("/opt/homebrew/bin/node", ["node", "/opt/x/cli.js", "--model", "opus", "hi"], {}))
         self.assertEqual(resumed(started, "S", TABLE), ["node", "/opt/x/cli.js", "--model", "opus", "--resume", "S"])
 
+    def test_an_interpreter_option_before_the_script_stays_with_the_program(self):
+        started = launch(Process("/opt/homebrew/bin/node", ["node", "--inspect", "/opt/x/cli.js", "--model", "opus"], {}))
+        self.assertEqual(started, Launch(["node", "--inspect", "/opt/x/cli.js"], ["--model", "opus"]))
+
     def test_claude_as_its_own_executable_is_its_first_word(self):
         started = launch(Process("/v/2.1.299", ["claude", "--model", "opus"], {}))
         self.assertEqual(started, Launch(["claude"], ["--model", "opus"]))
@@ -101,6 +105,17 @@ class Kinds(unittest.TestCase):
         if shutil.which("claude") is None:
             self.skipTest("no claude on PATH")
         self.assertEqual({option.name for option in claude_options().values()} - KINDS.keys(), set())
+
+
+class ShellLine(unittest.TestCase):
+    def test_words_come_back_from_one_line(self):
+        words = ["plain", "two words", "it's", '{"a": 1}', "line\nbreak", "tab\there", "back\\slash", "\x1b[0m", "it's\nboth\\"]
+        line = shell_line(words)
+        self.assertNotIn("\n", line)
+        self.assertNotIn("\t", line)
+        for shell in ("/bin/zsh", "/bin/bash", "/bin/sh"):
+            out = subprocess.run([shell, "-c", f"printf '%s\\0' {line}"], check=True, capture_output=True).stdout
+            self.assertEqual(out.decode().split("\0")[:-1], words, shell)
 
 
 class StartedWith(unittest.TestCase):

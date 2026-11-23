@@ -5,8 +5,9 @@
     excise.py rewrite PLAN   what the tmux pane runs once the session is replaced; not run by hand.
 
 `restart` checks every string is in the transcript, then replaces the session's tmux pane with `rewrite`. `rewrite`
-waits for the old Claude to exit, cuts the strings from the transcript, and starts Claude again on the same session,
-with the argv and environment it was first started with. When that Claude exits, the pane drops to a login shell.
+waits for the old Claude to exit, cuts the strings from the transcript, and becomes a login shell with the environment
+Claude was first started with, into which it types the command that resumes the session with its launch settings. So
+Claude is the program the pane shows, as it was, and when it exits the pane is at that shell's prompt.
 
 What the cut removes, so the resumed session cannot see it:
 - every occurrence of each string, in every string value of every entry, and its JSON-escaped form;
@@ -29,7 +30,7 @@ from pathlib import Path
 
 # The shared reader of how Claude was started, found through this file's symlink into the dotfiles repo.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-from claude_process import Unreadable, Unresumable, claude_options, launch, resumed, started_with  # noqa: E402
+from claude_process import Unreadable, Unresumable, claude_options, launch, resumed, shell_line, started_with  # noqa: E402
 
 # How long the old Claude has to exit after the pane is replaced before it is killed.
 EXIT_SECONDS = 10.0
@@ -211,7 +212,10 @@ def rewrite(plan_path: Path) -> None:
         staged.write_text("".join(line + "\n" for line in lines))
         os.replace(staged, transcript)
         print(f"excised {len(plan.cuts)} string(s); resuming", flush=True)
-        subprocess.run(plan.argv, env=plan.environment, cwd=plan.cwd)
+        # Typed ahead of the shell below, which reads it at its first prompt, as tmux-resurrect restores a pane.
+        pane = os.environ["TMUX_PANE"]
+        subprocess.run(["tmux", "send-keys", "-t", pane, "-l", shell_line(plan.argv)], check=True)
+        subprocess.run(["tmux", "send-keys", "-t", pane, "Enter"], check=True)
     except Exception as error:
         print(f"excise: {error}\nThe transcript was not changed unless this says it was excised.", file=sys.stderr, flush=True)
     os.execve(shell, [shell, "-l"], plan.environment)

@@ -10,6 +10,7 @@ Run: just test-tmux-resurrect
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -22,10 +23,11 @@ spec = importlib.util.spec_from_file_location("resurrect_command", SCRIPT)
 strategy = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = strategy  # dataclasses resolve its string annotations there
 spec.loader.exec_module(strategy)
-Process, Session, Record, Launch = strategy.Process, strategy.Session, strategy.Record, strategy.Launch
+Process, Session, Record = strategy.Process, strategy.Session, strategy.Record
 from claude_process import options  # noqa: E402  the strategy put its library on sys.path
 
 CONF = Path(__file__).resolve().parent.parent / "config/tmux/tmux.conf"
+PLUGIN = Path.home() / ".config/tmux/plugins/tmux-resurrect/scripts"
 
 # The options the fake `claude` below lists, in the shape `claude --help` prints them.
 HELP = """Options:
@@ -36,50 +38,49 @@ HELP = """Options:
 GRAMMAR = options(HELP)
 
 
-def record(program, sessions=()):
-    return strategy.recorded(program, list(sessions), GRAMMAR)
+def record(leader, program, sessions=()):
+    return strategy.recorded(leader, program, list(sessions), GRAMMAR)
 
 
-def claude(id, *words):
-    return Session(id, 1, Launch(["claude"], list(words)))
+def claude(id, pid, *words):
+    return Session(id, pid, Process("/v/2.1.299", ["claude", *words], {}))
 
 
 def restored_by_resurrect(command):
-    """Whether resurrect's restore relaunches a recorded `command`: tmux.conf's resume entry, matched the way
-    the fork's _proc_matches_full_command matches a tilde entry, with bash's =~."""
-    entry = next(line for line in CONF.read_text().splitlines() if line.startswith("set -g @resurrect-processes"))
-    pattern = entry.split('"~', 1)[1].split('"', 1)[0]
-    return subprocess.run(["bash", "-c", '[[ "$1" =~ ($2) ]]', "_", command, pattern]).returncode == 0
+    """Whether resurrect's restore relaunches a recorded `command`, decided by resurrect's own matcher (the
+    installed plugin's scripts) given tmux.conf's @resurrect-processes, with its default list as tmux would."""
+    processes = re.search(r"^set -g @resurrect-processes '(.*)'$", CONF.read_text(), re.M)[1]
+    script = (f"source {PLUGIN}/variables.sh; source {PLUGIN}/helpers.sh; source {PLUGIN}/process_restore_helpers.sh;"
+              ' get_tmux_option() { if [ "$1" = "$restore_processes_option" ]; then printf %s "$PROCESSES";'
+              ' else printf %s "$2"; fi; }; _process_on_the_restore_list "$1"')
+    return subprocess.run(["bash", "-c", script, "_", command], env={**os.environ, "PROCESSES": processes}).returncode == 0
 
 
 class Recorded(unittest.TestCase):
-    def test_a_claude_session_is_resumed_with_its_settings(self):
-        session = claude("S", "-w", "feat", "--model", "opus", "fix the bug")
-        self.assertEqual(record(Process("/c", ["claude", *session.started.words], {}), [session]),
-                         Record(["claude", "--model", "opus", "--resume", "S"], session))
+    def test_a_program_that_is_a_claude_session_is_resumed_with_its_settings(self):
+        session = claude("S", 7, "-w", "feat", "--model", "opus", "fix the bug")
+        self.assertEqual(record(7, session.process, [session]), Record(["claude", "--model", "opus", "--resume", "S"], session))
 
-    def test_a_wrapper_keeps_its_own_words_and_resumes_the_session_it_runs(self):
+    def test_the_session_in_the_foreground_is_resumed_not_another_launched_the_same_way(self):
+        suspended, live = claude("SUSPENDED", 100), claude("LIVE", 200)
+        self.assertEqual(record(200, live.process, [suspended, live]).session, live)
+
+    def test_a_wrapper_keeps_its_own_words_and_resumes_the_command_line_it_passes_after_a_double_dash(self):
         wrapper = Process("/f", ["fritter", "--tap", "x", "--", "claude", "--model", "opus"], {})
-        self.assertEqual(record(wrapper, [claude("S", "--model", "opus")]).argv,
+        self.assertEqual(record(1, wrapper, [claude("S", 2, "--model", "opus")]).argv,
                          ["fritter", "--tap", "x", "--", "claude", "--model", "opus", "--resume", "S"])
 
-    def test_npx_resumes_the_node_script_it_runs(self):
-        npx = Process("/n", ["node", "/opt/bin/npx", "claude", "--model", "opus", "fix the bug"], {})
-        session = Session("S", 2, Launch(["node", "/cache/cli.js"], ["--model", "opus", "fix the bug"]))
-        self.assertEqual(record(npx, [session]).argv, ["node", "/opt/bin/npx", "claude", "--model", "opus", "--resume", "S"])
+    def test_a_program_that_only_starts_a_claude_is_kept_as_launched(self):
+        bare = claude("S", 2)
+        for argv in (["/bin/bash", "./dev.sh"], ["zsh", "-c", "claude"], ["just", "chat"], ["claude", "remote-control"]):
+            self.assertEqual(record(1, Process("/p", argv, {}), [bare]), Record(argv, None), argv)
 
-    def test_sessions_a_program_starts_with_other_words_leave_it_as_launched(self):
-        remote = Process("/c", ["claude", "remote-control", "--name", "rc"], {})
-        self.assertEqual(record(remote, [claude("S", "--print", "--sdk-url", "u")]), Record(remote.argv, None))
-
-    def test_a_program_running_no_session_is_kept_as_launched(self):
-        program = Process("/bin/zsh", ["/bin/zsh", "-c", "make"], {})
-        self.assertEqual(record(program), Record(program.argv, None))
-
-    def test_restore_relaunches_exactly_the_commands_that_resume_a_session(self):
-        resume = " ".join(record(Process("/c", ["claude"], {}), [claude("1bf43610-853e-4f1e-9fa6-d7ddb207537c")]).argv)
-        self.assertTrue(restored_by_resurrect(resume), resume)
-        for kept in ("just test-claude-lib", "vim ~/.claude/settings.json", "claude -p 'deploy X'"):
+    def test_restore_relaunches_exactly_the_commands_a_save_resumes_and_remote_control(self):
+        session = claude("1bf43610-853e-4f1e-9fa6-d7ddb207537c", 7)
+        resume = strategy.shell_line(record(7, session.process, [session]).argv)
+        for relaunched in (resume, "/Users/bmf/.local/bin/claude remote-control --spawn worktree --name lit_v2"):
+            self.assertTrue(restored_by_resurrect(relaunched), relaunched)
+        for kept in ("just test-claude-lib", "cat ~/.claude/settings.json", "claude -p 'deploy X'", "cat claude remote-control"):
             self.assertFalse(restored_by_resurrect(kept), kept)
 
 
@@ -91,17 +92,6 @@ class AtPrompt(unittest.TestCase):
     def test_a_shell_running_a_command_or_another_shell_is_a_program(self):
         self.assertFalse(strategy.at_prompt(Process("/bin/zsh", ["/bin/zsh", "-c", "make"], {}), "/bin/zsh", "/bin/zsh"))
         self.assertFalse(strategy.at_prompt(Process("/bin/bash", ["bash"], {}), "/bin/bash", "/bin/zsh"))
-
-
-class ShellWord(unittest.TestCase):
-    def test_words_come_back_from_one_line(self):
-        words = ["plain", "two words", "it's", '{"a": 1}', "line\nbreak", "tab\there", "back\\slash", "\x1b[0m", "it's\nboth\\"]
-        line = " ".join(map(strategy.shell_word, words))
-        self.assertNotIn("\n", line)
-        self.assertNotIn("\t", line)
-        for shell in ("/bin/zsh", "/bin/bash", "/bin/sh"):
-            out = subprocess.run([shell, "-c", f"printf '%s\\0' {line}"], check=True, capture_output=True).stdout
-            self.assertEqual(out.decode().split("\0")[:-1], words, shell)
 
 
 class AgainstTmux(unittest.TestCase):
@@ -150,18 +140,18 @@ class AgainstTmux(unittest.TestCase):
         return subprocess.run([str(SCRIPT), *map(str, panes)], capture_output=True, text=True, env=self.environment)
 
     def test_each_pane_records_what_it_shows(self):
-        # At its prompt, with a job in the background: the session that job runs is not brought back.
         idle = self.pane("/bin/zsh -fc 'sleep 300 & exec /bin/zsh -f'", ["/bin/zsh", "-f"])
         program = self.pane("sleep 300; :", ["zsh", "-c", "sleep 300; :"])
         # A long-running process whose command line is a Claude launch: -c and the words after it are the
         # shell's, which Claude's grammar reads as --continue and a prompt.
         claude = self.pane("exec -a claude /bin/sh -c 'sleep 300; :' x --model opus",
                            ["claude", "-c", "sleep 300; :", "x", "--model", "opus"])
-        saved = self.saved([idle, program, claude], [(claude, "S1"), (self.child(idle), "S2"), (self.child(program), "S3")])
+        # S2 is a background job, S3 a session a non-Claude program started, and S4 one S1 started, which is S1's.
+        sessions = [(claude, "S1"), (self.child(idle), "S2"), (self.child(program), "S3"), (self.child(claude), "S4")]
+        saved = self.saved([idle, program, claude], sessions)
         self.assertEqual((saved.returncode, saved.stdout), (0, "\nzsh -c 'sleep 300; :'\nclaude --model opus --resume S1\n"))
-        # S3 runs under the program the pane shows, and comes back with it.
-        self.assertEqual(saved.stderr, f"tmux-resurrect-command: pane {idle}: Claude session S2 runs outside what the pane"
-                                       " shows; a restore does not bring it back\n")
+        self.assertEqual(saved.stderr, f"tmux-resurrect-command: pane {idle}: a restore does not bring back Claude session S2\n"
+                                       f"tmux-resurrect-command: pane {program}: a restore does not bring back Claude session S3\n")
 
     def children(self, pid):
         return list(map(int, subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout.split()))
@@ -183,8 +173,8 @@ class AgainstTmux(unittest.TestCase):
         (background,) = [pid for pid in self.children(shell) if pid != leader]
         saved = self.saved([shell], [(background, "SUSPENDED"), (leader, "LIVE")])
         self.assertEqual((saved.returncode, saved.stdout), (0, "claude --resume LIVE\n"))
-        self.assertEqual(saved.stderr, f"tmux-resurrect-command: pane {shell}: Claude session SUSPENDED runs outside what"
-                                       " the pane shows; a restore does not bring it back\n")
+        self.assertEqual(saved.stderr, f"tmux-resurrect-command: pane {shell}: a restore does not bring back Claude session"
+                                       " SUSPENDED\n")
 
     def test_a_pane_that_cannot_be_read_is_reported_and_the_others_still_saved(self):
         program = self.pane("sleep 300; :", ["zsh", "-c", "sleep 300; :"])
