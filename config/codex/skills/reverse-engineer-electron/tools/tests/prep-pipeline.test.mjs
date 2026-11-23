@@ -329,6 +329,11 @@ test("detect-dependencies lists every top-level package, through a link or not, 
   fs.mkdirSync(path.join(nm, "bare-dir"));
   writeText(path.join(nm, "broken-json", "package.json"), "{bad");
   placePackage(path.join(nm, "versionless"), { name: "versionless" });
+  placePackage(path.join(nm, "empty-version"), { name: "empty-version", version: "" });
+  const lockedScope = path.join(nm, "@locked-scope");
+  placePackage(path.join(lockedScope, "pkg"), { name: "@locked-scope/pkg", version: "1.0.0" });
+  fs.chmodSync(lockedScope, 0o000);
+  t.after(() => fs.chmodSync(lockedScope, 0o755));
   linkTo(placePackage(path.join(nm, ".pnpm", "real-name@6.0.0", "node_modules", "real-name"), { name: "real-name", version: "6.0.0" }), path.join(nm, "alias-name"));
 
   const { report, stdout } = detect(tmp, appDir);
@@ -352,12 +357,14 @@ test("detect-dependencies lists every top-level package, through a link or not, 
     [at("stray-file")]: { kind: "file" },
     [at("bare-dir")]: { kind: "no-manifest" },
     [at("broken-json")]: { kind: "invalid-manifest", reason: skipped[at("broken-json")].reason },
-    [at("versionless")]: { kind: "invalid-manifest", reason: "name and version must be strings" },
-    [at("alias-name")]: { kind: "alias", packageName: "real-name", version: "6.0.0" },
+    [at("versionless")]: { kind: "invalid-manifest", reason: "name and version must be non-empty strings" },
+    [at("empty-version")]: { kind: "invalid-manifest", reason: "name and version must be non-empty strings" },
+    [at("@locked-scope")]: { kind: "unreadable", code: "EACCES" },
   });
+  assert.deepEqual(report.onDisk.aliases, [{ name: "alias-name", packageName: "real-name", version: "6.0.0", path: at("alias-name") }]);
   assert.match(skipped[at("broken-json")].reason, /JSON/);
   assert.equal(report.onDisk.nodeModules, "directory");
-  for (const where of Object.keys(skipped)) {
+  for (const where of [...Object.keys(skipped), at("alias-name")]) {
     assert.ok(report.warnings.some((warning) => warning.startsWith(where)), `${where} is warned: ${JSON.stringify(report.warnings)}`);
     assert.ok(stdout.includes(`  - ${where}`), `${where} is printed: ${stdout}`);
   }
@@ -380,27 +387,60 @@ test("detect-dependencies tells an app with no node_modules apart from one whose
   assert.equal(dangling.warnings.length, 1);
 });
 
+test("detect-dependencies reports a node_modules it can't list, and still writes its report", (t) => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "locked");
+  const nm = path.join(appDir, "node_modules");
+  placePackage(path.join(nm, "pkg"), { name: "pkg", version: "1.0.0" });
+  fs.chmodSync(nm, 0o000);
+  t.after(() => fs.chmodSync(nm, 0o755));
+  const { report } = detect(tmp, appDir);
+  assert.equal(report.onDisk.nodeModules, "unreadable");
+  assert.deepEqual(report.onDisk.skipped, [{ path: "node_modules", kind: "unreadable", code: "EACCES" }]);
+});
+
 test("detect-dependencies reads top-level lockfile versions and reports a lockfile it can't parse", () => {
   const tmp = mkTmpDir();
   const appDir = path.join(tmp, "app-dir");
-  writeJson(path.join(appDir, "package-lock.json"), {
+  const lockPath = path.join(appDir, "package-lock.json");
+  writeJson(lockPath, {
     packages: {
       "": { name: "app" },
       "node_modules/a": { version: "1.0.0" },
       "node_modules/@scope/b": { version: "2.0.0" },
       "node_modules/a/node_modules/nested": { version: "3.0.0" },
       "node_modules/linked": { link: true, resolved: "packages/linked" },
+      "node_modules/versionless": {},
     },
+    dependencies: { a: { version: "0.9.0" } },
   });
-  assert.deepEqual(detect(tmp, appDir).report.lockfile.packages, [
+  const read = detect(tmp, appDir).report;
+  assert.deepEqual(read.lockfile.packages, [
     { name: "@scope/b", version: "2.0.0", path: "package-lock.json" },
     { name: "a", version: "1.0.0", path: "package-lock.json" },
   ]);
+  assert.deepEqual(read.warnings, ["package-lock.json records node_modules/versionless with no version"]);
 
-  writeText(path.join(appDir, "package-lock.json"), "{truncated");
-  const unparsed = detect(tmp, appDir).report;
-  assert.deepEqual(unparsed.lockfile.packages, []);
-  assert.ok(unparsed.warnings.some((warning) => warning.startsWith("package-lock.json could not be read")), JSON.stringify(unparsed.warnings));
+  writeJson(lockPath, { lockfileVersion: 1, dependencies: { a: { version: "0.9.0" } } });
+  assert.deepEqual(detect(tmp, appDir).report.lockfile.packages, [{ name: "a", version: "0.9.0", path: "package-lock.json" }]);
+
+  for (const [content, warning] of [
+    ["{truncated", /^package-lock\.json could not be read/],
+    ["null", /^package-lock\.json is not a JSON object/],
+    ["[]", /^package-lock\.json is not a JSON object/],
+  ]) {
+    writeText(lockPath, content);
+    const unusable = detect(tmp, appDir).report;
+    assert.deepEqual(unusable.lockfile.packages, []);
+    assert.equal(unusable.warnings.length, 1);
+    assert.match(unusable.warnings[0], warning);
+  }
+
+  fs.rmSync(lockPath);
+  linkTo(path.join(tmp, "gone.json"), lockPath);
+  const dangling = detect(tmp, appDir).report;
+  assert.equal(dangling.warnings.length, 1);
+  assert.match(dangling.warnings[0], /^package-lock\.json could not be read \(ENOENT/);
 });
 
 for (const [layout, name] of [["pnpm", "@scope/demo-pkg"], ["linked", "demo-pkg"]]) {
@@ -767,18 +807,19 @@ test("replace-dependency swaps a scoped package's pnpm store copy, and puts it b
   }
 });
 
-test("replace-dependency swaps a scoped package whose scope directory links out of the app, at its app path", () => {
-  const { tmp, appDir, appPkgDir, rootPkgDir, replace, readLog } = swapProject(VERIFYING_INDEX, { name: "@scope/demo-pkg" });
+test("replace-dependency refuses a scoped package whose scope directory links out of the app, moving nothing", () => {
+  const { tmp, appDir, logPath, replace } = swapProject(VERIFYING_INDEX, { name: "@scope/demo-pkg" });
   const scopeDir = path.join(appDir, "node_modules", "@scope");
-  fs.renameSync(scopeDir, path.join(tmp, "shared-scope"));
-  linkTo(path.join(tmp, "shared-scope"), scopeDir);
+  const sharedScope = path.join(tmp, "shared-scope");
+  fs.renameSync(scopeDir, sharedScope);
+  linkTo(sharedScope, scopeDir);
 
   const result = replace();
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  const entry = readLog().packages["@scope/demo-pkg"];
-  assert.equal(entry.status, "resolved", JSON.stringify(entry));
-  assert.equal(entry.attempts.at(-1).original.location, "node_modules/@scope/demo-pkg");
-  assert.equal(fs.realpathSync(appPkgDir), fs.realpathSync(rootPkgDir));
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /\[@scope\/demo-pkg\] \S+demo-pkg is reached through a link out of the app's node_modules \(it lives in \S+shared-scope\)/);
+  assert.ok(fs.statSync(path.join(sharedScope, "demo-pkg")).isDirectory(), "the package stays where it lives");
+  assert.ok(!fs.lstatSync(path.join(sharedScope, "demo-pkg")).isSymbolicLink(), "nothing is linked over it");
+  assert.ok(!fs.existsSync(logPath), "the refused run writes no log");
 });
 
 test("replace-dependency refuses an app whose links to the package loop, naming the loop", () => {

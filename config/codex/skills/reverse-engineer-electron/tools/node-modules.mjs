@@ -4,19 +4,35 @@ import fs from "fs";
 import path from "path";
 
 // [LAW:types-are-the-program] Every state a path can be in once followed through its links, as a value: a caller
-// handles each one rather than crashing on a loop or an unreadable target, or dropping it unseen.
+// handles each one rather than crashing on a loop or an unreadable target, or dropping it unseen. A directory is one
+// that can be listed and read, since that is what every reader of it does next.
 export function pathState(dir) {
   try {
-    return fs.statSync(dir).isDirectory() ? { kind: "directory" } : { kind: "file" };
+    if (!fs.statSync(dir).isDirectory()) return { kind: "file" };
+    fs.accessSync(dir, fs.constants.R_OK | fs.constants.X_OK);
+    return { kind: "directory" };
   } catch (error) {
     if (error.code !== "ENOENT") return { kind: "unreadable", code: error.code };
     return fs.lstatSync(dir, { throwIfNoEntry: false }) ? { kind: "dangling", target: fs.readlinkSync(dir) } : { kind: "absent" };
   }
 }
 
-// [LAW:one-source-of-truth] The top-level package locations of one node_modules directory, each by the name require()
-// resolves through it: node_modules/<name> and node_modules/@scope/<name>. Dot entries (.bin, .pnpm, .original) are
-// tooling, not packages. A scope that is not a directory stays an entry itself, so its state is still read.
+// [LAW:one-source-of-truth] The package a module path is inside: the one named right after its last node_modules
+// segment, since a nested node_modules holds a dependency's own copies (node_modules/a/node_modules/b/x.js is in b).
+// Null for a path inside no package.
+export function packageNameOf(modulePath) {
+  const parts = modulePath.split(/[\\/]/);
+  const at = parts.lastIndexOf("node_modules");
+  if (at === -1) return null;
+  const [first, second] = parts.slice(at + 1);
+  if (!first) return null;
+  if (!first.startsWith("@")) return first;
+  return second ? `${first}/${second}` : null;
+}
+
+// The top-level package locations of one node_modules directory, each by the name require() resolves through it:
+// node_modules/<name> and node_modules/@scope/<name>. Dot entries (.bin, .pnpm, .original) are tooling, not packages.
+// A scope that is not a listable directory stays an entry itself, so its state is still read.
 export function topLevelEntries(nodeModulesDir) {
   const listing = (dir) => fs.readdirSync(dir).filter((name) => !name.startsWith("."));
   return listing(nodeModulesDir).flatMap((name) => {
@@ -26,9 +42,8 @@ export function topLevelEntries(nodeModulesDir) {
   });
 }
 
-// What a top-level entry loads: a package and its version, or the reason it loads none this pipeline can trial. An
-// entry whose package.json names another package is an npm alias (`"x": "npm:other@1"`): it loads that package under
-// the entry's name.
+// What a top-level entry loads: a package, under the entry's name and its own (they differ for an npm alias,
+// `"x": "npm:other@1"`, which loads other under the name x), or the reason it loads none with a version.
 export function readEntry({ name, dir }) {
   const state = pathState(dir);
   if (state.kind !== "directory") return { ...state, name, dir };
@@ -44,9 +59,22 @@ export function readEntry({ name, dir }) {
   } catch (error) {
     return { kind: "invalid-manifest", reason: error.message, name, dir };
   }
-  if (typeof manifest?.name !== "string" || typeof manifest.version !== "string") {
-    return { kind: "invalid-manifest", reason: "name and version must be strings", name, dir };
+  const named = (value) => typeof value === "string" && value !== "";
+  if (!named(manifest?.name) || !named(manifest.version)) {
+    return { kind: "invalid-manifest", reason: "name and version must be non-empty strings", name, dir };
   }
-  if (manifest.name !== name) return { kind: "alias", packageName: manifest.name, version: manifest.version, name, dir };
-  return { kind: "package", version: manifest.version, name, dir };
+  return { kind: "package", packageName: manifest.name, version: manifest.version, name, dir };
+}
+
+// Why an entry loads no package, said for an operator; `where` is how the entry's path is shown.
+export function describeEntry(entry, where) {
+  switch (entry.kind) {
+    case "absent": return `${where} was listed but is gone`;
+    case "dangling": return `${where} is a link to ${entry.target}, which does not exist`;
+    case "unreadable": return `${where} cannot be read (${entry.code})`;
+    case "file": return `${where} is a file, not a package directory`;
+    case "no-manifest": return `${where} has no package.json, so it has no version`;
+    case "invalid-manifest": return `${where}/package.json is not a usable manifest: ${entry.reason}`;
+  }
+  throw new Error(`${where} loads ${entry.kind}, which is not a reason to load no package`);
 }

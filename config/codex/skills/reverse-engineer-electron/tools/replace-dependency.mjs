@@ -302,8 +302,8 @@ function findSwapLocation(pkgName, app) {
 }
 
 // Every location in the app's node_modules a package can load from, by package name: the top-level entries of each
-// node_modules directory found by walking real directories. Links are listed but never descended, so a link cycle
-// cannot loop the walk; .original/ holds set-aside backups nothing loads.
+// node_modules directory found by walking real directories. The walk never enters a link, so a link cycle cannot loop
+// it (a linked scope's entries are one listing, not a walk); .original/ holds set-aside backups nothing loads.
 function locationsByName(app) {
   const byName = new Map();
   const walk = (dir) => {
@@ -457,6 +457,12 @@ function priorSwap(entry, ctx, requestedVersion) {
   if (found.kind === "loop") return { kind: "conflict", reason: `the app's links loop, so no copy of it loads: ${found.chain.join(" -> ")} — fix the links, then rerun` };
   const current = locationDir(ctx.app, found.location);
   if (status === "unresolved") {
+    // Nothing past a link out of the app's node_modules is ours to move, and a scope directory that links out (to a
+    // workspace's own scope, say) puts the swap location itself past one.
+    const realParent = realExisting(path.dirname(current));
+    if (!realParent.startsWith(`${ctx.app.realNodeModules}${path.sep}`) && realParent !== ctx.app.realNodeModules) {
+      return { kind: "conflict", reason: `${current} is reached through a link out of the app's node_modules (it lives in ${realParent}), so swapping it would change files the app does not own — replace that link with a directory inside the app, then rerun` };
+    }
     if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried", swapLocation: found.location };
     // Trialing our own link would verify the root package against itself and record a made-up original.
     return { kind: "conflict", reason: `${current} already links to the root package, but ${ctx.app.logPath} records no resolved swap for it — put the original back over the link first (earlier backups are under ${ctx.app.backupsDir}), then rerun` };
