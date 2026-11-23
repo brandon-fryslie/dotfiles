@@ -9,12 +9,17 @@
 // the formatted AST while report hashed a re-minified one — ticket .22); a shared
 // module makes "same algorithm" structural rather than disciplinary.
 //
-// Two distinct token domains, deliberately kept apart:
+// Three distinct token domains, deliberately kept apart:
 //
 //   - IDENTITY (functionShapeTokens over the source AST): stable for one file as
 //     written. prepare.mjs records it in manifest.json; gate.mjs and report.mjs
 //     re-derive it from the same file to look entries up. Never run through a
 //     transformer — any syntax rewrite breaks the contract with the manifest.
+//
+//   - BODY (functionBodyShape): IDENTITY's tokens over a function's body alone,
+//     so a bundled module factory, whose parameters the bundler chose, matches the
+//     package function it was built from. detect-dependencies indexes package
+//     functions and looks bundle factories up in it.
 //
 //   - SIMILARITY (normalizedFunctionTokens): esbuild-minified so that stylistic
 //     differences (if/else vs ternary, statement merging) between the original
@@ -112,6 +117,21 @@ export function parseSource(code, loader) {
     errorRecovery: true,
     allowReturnOutsideFunction: true,
   });
+}
+
+// The syntax tree of code an engine would run, or every syntax error in it. Error
+// recovery lets the parser return a tree for code an engine rejects (a duplicate
+// `let`, say); for a reader that analyzes shipped code, such code isn't code that
+// runs, so its recovered errors are its outcome, the same as an error the parser
+// can't recover from. [LAW:no-silent-failure]
+export function parseRunnable(code, loader) {
+  let ast;
+  try {
+    ast = parseSource(code, loader);
+  } catch (error) {
+    return { ast: null, errors: [error.message] };
+  }
+  return ast.errors.length === 0 ? { ast, errors: [] } : { ast: null, errors: ast.errors.map((error) => error.message) };
 }
 
 // The parse for code that came from a file: the loader is the file's, and a
@@ -249,6 +269,12 @@ export function functionShapeTokens(node) {
 
 export function tokensToHash(tokens) {
   return createHash('sha256').update(tokens.join(',')).digest('hex').slice(0, 16);
+}
+
+// The BODY domain: a function's body tokens, with their count and their hash.
+export function functionBodyShape(fn) {
+  const tokens = functionShapeTokens(fn.body);
+  return { size: tokens.length, hash: tokensToHash(tokens) };
 }
 
 export function extractStrings(node) {

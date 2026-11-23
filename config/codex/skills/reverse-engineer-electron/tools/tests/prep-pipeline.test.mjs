@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
+import { writeText } from "./fixtures.mjs";
 import { appAt, copiesOf, replacementOf, walkStarts } from "../node-modules.mjs";
 import { fromLogPath } from "../replacement-log.mjs";
 
@@ -16,11 +17,6 @@ function mkTmpDir() {
 function writeJson(filePath, payload) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
-}
-
-function writeText(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content);
 }
 
 function runNode(scriptPath, args, cwd) {
@@ -54,7 +50,7 @@ test("find-near-match-versions only returns patch-level candidates and ranks exa
             version: "1.2.3",
             signal: "license",
             evidence: [{ package: "demo-pkg", signal: "license", detail: "1.2.3" }],
-            hashMatchPackages: ["demo-pkg@1.2.3:program"],
+            hashMatchPackages: ["demo-pkg@1.2.3"],
           },
         ],
       },

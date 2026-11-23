@@ -4,16 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+import { writeText } from "./fixtures.mjs";
 
 const TOOLS_DIR = path.resolve(import.meta.dirname, "..");
 
 function mkTmpDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "ec-report-test-"));
-}
-
-function writeText(filePath, content) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content);
 }
 
 function runNode(scriptPath, args, cwd) {
