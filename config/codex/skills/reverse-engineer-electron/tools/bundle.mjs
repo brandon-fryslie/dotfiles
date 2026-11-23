@@ -7,26 +7,39 @@
 
 import fs from "fs";
 import path from "path";
-import { walk, traverse, parseRunnable, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { walk, traverse, parseSource, isSourceFile, loaderFor, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
-// The JS files a target holds: the target itself, or every .js file under it.
+const isJsFile = (file) => isSourceFile(file) && loaderFor(file) === "js";
+
+// The JS source files a target holds, by shape.mjs's source-file rules: the target itself, or every one under it.
 export function listJsFiles(target) {
-  if (fs.statSync(target).isFile()) return path.extname(target) === ".js" ? [target] : [];
-  return listFiles(target, SOURCE_TREE_EXCLUDES)
-    .filter((rel) => path.extname(rel) === ".js")
+  if (fs.statSync(target).isFile()) return isJsFile(target) ? [target] : [];
+  return listSourceFiles(target, SOURCE_TREE_EXCLUDES)
+    .filter(isJsFile)
     .map((rel) => path.join(target, rel));
 }
 
-// A JS file's outcome: unreadable or unparsed, with its errors, or parsed, with its code and syntax tree.
+// A JS file's outcome: unreadable or unparsed, with its error, or parsed, with its code and syntax tree.
 export function readJsFile(file) {
   let code;
   try {
     code = fs.readFileSync(file, "utf8");
   } catch (error) {
-    return { kind: "unreadable", errors: [error.message] };
+    return { kind: "unreadable", error: error.message };
   }
-  const { ast, errors } = parseRunnable(code, "js");
-  return ast === null ? { kind: "unparsed", errors } : { kind: "parsed", code, ast };
+  try {
+    return { kind: "parsed", code, ast: parseSource(code, "js") };
+  } catch (error) {
+    return { kind: "unparsed", error: error.message };
+  }
+}
+
+// A build file's outcome: readJsFile's, and for a parsed file the bundle it is, or null for one that isn't a bundle.
+export function readBuildFile(file) {
+  const read = readJsFile(file);
+  if (read.kind !== "parsed") return read;
+  const detected = detectBundle(read.ast, read.code);
+  return { ...read, bundle: detected === null ? null : { ...detected, modules: withDependencies(read.ast, detected) } };
 }
 
 const isFactory = (node) => node?.type === "FunctionExpression" || node?.type === "ArrowFunctionExpression";
@@ -106,7 +119,7 @@ function moduleRecord(code, format, { id, factory, container }) {
 }
 
 // The bundle a parsed build file is, or null for a file that isn't one: its format, entry module, and module records.
-export function detectBundle(ast, code) {
+function detectBundle(ast, code) {
   const best = bestModuleArgument(ast);
   if (!best) return null;
   const { call, arg } = best;
@@ -138,12 +151,13 @@ export function detectBundle(ast, code) {
 
 const sortedUnique = (values) => [...new Set(values)].sort();
 
-// Each module record's dependencies, sorted: the ids of the modules it requires, and for browserify the specifiers
-// it requires them by. A webpack module requires a module by calling its require binding with the module's id. A
-// browserify module requires by specifier, and its dependency map gives each specifier's id.
+// Each module record with its dependencies, sorted: the ids of the bundle's modules it requires, the ids it requires
+// that name no module in this bundle (another chunk's, say), and for browserify the specifiers it requires them by. A
+// webpack module requires a module by calling its require binding with the module's id. A browserify module
+// requires by specifier, and its dependency map gives each specifier's id.
 // [LAW:types-are-the-program] A call counts as a require only when its callee resolves, by scope, to the factory's
 // require binding, so an inner function that rebinds the name (as minifiers do) is not a require.
-export function moduleDependencies(ast, bundle) {
+function withDependencies(ast, bundle) {
   const calledIds = new Map(bundle.modules.filter((record) => record.require).map((record) => [record.require, []]));
   traverse(ast, {
     CallExpression(p) {
@@ -154,20 +168,24 @@ export function moduleDependencies(ast, bundle) {
       if (ids && value !== null) ids.push(value);
     },
   });
-  const dependencies = {
-    webpack4: (record) => ({ ids: calledIds.get(record.require) ?? [], specifiers: [] }),
-    webpack5: (record) => ({ ids: calledIds.get(record.require) ?? [], specifiers: [] }),
-    browserify: (record) => {
-      const depMap = record.containerNode.value.elements[1];
-      const entries = depMap?.type === "ObjectExpression" ? depMap.properties.filter((property) => property.type === "ObjectProperty") : [];
-      return {
-        ids: entries.map((property) => literalValue(property.value)).filter((value) => value !== null),
-        specifiers: entries.map(propertyKey).filter((key) => key !== null),
-      };
-    },
-  }[bundle.format];
-  return new Map(bundle.modules.map((record) => {
+  const byCall = (record) => ({ ids: calledIds.get(record.require) ?? [], specifiers: [] });
+  const byDependencyMap = (record) => {
+    const depMap = record.containerNode.value.elements[1];
+    const entries = depMap?.type === "ObjectExpression" ? depMap.properties.filter((property) => property.type === "ObjectProperty") : [];
+    return {
+      ids: entries.map((property) => literalValue(property.value)).filter((value) => value !== null),
+      specifiers: entries.map(propertyKey).filter((key) => key !== null),
+    };
+  };
+  const dependencies = bundle.format === "browserify" ? byDependencyMap : byCall;
+  const moduleIds = new Set(bundle.modules.map((record) => record.id));
+  return bundle.modules.map((record) => {
     const { ids, specifiers } = dependencies(record);
-    return [record, { dependencyIds: sortedUnique(ids), dependencySpecifiers: sortedUnique(specifiers) }];
-  }));
+    return {
+      ...record,
+      dependencyIds: sortedUnique(ids.filter((id) => moduleIds.has(id))),
+      unresolvedDependencyIds: sortedUnique(ids.filter((id) => !moduleIds.has(id))),
+      dependencySpecifiers: sortedUnique(specifiers),
+    };
+  });
 }

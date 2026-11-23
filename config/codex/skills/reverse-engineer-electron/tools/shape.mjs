@@ -16,9 +16,10 @@
 //     re-derive it from the same file to look entries up. Never run through a
 //     transformer — any syntax rewrite breaks the contract with the manifest.
 //
-//   - BODY (functionBodyShape): IDENTITY's tokens over a function's body alone,
-//     so a bundled module factory, whose parameters the bundler chose, matches the
-//     package function it was built from.
+//   - BODY (statementsShape): IDENTITY's tokens over a list of statements alone,
+//     a function's body or a whole file's, so a bundled module factory, whose
+//     parameters the bundler chose, matches the package file or function it was
+//     built from.
 //
 //   - SIMILARITY (normalizedFunctionTokens): esbuild-minified so that stylistic
 //     differences (if/else vs ternary, statement merging) between the original
@@ -44,7 +45,7 @@ import path from 'path';
 // JSX on both sides — JSX only claims a `<` where plain JS has no legal reading,
 // so it rejects nothing a js loader accepts — which is why .jsx is not its own
 // loader. [LAW:dataflow-not-control-flow] the per-loader differences are data;
-// every loader parses as 'unambiguous' with error recovery.
+// every loader parses the way an engine reads the file (parseSource).
 const LOADERS = Object.freeze({
   js: { esbuild: 'jsx', plugins: ['jsx', 'decorators'] },
   ts: { esbuild: 'ts', plugins: ['typescript', 'decorators'] },
@@ -113,42 +114,27 @@ export function loaderFor(filePath) {
 const parseOptions = (loader, sourceType) => ({
   sourceType,
   plugins: loaderSpec(loader).plugins,
-  errorRecovery: true,
   allowReturnOutsideFunction: true,
 });
-
-export function parseSource(code, loader) {
-  return parse(code, parseOptions(loader, 'unambiguous'));
-}
 
 // @babel/traverse, whichever way the module system hands over its default export.
 export const traverse = traverseImport.default || traverseImport;
 
-// Babel's reason codes for module syntax found while parsing a script.
+// Babel's reason codes for module syntax met while parsing a script.
 const MODULE_SYNTAX = new Set(['ImportOutsideModule', 'ImportMetaOutsideModule']);
 
-function parseAs(code, loader, sourceType) {
+// The parse is made the way an engine reads the file: as a script, sloppy unless
+// it says otherwise, and as a module only when it has module syntax. Code an
+// engine would reject throws; with error recovery, babel would hand back a tree
+// for it (a duplicate `let`, say), and a tree for code that doesn't run is one no
+// tool should hash or analyze. [LAW:no-silent-failure]
+export function parseSource(code, loader) {
   try {
-    const ast = parse(code, parseOptions(loader, sourceType));
-    return { ast, errors: ast.errors };
+    return parse(code, parseOptions(loader, 'script'));
   } catch (error) {
-    return { ast: null, errors: [error] };
+    if (!MODULE_SYNTAX.has(error.reasonCode)) throw error;
+    return parse(code, parseOptions(loader, 'module'));
   }
-}
-
-// The syntax tree of code an engine would run, or every syntax error an engine
-// would raise for it. A file is parsed the way an engine runs it: as a script,
-// sloppy unless it says otherwise, and as a module only when it has module syntax
-// ('unambiguous' would apply a module's strict-mode errors to every script, so
-// `0755` or `with` would read as errors). Error recovery lets the parser return a
-// tree for code an engine rejects (a duplicate `let`, say); for a reader that
-// analyzes shipped code, such code isn't code that runs, so its recovered errors
-// are its outcome, the same as an error the parser can't recover from.
-// [LAW:no-silent-failure]
-export function parseRunnable(code, loader) {
-  const script = parseAs(code, loader, 'script');
-  const { ast, errors } = script.errors.some((error) => MODULE_SYNTAX.has(error.reasonCode)) ? parseAs(code, loader, 'module') : script;
-  return errors.length === 0 ? { ast, errors: [] } : { ast: null, errors: errors.map((error) => error.message) };
 }
 
 // The parse for code that came from a file: the loader is the file's, and a
@@ -288,9 +274,15 @@ export function tokensToHash(tokens) {
   return createHash('sha256').update(tokens.join(',')).digest('hex').slice(0, 16);
 }
 
-// The BODY domain: a function's body tokens, with their count and their hash.
-export function functionBodyShape(fn) {
-  const tokens = functionShapeTokens(fn.body);
+// A function's body as statements: a block's own, or an expression body as the
+// one statement that returns it, which is what `=> x` means.
+export function bodyStatements(fn) {
+  return fn.body.type === 'BlockStatement' ? fn.body.body : [{ type: 'ReturnStatement', argument: fn.body }];
+}
+
+// The BODY domain: the tokens of a list of statements, with their count and their hash.
+export function statementsShape(statements) {
+  const tokens = statements.flatMap(functionShapeTokens);
   return { size: tokens.length, hash: tokensToHash(tokens) };
 }
 

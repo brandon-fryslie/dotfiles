@@ -25,15 +25,15 @@ import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
 import { appAt, compareLocations, copiesOf, entryNameOf, isLocation, isNonEmptyString, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
-import { walk, isFunctionNode, functionBodyShape, traverse } from "./shape.mjs";
-import { detectBundle, listJsFiles, moduleDependencies, readJsFile } from "./bundle.mjs";
-import { clearArtifact, writeArtifact } from "./artifact.mjs";
+import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
+import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
+import { clearOutputs, writeOutputs } from "./artifact.mjs";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const FINGERPRINTS_PATH = path.join(SCRIPT_DIR, "third-party-fingerprints.json");
 const BUILTIN_SET = new Set(builtinModules.map((item) => (item.startsWith("node:") ? item.slice(5) : item)));
 const LOADER_RUNTIME_PACKAGES = new Set(["style-loader", "css-loader", "file-loader", "url-loader"]);
-// The body-token count under which a function's shape is too common to name its package.
+// The body-token count under which a file's or function's shape is too common to name its package.
 const MIN_FUNCTION_SHAPE_TOKENS = 20;
 // [LAW:one-type-per-behavior] A wrapper rule credits a module that isn't yet classified with the package that
 // dominates its vendor neighbours of one kind. A wrapper is a small module, so a module at or over sourceLimit
@@ -98,17 +98,8 @@ function pkgNameFromSpecifier(specifier) {
   return slashIndex === -1 ? specifier : specifier.slice(0, slashIndex);
 }
 
-function pkgNameFromNodeModulesPath(text) {
-  const marker = "/node_modules/";
-  const normalized = text.split("\\").join("/");
-  const idx = normalized.indexOf(marker);
-  if (idx === -1) return null;
-  const tail = normalized.slice(idx + marker.length);
-  const parts = tail.split("/").filter(Boolean);
-  if (parts.length === 0) return null;
-  if (parts[0].startsWith("@")) return parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null;
-  return parts[0];
-}
+// The package a path names: the entry after its last node_modules, by node-modules.mjs's grammar.
+const packageOfPath = (text) => entryNameOf(text.split("\\").join("/"));
 
 // [LAW:one-source-of-truth] Every copy of every package node finds in the app's node_modules, with the swap outcome
 // replace-dependency acts on (including what it loads, or that it loads nothing), and the walk's verdict on how much
@@ -121,7 +112,7 @@ function readOnDisk(appDir, projectRoot) {
 
 const byNameThenLocation = (copies) => [...copies].sort((a, b) => a.name.localeCompare(b.name) || compareLocations(a.location, b.location));
 
-// Each loaded package version's function shapes, in the BODY domain a bundle factory is looked up in, and every file
+// Each loaded package version's file and function shapes, in the BODY domain a bundle factory is looked up in, and every file
 // or directory that couldn't be listed, read, or parsed, so a package that contributed no shapes because it couldn't
 // be read is a parse error, not a package that matched nothing. [LAW:no-silent-failure]
 // A shape maps to the package versions that ship it, each once, at the first of its files that has it.
@@ -139,19 +130,19 @@ function indexPackageShapeHashes(packages) {
     for (const jsFile of jsFiles) {
       const read = readJsFile(jsFile);
       if (read.kind !== "parsed") {
-        errors.push(...read.errors.map((error) => fileError(jsFile, error)));
+        errors.push(fileError(jsFile, read.error));
         continue;
       }
-      const { ast } = read;
       const entry = { package: pkg.name, version: pkg.version, file: path.relative(pkg.dir, jsFile) };
-      walk(ast.program, (node) => {
-        if (!isFunctionNode(node)) return;
-        const shape = functionBodyShape(node);
-        if (shape.size < MIN_FUNCTION_SHAPE_TOKENS) return;
+      const statementLists = [read.ast.program.body];
+      walk(read.ast.program, (node) => {
+        if (isFunctionNode(node)) statementLists.push(bodyStatements(node));
+      });
+      for (const shape of statementLists.map(statementsShape).filter(({ size }) => size >= MIN_FUNCTION_SHAPE_TOKENS)) {
         const versions = byHash.get(shape.hash) ?? new Map();
         if (!versions.has(`${pkg.name}@${pkg.version}`)) versions.set(`${pkg.name}@${pkg.version}`, entry);
         byHash.set(shape.hash, versions);
-      });
+      }
     }
   }
   return { byHash: new Map([...byHash].map(([hash, versions]) => [hash, [...versions.values()]])), errors };
@@ -325,7 +316,7 @@ function findWebpackCommentSignal(text) {
     if (idx === -1) continue;
     const lineEnd = text.indexOf("\n", idx);
     const rawLine = lineEnd === -1 ? text.slice(idx) : text.slice(idx, lineEnd);
-    const pkgName = pkgNameFromNodeModulesPath(rawLine);
+    const pkgName = packageOfPath(rawLine);
     if (!pkgName) continue;
     return {
       package: pkgName,
@@ -406,50 +397,50 @@ function scoreAppAnchors(stringLiterals) {
   return score;
 }
 
-function isEmptyObjectExportModule(moduleRecord) {
-  const statements = moduleRecord.functionNode.body?.body || [];
-  if (statements.length !== 1) return false;
-  const statement = statements[0];
-  if (statement.type !== "ExpressionStatement") return false;
-  const expression = statement.expression;
-  if (expression?.type !== "AssignmentExpression") return false;
-  return expression.right?.type === "ObjectExpression" && expression.right.properties.length === 0;
+// The one expression a factory's body is: its one statement's expression, or the value it returns.
+function soleExpression(functionNode) {
+  const statements = bodyStatements(functionNode);
+  if (statements.length !== 1) return null;
+  const [statement] = statements;
+  if (statement.type === "ExpressionStatement") return statement.expression;
+  return statement.type === "ReturnStatement" ? statement.argument : null;
 }
 
-// A webpack factory whose one statement exports the bundle's public path (its require binding's `p`) plus a file name.
+function isEmptyObjectExportModule(moduleRecord) {
+  const expression = soleExpression(moduleRecord.functionNode);
+  return expression?.type === "AssignmentExpression" && expression.right.type === "ObjectExpression" && expression.right.properties.length === 0;
+}
+
+// A webpack factory that exports the bundle's public path (its require binding's `p`) plus a file name.
 function isWebpackPublicPathAssetModule(moduleRecord) {
-  const statements = moduleRecord.functionNode.body?.body || [];
-  if (statements.length !== 1) return false;
-  const statement = statements[0];
-  if (statement.type !== "ExpressionStatement") return false;
-  const expression = statement.expression;
+  const expression = soleExpression(moduleRecord.functionNode);
   if (expression?.type !== "AssignmentExpression") return false;
-  if (expression.right?.type !== "BinaryExpression" || expression.right.operator !== "+") return false;
-  if (expression.right.right?.type !== "StringLiteral") return false;
+  if (expression.right.type !== "BinaryExpression" || expression.right.operator !== "+") return false;
+  if (expression.right.right.type !== "StringLiteral") return false;
   const publicPath = expression.right.left;
   return (
     moduleRecord.require !== null &&
-    publicPath?.type === "MemberExpression" &&
+    publicPath.type === "MemberExpression" &&
     !publicPath.computed &&
-    publicPath.object?.type === "Identifier" &&
+    publicPath.object.type === "Identifier" &&
     publicPath.object.name === moduleRecord.require.name &&
-    publicPath.property?.type === "Identifier" &&
+    publicPath.property.type === "Identifier" &&
     publicPath.property.name === "p"
   );
 }
 
-// Each module record with its dependencies, by id, and the ids of the modules that require each one.
-function buildBundleGraph(bundle, dependencies) {
-  const byId = new Map(bundle.modules.map((record) => [record.id, { ...record, ...dependencies.get(record) }]));
+// Each module record by id, and the ids of the modules that require each one.
+function buildBundleGraph(bundle) {
+  const byId = new Map(bundle.modules.map((record) => [record.id, record]));
   const parentsById = new Map(bundle.modules.map((record) => [record.id, []]));
-  for (const [fromId, record] of byId) {
-    for (const depId of record.dependencyIds) parentsById.get(depId)?.push(fromId);
+  for (const record of bundle.modules) {
+    for (const depId of record.dependencyIds) parentsById.get(depId).push(record.id);
   }
   return { byId, parentsById };
 }
 
-function classifyBundleModules(bundle, dependencies, context) {
-  const graph = buildBundleGraph(bundle, dependencies);
+function classifyBundleModules(bundle, context) {
+  const graph = buildBundleGraph(bundle);
   const states = [];
   // A vendor module's classification, credited to the package its evidence names.
   const vendorModule = (pkgName, evidence) => ({
@@ -465,7 +456,7 @@ function classifyBundleModules(bundle, dependencies, context) {
     const webpackCommentSignal = findWebpackCommentSignal(moduleText);
     const licenseSignal = findLicenseSignal(moduleText, context.knownPackages);
     const fingerprintMatches = findFingerprintMatches(moduleText, context.fingerprints);
-    const shapeHash = functionBodyShape(moduleRecord.functionNode).hash;
+    const shapeHash = statementsShape(bodyStatements(moduleRecord.functionNode)).hash;
     const hashMatches = context.packageShapeHashes.get(shapeHash) ?? [];
     // A shape names a package when every package version that ships it is a version of that one package.
     const uniqueHashPackage = new Set(hashMatches.map((item) => item.package)).size === 1 ? hashMatches[0] : null;
@@ -624,6 +615,7 @@ function classifyBundleModules(bundle, dependencies, context) {
       appAnchorScore: state.appAnchorScore,
       hashMatches: state.hashMatches.map(({ package: pkgName, version }) => ({ package: pkgName, version })),
       dependencyIds: state.moduleRecord.dependencyIds,
+      unresolvedDependencyIds: state.moduleRecord.unresolvedDependencyIds,
       dependencySpecifiers: state.moduleRecord.dependencySpecifiers,
       topScore: best ? best.score : 0,
       evidence: state.evidence,
@@ -649,18 +641,16 @@ function analyzePlainJsFile(filePath, ast, projectRoot, report) {
   }
 }
 
-// Records the file's bundle, if it is one, and says whether it is.
-function analyzeBundleFile(filePath, ast, code, projectRoot, report, context) {
-  const detected = detectBundle(ast, code);
-  if (detected === null) return false;
+// Records a bundle a build file is, with its classified modules.
+function recordBundle(filePath, detected, code, projectRoot, report, context) {
   // A module keyed by its node_modules path (webpack5's, or browserify's with full paths) names its package.
   const bundle = {
     ...detected,
     fileHint: filePath,
-    modules: detected.modules.map((record) => ({ ...record, explicitPackage: pkgNameFromNodeModulesPath(record.id) })),
+    modules: detected.modules.map((record) => ({ ...record, explicitPackage: packageOfPath(record.id) })),
   };
 
-  const classified = classifyBundleModules(bundle, moduleDependencies(ast, bundle), context);
+  const classified = classifyBundleModules(bundle, context);
   const suggestedDependencies = {};
   for (const item of classified) {
     if (item.package && !suggestedDependencies[item.package]) suggestedDependencies[item.package] = item.version || "*";
@@ -686,19 +676,20 @@ function analyzeBundleFile(filePath, ast, code, projectRoot, report, context) {
     },
     suggestedDependencies,
   });
-  return true;
 }
 
 // A build file's outcome, after recording what it found: unreadable or unparsed (its errors recorded), or a parsed
 // file whose static bare specifiers are recorded, and that is plain or bundled.
 function analyzeBuildFile(jsFile, projectRoot, report, context) {
-  const read = readJsFile(jsFile);
+  const read = readBuildFile(jsFile);
   if (read.kind !== "parsed") {
-    report.parseErrors.push(...read.errors.map((error) => fileError(fileRel(projectRoot, jsFile), error)));
+    report.parseErrors.push(fileError(fileRel(projectRoot, jsFile), read.error));
     return read.kind;
   }
   analyzePlainJsFile(jsFile, read.ast, projectRoot, report);
-  return analyzeBundleFile(jsFile, read.ast, read.code, projectRoot, report, context) ? "bundled" : "plain";
+  if (read.bundle === null) return "plain";
+  recordBundle(jsFile, read.bundle, read.code, projectRoot, report, context);
+  return "bundled";
 }
 
 function main() {
@@ -714,7 +705,7 @@ function main() {
   const appDir = path.resolve(projectRoot, opts.appDir);
   const buildDir = path.resolve(projectRoot, opts.buildDir);
   const outPath = path.resolve(projectRoot, opts.out);
-  clearArtifact(outPath);
+  clearOutputs([outPath]);
 
   const fingerprints = loadFingerprints();
   const onDisk = readOnDisk(appDir, projectRoot);
@@ -821,7 +812,8 @@ function main() {
     knownPackages,
   };
 
-  report.code.files = tally(FILE_OUTCOMES, jsFiles, (jsFile) => analyzeBuildFile(jsFile, projectRoot, report, classificationContext));
+  const outcomes = jsFiles.map((jsFile) => analyzeBuildFile(jsFile, projectRoot, report, classificationContext));
+  report.code.files = tally(FILE_OUTCOMES, outcomes, (outcome) => outcome);
 
   const inCode = Object.keys(report.code.bareSpecifiers).sort();
   const onDiskSet = new Set(loadedPackageVersions.map((pkg) => pkg.name));
@@ -858,7 +850,7 @@ function main() {
       ? 0
       : Number((report.summary.classifiedCandidates / report.summary.totalModuleCandidates).toFixed(6));
 
-  writeArtifact(outPath, report);
+  writeOutputs([[outPath, report]]);
 
   console.log(`Wrote ${fileRel(projectRoot, outPath)}`);
   console.log(`- JS files scanned: ${report.code.filesScanned} (unreadable: ${report.code.files.unreadable}, unparsed: ${report.code.files.unparsed})`);

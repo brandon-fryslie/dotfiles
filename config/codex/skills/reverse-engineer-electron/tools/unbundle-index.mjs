@@ -17,8 +17,8 @@
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { detectBundle, listJsFiles, moduleDependencies, readJsFile } from "./bundle.mjs";
-import { clearArtifact, writeArtifact } from "./artifact.mjs";
+import { listJsFiles, readBuildFile } from "./bundle.mjs";
+import { clearOutputs, writeOutputs } from "./artifact.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -49,8 +49,7 @@ function main() {
   const buildDir = path.resolve(projectRoot, opts.buildDir);
   const outPath = path.resolve(projectRoot, opts.out);
   const graphPath = path.resolve(projectRoot, opts.graphOut);
-  clearArtifact(outPath);
-  clearArtifact(graphPath);
+  clearOutputs([outPath, graphPath]);
 
   if (!fs.existsSync(buildDir)) {
     console.error(`Build directory not found: ${buildDir}`);
@@ -65,22 +64,18 @@ function main() {
 
   for (const jsFile of jsFiles) {
     const relFile = path.relative(projectRoot, jsFile).split(path.sep).join("/");
-    const read = readJsFile(jsFile);
+    const read = readBuildFile(jsFile);
     if (read.kind !== "parsed") {
-      parseErrors.push(...read.errors.map((error) => ({ file: relFile, error })));
+      parseErrors.push({ file: relFile, error: read.error });
       continue;
     }
-    const detected = detectBundle(read.ast, read.code);
-    if (detected === null) continue;
+    if (read.bundle === null) continue;
 
-    const dependencies = moduleDependencies(read.ast, detected);
-    const modules = detected.modules.map((moduleRecord) => {
-      const depInfo = dependencies.get(moduleRecord);
-      const moduleId = moduleRecord.id;
-      const nodeId = `${relFile}#${moduleId}`;
-
-      graphNodes.push({ id: nodeId, bundleFile: relFile, moduleId, bytes: moduleRecord.source.length });
-      for (const depId of depInfo.dependencyIds) {
+    // The graph's edges are the dependencies that resolve to a module in this bundle; the rest stay on the module.
+    const modules = read.bundle.modules.map((moduleRecord) => {
+      const nodeId = `${relFile}#${moduleRecord.id}`;
+      graphNodes.push({ id: nodeId, bundleFile: relFile, moduleId: moduleRecord.id, bytes: moduleRecord.source.length });
+      for (const depId of moduleRecord.dependencyIds) {
         graphEdges.push({ from: nodeId, to: `${relFile}#${depId}`, kind: "module-require" });
       }
 
@@ -89,15 +84,16 @@ function main() {
         bytes: moduleRecord.source.length,
         startOffset: moduleRecord.startOffset,
         endOffset: moduleRecord.endOffset,
-        dependencyIds: depInfo.dependencyIds,
-        dependencySpecifiers: depInfo.dependencySpecifiers,
+        dependencyIds: moduleRecord.dependencyIds,
+        unresolvedDependencyIds: moduleRecord.unresolvedDependencyIds,
+        dependencySpecifiers: moduleRecord.dependencySpecifiers,
       };
     });
 
     bundles.push({
       file: relFile,
-      format: detected.format,
-      entryModuleId: detected.entryModuleId,
+      format: read.bundle.format,
+      entryModuleId: read.bundle.entryModuleId,
       totalModules: modules.length,
       modules,
     });
@@ -127,8 +123,7 @@ function main() {
     },
   };
 
-  writeArtifact(outPath, moduleIndex);
-  writeArtifact(graphPath, moduleGraph);
+  writeOutputs([[outPath, moduleIndex], [graphPath, moduleGraph]]);
 
   console.log(`Wrote ${path.relative(projectRoot, outPath)}`);
   console.log(`Wrote ${path.relative(projectRoot, graphPath)}`);
