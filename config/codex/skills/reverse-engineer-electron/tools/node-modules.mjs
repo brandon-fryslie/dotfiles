@@ -17,6 +17,20 @@ export function pathState(dir) {
   }
 }
 
+// A path with its existing directories resolved through symlinks, so two spellings of one tree (/var vs /private/var
+// on macOS) compare equal; the part that doesn't exist yet is kept as written.
+export function realExisting(dir) {
+  return fs.existsSync(dir) ? fs.realpathSync(dir) : path.join(realExisting(path.dirname(dir)), path.basename(dir));
+}
+
+// [LAW:one-source-of-truth] Where an entry of an app's node_modules really lives: the real directory holding it, and
+// whether that is inside the app's real node_modules. Past a link out of it (a scope linked to a workspace's own
+// scope, say), nothing is the app's to change, so a copy living there can't be swapped.
+export function entryHome(realNodeModules, dir) {
+  const parent = realExisting(path.dirname(dir));
+  return { parent, inApp: parent === realNodeModules || parent.startsWith(`${realNodeModules}${path.sep}`) };
+}
+
 // [LAW:one-source-of-truth] The package a module path is inside: the one named right after its last node_modules
 // segment, since a nested node_modules holds a dependency's own copies (node_modules/a/node_modules/b/x.js is in b).
 // Null for a path inside no package.

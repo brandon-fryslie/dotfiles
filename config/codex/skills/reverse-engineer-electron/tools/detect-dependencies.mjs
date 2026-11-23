@@ -19,7 +19,7 @@ import path from "path";
 import process from "process";
 import { builtinModules } from "module";
 import { fileURLToPath } from "url";
-import { describeEntry, packageNameOf, pathState, readEntry, topLevelEntries } from "./node-modules.mjs";
+import { describeEntry, entryHome, packageNameOf, pathState, readEntry, topLevelEntries } from "./node-modules.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseSource, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 import traverseImport from "@babel/traverse";
 
@@ -91,11 +91,25 @@ function pkgNameFromSpecifier(specifier) {
   return slashIndex === -1 ? specifier : specifier.slice(0, slashIndex);
 }
 
+// Why replace-dependency can't trial a package the app loads: an alias loads it under another name, which npm can't
+// install by that name; a copy past a link out of the app's node_modules is not the app's to swap.
+function untrialableReason(pkg, realNodeModules) {
+  if (pkg.name !== pkg.packageName) return { reason: "alias" };
+  const home = entryHome(realNodeModules, pkg.dir);
+  return home.inApp ? null : { reason: "outside-app", livesIn: home.parent };
+}
+
+function describeUntrialable(pkg) {
+  const loads = `${pkg.path} loads ${pkg.packageName}@${pkg.version}`;
+  if (pkg.reason === "alias") return `${loads} under the name ${pkg.name}, which npm can't install by that name, so it can't be trialed`;
+  return `${loads} from ${pkg.livesIn}, past a link out of the app's node_modules, so it isn't the app's to swap and can't be trialed`;
+}
+
 // The packages the app loads from its top-level node_modules locations, through a link (pnpm, workspace, npm link) or
 // not, with the version each one has on disk. Copies with no top-level location (the .pnpm store, nested
-// node_modules) are not here. `packages` are the ones the trial pipeline can name: each loads under its own name.
-// An alias loads a package under another name, which npm can't install by that name, so it is listed apart.
-// [LAW:no-silent-failure] Every entry is listed, listed as an alias, or skipped with its reason; nothing is dropped
+// node_modules) are not here. `packages` are the ones replace-dependency can trial; `untrialable` are loaded too,
+// each with the reason it can't be.
+// [LAW:no-silent-failure] Every entry is listed, listed as untrialable, or skipped with its reason; nothing is dropped
 // unseen. An app with no node_modules at all is a fact the report states, not a failure: fully bundled apps ship none.
 function readOnDiskPackages(appDir) {
   const nmDir = path.join(appDir, "node_modules");
@@ -105,9 +119,11 @@ function readOnDiskPackages(appDir) {
     : [{ ...nodeModules, dir: nmDir }];
   const relative = (dir) => path.relative(appDir, dir);
   const byName = (left, right) => left.name.localeCompare(right.name);
+  const realNodeModules = nodeModules.kind === "directory" ? fs.realpathSync(nmDir) : null;
   const loaded = entries
     .filter((entry) => entry.kind === "package")
     .map(({ name, packageName, version, dir }) => ({ name, packageName, version, path: relative(dir), dir }))
+    .map((pkg) => ({ ...pkg, untrialable: untrialableReason(pkg, realNodeModules) }))
     .sort(byName);
   const skipped = entries
     .filter((entry) => entry.kind !== "package")
@@ -115,8 +131,8 @@ function readOnDiskPackages(appDir) {
   return {
     nodeModules: nodeModules.kind,
     loaded,
-    packages: loaded.filter((pkg) => pkg.name === pkg.packageName),
-    aliases: loaded.filter((pkg) => pkg.name !== pkg.packageName),
+    packages: loaded.filter((pkg) => pkg.untrialable === null),
+    untrialable: loaded.filter((pkg) => pkg.untrialable !== null).map(({ untrialable, dir, ...pkg }) => ({ ...pkg, ...untrialable })),
     skipped,
   };
 }
@@ -1068,7 +1084,7 @@ function main() {
     out: fileRel(projectRoot, outPath),
     warnings: [
       ...onDisk.skipped.map((entry) => describeEntry(entry, entry.path)),
-      ...onDisk.aliases.map((alias) => `${alias.path} is an npm alias: it loads ${alias.packageName}@${alias.version} under the name ${alias.name}, which npm can't install by that name, so it can't be trialed`),
+      ...onDisk.untrialable.map(describeUntrialable),
       ...lockfile.warnings,
     ],
     parseErrors: [],
@@ -1081,7 +1097,7 @@ function main() {
     },
     onDisk: {
       nodeModules: onDisk.nodeModules,
-      aliases: onDisk.aliases.map(({ name, packageName, version, path: where }) => ({ name, packageName, version, path: where })),
+      untrialable: onDisk.untrialable,
       skipped: onDisk.skipped,
       packages: onDiskPackages.map((pkg) => ({
         name: pkg.name,

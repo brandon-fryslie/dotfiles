@@ -341,7 +341,6 @@ test("detect-dependencies lists every top-level package, through a link or not, 
   assert.deepEqual(
     report.onDisk.packages.map(({ name, version, path: where }) => ({ name, version, path: where })),
     [
-      { name: "@linked/pkg", version: "5.0.0", path: at("@linked", "pkg") },
       { name: "@scope/scoped-pkg", version: "3.0.0", path: at("@scope", "scoped-pkg") },
       { name: "plain-pkg", version: "1.0.0", path: at("plain-pkg") },
       { name: "pnpm-pkg", version: "2.0.0", path: at("pnpm-pkg") },
@@ -361,10 +360,13 @@ test("detect-dependencies lists every top-level package, through a link or not, 
     [at("empty-version")]: { kind: "invalid-manifest", reason: "name and version must be non-empty strings" },
     [at("@locked-scope")]: { kind: "unreadable", code: "EACCES" },
   });
-  assert.deepEqual(report.onDisk.aliases, [{ name: "alias-name", packageName: "real-name", version: "6.0.0", path: at("alias-name") }]);
+  assert.deepEqual(report.onDisk.untrialable, [
+    { name: "@linked/pkg", packageName: "@linked/pkg", version: "5.0.0", path: at("@linked", "pkg"), reason: "outside-app", livesIn: fs.realpathSync(path.join(tmp, "packages", "@linked")) },
+    { name: "alias-name", packageName: "real-name", version: "6.0.0", path: at("alias-name"), reason: "alias" },
+  ]);
   assert.match(skipped[at("broken-json")].reason, /JSON/);
   assert.equal(report.onDisk.nodeModules, "directory");
-  for (const where of [...Object.keys(skipped), at("alias-name")]) {
+  for (const where of [...Object.keys(skipped), at("@linked", "pkg"), at("alias-name")]) {
     assert.ok(report.warnings.some((warning) => warning.startsWith(where)), `${where} is warned: ${JSON.stringify(report.warnings)}`);
     assert.ok(stdout.includes(`  - ${where}`), `${where} is printed: ${stdout}`);
   }
@@ -477,6 +479,44 @@ for (const [layout, name] of [["pnpm", "@scope/demo-pkg"], ["linked", "demo-pkg"
     assert.equal(entry.attempts.at(-1).attemptedVersion, "1.2.3");
   });
 }
+
+test("an app with a scope linked out of it still has its other packages trialed by --auto-near-match, and the linked one is left alone", () => {
+  const name = "@scope/demo-pkg";
+  const { tmp, appDir, fakeNpm, logPath, readLog } = swapProject(VERIFYING_INDEX, { layout: "pnpm", name });
+  const workspacePkg = placePackage(path.join(tmp, "packages", "@ws", "pkg"), { name: "@ws/pkg", version: "1.2.3" });
+  writeText(path.join(workspacePkg, "index.js"), VERIFYING_INDEX);
+  linkTo(path.join(tmp, "packages", "@ws"), path.join(appDir, "node_modules", "@ws"));
+  const depsDir = path.join(tmp, "deps");
+  const { report, out: detected } = detect(tmp, appDir);
+  assert.deepEqual(report.onDisk.untrialable.map(({ name: untrialable, reason }) => ({ name: untrialable, reason })), [{ name: "@ws/pkg", reason: "outside-app" }]);
+
+  const nearMatches = path.join(depsDir, "detected-near-matches.json");
+  writeJson(path.join(tmp, "registry.json"), { [name]: ["1.2.3"], "@ws/pkg": ["1.2.3"] });
+  const near = runNode(
+    path.join(TOOLS_DIR, "find-near-match-versions.mjs"),
+    ["--deps", detected, "--app-dir", appDir, "--registry-file", path.join(tmp, "registry.json"), "--out", nearMatches],
+    tmp,
+  );
+  assert.equal(near.status, 0, near.stderr || near.stdout);
+  const result = runNode(
+    path.join(TOOLS_DIR, "replace-dependency.mjs"),
+    [
+      "--auto-near-match", "--candidate-source", nearMatches,
+      "--app-dir", appDir,
+      "--npm", fakeNpm,
+      "--verify-script", path.join(TOOLS_DIR, "verify-dependency-swap.mjs"),
+      "--verification-dir", path.join(depsDir, "verification"),
+      "--out", logPath,
+      "--threshold", "0.99",
+    ],
+    tmp,
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(readLog().packages[name].status, "resolved");
+  assert.equal(readLog().packages["@ws/pkg"], undefined, "the linked scope's package is never trialed");
+  assert.ok(!fs.lstatSync(workspacePkg).isSymbolicLink(), "the workspace's package stays where it lives");
+});
 
 test("replace-dependency rolls back failed verified swap and logs transaction", () => {
   const { appPkgDir, replace, readLog } = swapProject(FAILING_INDEX);
@@ -807,19 +847,38 @@ test("replace-dependency swaps a scoped package's pnpm store copy, and puts it b
   }
 });
 
-test("replace-dependency refuses a scoped package whose scope directory links out of the app, moving nothing", () => {
-  const { tmp, appDir, logPath, replace } = swapProject(VERIFYING_INDEX, { name: "@scope/demo-pkg" });
-  const scopeDir = path.join(appDir, "node_modules", "@scope");
+// Move the app's @scope directory out of the app and link it back in, the way a workspace's own scope is linked.
+function linkScopeOut(tmp, appDir) {
   const sharedScope = path.join(tmp, "shared-scope");
-  fs.renameSync(scopeDir, sharedScope);
-  linkTo(sharedScope, scopeDir);
+  fs.renameSync(path.join(appDir, "node_modules", "@scope"), sharedScope);
+  linkTo(sharedScope, path.join(appDir, "node_modules", "@scope"));
+  return sharedScope;
+}
+
+test("replace-dependency records a scoped package whose scope directory links out of the app as not trialed, moving nothing", () => {
+  const { tmp, appDir, replace, readLog } = swapProject(VERIFYING_INDEX, { name: "@scope/demo-pkg" });
+  const sharedScope = linkScopeOut(tmp, appDir);
+
+  const result = replace();
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /\[@scope\/demo-pkg\] not trialed: \S+demo-pkg is reached through a link out of the app's node_modules \(it lives in \S+shared-scope\)/);
+  const entry = readLog().packages["@scope/demo-pkg"];
+  assert.equal(entry.status, "unresolved", JSON.stringify(entry));
+  assert.equal(entry.attempts.at(-1).reason, "swap-location-outside-app");
+  assert.ok(!fs.lstatSync(path.join(sharedScope, "demo-pkg")).isSymbolicLink(), "the package stays where it lives");
+});
+
+test("replace-dependency refuses a recorded swap whose location now lies past a scope linked out of the app", () => {
+  const { tmp, appDir, logPath, replace } = swapProject(VERIFYING_INDEX, { name: "@scope/demo-pkg" });
+  assert.equal(replace().status, 0);
+  const sharedScope = linkScopeOut(tmp, appDir);
+  const linkBefore = fs.readlinkSync(path.join(sharedScope, "demo-pkg"));
 
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, /\[@scope\/demo-pkg\] \S+demo-pkg is reached through a link out of the app's node_modules \(it lives in \S+shared-scope\)/);
-  assert.ok(fs.statSync(path.join(sharedScope, "demo-pkg")).isDirectory(), "the package stays where it lives");
-  assert.ok(!fs.lstatSync(path.join(sharedScope, "demo-pkg")).isSymbolicLink(), "nothing is linked over it");
-  assert.ok(!fs.existsSync(logPath), "the refused run writes no log");
+  assert.match(result.stderr, /\[@scope\/demo-pkg\] the log records a resolved swap at \S+demo-pkg, but \S+demo-pkg is reached through a link out of the app's node_modules/);
+  assert.equal(fs.readlinkSync(path.join(sharedScope, "demo-pkg")), linkBefore, "the refused run changes nothing there");
+  assert.ok(fs.existsSync(logPath));
 });
 
 test("replace-dependency refuses an app whose links to the package loop, naming the loop", () => {

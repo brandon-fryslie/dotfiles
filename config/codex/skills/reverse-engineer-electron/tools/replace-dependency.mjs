@@ -24,7 +24,7 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
-import { topLevelEntries } from "./node-modules.mjs";
+import { entryHome, realExisting, topLevelEntries } from "./node-modules.mjs";
 import { emptyLog, fromLogPath, isLocation, parseLog, serializeLog, toLogPath } from "./replacement-log.mjs";
 
 function parseArgs(argv) {
@@ -257,10 +257,6 @@ function canonicalEntry(entryPath) {
   return path.join(realExisting(path.dirname(entryPath)), path.basename(entryPath));
 }
 
-function realExisting(dir) {
-  return fs.existsSync(dir) ? fs.realpathSync(dir) : path.join(realExisting(path.dirname(dir)), path.basename(dir));
-}
-
 // Where a symlink at appPkgDir with this readlink text leads: a relative target resolves from the link's real directory.
 function linkDestination(appPkgDir, target) {
   return canonicalEntry(path.resolve(fs.realpathSync(path.dirname(appPkgDir)), target));
@@ -285,8 +281,9 @@ function locationDir(app, location) {
 // location of the same package inside the app's node_modules, so for a pnpm layout, whose top-level link and .pnpm
 // siblings all lead to one store copy, it is that copy's location. A link leading anywhere else (out of the app's
 // node_modules, as a workspace package or our link to the root does, or to another package, as an alias does) is
-// itself the swap location: nothing past it is ours to move. Links that loop are a value too, so the caller refuses
-// them the way it refuses every other disk state it can't trial.
+// itself the swap location: nothing past it is ours to move. So a swap location that itself lies past such a link (its
+// scope directory links to a workspace's own scope) is "outside": it is the app's copy, but not the app's to swap.
+// Links that loop are a value too, so the caller refuses them the way it refuses every other disk state it can't trial.
 function findSwapLocation(pkgName, app) {
   const tail = `${path.sep}${path.join("node_modules", ...pkgPathParts(pkgName))}`;
   const chain = [locationOf(app.nodeModules, path.join(app.nodeModules, ...pkgPathParts(pkgName)))];
@@ -294,7 +291,10 @@ function findSwapLocation(pkgName, app) {
     const dir = locationDir(app, chain.at(-1));
     const state = appPathState(dir);
     const next = state.kind === "link" ? linkDestination(dir, state.target) : null;
-    if (next === null || !next.startsWith(`${app.realNodeModules}${path.sep}`) || !next.endsWith(tail)) return { kind: "found", location: chain.at(-1) };
+    if (next === null || !next.startsWith(`${app.realNodeModules}${path.sep}`) || !next.endsWith(tail)) {
+      const home = entryHome(app.realNodeModules, dir);
+      return home.inApp ? { kind: "found", location: chain.at(-1) } : { kind: "outside", location: chain.at(-1), livesIn: home.parent };
+    }
     const nextLocation = locationOf(app.realNodeModules, next);
     if (chain.includes(nextLocation)) return { kind: "loop", chain: [...chain, nextLocation] };
     chain.push(nextLocation);
@@ -456,13 +456,14 @@ function priorSwap(entry, ctx, requestedVersion) {
   const found = findSwapLocation(ctx.pkgName, ctx.app);
   if (found.kind === "loop") return { kind: "conflict", reason: `the app's links loop, so no copy of it loads: ${found.chain.join(" -> ")} — fix the links, then rerun` };
   const current = locationDir(ctx.app, found.location);
+  if (found.kind === "outside") {
+    const outside = `${current} is reached through a link out of the app's node_modules (it lives in ${found.livesIn})`;
+    // An untried copy there is simply not trialed. A record of a swap there can't be recovered or checked without
+    // changing files the app does not own, so the run refuses it.
+    if (status === "unresolved") return { kind: "not-ours", reason: `${outside}, so swapping it would change files the app does not own` };
+    return { kind: "conflict", reason: `the log records a ${status} swap at ${current}, but ${outside} — restore it there by hand, then ${ctx.deleteEntry}` };
+  }
   if (status === "unresolved") {
-    // Nothing past a link out of the app's node_modules is ours to move, and a scope directory that links out (to a
-    // workspace's own scope, say) puts the swap location itself past one.
-    const realParent = realExisting(path.dirname(current));
-    if (!realParent.startsWith(`${ctx.app.realNodeModules}${path.sep}`) && realParent !== ctx.app.realNodeModules) {
-      return { kind: "conflict", reason: `${current} is reached through a link out of the app's node_modules (it lives in ${realParent}), so swapping it would change files the app does not own — replace that link with a directory inside the app, then rerun` };
-    }
     if (!isOurLink(appPathState(current), current, ctx.rootPkgDir)) return { kind: "untried", swapLocation: found.location };
     // Trialing our own link would verify the root package against itself and record a made-up original.
     return { kind: "conflict", reason: `${current} already links to the root package, but ${ctx.app.logPath} records no resolved swap for it — put the original back over the link first (earlier backups are under ${ctx.app.backupsDir}), then rerun` };
@@ -585,9 +586,10 @@ function main() {
     console.log(`[${pkgName}] interrupted trial of ${inFlight.attemptedVersion}: ${outcome}`);
   }
 
-  const toTry = priors.filter(({ pkgName, prior }) => packageList.includes(pkgName) && (prior.kind === "untried" || prior.kind === "interrupted"));
+  const toTry = priors.filter(({ pkgName, prior }) => packageList.includes(pkgName) && ["untried", "interrupted", "not-ours"].includes(prior.kind));
 
-  for (const { pkgName, prior: { swapLocation } } of toTry) {
+  for (const { pkgName, prior } of toTry) {
+    const { swapLocation } = prior;
     const appPkgDir = appPkgDirOf(pkgName);
     const appPkgJson = path.join(appPkgDir, "package.json");
 
@@ -608,6 +610,11 @@ function main() {
         verification: { path: null, pass: false },
       }, outPath);
     };
+    if (prior.kind === "not-ours") {
+      console.log(`[${pkgName}] not trialed: ${prior.reason}`);
+      untrialable("swap-location-outside-app");
+      continue;
+    }
     if (!fs.existsSync(appPkgJson)) {
       untrialable("on-disk-package-missing");
       continue;
