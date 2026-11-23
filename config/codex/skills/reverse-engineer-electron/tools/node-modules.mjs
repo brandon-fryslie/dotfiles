@@ -9,7 +9,10 @@
 
 import fs from "fs";
 import path from "path";
-import { isLocation } from "./replacement-log.mjs";
+
+// A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
+// node_modules/.pnpm/foo@1.0.0/node_modules/foo. replacement-log.mjs parses the locations a log stores with it.
+export const isLocation = (value) => typeof value === "string" && value.startsWith("node_modules/") && value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 
 export function pkgPathParts(name) {
   return name.startsWith("@") && name.includes("/") ? name.split("/") : [name];
@@ -96,13 +99,24 @@ export function topLevelEntries(nodeModules) {
   return { names: parts.flatMap((part) => part.names), unlisted: [...top.unlisted, ...parts.flatMap((part) => part.unlisted)] };
 }
 
-// What sits at a package's path in the app, without following it: nothing, a directory, or a symlink with its
-// readlink text.
-export function appPathState(appPkgDir) {
-  const stat = fs.lstatSync(appPkgDir, { throwIfNoEntry: false });
-  if (!stat) return { kind: "absent" };
-  if (stat.isSymbolicLink()) return { kind: "link", target: fs.readlinkSync(appPkgDir) };
-  return { kind: "dir" };
+// What sits at a path without following it: nothing, a directory, a file, a symlink with its readlink text, or a path
+// it can't lstat (with the error code). pathState answers what node finds there once it follows the links.
+export function appPathState(p) {
+  try {
+    const stat = fs.lstatSync(p, { throwIfNoEntry: false });
+    if (!stat) return { kind: "absent" };
+    if (stat.isSymbolicLink()) return { kind: "link", target: fs.readlinkSync(p) };
+    return { kind: stat.isDirectory() ? "dir" : "file" };
+  } catch (error) {
+    if (typeof error.code !== "string") throw error;
+    return { kind: "unreadable", code: error.code };
+  }
+}
+
+export function describeEntry(state) {
+  if (state.kind === "link") return `a link to ${state.target}`;
+  if (state.kind === "unreadable") return `a path it can't read (${state.code})`;
+  return { absent: "nothing", dir: "a directory", file: "a file" }[state.kind];
 }
 
 // An entry path in canonical form: its parent directories resolved through symlinks as far as they exist, so --app-dir
@@ -144,16 +158,6 @@ export function locationDir(app, location) {
 
 const isInside = (app, entryPath) => entryPath.startsWith(`${app.realNodeModules}${path.sep}`);
 
-// What sits at a location without following it, a path it can't lstat included.
-function entryAt(dir) {
-  try {
-    return appPathState(dir);
-  } catch (error) {
-    if (typeof error.code !== "string") throw error;
-    return { kind: "unreadable", code: error.code };
-  }
-}
-
 // [LAW:one-source-of-truth] The swap location: where every consumer of the app's copy loads it through. It is the app
 // path, followed through each link to another location of the same package inside the app's node_modules, so for a
 // pnpm layout, whose top-level link and .pnpm siblings all lead to one store copy, it is that copy's location. A link
@@ -164,7 +168,7 @@ function findSwapLocation(app, pkgName) {
   const chain = [locationOf(app.nodeModules, path.join(app.nodeModules, ...pkgPathParts(pkgName)))];
   for (;;) {
     const dir = locationDir(app, chain.at(-1));
-    const entry = entryAt(dir);
+    const entry = appPathState(dir);
     const next = entry.kind === "link" ? linkDestination(dir, entry.target) : null;
     if (next === null || !isInside(app, next) || !next.endsWith(tail)) return { kind: "location", location: chain.at(-1) };
     const nextLocation = locationOf(app.realNodeModules, next);
@@ -174,10 +178,12 @@ function findSwapLocation(app, pkgName) {
 }
 
 // [LAW:types-are-the-program] Whether, and where, replace-dependency can swap the app's copy of a package. Every
-// outcome names the swap location (for a loop, the app path the loop starts from), what it holds, and whether the app
-// owns it: a location past a link out of the app's real node_modules (a scope linked to a workspace's own) holds files
-// nothing may move. An outcome is trialable when the app owns a location holding pkgName itself; any other carries the
-// reason it isn't, in the order replace-dependency would hit them:
+// outcome names the swap location (for a loop, the app path the loop starts from) and the package node loads there,
+// or null when it loads none:
+//   { kind: "trialable", location, loads }                  the app owns the location and it holds pkgName itself
+//   { kind: "untrialable", location, loads, reason, appOwns }
+// appOwns is false for a location past a link out of the app's real node_modules (a scope linked to a workspace's
+// own), which holds files nothing may move. The reason is the first of these replace-dependency would hit:
 //   loop:<chain>                the links loop, so no copy loads
 //   outside-app:<location>      the app doesn't own the location
 //   not-a-package:<state>       the location holds no usable package.json
@@ -187,11 +193,12 @@ export function swapOutcome(app, pkgName) {
   const location = swap.kind === "loop" ? swap.chain[0] : swap.location;
   const dir = locationDir(app, location);
   const holds = packageAt(dir);
+  const loads = holds.kind === "package" ? { name: holds.name, version: holds.version } : null;
   const appOwns = isInside(app, canonicalEntry(dir));
   const reason = swap.kind === "loop" ? `loop:${swap.chain.join(" -> ")}`
     : !appOwns ? `outside-app:${location}`
-    : holds.kind !== "package" ? `not-a-package:${stateText(holds)}`
-    : holds.name !== pkgName ? `alias-of:${holds.name}`
+    : loads === null ? `not-a-package:${stateText(holds)}`
+    : loads.name !== pkgName ? `alias-of:${loads.name}`
     : null;
-  return reason === null ? { trialable: true, location, holds, appOwns } : { trialable: false, reason, location, holds, appOwns };
+  return reason === null ? { kind: "trialable", location, loads } : { kind: "untrialable", location, loads, reason, appOwns };
 }

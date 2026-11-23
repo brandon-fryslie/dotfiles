@@ -20,11 +20,12 @@
 //                 happened and was undone before the kill, so it records only what disk showed
 //   any other     { swapApplied, rolledBack, original | null, verification }  a trial this run saw end
 //
-// A location is a package's path relative to the app dir, as npm's lockfile spells one: node_modules/foo, or
-// node_modules/.pnpm/foo@1.0.0/node_modules/foo. isLocation is what node-modules.mjs's locationOf can write. Other stored paths (backupPath, verification.path) are relative to
-// the log's directory, so a run from any cwd reads them the same way.
+// A location is node-modules.mjs's isLocation: a package's path relative to the app dir, as npm's lockfile spells
+// one. Other stored paths (backupPath, verification.path) are relative to the log's directory, so a run from any
+// cwd reads them the same way.
 
 import path from "path";
+import { isLocation } from "./node-modules.mjs";
 
 export const SCHEMA_VERSION = 3;
 
@@ -60,7 +61,6 @@ export function serializeLog(log) {
 
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const isString = (value) => typeof value === "string";
-export const isLocation = (value) => isString(value) && value.startsWith("node_modules/") && value.split("/").every((part) => part !== "" && part !== "." && part !== "..");
 
 function originalError(original) {
   if (!isObject(original)) return "original must be an object";

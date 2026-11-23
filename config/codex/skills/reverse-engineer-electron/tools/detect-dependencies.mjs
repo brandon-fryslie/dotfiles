@@ -1038,8 +1038,8 @@ function main() {
   const onDisk = readOnDisk(appDir);
   // Every copy the app loads, trialable or not, lends its version, its name, and its shape hashes to classification.
   const loadedPackages = onDisk.entries
-    .filter(({ outcome }) => outcome.holds.kind === "package")
-    .map(({ name, dir, outcome }) => ({ name, version: outcome.holds.version, dir }));
+    .filter(({ outcome }) => outcome.loads !== null)
+    .map(({ name, dir, outcome }) => ({ name, version: outcome.loads.version, dir }));
   const lockfilePackages = loadLockfilePackages(appDir);
   const packageVersionByName = Object.fromEntries([...lockfilePackages, ...loadedPackages].map((pkg) => [pkg.name, pkg.version]));
   const shapeIndex = indexPackageShapeHashes(loadedPackages);
@@ -1048,10 +1048,10 @@ function main() {
   ).sort((left, right) => right.length - left.length || left.localeCompare(right));
   const onDiskReport = {
     nodeModules: onDisk.nodeModules,
-    packages: onDisk.entries.filter(({ outcome }) => outcome.trialable)
-      .map(({ name, path: entryPath, outcome }) => ({ name, version: outcome.holds.version, path: entryPath, location: outcome.location })),
-    untrialable: onDisk.entries.filter(({ outcome }) => !outcome.trialable)
-      .map(({ name, path: entryPath, outcome }) => ({ name, path: entryPath, reason: outcome.reason })),
+    packages: onDisk.entries.filter(({ outcome }) => outcome.kind === "trialable")
+      .map(({ name, path: entryPath, outcome }) => ({ name, version: outcome.loads.version, path: entryPath, location: outcome.location })),
+    untrialable: onDisk.entries.filter(({ outcome }) => outcome.kind === "untrialable")
+      .map(({ name, path: entryPath, outcome }) => ({ name, path: entryPath, reason: outcome.reason, loads: outcome.loads })),
     unlisted: onDisk.unlisted,
   };
 

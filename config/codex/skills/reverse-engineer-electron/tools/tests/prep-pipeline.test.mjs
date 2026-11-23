@@ -36,6 +36,7 @@ test("find-near-match-versions only returns patch-level candidates and ranks exa
 
   writeJson(depsPath, {
     onDisk: {
+      nodeModules: { kind: "dir" },
       packages: [{ name: "demo-pkg", version: "1.2.3", path: "node_modules/demo-pkg" }],
     },
     code: {
@@ -77,6 +78,25 @@ test("find-near-match-versions only returns patch-level candidates and ranks exa
   assert.ok(pkg, "demo-pkg result should exist");
   assert.equal(pkg.bestCandidate.version, "1.2.3");
   assert.ok(pkg.candidates.every((item) => item.version.startsWith("1.2.")), "all versions must be patch-only");
+});
+
+test("find-near-match-versions refuses a report whose on-disk packages it can't read, instead of proposing none from disk", () => {
+  const tmp = mkTmpDir();
+  const depsPath = path.join(tmp, "deps", "detected-dependencies.json");
+  const run = (report) => {
+    writeJson(depsPath, report);
+    return runNode(path.join(TOOLS_DIR, "find-near-match-versions.mjs"), ["--deps", depsPath, "--app-dir", tmp, "--out", path.join(tmp, "near.json")], TOOLS_DIR);
+  };
+  const cases = [
+    [{ code: {} }, /has no onDisk\.packages list/],
+    [{ onDisk: { nodeModules: { kind: "dir" }, packages: [{ name: "", version: "1.0.0" }] } }, /has no onDisk\.packages list/],
+    [{ onDisk: { nodeModules: { kind: "dangling", target: "gone" }, packages: [] } }, /node_modules is \{"kind":"dangling","target":"gone"\}/],
+  ];
+  for (const [report, message] of cases) {
+    const result = run(report);
+    assert.equal(result.status, 2, JSON.stringify(report));
+    assert.match(result.stderr, message);
+  }
 });
 
 test("verify-dependency-swap passes and fails deterministically based on structural coverage", () => {
@@ -428,7 +448,7 @@ test("replace-dependency refuses a resolved package whose root copy drifted from
 
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, /resolved with 1\.2\.3, but the root package is now 1\.2\.4/);
+  assert.match(result.stderr, /resolved with 1\.2\.3, but the root package is now demo-pkg@1\.2\.4/);
 });
 
 test("replace-dependency refuses an explicit --version that differs from the resolved one, until the original is restored", () => {
@@ -705,8 +725,35 @@ test("replace-dependency refuses a resolved swap whose app path now loops", () =
 
   const result = replace();
   assert.equal(result.status, 2, result.stdout);
-  assert.match(result.stderr, /\[demo-pkg\] resolved with 1\.2\.3 in the log, but \S+ is not linked to the root package/);
+  assert.match(result.stderr, /\[demo-pkg\] resolved with 1\.2\.3 in the log, but \S+ is not linked to the root package \(loop:node_modules\/demo-pkg -> node_modules\/demo-pkg\)/);
   assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+});
+
+test("replace-dependency reads each package's swap location as its trial starts, after earlier trials in the run moved things", () => {
+  const { tmp, appDir, appPkgDir, logPath, readLog, fakeNpm } = swapProject(VERIFYING_INDEX);
+  // inner's app path links into demo-pkg's own node_modules, so swapping demo-pkg first takes inner's copy with it.
+  writeJson(path.join(appPkgDir, "node_modules", "inner", "package.json"), { name: "inner", version: "1.0.0" });
+  linkTo(path.join(appPkgDir, "node_modules", "inner"), path.join(appDir, "node_modules", "inner"));
+  writeJson(path.join(tmp, "node_modules", "inner", "package.json"), { name: "inner", version: "1.0.0" });
+  const candidateSource = path.join(tmp, "deps", "both.json");
+  writeJson(candidateSource, {
+    packages: ["demo-pkg@1.2.3", "inner@1.0.0"].map((spec) => {
+      const [name, version] = spec.split("@");
+      return { name, observedVersion: version, recommendation: "exact", candidates: [{ version, score: 100, reasons: ["exact"], risk: "low" }] };
+    }),
+  });
+
+  const result = runNode(
+    path.join(TOOLS_DIR, "replace-dependency.mjs"),
+    ["--auto-near-match", "--candidate-source", candidateSource, "--app-dir", appDir, "--npm", fakeNpm, "--out", logPath, "--verification-dir", path.join(tmp, "deps", "verification"),
+      "--verify-script", path.join(TOOLS_DIR, "verify-dependency-swap.mjs"), "--threshold", "0.99"],
+    tmp,
+  );
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(readLog().packages["demo-pkg"].status, "resolved");
+  const inner = readLog().packages.inner.attempts.at(-1);
+  assert.equal(inner.attemptedVersion, null);
+  assert.match(inner.reason, /^not-a-package:dangling:/, "inner's copy left with demo-pkg's original, which the run reads before trialing it");
 });
 
 test("replace-dependency swaps an alias link at the app path, never the other package it leads to", () => {
@@ -1070,15 +1117,15 @@ const EVERY_STATE_ON_DISK = {
     { name: "searchable", version: "10.0.0", path: "node_modules/searchable", location: "node_modules/searchable" },
   ],
   untrialable: [
-    { name: "@ws/inner", path: "node_modules/@ws/inner", reason: "outside-app:node_modules/@ws/inner" },
-    { name: "afile", path: "node_modules/afile", reason: "not-a-package:file" },
-    { name: "aliased", path: "node_modules/aliased", reason: "alias-of:real-pkg" },
-    { name: "badjson", path: "node_modules/badjson", reason: `not-a-package:unusable-manifest:invalid-json (${invalidJsonMessage("{")})` },
-    { name: "dangling", path: "node_modules/dangling", reason: "not-a-package:dangling:gone" },
-    { name: "locked", path: "node_modules/locked", reason: "not-a-package:unusable-manifest:EACCES" },
-    { name: "looped", path: "node_modules/looped", reason: "loop:node_modules/looped -> node_modules/looped" },
-    { name: "nomanifest", path: "node_modules/nomanifest", reason: "not-a-package:no-manifest" },
-    { name: "noversion", path: "node_modules/noversion", reason: "not-a-package:unusable-manifest:no-name-or-version" },
+    { name: "@ws/inner", path: "node_modules/@ws/inner", reason: "outside-app:node_modules/@ws/inner", loads: { name: "@ws/inner", version: "6.0.0" } },
+    { name: "afile", path: "node_modules/afile", reason: "not-a-package:file", loads: null },
+    { name: "aliased", path: "node_modules/aliased", reason: "alias-of:real-pkg", loads: { name: "real-pkg", version: "5.0.0" } },
+    { name: "badjson", path: "node_modules/badjson", reason: `not-a-package:unusable-manifest:invalid-json (${invalidJsonMessage("{")})`, loads: null },
+    { name: "dangling", path: "node_modules/dangling", reason: "not-a-package:dangling:gone", loads: null },
+    { name: "locked", path: "node_modules/locked", reason: "not-a-package:unusable-manifest:EACCES", loads: null },
+    { name: "looped", path: "node_modules/looped", reason: "loop:node_modules/looped -> node_modules/looped", loads: null },
+    { name: "nomanifest", path: "node_modules/nomanifest", reason: "not-a-package:no-manifest", loads: null },
+    { name: "noversion", path: "node_modules/noversion", reason: "not-a-package:unusable-manifest:no-name-or-version", loads: null },
   ],
   unlisted: [
     { path: "node_modules/@locked-scope", code: "EACCES" },
@@ -1129,8 +1176,15 @@ test("replace-dependency --pkg trials exactly the packages detect-dependencies r
   assert.deepEqual(npmCallsIn(tmp), report.onDisk.packages.map(({ name }) => `install --silent --no-progress --save-exact ${name}@9.9.9`));
   assert.deepEqual(outside.map(treeSnapshot), before, "nothing past a link out of the app changes");
 
+  // A scope detection can't list still has names replace-dependency can be asked for: under a scope nothing can read
+  // through, the name is recorded as not trialed; under one node loads through, it is trialed.
+  assert.equal(replace("@locked-scope/x").status, 0);
+  assert.deepEqual([lastAttempt("@locked-scope/x").attemptedVersion, lastAttempt("@locked-scope/x").reason], [null, "not-a-package:unreadable:EACCES"]);
+  assert.equal(replace("@search-scope/x").status, 0);
+  assert.deepEqual([lastAttempt("@search-scope/x").attemptedVersion, lastAttempt("@search-scope/x").reason], ["9.9.9", "npm-install-failed"]);
+
   const summary = replace("plain").stdout;
-  assert.match(summary, /- directories that count couldn't list, so any copy inside them is not counted: 4\n/);
+  assert.match(summary, /not counting any inside the 4 directories it couldn't list\n/);
   for (const dir of ["@locked-scope", "@search-scope", "locked", "searchable"]) {
     assert.ok(summary.includes(`  ${path.join(appDir, "node_modules", dir)} (EACCES)`), `the run names ${dir}, which it couldn't list`);
   }
@@ -1169,7 +1223,7 @@ test("replace-dependency --auto-near-match resolves a pnpm package beside a scop
     registry: { "demo-pkg": ["1.2.3"], "@ws/linked": ["1.0.0"] },
   });
   const reason = "outside-app:node_modules/@ws/linked";
-  assert.deepEqual(report.onDisk.untrialable, [{ name: "@ws/linked", path: "node_modules/@ws/linked", reason }]);
+  assert.deepEqual(report.onDisk.untrialable, [{ name: "@ws/linked", path: "node_modules/@ws/linked", reason, loads: { name: "@ws/linked", version: "1.0.0" } }]);
   assert.equal(log.packages["demo-pkg"].status, "resolved", JSON.stringify(log));
   assert.deepEqual(log.packages["@ws/linked"].attempts.map((attempt) => [attempt.attemptedVersion, attempt.reason]), [[null, reason]]);
   assert.deepEqual(project.npmCalls(), ["install --silent --no-progress --save-exact demo-pkg@1.2.3"]);
