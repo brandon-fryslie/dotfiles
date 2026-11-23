@@ -18,8 +18,7 @@
 //
 //   - BODY (functionBodyShape): IDENTITY's tokens over a function's body alone,
 //     so a bundled module factory, whose parameters the bundler chose, matches the
-//     package function it was built from. detect-dependencies indexes package
-//     functions and looks bundle factories up in it.
+//     package function it was built from.
 //
 //   - SIMILARITY (normalizedFunctionTokens): esbuild-minified so that stylistic
 //     differences (if/else vs ternary, statement merging) between the original
@@ -27,6 +26,7 @@
 //     ever compared against tokens produced by this same function.
 
 import { parse } from '@babel/parser';
+import traverseImport from '@babel/traverse';
 import { isFunction, isClassMethod, isClassPrivateMethod, isObjectMethod } from '@babel/types';
 import { transformSync } from 'esbuild';
 import { createHash } from 'crypto';
@@ -110,28 +110,45 @@ export function loaderFor(filePath) {
   return loader;
 }
 
+const parseOptions = (loader, sourceType) => ({
+  sourceType,
+  plugins: loaderSpec(loader).plugins,
+  errorRecovery: true,
+  allowReturnOutsideFunction: true,
+});
+
 export function parseSource(code, loader) {
-  return parse(code, {
-    sourceType: 'unambiguous',
-    plugins: loaderSpec(loader).plugins,
-    errorRecovery: true,
-    allowReturnOutsideFunction: true,
-  });
+  return parse(code, parseOptions(loader, 'unambiguous'));
 }
 
-// The syntax tree of code an engine would run, or every syntax error in it. Error
-// recovery lets the parser return a tree for code an engine rejects (a duplicate
-// `let`, say); for a reader that analyzes shipped code, such code isn't code that
-// runs, so its recovered errors are its outcome, the same as an error the parser
-// can't recover from. [LAW:no-silent-failure]
-export function parseRunnable(code, loader) {
-  let ast;
+// @babel/traverse, whichever way the module system hands over its default export.
+export const traverse = traverseImport.default || traverseImport;
+
+// Babel's reason codes for module syntax found while parsing a script.
+const MODULE_SYNTAX = new Set(['ImportOutsideModule', 'ImportMetaOutsideModule']);
+
+function parseAs(code, loader, sourceType) {
   try {
-    ast = parseSource(code, loader);
+    const ast = parse(code, parseOptions(loader, sourceType));
+    return { ast, errors: ast.errors };
   } catch (error) {
-    return { ast: null, errors: [error.message] };
+    return { ast: null, errors: [error] };
   }
-  return ast.errors.length === 0 ? { ast, errors: [] } : { ast: null, errors: ast.errors.map((error) => error.message) };
+}
+
+// The syntax tree of code an engine would run, or every syntax error an engine
+// would raise for it. A file is parsed the way an engine runs it: as a script,
+// sloppy unless it says otherwise, and as a module only when it has module syntax
+// ('unambiguous' would apply a module's strict-mode errors to every script, so
+// `0755` or `with` would read as errors). Error recovery lets the parser return a
+// tree for code an engine rejects (a duplicate `let`, say); for a reader that
+// analyzes shipped code, such code isn't code that runs, so its recovered errors
+// are its outcome, the same as an error the parser can't recover from.
+// [LAW:no-silent-failure]
+export function parseRunnable(code, loader) {
+  const script = parseAs(code, loader, 'script');
+  const { ast, errors } = script.errors.some((error) => MODULE_SYNTAX.has(error.reasonCode)) ? parseAs(code, loader, 'module') : script;
+  return errors.length === 0 ? { ast, errors: [] } : { ast: null, errors: errors.map((error) => error.message) };
 }
 
 // The parse for code that came from a file: the loader is the file's, and a

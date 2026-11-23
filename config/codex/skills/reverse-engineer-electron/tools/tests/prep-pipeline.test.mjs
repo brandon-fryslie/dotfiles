@@ -50,7 +50,7 @@ test("find-near-match-versions only returns patch-level candidates and ranks exa
             version: "1.2.3",
             signal: "license",
             evidence: [{ package: "demo-pkg", signal: "license", detail: "1.2.3" }],
-            hashMatchPackages: ["demo-pkg@1.2.3"],
+            hashMatches: [{ package: "demo-pkg", version: "1.2.3" }],
           },
         ],
       },

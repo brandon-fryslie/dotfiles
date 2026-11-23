@@ -7,17 +7,18 @@
  * Usage:
  *   node unbundle-index.mjs --build-dir app/.vite/build --out deps/module-index.json --graph-out deps/module-graph.json
  *
- * // [LAW:verifiable-goals] Emits deterministic JSON artifacts for module index and dependency graph.
+ * // [LAW:verifiable-goals] Emits deterministic JSON artifacts for module index and dependency graph, both from the
+ * // last run that finished.
  * // [LAW:one-source-of-truth] module-index.json is the canonical module-map input for downstream dependency analysis.
- * // [LAW:dataflow-not-control-flow] Every JS file executes the same read/parse/detect/index pipeline; a file that can't
- * // be read or parsed is a parse error, and one that isn't a bundle indexes no modules.
+ * // [LAW:dataflow-not-control-flow] Every JS file has one outcome: unreadable or unparsed (a parse error), or parsed,
+ * // and a parsed file indexes the modules of the bundle it is, none for a file that isn't one.
  */
 
 import fs from "fs";
 import path from "path";
 import process from "process";
-import { parseRunnable, listFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
-import { detectBundle, moduleDependencies } from "./bundle.mjs";
+import { detectBundle, listJsFiles, moduleDependencies, readJsFile } from "./bundle.mjs";
+import { clearArtifact, writeArtifact } from "./artifact.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -37,16 +38,6 @@ function parseArgs(argv) {
   return { help: false, opts };
 }
 
-function ensureDir(dirPath) {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function listJsFiles(rootDir) {
-  return listFiles(rootDir, SOURCE_TREE_EXCLUDES)
-    .filter((rel) => path.extname(rel) === ".js")
-    .map((rel) => path.join(rootDir, rel));
-}
-
 function main() {
   const { help, opts } = parseArgs(process.argv);
   if (help) {
@@ -58,6 +49,8 @@ function main() {
   const buildDir = path.resolve(projectRoot, opts.buildDir);
   const outPath = path.resolve(projectRoot, opts.out);
   const graphPath = path.resolve(projectRoot, opts.graphOut);
+  clearArtifact(outPath);
+  clearArtifact(graphPath);
 
   if (!fs.existsSync(buildDir)) {
     console.error(`Build directory not found: ${buildDir}`);
@@ -71,24 +64,19 @@ function main() {
   const parseErrors = [];
 
   for (const jsFile of jsFiles) {
-    let code = "";
-    try {
-      code = fs.readFileSync(jsFile, "utf8");
-    } catch (error) {
-      parseErrors.push({ file: path.relative(projectRoot, jsFile), error: String(error?.message || error) });
+    const relFile = path.relative(projectRoot, jsFile).split(path.sep).join("/");
+    const read = readJsFile(jsFile);
+    if (read.kind !== "parsed") {
+      parseErrors.push(...read.errors.map((error) => ({ file: relFile, error })));
       continue;
     }
-
-    const relFile = path.relative(projectRoot, jsFile).split(path.sep).join("/");
-    const { ast, errors } = parseRunnable(code, "js");
-    parseErrors.push(...errors.map((error) => ({ file: relFile, error })));
-    const detected = ast === null ? null : detectBundle(ast, code);
+    const detected = detectBundle(read.ast, read.code);
     if (detected === null) continue;
 
-    const dependencies = moduleDependencies(ast, detected);
+    const dependencies = moduleDependencies(read.ast, detected);
     const modules = detected.modules.map((moduleRecord) => {
       const depInfo = dependencies.get(moduleRecord);
-      const moduleId = String(moduleRecord.id);
+      const moduleId = moduleRecord.id;
       const nodeId = `${relFile}#${moduleId}`;
 
       graphNodes.push({ id: nodeId, bundleFile: relFile, moduleId, bytes: moduleRecord.source.length });
@@ -98,7 +86,6 @@ function main() {
 
       return {
         id: moduleRecord.id,
-        key: moduleRecord.key,
         bytes: moduleRecord.source.length,
         startOffset: moduleRecord.startOffset,
         endOffset: moduleRecord.endOffset,
@@ -140,10 +127,8 @@ function main() {
     },
   };
 
-  ensureDir(path.dirname(outPath));
-  ensureDir(path.dirname(graphPath));
-  fs.writeFileSync(outPath, JSON.stringify(moduleIndex, null, 2));
-  fs.writeFileSync(graphPath, JSON.stringify(moduleGraph, null, 2));
+  writeArtifact(outPath, moduleIndex);
+  writeArtifact(graphPath, moduleGraph);
 
   console.log(`Wrote ${path.relative(projectRoot, outPath)}`);
   console.log(`Wrote ${path.relative(projectRoot, graphPath)}`);
