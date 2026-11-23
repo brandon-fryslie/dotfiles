@@ -19,7 +19,8 @@ import fs from "fs";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { isNonEmptyString } from "./json-value.mjs";
+import { isNonEmptyString, JSON_SHAPE } from "./json-value.mjs";
+import { readJson } from "./path-state.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -45,8 +46,12 @@ function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+// The JSON object an input file holds; one that is missing or can't be used stops the run, naming the file and why.
+function readInput(filePath, what) {
+  const read = readJson(filePath, JSON_SHAPE.object);
+  if (read.kind === "json") return read.value;
+  console.error(`${what} ${filePath} ${read.reason}`);
+  process.exit(2);
 }
 
 function writeJson(filePath, payload) {
@@ -110,7 +115,7 @@ function npmViewVersions(pkgName) {
 // detect-dependencies listed in full, or one the app doesn't ship, lists every trialable copy; any other is a tree it
 // couldn't read.
 function parseOnDiskPackages(report) {
-  const onDisk = report?.onDisk;
+  const onDisk = report.onDisk;
   if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version) && isNonEmptyString(pkg?.location))) {
     return { ok: false, error: "it has no onDisk.packages list of { name, version, location } — rerun detect-dependencies.mjs to write it" };
   }
@@ -145,13 +150,13 @@ function collectPackageContexts(report, onDiskPackages) {
 
   for (const pkg of onDiskPackages) ensure(pkg.name).onDiskVersions.add(pkg.version);
 
-  const bareSpecifiers = report?.code?.bareSpecifiers || {};
+  const bareSpecifiers = report.code?.bareSpecifiers || {};
   for (const [pkgName, meta] of Object.entries(bareSpecifiers)) {
     const ctx = ensure(pkgName);
     ctx.codeSpecifierCount += Number(meta?.count || 0);
   }
 
-  for (const bundle of report?.bundles || []) {
+  for (const bundle of report.bundles || []) {
     for (const module of bundle?.modules || []) {
       if (!module?.package) continue;
       const ctx = ensure(module.package);
@@ -282,19 +287,14 @@ function main() {
   const appDir = path.resolve(projectRoot, opts.appDir);
   const outPath = path.resolve(projectRoot, opts.out);
 
-  if (!fs.existsSync(depsPath)) {
-    console.error(`Dependency report missing: ${depsPath}`);
-    process.exit(2);
-  }
-
-  const report = readJson(depsPath);
+  const report = readInput(depsPath, "Dependency report");
   const onDisk = parseOnDiskPackages(report);
   if (!onDisk.ok) {
     console.error(`Dependency report ${depsPath} can't be used: ${onDisk.error}`);
     process.exit(2);
   }
   const packageContexts = collectPackageContexts(report, onDisk.packages);
-  const registryFixture = opts.registryFile ? readJson(path.resolve(projectRoot, opts.registryFile)) : null;
+  const registryFixture = opts.registryFile ? readInput(path.resolve(projectRoot, opts.registryFile), "Registry file") : null;
 
   let degradedMode = false;
   const degradedReasons = [];

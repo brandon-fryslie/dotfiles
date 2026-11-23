@@ -20,14 +20,15 @@
  * // [LAW:dataflow-not-control-flow] Each gate runs a fixed, deterministic sequence of checks every time.
  */
 
-import { createHash } from "crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { fromLogPath, parseLog } from "./replacement-log.mjs";
-import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { JSON_SHAPE } from "./json-value.mjs";
+import { fileDigest, inputAt, readJson, readText } from "./path-state.mjs";
+import { fromLogPath, readLog } from "./replacement-log.mjs";
+import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, listCodeEntries, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const EXIT = {
   PASS: 0,
@@ -87,33 +88,46 @@ function writeJson(filePath, payload) {
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
 }
 
-function sha256File(filePath) {
-  const hash = createHash("sha256");
-  hash.update(fs.readFileSync(filePath));
-  return hash.digest("hex");
-}
-
 // The extract gate verifies an extracted dir against the asar's full contents,
 // so it skips only the repo a user may have initialized around their work. The
-// prepare gate walks the tree prepare walked, and the remove-deps gate checks the
+// prepare gate checks what prepare writes, and the remove-deps gate checks the
 // app's own code, which is everything outside node_modules: node_modules is what
-// remove-deps changes, and replace-dependency leaves symlinks there that no walk
-// descends. Both use the source-tree set.
+// remove-deps changes. Both check listCodeEntries over the source-tree set.
 const EXTRACT_EXCLUDES = new Set([".git"]);
 
-function mapFileHashes(rootDir, relFiles) {
-  const hashes = {};
-  for (const rel of relFiles) {
-    const abs = path.join(rootDir, rel);
-    hashes[rel] = sha256File(abs);
-  }
-  return hashes;
+// [LAW:single-enforcer] What a gate compares a tree entry by, under shape.mjs's link rule: a link by the target it
+// names, a special file as itself, a file by its sha256. A file it couldn't read is unread, with the reason, and
+// matches nothing, so a gate never passes an entry it could not read.
+function entryIdentity(rootDir, entry) {
+  if (entry.kind === "link") return { kind: "link", target: entry.target };
+  if (entry.kind === "special") return { kind: "special" };
+  const digest = fileDigest(path.join(rootDir, entry.rel));
+  return digest.kind === "digest" ? { kind: "file", sha256: digest.sha256 } : { kind: "unread", reason: digest.reason };
 }
 
-function setDiff(left, right) {
-  const rightSet = new Set(right);
-  return left.filter((item) => !rightSet.has(item));
+const sameIdentity = (left, right) => left.kind !== "unread" && JSON.stringify(left) === JSON.stringify(right);
+
+// Two trees' entries by path: the paths only the left has, those only the right has, and the paths both have.
+function pairEntries(leftEntries, rightEntries) {
+  const rightByRel = new Map(rightEntries.map((entry) => [entry.rel, entry]));
+  const leftRels = new Set(leftEntries.map(({ rel }) => rel));
+  return {
+    missing: leftEntries.filter(({ rel }) => !rightByRel.has(rel)).map(({ rel }) => rel),
+    extra: rightEntries.filter(({ rel }) => !leftRels.has(rel)).map(({ rel }) => rel),
+    shared: leftEntries.filter(({ rel }) => rightByRel.has(rel)).map((left) => ({ left, right: rightByRel.get(left.rel) })),
+  };
 }
+
+// Each shared pair whose entries differ by entryIdentity, with what each side is.
+const identityMismatches = (pairs, leftRoot, rightRoot) => pairs
+  .map(({ left, right }) => ({ file: left.rel, expected: entryIdentity(leftRoot, left), actual: entryIdentity(rightRoot, right) }))
+  .filter(({ expected, actual }) => !sameIdentity(expected, actual));
+
+// The sentence for each input that is missing or can't be used, with its path and why.
+const inputProblems = (inputs) => inputs
+  .map(([p, kind]) => ({ p, input: inputAt(p, kind) }))
+  .filter(({ input }) => input.kind === "absent" || input.kind === "unusable")
+  .map(({ p, input }) => `${p} ${input.reason}`);
 
 function runAsarExtract(asarPath, outDir) {
   const localAsar = path.resolve(process.cwd(), "node_modules/.bin/asar");
@@ -151,6 +165,13 @@ function equalCountMap(left, right) {
   return true;
 }
 
+// A file's text for the gate, or an error naming the file and why it can't be read.
+function gateText(filePath) {
+  const read = readText(filePath);
+  if (read.kind !== "text") throw new Error(`${filePath} ${read.reason}`);
+  return read.text;
+}
+
 function runExtractGate(opts) {
   const upstreamAsar = path.resolve(process.cwd(), opts.upstreamAsar);
   const copiedAsar = path.resolve(process.cwd(), opts.copiedAsar);
@@ -167,65 +188,53 @@ function runExtractGate(opts) {
     checks: {
       asarHashMatch: false,
       extractedFileSetMatch: false,
-      extractedFileHashMatch: false,
+      extractedEntriesMatch: false,
     },
     metrics: {
       filesCompared: 0,
       missingFiles: 0,
       extraFiles: 0,
-      hashMismatches: 0,
+      entryMismatches: 0,
     },
     mismatches: {
       missingFiles: [],
       extraFiles: [],
-      hashMismatches: [],
+      entryMismatches: [],
     },
     pass: false,
   };
 
-  if (!fs.existsSync(upstreamAsar) || !fs.existsSync(copiedAsar) || !fs.existsSync(extractedDir)) {
-    artifact.error = "Required extract gate input path missing";
+  const problems = inputProblems([[upstreamAsar, "file"], [copiedAsar, "file"], [extractedDir, "dir"]]);
+  if (problems.length > 0) {
+    artifact.error = problems.join("; ");
     return artifact;
   }
 
-  const upstreamHash = sha256File(upstreamAsar);
-  const copiedHash = sha256File(copiedAsar);
-  artifact.metrics.upstreamAsarSha256 = upstreamHash;
-  artifact.metrics.copiedAsarSha256 = copiedHash;
-  artifact.checks.asarHashMatch = upstreamHash === copiedHash;
+  // Each asar's sha256, or why it couldn't be read, which matches nothing.
+  const [upstream, copied] = [upstreamAsar, copiedAsar].map(fileDigest);
+  artifact.metrics.upstreamAsarSha256 = upstream.sha256 ?? upstream.reason;
+  artifact.metrics.copiedAsarSha256 = copied.sha256 ?? copied.reason;
+  artifact.checks.asarHashMatch = upstream.kind === "digest" && upstream.sha256 === copied.sha256;
 
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "gate-extract-"));
   try {
     runAsarExtract(upstreamAsar, tmpRoot);
 
-    const expectedFiles = listFiles(tmpRoot, EXTRACT_EXCLUDES);
-    const actualFiles = listFiles(extractedDir, EXTRACT_EXCLUDES);
+    const expected = listFiles(tmpRoot, EXTRACT_EXCLUDES);
+    const { missing, extra, shared } = pairEntries(expected, listFiles(extractedDir, EXTRACT_EXCLUDES));
 
-    const missingFiles = setDiff(expectedFiles, actualFiles);
-    const extraFiles = setDiff(actualFiles, expectedFiles);
+    artifact.metrics.filesCompared = expected.length;
+    artifact.metrics.missingFiles = missing.length;
+    artifact.metrics.extraFiles = extra.length;
+    artifact.mismatches.missingFiles = missing.slice(0, 200);
+    artifact.mismatches.extraFiles = extra.slice(0, 200);
 
-    artifact.metrics.filesCompared = expectedFiles.length;
-    artifact.metrics.missingFiles = missingFiles.length;
-    artifact.metrics.extraFiles = extraFiles.length;
-    artifact.mismatches.missingFiles = missingFiles.slice(0, 200);
-    artifact.mismatches.extraFiles = extraFiles.slice(0, 200);
+    artifact.checks.extractedFileSetMatch = missing.length === 0 && extra.length === 0;
 
-    artifact.checks.extractedFileSetMatch = missingFiles.length === 0 && extraFiles.length === 0;
-
-    const expectedHashes = mapFileHashes(tmpRoot, expectedFiles);
-    const actualHashes = mapFileHashes(extractedDir, expectedFiles.filter((rel) => fs.existsSync(path.join(extractedDir, rel))));
-
-    const hashMismatches = [];
-    for (const rel of expectedFiles) {
-      if (!actualHashes[rel]) continue;
-      if (expectedHashes[rel] !== actualHashes[rel]) {
-        hashMismatches.push({ relPath: rel, expected: expectedHashes[rel], actual: actualHashes[rel] });
-      }
-    }
-
-    artifact.metrics.hashMismatches = hashMismatches.length;
-    artifact.mismatches.hashMismatches = hashMismatches.slice(0, 200);
-    artifact.checks.extractedFileHashMatch = hashMismatches.length === 0;
+    const entryMismatches = identityMismatches(shared, tmpRoot, extractedDir);
+    artifact.metrics.entryMismatches = entryMismatches.length;
+    artifact.mismatches.entryMismatches = entryMismatches.slice(0, 200);
+    artifact.checks.extractedEntriesMatch = entryMismatches.length === 0;
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -249,6 +258,7 @@ function runPrepareGate(opts) {
     },
     checks: {
       jsInventoryMatch: false,
+      entriesMatch: false,
       fileStructuralHashMatch: false,
       functionStructuralMultisetMatch: false,
       manifestConsistency: false,
@@ -260,6 +270,7 @@ function runPrepareGate(opts) {
       functionCountManifest: 0,
       inventoryMissing: 0,
       inventoryExtra: 0,
+      entryMismatches: 0,
       fileHashMismatches: 0,
       functionMultisetMismatches: 0,
       manifestMismatches: 0,
@@ -267,6 +278,7 @@ function runPrepareGate(opts) {
     mismatches: {
       missingFiles: [],
       extraFiles: [],
+      entryMismatches: [],
       fileHashMismatches: [],
       functionMultisetMismatches: [],
       manifestMismatches: [],
@@ -275,35 +287,42 @@ function runPrepareGate(opts) {
     pass: false,
   };
 
-  if (!fs.existsSync(origDir) || !fs.existsSync(preparedDir) || !fs.existsSync(manifestPath)) {
-    artifact.error = "Required prepare gate input path missing";
+  const manifestRead = readJson(manifestPath, JSON_SHAPE.array);
+  const problems = [
+    ...inputProblems([[origDir, "dir"], [preparedDir, "dir"]]),
+    ...(manifestRead.kind === "json" ? [] : [`${manifestPath} ${manifestRead.reason}`]),
+  ];
+  if (problems.length > 0) {
+    artifact.error = problems.join("; ");
     return artifact;
   }
 
-  const origJs = listSourceFiles(origDir, SOURCE_TREE_EXCLUDES);
-  const preparedJs = listSourceFiles(preparedDir, SOURCE_TREE_EXCLUDES);
-  const missingFiles = setDiff(origJs, preparedJs);
-  const extraFiles = setDiff(preparedJs, origJs);
+  // [LAW:one-source-of-truth] The entries checked are the ones prepare writes: listCodeEntries on both sides.
+  const origEntries = listCodeEntries(origDir, SOURCE_TREE_EXCLUDES);
+  const { missing, extra, shared } = pairEntries(origEntries, listCodeEntries(preparedDir, SOURCE_TREE_EXCLUDES));
 
-  artifact.metrics.filesCompared = origJs.length;
-  artifact.metrics.inventoryMissing = missingFiles.length;
-  artifact.metrics.inventoryExtra = extraFiles.length;
-  artifact.mismatches.missingFiles = missingFiles.slice(0, 200);
-  artifact.mismatches.extraFiles = extraFiles.slice(0, 200);
-  artifact.checks.jsInventoryMatch = missingFiles.length === 0 && extraFiles.length === 0;
+  artifact.metrics.filesCompared = origEntries.length;
+  artifact.metrics.inventoryMissing = missing.length;
+  artifact.metrics.inventoryExtra = extra.length;
+  artifact.mismatches.missingFiles = missing.slice(0, 200);
+  artifact.mismatches.extraFiles = extra.slice(0, 200);
+  artifact.checks.jsInventoryMatch = missing.length === 0 && extra.length === 0;
+
+  // A file prepare formatted is compared by its structure; every other pair, a link or a kind that changed, as itself.
+  const bothFiles = ({ left, right }) => left.kind === "file" && right.kind === "file";
+  const entryMismatches = identityMismatches(shared.filter((pair) => !bothFiles(pair)), origDir, preparedDir);
+  artifact.metrics.entryMismatches = entryMismatches.length;
+  artifact.mismatches.entryMismatches = entryMismatches.slice(0, 200);
+  artifact.checks.entriesMatch = entryMismatches.length === 0;
 
   const fileHashMismatches = [];
   const functionMultisetMismatches = [];
   const preparedFnHashesByFile = {};
 
-  for (const rel of origJs) {
-    const origPath = path.join(origDir, rel);
-    const preparedPath = path.join(preparedDir, rel);
-    if (!fs.existsSync(preparedPath)) continue;
-
+  for (const { left: { rel } } of shared.filter(bothFiles)) {
     try {
-      const origAst = parseFile(fs.readFileSync(origPath, "utf8"), rel);
-      const preparedAst = parseFile(fs.readFileSync(preparedPath, "utf8"), rel);
+      const origAst = parseFile(gateText(path.join(origDir, rel)), rel);
+      const preparedAst = parseFile(gateText(path.join(preparedDir, rel)), rel);
 
       const origProgramHash = tokensToHash(functionShapeTokens(origAst.program));
       const preparedProgramHash = tokensToHash(functionShapeTokens(preparedAst.program));
@@ -344,57 +363,46 @@ function runPrepareGate(opts) {
   artifact.checks.fileStructuralHashMatch = fileHashMismatches.length === 0;
   artifact.checks.functionStructuralMultisetMatch = functionMultisetMismatches.length === 0;
 
-  let manifest = [];
-  try {
-    manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  } catch (error) {
-    artifact.mismatches.manifestMismatches.push({ type: "manifest-read", error: String(error?.message || error) });
-  }
-
-  artifact.metrics.functionCountManifest = Array.isArray(manifest) ? manifest.length : 0;
+  const manifest = manifestRead.value;
+  artifact.metrics.functionCountManifest = manifest.length;
 
   const manifestMismatches = [];
-  if (!Array.isArray(manifest)) {
-    manifestMismatches.push({ type: "manifest-type", expected: "array" });
-  } else {
-    const manifestByFile = {};
-    for (const entry of manifest) {
-      const file = entry?.file;
-      const shapeHash = entry?.shapeHash;
-      if (typeof file !== "string" || typeof shapeHash !== "string") {
-        manifestMismatches.push({ type: "manifest-entry-shape", entry });
-        continue;
-      }
-      manifestByFile[file] = manifestByFile[file] || {};
-      manifestByFile[file][shapeHash] = (manifestByFile[file][shapeHash] || 0) + 1;
-
-      if (!Number.isInteger(entry?.line) || entry.line <= 0) {
-        manifestMismatches.push({ type: "manifest-line", file, line: entry?.line });
-      }
-      if (!Number.isInteger(entry?.column) || entry.column < 0) {
-        manifestMismatches.push({ type: "manifest-column", file, column: entry?.column });
-      }
+  const manifestByFile = {};
+  for (const entry of manifest) {
+    const file = entry?.file;
+    const shapeHash = entry?.shapeHash;
+    if (typeof file !== "string" || typeof shapeHash !== "string") {
+      manifestMismatches.push({ type: "manifest-entry-shape", entry });
+      continue;
     }
+    manifestByFile[file] = manifestByFile[file] || {};
+    manifestByFile[file][shapeHash] = (manifestByFile[file][shapeHash] || 0) + 1;
 
-    for (const [file, preparedHashes] of Object.entries(preparedFnHashesByFile)) {
-      const preparedCountMap = countBy(preparedHashes);
-      const manifestCountMap = manifestByFile[file] || {};
-      if (!equalCountMap(preparedCountMap, manifestCountMap)) {
-        manifestMismatches.push({
-          type: "manifest-function-multiset",
-          file,
-          preparedDistinct: Object.keys(preparedCountMap).length,
-          manifestDistinct: Object.keys(manifestCountMap).length,
-        });
-      }
+    if (!Number.isInteger(entry?.line) || entry.line <= 0) {
+      manifestMismatches.push({ type: "manifest-line", file, line: entry?.line });
     }
+    if (!Number.isInteger(entry?.column) || entry.column < 0) {
+      manifestMismatches.push({ type: "manifest-column", file, column: entry?.column });
+    }
+  }
 
-    const manifestFiles = Object.keys(manifestByFile);
-    const preparedSet = new Set(Object.keys(preparedFnHashesByFile));
-    for (const file of manifestFiles) {
-      if (!preparedSet.has(file)) {
-        manifestMismatches.push({ type: "manifest-file-missing", file });
-      }
+  for (const [file, preparedHashes] of Object.entries(preparedFnHashesByFile)) {
+    const preparedCountMap = countBy(preparedHashes);
+    const manifestCountMap = manifestByFile[file] || {};
+    if (!equalCountMap(preparedCountMap, manifestCountMap)) {
+      manifestMismatches.push({
+        type: "manifest-function-multiset",
+        file,
+        preparedDistinct: Object.keys(preparedCountMap).length,
+        manifestDistinct: Object.keys(manifestCountMap).length,
+      });
+    }
+  }
+
+  const preparedSet = new Set(Object.keys(preparedFnHashesByFile));
+  for (const file of Object.keys(manifestByFile)) {
+    if (!preparedSet.has(file)) {
+      manifestMismatches.push({ type: "manifest-file-missing", file });
     }
   }
 
@@ -430,11 +438,11 @@ function runRemoveDepsGate(opts) {
       workingCodeUnchanged: false,
     },
     metrics: {
-      baselineJsFiles: 0,
-      workingJsFiles: 0,
-      jsMissing: 0,
-      jsExtra: 0,
-      jsHashMismatches: 0,
+      baselineEntries: 0,
+      workingEntries: 0,
+      entriesMissing: 0,
+      entriesExtra: 0,
+      entryMismatches: 0,
       copiesTracked: 0,
       attemptsTracked: 0,
       missingVerificationArtifacts: 0,
@@ -442,81 +450,62 @@ function runRemoveDepsGate(opts) {
     mismatches: {
       missingFiles: [],
       extraFiles: [],
-      jsHashMismatches: [],
+      entryMismatches: [],
       replacementLogErrors: [],
       missingVerificationArtifacts: [],
     },
     pass: false,
   };
 
-  const requiredPaths = [baselineDir, workingDir, nearMatchesPath, replacementsPath];
-  const missingRequired = requiredPaths.filter((p) => !fs.existsSync(p));
-  artifact.checks.artifactsPresent = missingRequired.length === 0;
-  if (missingRequired.length > 0) {
-    artifact.mismatches.replacementLogErrors.push({ type: "missing-required", paths: missingRequired });
-  }
+  const replacementLogErrors = artifact.mismatches.replacementLogErrors;
+  const inputs = [[baselineDir, "dir"], [workingDir, "dir"], [nearMatchesPath, "file"]].map(([p, kind]) => ({ p, input: inputAt(p, kind) }));
+  const log = readLog(replacementsPath);
+  const missingRequired = [...inputs.filter(({ input }) => input.kind === "absent").map(({ p }) => p), ...(log.kind === "absent" ? [replacementsPath] : [])];
+  if (missingRequired.length > 0) replacementLogErrors.push({ type: "missing-required", paths: missingRequired });
+  for (const { p, input } of inputs.filter(({ input }) => input.kind === "unusable")) replacementLogErrors.push({ type: "unusable-required", path: p, reason: input.reason });
+  artifact.checks.artifactsPresent = inputs.every(({ input }) => input.kind === "dir" || input.kind === "file") && log.kind !== "absent";
 
-  if (fs.existsSync(baselineDir) && fs.existsSync(workingDir)) {
-    const baselineJs = listSourceFiles(baselineDir, SOURCE_TREE_EXCLUDES);
-    const workingJs = listSourceFiles(workingDir, SOURCE_TREE_EXCLUDES);
-    artifact.metrics.baselineJsFiles = baselineJs.length;
-    artifact.metrics.workingJsFiles = workingJs.length;
+  if (inputs[0].input.kind === "dir" && inputs[1].input.kind === "dir") {
+    const baseline = listCodeEntries(baselineDir, SOURCE_TREE_EXCLUDES);
+    const working = listCodeEntries(workingDir, SOURCE_TREE_EXCLUDES);
+    artifact.metrics.baselineEntries = baseline.length;
+    artifact.metrics.workingEntries = working.length;
 
-    const missingFiles = setDiff(baselineJs, workingJs);
-    const extraFiles = setDiff(workingJs, baselineJs);
-    artifact.metrics.jsMissing = missingFiles.length;
-    artifact.metrics.jsExtra = extraFiles.length;
-    artifact.mismatches.missingFiles = missingFiles.slice(0, 200);
-    artifact.mismatches.extraFiles = extraFiles.slice(0, 200);
+    const { missing, extra, shared } = pairEntries(baseline, working);
+    artifact.metrics.entriesMissing = missing.length;
+    artifact.metrics.entriesExtra = extra.length;
+    artifact.mismatches.missingFiles = missing.slice(0, 200);
+    artifact.mismatches.extraFiles = extra.slice(0, 200);
 
-    const hashMismatches = [];
-    for (const rel of baselineJs) {
-      const workingPath = path.join(workingDir, rel);
-      if (!fs.existsSync(workingPath)) continue;
-      const leftHash = sha256File(path.join(baselineDir, rel));
-      const rightHash = sha256File(workingPath);
-      if (leftHash !== rightHash) {
-        hashMismatches.push({ file: rel, baselineHash: leftHash, workingHash: rightHash });
-      }
-    }
-
-    artifact.metrics.jsHashMismatches = hashMismatches.length;
-    artifact.mismatches.jsHashMismatches = hashMismatches.slice(0, 200);
-    artifact.checks.workingCodeUnchanged =
-      missingFiles.length === 0 && extraFiles.length === 0 && hashMismatches.length === 0;
+    const entryMismatches = identityMismatches(shared, baselineDir, workingDir);
+    artifact.metrics.entryMismatches = entryMismatches.length;
+    artifact.mismatches.entryMismatches = entryMismatches.slice(0, 200);
+    artifact.checks.workingCodeUnchanged = missing.length === 0 && extra.length === 0 && entryMismatches.length === 0;
   }
 
   // [LAW:single-enforcer] The log's shape — one pass per resolved copy, none under unresolved, no applied swap
   // left un-rolled-back — is replacement-log.mjs's to enforce; the gate adds only what needs disk.
-  const replacementLogErrors = artifact.mismatches.replacementLogErrors;
   const missingVerificationArtifacts = [];
-  if (fs.existsSync(replacementsPath)) {
-    const parsed = parseLog(fs.readFileSync(replacementsPath, "utf8"), replacementsPath);
-    if (!parsed.ok) replacementLogErrors.push(...parsed.errors);
-    const entries = parsed.ok ? Object.entries(parsed.log.copies) : [];
-    // A rejected log's size is unknown, not zero.
-    artifact.metrics.copiesTracked = parsed.ok ? entries.length : null;
-    artifact.metrics.attemptsTracked = parsed.ok ? entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0) : null;
+  if (log.kind === "unusable") replacementLogErrors.push(...log.errors);
+  const entries = log.kind === "read" ? Object.entries(log.log.copies) : [];
+  // A log that couldn't be read has an unknown size, not zero.
+  artifact.metrics.copiesTracked = log.kind === "read" ? entries.length : null;
+  artifact.metrics.attemptsTracked = log.kind === "read" ? entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0) : null;
 
-    // An in-flight entry is a swap whose original may still be set aside: disk and log disagree until it is recovered.
-    for (const [location, entry] of entries.filter(([, entry]) => entry.status === "in-flight")) {
-      replacementLogErrors.push({ type: "swap-in-flight", location, package: entry.name, attemptVersion: entry.inFlight.attemptedVersion });
-    }
+  // An in-flight entry is a swap whose original may still be set aside: disk and log disagree until it is recovered.
+  for (const [location, entry] of entries.filter(([, entry]) => entry.status === "in-flight")) {
+    replacementLogErrors.push({ type: "swap-in-flight", location, package: entry.name, attemptVersion: entry.inFlight.attemptedVersion });
+  }
 
-    for (const [location, entry] of entries.filter(([, entry]) => entry.status === "resolved")) {
-      const verificationPath = fromLogPath(replacementsPath, entry.pass.verification.path);
-      if (!fs.existsSync(verificationPath)) {
-        missingVerificationArtifacts.push({ location, package: entry.name, attemptVersion: entry.chosenVersion, path: verificationPath });
-        continue;
-      }
-      try {
-        const verification = JSON.parse(fs.readFileSync(verificationPath, "utf8"));
-        if (!verification?.pass) {
-          replacementLogErrors.push({ type: "verification-failed", location, package: entry.name, path: verificationPath });
-        }
-      } catch (error) {
-        replacementLogErrors.push({ type: "verification-read", location, package: entry.name, path: verificationPath, error: String(error?.message || error) });
-      }
+  for (const [location, entry] of entries.filter(([, entry]) => entry.status === "resolved")) {
+    const verificationPath = fromLogPath(replacementsPath, entry.pass.verification.path);
+    const verification = readJson(verificationPath, JSON_SHAPE.object);
+    if (verification.kind === "absent") {
+      missingVerificationArtifacts.push({ location, package: entry.name, attemptVersion: entry.chosenVersion, path: verificationPath });
+    } else if (verification.kind === "unusable") {
+      replacementLogErrors.push({ type: "verification-read", location, package: entry.name, path: verificationPath, error: verification.reason });
+    } else if (verification.value.pass !== true) {
+      replacementLogErrors.push({ type: "verification-failed", location, package: entry.name, path: verificationPath });
     }
   }
 

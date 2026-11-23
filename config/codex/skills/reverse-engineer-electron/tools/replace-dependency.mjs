@@ -31,9 +31,9 @@ import process from "process";
 import { spawnSync } from "child_process";
 import { randomUUID } from "crypto";
 import { writeOutputs } from "./artifact.mjs";
-import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, parseLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
-import { isNonEmptyString } from "./json-value.mjs";
-import { appPathState, describeEntry } from "./path-state.mjs";
+import { emptyLog, fromLogPath, inFlightEntry, interruptedAttempt, readLog, serializeLog, settledEntry, toLogPath, trialAttempt, untrialedAttempt } from "./replacement-log.mjs";
+import { isNonEmptyString, JSON_SHAPE } from "./json-value.mjs";
+import { appPathState, describeEntry, inputAt, readJson } from "./path-state.mjs";
 import { appAt, canonicalEntry, containerSwappedAt, copiesOf, entryNameOf, isPackageName, linkDestination, locationDir, packageAt, pkgPathParts, realExisting, replacementOf, stateText, swapOutcome, walkStarts } from "./node-modules.mjs";
 
 const USAGE = [
@@ -113,10 +113,6 @@ function ensureDir(p) {
   fs.mkdirSync(p, { recursive: true });
 }
 
-function readJson(p) {
-  return JSON.parse(fs.readFileSync(p, "utf8"));
-}
-
 // [LAW:one-source-of-truth] A tree is locked exactly while the run that locked it lives. The flock belongs to the
 // run's own open file description — perl takes it through stdin, which shares that description, and exits — so the
 // kernel releases it however the run ends, kill -9 included, and there is no stale lock to judge or take over. Node
@@ -190,14 +186,11 @@ function runVerifySwap({ verifyScript, pkgName, beforeDir, afterDir, expectedVer
     stdio: "inherit",
   });
   if (result.error || result.signal) return { kind: "error", detail: result.error?.message ?? `killed by ${result.signal}` };
-  let artifact;
-  try {
-    artifact = readJson(verificationOut);
-  } catch (error) {
-    return { kind: "error", detail: `exit ${result.status} with no verdict at ${verificationOut} (${error.message})` };
-  }
-  if (typeof artifact?.pass !== "boolean" || artifact.pass !== (result.status === 0)) {
-    return { kind: "error", detail: `exit ${result.status}, but its verdict at ${verificationOut} says pass: ${JSON.stringify(artifact?.pass)}` };
+  const read = readJson(verificationOut, JSON_SHAPE.object);
+  if (read.kind !== "json") return { kind: "error", detail: `exit ${result.status} with no verdict: ${verificationOut} ${read.reason}` };
+  const artifact = read.value;
+  if (typeof artifact.pass !== "boolean" || artifact.pass !== (result.status === 0)) {
+    return { kind: "error", detail: `exit ${result.status}, but its verdict at ${verificationOut} says pass: ${JSON.stringify(artifact.pass)}` };
   }
   return { kind: "verdict", pass: artifact.pass };
 }
@@ -205,21 +198,18 @@ function runVerifySwap({ verifyScript, pkgName, beforeDir, afterDir, expectedVer
 // [LAW:parse-dont-validate] The candidate source as replace-dependency reads it: { kind: "read", byName }, each
 // package name it lists mapped from the exact version a copy of it is on disk to the versions to trial that copy
 // against, or { kind: "absent" } when no file is there. A name it lists with no copy on disk has no versions, and is
-// still a name the run is asked about. A file in any other shape, one an older find-near-match-versions wrote among
-// them, is refused.
+// still a name the run is asked about. A file that is there but can't be read, or is in any other shape (one an older
+// find-near-match-versions wrote among them), is refused.
 function loadCandidateSource(filePath) {
-  if (!fs.existsSync(filePath)) return { kind: "absent" };
+  const read = readJson(filePath, JSON_SHAPE.object);
+  if (read.kind === "absent") return { kind: "absent" };
   const refuseSource = (why) => {
     console.error(`Error: ${filePath} ${why} — rerun find-near-match-versions.mjs to write it`);
     process.exit(2);
   };
-  let parsed;
-  try {
-    parsed = readJson(filePath);
-  } catch (error) {
-    refuseSource(`is not JSON (${error.message})`);
-  }
-  if (!Array.isArray(parsed?.packages)) refuseSource("has no packages list");
+  if (read.kind === "unusable") refuseSource(read.reason);
+  const parsed = read.value;
+  if (!Array.isArray(parsed.packages)) refuseSource("has no packages list");
   const byName = new Map();
   for (const item of parsed.packages) {
     const itemOk = isPackageName(item?.name)
@@ -235,11 +225,13 @@ function loadCandidateSource(filePath) {
   return { kind: "read", byName };
 }
 
+// The log a run starts from: no log is an empty one, and a log that is there but can't be read or parsed stops the run
+// before it trials or writes anything, so the record of earlier swaps is never overwritten.
 function loadLog(logPath) {
-  if (!fs.existsSync(logPath)) return emptyLog();
-  const parsed = parseLog(fs.readFileSync(logPath, "utf8"), logPath);
-  if (parsed.ok) return parsed.log;
-  for (const error of parsed.errors) console.error(`Error: ${logPath}: ${JSON.stringify(error)}`);
+  const read = readLog(logPath);
+  if (read.kind === "absent") return emptyLog();
+  if (read.kind === "read") return read.log;
+  for (const error of read.errors) console.error(`Error: ${logPath}: ${JSON.stringify(error)}`);
   process.exit(2);
 }
 
@@ -370,7 +362,9 @@ function classifyInterrupted(inFlight, state, ours, ctx) {
 
   if (original.kind === "dir") {
     const backup = fromLogPath(ctx.app.logPath, original.backupPath);
-    const backupPresent = fs.existsSync(backup);
+    const backupState = appPathState(backup);
+    if (backupState.kind === "unreadable") return conflict(`${trial} moved the original to ${backup}, which is ${describeEntry(backupState)} — make it readable, then rerun`);
+    const backupPresent = backupState.kind !== "absent";
     if (state.kind === "dir") {
       if (!backupPresent) return interrupted("original-in-place");
       return conflict(`${trial} left the original at ${backup}, but ${dir} holds a directory too — keep the original at ${dir}, remove the other copy, then ${ctx.deleteEntry}`);
@@ -659,8 +653,9 @@ function main() {
   const verificationDir = path.resolve(projectRoot, opts.verificationDir);
   const candidateSourcePath = path.resolve(projectRoot, opts.candidateSource);
 
-  if (!fs.existsSync(appNodeModules)) {
-    console.error(`Error: ${appNodeModules} does not exist — --app-dir must name an extracted app with its node_modules`);
+  const nodeModulesInput = inputAt(appNodeModules, "dir");
+  if (nodeModulesInput.kind !== "dir") {
+    console.error(`Error: ${appNodeModules} ${nodeModulesInput.reason} — --app-dir must name an extracted app with its node_modules`);
     process.exit(2);
   }
   if (realExisting(path.join(projectRoot, "node_modules")) === fs.realpathSync(appNodeModules)) {

@@ -1049,6 +1049,28 @@ function detect(tmp, appDir, code = "console.log(1);\n") {
   return { result, report: JSON.parse(fs.readFileSync(out, "utf8")) };
 }
 
+test("detect-dependencies reports a module index it was named but couldn't read, and refuses a build dir that can't be used", () => {
+  const tmp = mkTmpDir();
+  const appDir = path.join(tmp, "app");
+  writeJson(path.join(appDir, "package.json"), { name: "app" });
+  fs.mkdirSync(path.join(appDir, "node_modules"));
+  writeText(path.join(tmp, "build", "main.js"), "console.log(1);\n");
+  writeText(path.join(tmp, "deps", "module-index.json"), "[]");
+  const out = path.join(tmp, "deps", "detected-dependencies.json");
+  const run = (args) => runNode(path.join(TOOLS_DIR, "detect-dependencies.mjs"), ["--app-dir", appDir, "--out", out, ...args], tmp);
+
+  for (const [index, reason] of [["deps/gone.json", "does not exist"], ["deps/module-index.json", "is a JSON array, not a JSON object"]]) {
+    const result = run(["--build-dir", path.join(tmp, "build"), "--module-index", index]);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.ok(JSON.parse(fs.readFileSync(out, "utf8")).warnings.includes(`Could not read module index: ${index} ${reason}`), index);
+  }
+
+  fs.symlinkSync("nowhere", path.join(tmp, "dangling-build"));
+  const dangling = run(["--build-dir", path.join(tmp, "dangling-build")]);
+  assert.equal(dangling.status, 2, dangling.stdout);
+  assert.match(dangling.stderr, /--build-dir \S+dangling-build is not a directory or file \(dangling:nowhere\)/);
+});
+
 // detect-dependencies, then find-near-match-versions against registry (a {name: [versions]} fixture), then
 // replace-dependency --auto-near-match with no --pkg over what they found, which exits with `status`.
 function detectAndReplace(project, { code, registry, status }) {
@@ -1613,6 +1635,107 @@ test("replace-dependency refuses a candidate source an older find-near-match-ver
   assert.deepEqual(project.npmCalls(), []);
 });
 
+const UNREADABLE_SKIP = process.getuid?.() === 0 && "chmod 000 doesn't restrict root";
+
+test("replace-dependency refuses a log that is there but can't be read, naming it, trialing nothing, and leaving it as it was", { skip: UNREADABLE_SKIP }, () => {
+  const cases = [
+    ["a link to nowhere", (logPath) => fs.symlinkSync("gone.json", logPath), "is not a file (dangling:gone.json)"],
+    ["a file it can't read", (logPath) => { writeText(logPath, "{}"); fs.chmodSync(logPath, 0o000); }, "can't be read (EACCES)"],
+    ["a directory", (logPath) => fs.mkdirSync(logPath), "is not a file (dir)"],
+  ];
+  for (const [what, place, reason] of cases) {
+    const project = swapProject(VERIFYING_INDEX);
+    fs.mkdirSync(path.dirname(project.logPath), { recursive: true });
+    place(project.logPath);
+    const before = fs.lstatSync(project.logPath);
+    const link = before.isSymbolicLink() ? fs.readlinkSync(project.logPath) : null;
+    try {
+      const result = project.replace();
+      assert.equal(result.status, 2, `${what}: ${result.stdout}`);
+      assert.ok(result.stderr.includes(JSON.stringify({ type: "replacements-unreadable", path: project.logPath, error: reason })), `${what}: ${result.stderr}`);
+      assert.deepEqual(project.npmCalls(), [], what);
+      assert.ok(fs.lstatSync(project.appPkgDir).isDirectory(), `${what}: nothing moved`);
+      const after = fs.lstatSync(project.logPath);
+      assert.deepEqual([after.ino, after.mode, after.mtimeMs, link && fs.readlinkSync(project.logPath)], [before.ino, before.mode, before.mtimeMs, link], `${what}: the log is untouched`);
+
+      const { status, artifact } = project.gate();
+      assert.equal(status, 1, what);
+      assert.deepEqual(artifact.mismatches.replacementLogErrors, [{ type: "replacements-unreadable", path: project.logPath, error: reason }], what);
+    } finally {
+      if (!fs.lstatSync(project.logPath).isSymbolicLink()) fs.chmodSync(project.logPath, 0o755);
+    }
+  }
+});
+
+test("replace-dependency refuses a candidate source that is there but can't be read, naming it, before it trials anything", { skip: UNREADABLE_SKIP }, () => {
+  const project = swapProject(VERIFYING_INDEX);
+  const source = path.join(project.tmp, "deps", "near-matches.json");
+  fs.chmodSync(source, 0o000);
+  try {
+    const locked = project.replaceAuto();
+    assert.equal(locked.status, 2, locked.stdout);
+    assert.ok(locked.stderr.includes(`${source} can't be read (EACCES) — rerun find-near-match-versions.mjs`), locked.stderr);
+  } finally {
+    fs.chmodSync(source, 0o644);
+  }
+  fs.rmSync(source);
+  fs.symlinkSync("gone.json", source);
+  const dangling = project.replaceAuto();
+  assert.equal(dangling.status, 2, dangling.stdout);
+  assert.ok(dangling.stderr.includes(`${source} is not a file (dangling:gone.json)`), dangling.stderr);
+  assert.deepEqual(project.npmCalls(), []);
+  assert.ok(!fs.existsSync(project.logPath), "no log was written");
+});
+
+test("verify-dependency-swap reads a package.json with a byte order mark as npm does, instead of crashing", () => {
+  const tmp = mkTmpDir();
+  for (const side of ["before", "after"]) {
+    writeText(path.join(tmp, side, "package.json"), `\uFEFF${JSON.stringify({ name: "pkg-a", version: "1.2.3" })}`);
+    writeText(path.join(tmp, side, "index.js"), "module.exports=function(a){return a+1};\n");
+  }
+  const out = path.join(tmp, "verify.json");
+  const result = runNode(path.join(TOOLS_DIR, "verify-dependency-swap.mjs"), ["--pkg", "pkg-a", "--before", path.join(tmp, "before"), "--after", path.join(tmp, "after"), "--expected-version", "1.2.3", "--out", out], tmp);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(JSON.parse(fs.readFileSync(out, "utf8")).pass, true);
+});
+
+test("verify-dependency-swap compares a package it lists by its files, naming a link it finds instead of reading through it", () => {
+  const tmp = mkTmpDir();
+  writeText(path.join(tmp, "outside.js"), "module.exports=function(){return 'OUTSIDE'};\n");
+  for (const side of ["before", "after"]) {
+    writeJson(path.join(tmp, side, "package.json"), { name: "pkg-a", version: "1.2.3", main: "nowhere.js" });
+    writeText(path.join(tmp, side, "lib.js"), "module.exports=function(a){return a+1};\n");
+    fs.symlinkSync(path.join("..", "outside.js"), path.join(tmp, side, "linked.js"));
+  }
+  const out = path.join(tmp, "verify.json");
+  const result = runNode(path.join(TOOLS_DIR, "verify-dependency-swap.mjs"), ["--pkg", "pkg-a", "--before", path.join(tmp, "before"), "--after", path.join(tmp, "after"), "--expected-version", "1.2.3", "--out", out], tmp);
+  assert.equal(result.status, 1, result.stdout);
+  const artifact = JSON.parse(fs.readFileSync(out, "utf8"));
+  assert.equal(artifact.pass, false);
+  assert.deepEqual(artifact.mismatches.unreadFiles, [`${path.join(tmp, "before", "linked.js")} is a link to ../outside.js, so it is not read`]);
+});
+
+test("verify-dependency-swap fails a swap with a source file it can't read, naming it, however the rest compares", { skip: UNREADABLE_SKIP }, () => {
+  const tmp = mkTmpDir();
+  for (const side of ["before", "after"]) {
+    writeJson(path.join(tmp, side, "package.json"), { name: "pkg-a", version: "1.2.3", main: "index.js" });
+    writeText(path.join(tmp, side, "index.js"), "module.exports=function(a){return a+1};\n");
+    writeText(path.join(tmp, side, "extra.js"), "module.exports=1;\n");
+  }
+  const locked = path.join(tmp, "after", "index.js");
+  fs.chmodSync(locked, 0o000);
+  try {
+    const out = path.join(tmp, "verify.json");
+    const result = runNode(path.join(TOOLS_DIR, "verify-dependency-swap.mjs"), ["--pkg", "pkg-a", "--before", path.join(tmp, "before"), "--after", path.join(tmp, "after"), "--expected-version", "1.2.3", "--out", out], tmp);
+    assert.equal(result.status, 1, result.stdout);
+    const artifact = JSON.parse(fs.readFileSync(out, "utf8"));
+    assert.equal(artifact.pass, false);
+    assert.deepEqual(artifact.mismatches.parseErrors, [{ file: "index.js", error: `${locked} can't be read (EACCES)` }]);
+  } finally {
+    fs.chmodSync(locked, 0o644);
+  }
+});
+
 test("replace-dependency stops at an npm it can't run, and at a verifier that gives no verdict, putting the original back", () => {
   const project = swapProject(VERIFYING_INDEX);
   const noNpm = runNode(path.join(TOOLS_DIR, "replace-dependency.mjs"), ["--pkg", "demo-pkg", "--app-dir", project.appDir, "--npm", path.join(project.tmp, "no-such-npm"), "--out", project.logPath], project.tmp);
@@ -1624,7 +1747,7 @@ test("replace-dependency stops at an npm it can't run, and at a verifier that gi
   writeText(silentVerify, "process.exit(0);\n");
   const silent = project.replace("1.2.3", { verifyScript: silentVerify });
   assert.equal(silent.status, 1, silent.stdout);
-  assert.match(silent.stderr, /gave no verdict on 1\.2\.3: exit 0 with no verdict at /);
+  assert.match(silent.stderr, /gave no verdict on 1\.2\.3: exit 0 with no verdict: \S+\.json does not exist/);
   assert.equal(project.entry().status, "unresolved");
   assert.match(project.entry().attempts.at(-1).reason, /^verifier-error:/);
   assert.ok(fs.lstatSync(project.appPkgDir).isDirectory(), "the original is back");
@@ -1734,7 +1857,7 @@ test("detect-dependencies reports the lockfile's packages under the file it read
 
 test("detect-dependencies warns of a package-lock.json it can't use or fully read, and still writes its report", () => {
   const cases = [
-    { lock: "null", reason: "it is not a JSON object" },
+    { lock: "null", reason: "it is JSON null, not a JSON object" },
     { lock: JSON.stringify({ lockfileVersion: 3, packages: { "node_modules/foo": {} } }), reason: "node_modules/foo records no version" },
   ];
   for (const { lock, reason } of cases) {

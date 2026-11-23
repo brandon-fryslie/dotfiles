@@ -26,26 +26,17 @@ import {
   buildLineIndex,
   charToLineCol,
   parseFile,
-  listSourceFiles,
+  listCodeEntries,
+  unreadText,
   SOURCE_TREE_EXCLUDES,
 } from './shape.mjs';
+import { inputAt, readText } from './path-state.mjs';
 
 // --- CLI ---
 
 function parseArgs(argv) {
   const positional = argv.slice(2).filter(arg => !arg.startsWith('--'));
   return { positional };
-}
-
-// --- File discovery ---
-
-function discoverJsFiles(dir) {
-  const absDir = path.resolve(dir);
-  return listSourceFiles(absDir, SOURCE_TREE_EXCLUDES).map(rel => ({
-    absPath: path.join(absDir, rel),
-    relPath: rel,
-    content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
-  }));
 }
 
 // --- Extract manifest entries from formatted code ---
@@ -102,8 +93,16 @@ async function main() {
   console.log(`Input:  ${inputDir}`);
   console.log(`Output: ${outputDir}`);
 
-  // Discover input files
-  const files = discoverJsFiles(inputDir);
+  const input = inputAt(inputDir, 'dir');
+  if (input.kind !== 'dir') {
+    console.error(`Error: ${inputDir} ${input.reason}`);
+    process.exit(1);
+  }
+
+  // [LAW:one-source-of-truth] What prepare writes is listCodeEntries', the same set the prepare gate checks.
+  const absDir = path.resolve(inputDir);
+  const entries = listCodeEntries(absDir, SOURCE_TREE_EXCLUDES);
+  const files = entries.filter(({ kind }) => kind === 'file');
   console.log(`\nFound ${files.length} source files`);
 
   // Ensure output directory exists
@@ -112,18 +111,38 @@ async function main() {
   const manifest = [];
   let totalFunctions = 0;
 
-  for (const file of files) {
-    const outPath = path.join(outputDir, file.relPath);
-    const outDir = path.dirname(outPath);
-    fs.mkdirSync(outDir, { recursive: true });
+  for (const entry of entries) {
+    const outPath = path.join(outputDir, entry.rel);
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    // Whatever an earlier run left at the path goes first, so nothing is written through a link it left there.
+    fs.rmSync(outPath, { force: true });
 
-    console.log(`  ${file.relPath} (${(file.content.length / 1024).toFixed(0)}KB)`);
+    // [LAW:single-enforcer] shape.mjs's link rule: a link is written as itself, never read through; a special file
+    // can't be copied, so it is named and its absence fails the prepare gate.
+    if (entry.kind === 'link') {
+      fs.symlinkSync(entry.target, outPath);
+      console.log(`  ${entry.rel} -> ${entry.target} (link)`);
+      continue;
+    }
+    if (entry.kind === 'special') {
+      console.warn(`  ${unreadText(absDir, entry)}`);
+      continue;
+    }
+
+    // A file it can't read is named and left unwritten, so the prepare gate fails on it, as on a special file.
+    const read = readText(path.join(absDir, entry.rel));
+    if (read.kind !== 'text') {
+      console.warn(`  ${path.join(absDir, entry.rel)} ${read.reason}, so it is not prepared`);
+      continue;
+    }
+    const content = read.text;
+    console.log(`  ${entry.rel} (${(content.length / 1024).toFixed(0)}KB)`);
 
     // Step 1: Format with prettier
     let formatted;
     try {
-      formatted = await prettier.format(file.content, {
-        filepath: file.relPath, // prettier picks its parser by the extension, as loaderFor does
+      formatted = await prettier.format(content, {
+        filepath: entry.rel, // prettier picks its parser by the extension, as loaderFor does
         printWidth: 100,
         tabWidth: 2,
         semi: true,
@@ -135,18 +154,18 @@ async function main() {
       });
     } catch (e) {
       console.warn(`    prettier error: ${e.message.split('\n')[0]}`);
-      formatted = file.content;
+      formatted = content;
     }
 
     // Step 2: Write formatted file
     fs.writeFileSync(outPath, formatted);
 
     // Step 3: Extract manifest entries from formatted code
-    const entries = extractManifestEntries(formatted, file.relPath);
-    totalFunctions += entries.length;
-    manifest.push(...entries);
+    const fileEntries = extractManifestEntries(formatted, entry.rel);
+    totalFunctions += fileEntries.length;
+    manifest.push(...fileEntries);
 
-    console.log(`    -> ${entries.length} functions, ${(formatted.length / 1024).toFixed(0)}KB formatted`);
+    console.log(`    -> ${fileEntries.length} functions, ${(formatted.length / 1024).toFixed(0)}KB formatted`);
   }
 
   // Write manifest

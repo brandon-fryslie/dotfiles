@@ -30,7 +30,10 @@ import {
   parseFile,
   loaderFor,
   listSourceFiles,
+  unreadText,
 } from './shape.mjs';
+import { JSON_SHAPE } from './json-value.mjs';
+import { inputAt, readJson } from './path-state.mjs';
 
 // --- CLI ---
 
@@ -65,7 +68,12 @@ function parseArgs(argv) {
 
 function buildIndexFromManifest(preparedDir) {
   const manifestPath = path.join(preparedDir, 'manifest.json');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const read = readJson(manifestPath, JSON_SHAPE.array);
+  if (read.kind !== 'json') {
+    console.error(`Error: ${manifestPath} ${read.reason} — run prepare.mjs to write it`);
+    process.exit(1);
+  }
+  const manifest = read.value;
 
   // Group manifest entries by file
   const entriesByFile = new Map();
@@ -147,9 +155,17 @@ function buildIndexFromManifest(preparedDir) {
 
 const DEMINIFIED_EXCLUDES = new Set(['node_modules', '.git', 'dist', 'prepared']);
 
+// The deminified source files, by shape.mjs's link rule; each source-named entry it can't read is named.
 function discoverFiles(dir) {
+  const input = inputAt(dir, 'dir');
+  if (input.kind !== 'dir') {
+    console.error(`Error: ${dir} ${input.reason}`);
+    process.exit(1);
+  }
   const absDir = path.resolve(dir);
-  return listSourceFiles(absDir, DEMINIFIED_EXCLUDES).map(rel => ({
+  const { files, unread } = listSourceFiles(absDir, DEMINIFIED_EXCLUDES);
+  for (const entry of unread) console.warn(`  ${unreadText(absDir, entry)}`);
+  return files.map(rel => ({
     absPath: path.join(absDir, rel),
     relPath: rel,
     content: fs.readFileSync(path.join(absDir, rel), 'utf8'),

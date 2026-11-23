@@ -5,30 +5,29 @@
 // [LAW:types-are-the-program] A module id is a string in every format, as are its entry and its dependency ids, so
 // an id from one place is compared with an id from another without conversion.
 
-import fs from "fs";
 import path from "path";
-import { walk, traverse, parseSource, sourceKindOf, isSourceFile, loaderFor, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
+import { pathState, readText } from "./path-state.mjs";
+import { walk, traverse, parseSource, sourceKindOf, isSourceFile, loaderFor, listSourceFiles, unreadText, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const isJsFile = (file) => isSourceFile(file) && loaderFor(file) === "js";
 
-// The JS source files a target holds, by shape.mjs's source-file rules: the target itself, or every one under it.
+// The JS source files a target holds, by shape.mjs's source-file rules and its link rule: the target itself, or every
+// one under it. Each JS-named entry under it that is a link or a special file is not read, and is named in unread.
 export function listJsFiles(target) {
-  if (fs.statSync(target).isFile()) return isJsFile(target) ? [target] : [];
-  return listSourceFiles(target, SOURCE_TREE_EXCLUDES)
-    .filter(isJsFile)
-    .map((rel) => path.join(target, rel));
+  if (pathState(target).kind === "file") return { files: isJsFile(target) ? [target] : [], unread: [] };
+  const { files, unread } = listSourceFiles(target, SOURCE_TREE_EXCLUDES);
+  return {
+    files: files.filter(isJsFile).map((rel) => path.join(target, rel)),
+    unread: unread.filter(({ rel }) => isJsFile(rel)).map((entry) => unreadText(target, entry)),
+  };
 }
 
 // A JS file's outcome: unreadable or unparsed, with its error, or parsed, with its code and syntax tree.
 export function readJsFile(file) {
-  let code;
+  const read = readText(file);
+  if (read.kind !== "text") return { kind: "unreadable", error: read.reason };
   try {
-    code = fs.readFileSync(file, "utf8");
-  } catch (error) {
-    return { kind: "unreadable", error: error.message };
-  }
-  try {
-    return { kind: "parsed", code, ast: parseSource(code, sourceKindOf(file)) };
+    return { kind: "parsed", code: read.text, ast: parseSource(read.text, sourceKindOf(file)) };
   } catch (error) {
     return { kind: "unparsed", error: error.message };
   }

@@ -36,7 +36,9 @@ import {
   sourceKindOf,
   minifySource,
   listSourceFiles,
+  unreadText,
 } from './shape.mjs';
+import { inputAt } from './path-state.mjs';
 
 // --- Configuration ---
 
@@ -99,9 +101,18 @@ function minifyCode(code, filepath) {
 
 // --- File Discovery ---
 
+// The source files under dir, by shape.mjs's link rule; each source-named entry it can't read is named, and the
+// tool stops at a dir that isn't there or can't be used.
 function discoverFiles(dir, excludes) {
+  const input = inputAt(dir, 'dir');
+  if (input.kind !== 'dir') {
+    console.error(`Error: ${dir} ${input.reason}`);
+    process.exit(1);
+  }
   const absDir = path.resolve(dir);
-  return listSourceFiles(absDir, excludes).map(rel => ({
+  const { files, unread } = listSourceFiles(absDir, excludes);
+  for (const entry of unread) console.warn(`  ${unreadText(absDir, entry)}`);
+  return files.map(rel => ({
     path: rel,
     content: fs.readFileSync(path.join(absDir, rel), 'utf8'),
   }));

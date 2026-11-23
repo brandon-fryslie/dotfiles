@@ -21,6 +21,8 @@
  *   }
  */
 import { readFileSync, writeFileSync } from "fs";
+import { JSON_SHAPE } from "./json-value.mjs";
+import { readJson } from "./path-state.mjs";
 
 const [, , filePath, specPath, ...flags] = process.argv;
 const dryRun = flags.includes("--dry-run");
@@ -32,7 +34,12 @@ if (!filePath || !specPath) {
   process.exit(1);
 }
 
-const raw = JSON.parse(readFileSync(specPath, "utf8"));
+const specRead = readJson(specPath, JSON_SHAPE.object);
+if (specRead.kind !== "json") {
+  console.error(`Error: ${specPath} ${specRead.reason}`);
+  process.exit(1);
+}
+const raw = specRead.value;
 
 // Extract metadata (keys starting with __)
 const startLine = raw.__startLine || 1;
