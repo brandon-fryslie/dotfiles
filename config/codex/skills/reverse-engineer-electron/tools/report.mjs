@@ -14,6 +14,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { mismatchText, readJson } from './path-state.mjs';
 
 // [LAW:one-source-of-truth] Identity hashes must come from the exact algorithm
 // and domain prepare.mjs wrote into manifest.json; similarity tokens must come
@@ -65,7 +66,12 @@ function parseArgs(argv) {
 
 function buildIndexFromManifest(preparedDir) {
   const manifestPath = path.join(preparedDir, 'manifest.json');
-  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const read = readJson(manifestPath);
+  if (read.kind !== 'json') {
+    console.error(`Error: ${manifestPath} ${mismatchText('file', read)}`);
+    process.exit(1);
+  }
+  const manifest = read.value;
 
   // Group manifest entries by file
   const entriesByFile = new Map();

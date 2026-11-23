@@ -20,6 +20,7 @@ fi
 
 APP_PATH="$1"
 EXTRACTED_DIR="${2:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ ! -d "$APP_PATH" ]; then
   echo "Error: $APP_PATH not found" >&2
@@ -42,13 +43,22 @@ if [ -f "$FRAMEWORK_PLIST" ]; then
   fi
 fi
 
-# Method 2: package.json in extracted app
-if [ -n "$EXTRACTED_DIR" ] && [ -f "$EXTRACTED_DIR/package.json" ]; then
-  # [LAW:no-silent-failure] A malformed package.json is an error, not "version unknown";
-  # node's stderr says why. The path travels as argv after --, never spliced into JS source or read as a node option.
+# Method 2: package.json in extracted app, read by the node tools' own JSON reader (read-json.mjs)
+# [LAW:no-silent-failure] A package.json that is there but can't be read as JSON is an error, not "version unknown";
+# read-json.mjs says why. Only one that isn't there leaves the version undetermined.
+PKG_RC=3
+if [ -n "$EXTRACTED_DIR" ]; then
+  PKG_RC=0
+  PKG_JSON="$(node "$SCRIPT_DIR/read-json.mjs" "$EXTRACTED_DIR/package.json")" || PKG_RC=$?
+  if [ "$PKG_RC" -ne 0 ] && [ "$PKG_RC" -ne 3 ]; then
+    exit 1
+  fi
+fi
+if [ "$PKG_RC" -eq 0 ]; then
+  # The JSON travels as argv after --, never spliced into JS source or read as a node option.
   if ! DETECTED="$(node -e "
-    const p=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
-    const v = p.devDependencies?.electron || p.dependencies?.electron || '';
+    const p=JSON.parse(process.argv[1]);
+    const v = p?.devDependencies?.electron || p?.dependencies?.electron || '';
     if (!v) process.exit(0);
     let s = String(v).trim();
     while (s.length > 0) {
@@ -57,7 +67,7 @@ if [ -n "$EXTRACTED_DIR" ] && [ -f "$EXTRACTED_DIR/package.json" ]; then
       s = s.slice(1);
     }
     if (s) console.log(s);
-  " -- "$EXTRACTED_DIR/package.json")"; then
+  " -- "$PKG_JSON")"; then
     echo "Error: node could not read the electron version from $EXTRACTED_DIR/package.json" >&2
     exit 1
   fi

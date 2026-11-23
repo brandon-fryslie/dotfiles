@@ -20,6 +20,7 @@ import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
 import { isNonEmptyString } from "./json-value.mjs";
+import { mismatchText, readJson } from "./path-state.mjs";
 
 function parseArgs(argv) {
   const opts = {
@@ -43,10 +44,6 @@ function parseArgs(argv) {
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function readJson(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
 function writeJson(filePath, payload) {
@@ -282,19 +279,21 @@ function main() {
   const appDir = path.resolve(projectRoot, opts.appDir);
   const outPath = path.resolve(projectRoot, opts.out);
 
-  if (!fs.existsSync(depsPath)) {
-    console.error(`Dependency report missing: ${depsPath}`);
+  // [LAW:no-silent-failure] Each input file's JSON, or the run stops naming the file and why it can't be read.
+  const readInput = (what, file) => {
+    const read = readJson(file);
+    if (read.kind === "json") return read.value;
+    console.error(`${what} ${file} ${mismatchText("file", read)}`);
     process.exit(2);
-  }
-
-  const report = readJson(depsPath);
+  };
+  const report = readInput("Dependency report", depsPath);
   const onDisk = parseOnDiskPackages(report);
   if (!onDisk.ok) {
     console.error(`Dependency report ${depsPath} can't be used: ${onDisk.error}`);
     process.exit(2);
   }
   const packageContexts = collectPackageContexts(report, onDisk.packages);
-  const registryFixture = opts.registryFile ? readJson(path.resolve(projectRoot, opts.registryFile)) : null;
+  const registryFixture = opts.registryFile ? readInput("Registry file", path.resolve(projectRoot, opts.registryFile)) : null;
 
   let degradedMode = false;
   const degradedReasons = [];

@@ -17,6 +17,7 @@ if [ $# -lt 1 ]; then
 fi
 
 APP_DIR="${1%/}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ ! -d "$APP_DIR" ]; then
   echo "Error: $APP_DIR not found" >&2
@@ -24,16 +25,22 @@ if [ ! -d "$APP_DIR" ]; then
 fi
 
 # Method 1: package.json "main" entrypoint
-# // [LAW:one-source-of-truth] package.json is the app's authoritative entrypoint contract.
-if [ -f "$APP_DIR/package.json" ]; then
-  # [LAW:no-silent-failure] A parse failure of the authoritative entrypoint
-  # contract must surface, not silently degrade to the heuristic below.
-  # The path travels as argv, never interpolated into JS source.
+# // [LAW:one-source-of-truth] package.json is the app's authoritative entrypoint contract, read by the node tools'
+# own JSON reader (read-json.mjs).
+# [LAW:no-silent-failure] Only a package.json that isn't there falls through to the heuristic below; one that is
+# there but can't be read as JSON stops the run, and read-json.mjs has said why.
+PKG_RC=0
+PKG_JSON="$(node "$SCRIPT_DIR/read-json.mjs" "$APP_DIR/package.json")" || PKG_RC=$?
+if [ "$PKG_RC" -ne 0 ] && [ "$PKG_RC" -ne 3 ]; then
+  exit 1
+fi
+if [ "$PKG_RC" -eq 0 ]; then
+  # The JSON travels as argv, never interpolated into JS source.
   if ! MAIN_REL="$(node -e "
-    const p = JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));
-    if (typeof p.main === 'string' && p.main.trim()) console.log(p.main.trim());
-  " "$APP_DIR/package.json")"; then
-    echo "Error: failed to parse $APP_DIR/package.json" >&2
+    const p = JSON.parse(process.argv[1]);
+    if (typeof p?.main === 'string' && p.main.trim()) console.log(p.main.trim());
+  " "$PKG_JSON")"; then
+    echo "Error: node could not read main from $APP_DIR/package.json" >&2
     exit 1
   fi
   if [ -n "$MAIN_REL" ]; then

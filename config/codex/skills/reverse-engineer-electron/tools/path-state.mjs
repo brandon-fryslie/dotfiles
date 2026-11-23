@@ -58,6 +58,37 @@ export function readText(file) {
   }
 }
 
+// [LAW:one-source-of-truth] The one JSON reader: a file's value, or what its path holds instead, or the parse error of
+// text that isn't JSON. Every tool reads its JSON inputs here, so they all read the same text the same way.
+export function readJson(file) {
+  const read = readText(file);
+  if (read.kind !== "text") return read;
+  try {
+    return { kind: "json", value: JSON.parse(read.text) };
+  } catch (error) {
+    return { kind: "invalid-json", error: error.message };
+  }
+}
+
+// [LAW:types-are-the-program] Each path state, and the one field that says why, so a state with no entry here is an
+// error, not a reason with a gap in it.
+const STATE_DETAIL = { absent: null, dir: null, file: null, special: null, dangling: "target", unreadable: "code", "invalid-json": "error" };
+
+export function pathStateText(state) {
+  if (!Object.hasOwn(STATE_DETAIL, state.kind)) throw new Error(`a ${state.kind} state has no reason text`);
+  const field = STATE_DETAIL[state.kind];
+  return field === null ? state.kind : `${state.kind}:${state[field]}`;
+}
+
+// Why a path that should hold a kind of thing doesn't: nothing is there, it holds another kind, it can't be read to
+// tell, or its text isn't JSON.
+export function mismatchText(expected, state) {
+  if (state.kind === "absent") return "is missing";
+  if (state.kind === "unreadable") return `can't be read (${state.code})`;
+  if (state.kind === "invalid-json") return `doesn't parse as JSON: ${state.error}`;
+  return `is not a ${expected} (${pathStateText(state)})`;
+}
+
 // A directory's entries, or the error code that kept them from being read.
 export function listDir(dir) {
   try {

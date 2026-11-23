@@ -12,7 +12,7 @@
 import fs from "fs";
 import path from "path";
 import { isNonEmptyString } from "./json-value.mjs";
-import { appPathState, listDir, pathState, readText } from "./path-state.mjs";
+import { appPathState, listDir, mismatchText, pathState, pathStateText, readJson } from "./path-state.mjs";
 import { verdictOn } from "./verdict.mjs";
 
 // [LAW:single-enforcer] A package name as npm spells one: a name, or a scope and a name, neither starting with "."
@@ -48,18 +48,12 @@ export function pkgPathParts(name) {
   return name.startsWith("@") && name.includes("/") ? name.split("/") : [name];
 }
 
-// [LAW:types-are-the-program] Each state that is not a package, and the one field that says why, so a reason built
-// from a state names the cause it holds and a state with no entry here is an error, not a reason with a gap in it.
-const STATE_DETAIL = { absent: null, dir: null, file: null, special: null, "no-manifest": null, dangling: "target", unreadable: "code", "unusable-manifest": "reason" };
-
+// What a path holds that is not a package, as a reason: a package state packageAt adds, or a path state.
 export function stateText(state) {
-  if (!Object.hasOwn(STATE_DETAIL, state.kind)) throw new Error(`a ${state.kind} state has no reason text`);
-  const field = STATE_DETAIL[state.kind];
-  return field === null ? state.kind : `${state.kind}:${state[field]}`;
+  if (state.kind === "no-manifest") return state.kind;
+  if (state.kind === "unusable-manifest") return `${state.kind}:${state.reason}`;
+  return pathStateText(state);
 }
-
-// Why a path that should hold a kind of thing doesn't: it holds another kind, or it can't be read to tell.
-export const mismatchText = (expected, state) => (state.kind === "unreadable" ? `can't be read (${state.code})` : `is not a ${expected} (${stateText(state)})`);
 
 // What a path holds as a package: the name and version its package.json gives, or, when it holds none, the path's
 // own state, a directory with no package.json, or a package.json that can't be read, lacks a name or version, or
@@ -67,15 +61,10 @@ export const mismatchText = (expected, state) => (state.kind === "unreadable" ? 
 export function packageAt(dir) {
   const state = pathState(dir);
   if (state.kind !== "dir") return state;
-  const read = readText(path.join(dir, "package.json"));
+  const read = readJson(path.join(dir, "package.json"));
   if (read.kind === "absent") return { kind: "no-manifest" };
-  if (read.kind !== "text") return { kind: "unusable-manifest", reason: read.kind === "unreadable" ? read.code : stateText(read) };
-  let manifest;
-  try {
-    manifest = JSON.parse(read.text);
-  } catch (error) {
-    return { kind: "unusable-manifest", reason: `invalid-json (${error.message})` };
-  }
+  if (read.kind !== "json") return { kind: "unusable-manifest", reason: pathStateText(read) };
+  const manifest = read.value;
   if (!isNonEmptyString(manifest?.name) || !isNonEmptyString(manifest?.version)) return { kind: "unusable-manifest", reason: "no-name-or-version" };
   if (!isPackageName(manifest.name)) return { kind: "unusable-manifest", reason: "invalid-name" };
   return { kind: "package", name: manifest.name, version: manifest.version };

@@ -26,6 +26,7 @@ import { builtinModules } from "module";
 import { fileURLToPath } from "url";
 import { appAt, byNameThenLocation, copiesOf, entryNameOf, locationDir, topLevelLocation, walkStarts } from "./node-modules.mjs";
 import { loadLockfile } from "./package-lock.mjs";
+import { mismatchText, readJson } from "./path-state.mjs";
 import { walk, isFunctionNode, bodyStatements, statementsShape, traverse } from "./shape.mjs";
 import { listJsFiles, readBuildFile, readJsFile } from "./bundle.mjs";
 import { clearOutputs, writeOutputs } from "./artifact.mjs";
@@ -149,7 +150,10 @@ function indexPackageShapeHashes(packages) {
 }
 
 function loadFingerprints() {
-  const raw = JSON.parse(fs.readFileSync(FINGERPRINTS_PATH, "utf8"));
+  // The skill's own file: one it can't read is a broken install, not an input to report.
+  const read = readJson(FINGERPRINTS_PATH);
+  if (read.kind !== "json") throw new Error(`${FINGERPRINTS_PATH} ${mismatchText("file", read)}`);
+  const raw = read.value;
   const filtered = {};
   for (const [key, value] of Object.entries(raw)) {
     if (key.startsWith("//")) continue;
@@ -767,15 +771,15 @@ function main() {
   }
 
   const moduleIndexPath = opts.moduleIndex ? path.resolve(projectRoot, opts.moduleIndex) : null;
-  if (moduleIndexPath && fs.existsSync(moduleIndexPath)) {
-    try {
-      const moduleIndex = JSON.parse(fs.readFileSync(moduleIndexPath, "utf8"));
-      report.moduleIndex.file = fileRel(projectRoot, moduleIndexPath);
-      report.moduleIndex.bundlesIndexed = moduleIndex?.summary?.bundlesDetected || 0;
-      report.moduleIndex.modulesIndexed = moduleIndex?.summary?.modulesIndexed || 0;
-    } catch (error) {
-      report.warnings.push(`Could not parse module index (${fileRel(projectRoot, moduleIndexPath)}): ${String(error?.message || error)}`);
-    }
+  // The module index is optional: one that isn't there is skipped, and one that is there but can't be read is a warning.
+  const moduleIndexRead = moduleIndexPath ? readJson(moduleIndexPath) : { kind: "absent" };
+  if (moduleIndexRead.kind === "json") {
+    const moduleIndex = moduleIndexRead.value;
+    report.moduleIndex.file = fileRel(projectRoot, moduleIndexPath);
+    report.moduleIndex.bundlesIndexed = moduleIndex?.summary?.bundlesDetected || 0;
+    report.moduleIndex.modulesIndexed = moduleIndex?.summary?.modulesIndexed || 0;
+  } else if (moduleIndexRead.kind !== "absent") {
+    report.warnings.push(`Could not read module index ${fileRel(projectRoot, moduleIndexPath)}: it ${mismatchText("file", moduleIndexRead)}`);
   }
 
   const buildDirRel = report.buildDir.split(path.sep).join("/");

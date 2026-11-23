@@ -26,7 +26,8 @@ import os from "os";
 import path from "path";
 import process from "process";
 import { spawnSync } from "child_process";
-import { fromLogPath, parseLog } from "./replacement-log.mjs";
+import { mismatchText, pathState, readJson } from "./path-state.mjs";
+import { fromLogPath, readLog } from "./replacement-log.mjs";
 import { walk, isFunctionNode, functionShapeTokens, tokensToHash, parseFile, listFiles, listSourceFiles, SOURCE_TREE_EXCLUDES } from "./shape.mjs";
 
 const EXIT = {
@@ -100,6 +101,19 @@ function sha256File(filePath) {
 // remove-deps changes, and replace-dependency leaves symlinks there that no walk
 // descends. Both use the source-tree set.
 const EXTRACT_EXCLUDES = new Set([".git"]);
+
+// [LAW:no-silent-failure] A gate's required inputs, each [path, kind]: the ones of that kind (usable), and each other
+// one as a problem with its state and why, so one that isn't there and one that can't be read are told apart.
+const KIND_WORD = { dir: "directory", file: "file" };
+function requiredInputs(inputs) {
+  const states = inputs.map(([p, kind]) => ({ path: p, kind, state: pathState(p) }));
+  return {
+    usable: new Set(states.filter(({ kind, state }) => state.kind === kind).map(({ path: p }) => p)),
+    problems: states.filter(({ kind, state }) => state.kind !== kind).map(({ path: p, kind, state }) => ({ path: p, state, reason: mismatchText(KIND_WORD[kind], state) })),
+  };
+}
+
+const problemsText = (problems) => problems.map(({ path: p, reason }) => `${p} ${reason}`).join("; ");
 
 function mapFileHashes(rootDir, relFiles) {
   const hashes = {};
@@ -183,8 +197,9 @@ function runExtractGate(opts) {
     pass: false,
   };
 
-  if (!fs.existsSync(upstreamAsar) || !fs.existsSync(copiedAsar) || !fs.existsSync(extractedDir)) {
-    artifact.error = "Required extract gate input path missing";
+  const inputs = requiredInputs([[upstreamAsar, "file"], [copiedAsar, "file"], [extractedDir, "dir"]]);
+  if (inputs.problems.length > 0) {
+    artifact.error = `Required extract gate input: ${problemsText(inputs.problems)}`;
     return artifact;
   }
 
@@ -213,7 +228,8 @@ function runExtractGate(opts) {
     artifact.checks.extractedFileSetMatch = missingFiles.length === 0 && extraFiles.length === 0;
 
     const expectedHashes = mapFileHashes(tmpRoot, expectedFiles);
-    const actualHashes = mapFileHashes(extractedDir, expectedFiles.filter((rel) => fs.existsSync(path.join(extractedDir, rel))));
+    const actualSet = new Set(actualFiles);
+    const actualHashes = mapFileHashes(extractedDir, expectedFiles.filter((rel) => actualSet.has(rel)));
 
     const hashMismatches = [];
     for (const rel of expectedFiles) {
@@ -275,8 +291,9 @@ function runPrepareGate(opts) {
     pass: false,
   };
 
-  if (!fs.existsSync(origDir) || !fs.existsSync(preparedDir) || !fs.existsSync(manifestPath)) {
-    artifact.error = "Required prepare gate input path missing";
+  const inputs = requiredInputs([[origDir, "dir"], [preparedDir, "dir"], [manifestPath, "file"]]);
+  if (inputs.problems.length > 0) {
+    artifact.error = `Required prepare gate input: ${problemsText(inputs.problems)}`;
     return artifact;
   }
 
@@ -284,6 +301,7 @@ function runPrepareGate(opts) {
   const preparedJs = listSourceFiles(preparedDir, SOURCE_TREE_EXCLUDES);
   const missingFiles = setDiff(origJs, preparedJs);
   const extraFiles = setDiff(preparedJs, origJs);
+  const preparedSet = new Set(preparedJs);
 
   artifact.metrics.filesCompared = origJs.length;
   artifact.metrics.inventoryMissing = missingFiles.length;
@@ -299,7 +317,7 @@ function runPrepareGate(opts) {
   for (const rel of origJs) {
     const origPath = path.join(origDir, rel);
     const preparedPath = path.join(preparedDir, rel);
-    if (!fs.existsSync(preparedPath)) continue;
+    if (!preparedSet.has(rel)) continue;
 
     try {
       const origAst = parseFile(fs.readFileSync(origPath, "utf8"), rel);
@@ -344,12 +362,9 @@ function runPrepareGate(opts) {
   artifact.checks.fileStructuralHashMatch = fileHashMismatches.length === 0;
   artifact.checks.functionStructuralMultisetMatch = functionMultisetMismatches.length === 0;
 
-  let manifest = [];
-  try {
-    manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  } catch (error) {
-    artifact.mismatches.manifestMismatches.push({ type: "manifest-read", error: String(error?.message || error) });
-  }
+  const manifestRead = readJson(manifestPath);
+  if (manifestRead.kind !== "json") artifact.mismatches.manifestMismatches.push({ type: "manifest-read", error: `${manifestPath} ${mismatchText("file", manifestRead)}` });
+  const manifest = manifestRead.kind === "json" ? manifestRead.value : [];
 
   artifact.metrics.functionCountManifest = Array.isArray(manifest) ? manifest.length : 0;
 
@@ -449,14 +464,21 @@ function runRemoveDepsGate(opts) {
     pass: false,
   };
 
-  const requiredPaths = [baselineDir, workingDir, nearMatchesPath, replacementsPath];
-  const missingRequired = requiredPaths.filter((p) => !fs.existsSync(p));
-  artifact.checks.artifactsPresent = missingRequired.length === 0;
+  // [LAW:single-enforcer] The log's state is readLog's to say, here as in replace-dependency; the kind check covers
+  // the inputs nothing else reads.
+  const log = readLog(replacementsPath);
+  const inputs = requiredInputs([[baselineDir, "dir"], [workingDir, "dir"], [nearMatchesPath, "file"]]);
+  const missingRequired = [...inputs.problems.filter(({ state }) => state.kind === "absent").map(({ path: p }) => p), ...(log.kind === "absent" ? [replacementsPath] : [])];
+  const unusableRequired = inputs.problems.filter(({ state }) => state.kind !== "absent").map(({ path: p, reason }) => ({ path: p, reason }));
+  artifact.checks.artifactsPresent = missingRequired.length === 0 && unusableRequired.length === 0;
   if (missingRequired.length > 0) {
     artifact.mismatches.replacementLogErrors.push({ type: "missing-required", paths: missingRequired });
   }
+  if (unusableRequired.length > 0) {
+    artifact.mismatches.replacementLogErrors.push({ type: "unusable-required", inputs: unusableRequired });
+  }
 
-  if (fs.existsSync(baselineDir) && fs.existsSync(workingDir)) {
+  if (inputs.usable.has(baselineDir) && inputs.usable.has(workingDir)) {
     const baselineJs = listSourceFiles(baselineDir, SOURCE_TREE_EXCLUDES);
     const workingJs = listSourceFiles(workingDir, SOURCE_TREE_EXCLUDES);
     artifact.metrics.baselineJsFiles = baselineJs.length;
@@ -470,9 +492,10 @@ function runRemoveDepsGate(opts) {
     artifact.mismatches.extraFiles = extraFiles.slice(0, 200);
 
     const hashMismatches = [];
+    const workingSet = new Set(workingJs);
     for (const rel of baselineJs) {
       const workingPath = path.join(workingDir, rel);
-      if (!fs.existsSync(workingPath)) continue;
+      if (!workingSet.has(rel)) continue;
       const leftHash = sha256File(path.join(baselineDir, rel));
       const rightHash = sha256File(workingPath);
       if (leftHash !== rightHash) {
@@ -490,13 +513,12 @@ function runRemoveDepsGate(opts) {
   // left un-rolled-back — is replacement-log.mjs's to enforce; the gate adds only what needs disk.
   const replacementLogErrors = artifact.mismatches.replacementLogErrors;
   const missingVerificationArtifacts = [];
-  if (fs.existsSync(replacementsPath)) {
-    const parsed = parseLog(fs.readFileSync(replacementsPath, "utf8"), replacementsPath);
-    if (!parsed.ok) replacementLogErrors.push(...parsed.errors);
-    const entries = parsed.ok ? Object.entries(parsed.log.copies) : [];
+  if (log.kind !== "absent") {
+    if (log.kind === "rejected") replacementLogErrors.push(...log.errors);
+    const entries = log.kind === "log" ? Object.entries(log.log.copies) : [];
     // A rejected log's size is unknown, not zero.
-    artifact.metrics.copiesTracked = parsed.ok ? entries.length : null;
-    artifact.metrics.attemptsTracked = parsed.ok ? entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0) : null;
+    artifact.metrics.copiesTracked = log.kind === "log" ? entries.length : null;
+    artifact.metrics.attemptsTracked = log.kind === "log" ? entries.reduce((sum, [, entry]) => sum + entry.attempts.length, 0) : null;
 
     // An in-flight entry is a swap whose original may still be set aside: disk and log disagree until it is recovered.
     for (const [location, entry] of entries.filter(([, entry]) => entry.status === "in-flight")) {
@@ -505,17 +527,13 @@ function runRemoveDepsGate(opts) {
 
     for (const [location, entry] of entries.filter(([, entry]) => entry.status === "resolved")) {
       const verificationPath = fromLogPath(replacementsPath, entry.pass.verification.path);
-      if (!fs.existsSync(verificationPath)) {
+      const verification = readJson(verificationPath);
+      if (verification.kind === "absent") {
         missingVerificationArtifacts.push({ location, package: entry.name, attemptVersion: entry.chosenVersion, path: verificationPath });
-        continue;
-      }
-      try {
-        const verification = JSON.parse(fs.readFileSync(verificationPath, "utf8"));
-        if (!verification?.pass) {
-          replacementLogErrors.push({ type: "verification-failed", location, package: entry.name, path: verificationPath });
-        }
-      } catch (error) {
-        replacementLogErrors.push({ type: "verification-read", location, package: entry.name, path: verificationPath, error: String(error?.message || error) });
+      } else if (verification.kind !== "json") {
+        replacementLogErrors.push({ type: "verification-read", location, package: entry.name, path: verificationPath, error: mismatchText("file", verification) });
+      } else if (!verification.value?.pass) {
+        replacementLogErrors.push({ type: "verification-failed", location, package: entry.name, path: verificationPath });
       }
     }
   }

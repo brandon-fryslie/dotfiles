@@ -21,6 +21,7 @@ import path from "path";
 import process from "process";
 import { execFileSync } from "child_process";
 
+import { mismatchText, pathState } from "./path-state.mjs";
 import { parseFile, listSourceFiles, SOURCE_TREE_EXCLUDES, traverse as traverseAst } from "./shape.mjs";
 
 // ---------------------------------------------------------------------------
@@ -590,8 +591,9 @@ function main() {
   const buildDir = path.resolve(opts.buildDir);
   const outPath = opts.out ? path.resolve(opts.out) : path.join(buildDir, "analysis.json");
 
-  if (!fs.existsSync(buildDir) || !fs.statSync(buildDir).isDirectory()) {
-    console.error(`Error: ${buildDir} is not a directory`);
+  const buildDirState = pathState(buildDir);
+  if (buildDirState.kind !== "dir") {
+    console.error(`Error: ${buildDir} ${mismatchText("directory", buildDirState)}`);
     process.exit(1);
   }
 

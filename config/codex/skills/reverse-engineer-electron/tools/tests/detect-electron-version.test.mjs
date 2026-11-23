@@ -26,11 +26,10 @@ test("reads the electron version from package.json in a path containing a quote"
   assert.equal(result.stdout.trim(), "32.4.1 32");
 });
 
-test("a malformed package.json fails with node's error, not 'could not determine'", () => {
+test("a malformed package.json fails naming the file and the parse error, not 'could not determine'", () => {
   const result = appWithPackageJson("{ not json");
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /SyntaxError/);
-  assert.match(result.stderr, /node could not read the electron version/);
+  assert.match(result.stderr, /package\.json doesn't parse as JSON: /);
   assert.doesNotMatch(result.stderr, /Could not determine/);
 });
 

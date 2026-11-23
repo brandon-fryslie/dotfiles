@@ -1137,11 +1137,11 @@ const EVERY_STATE_ON_DISK = {
   untrialable: [
     ["@ws/inner", "outside-app:node_modules/@ws/inner", { name: "@ws/inner", version: "6.0.0" }],
     ["afile", "not-a-package:file", null],
-    ["badjson", `not-a-package:unusable-manifest:invalid-json (${invalidJsonMessage("{")})`, null],
+    ["badjson", `not-a-package:unusable-manifest:invalid-json:${invalidJsonMessage("{")}`, null],
     ["badname", "not-a-package:unusable-manifest:invalid-name", null],
     // A link leads to the location it names, here one that is absent.
     ["dangling", "not-a-package:absent", null, "node_modules/gone"],
-    ["locked", "not-a-package:unusable-manifest:EACCES", null],
+    ["locked", "not-a-package:unusable-manifest:unreadable:EACCES", null],
     ["looped", "loop:node_modules/looped -> node_modules/looped", null],
     ["nomanifest", "not-a-package:no-manifest", null],
     ["noversion", "not-a-package:unusable-manifest:no-name-or-version", null],
@@ -1624,7 +1624,7 @@ test("replace-dependency stops at an npm it can't run, and at a verifier that gi
   writeText(silentVerify, "process.exit(0);\n");
   const silent = project.replace("1.2.3", { verifyScript: silentVerify });
   assert.equal(silent.status, 1, silent.stdout);
-  assert.match(silent.stderr, /gave no verdict on 1\.2\.3: exit 0 with no verdict at /);
+  assert.match(silent.stderr, /gave no verdict on 1\.2\.3: exit 0 with no verdict: .*verification.* is missing/);
   assert.equal(project.entry().status, "unresolved");
   assert.match(project.entry().attempts.at(-1).reason, /^verifier-error:/);
   assert.ok(fs.lstatSync(project.appPkgDir).isDirectory(), "the original is back");
@@ -1786,4 +1786,138 @@ test("replace-dependency --pkg with an alias's name trials the copy that name re
   const entry = readLog().copies["node_modules/bar"];
   assert.deepEqual([entry.name, entry.status, entry.chosenVersion], ["demo-pkg", "resolved", "1.2.3"], JSON.stringify(entry));
   assert.equal(fs.realpathSync(aliasDir), fs.realpathSync(replacementOf(tmp, "demo-pkg", "1.2.3").dir));
+});
+
+// Replace whatever is at p with a link leading nowhere, keeping nothing of what was there.
+function dangle(p) {
+  fs.rmSync(p, { recursive: true, force: true });
+  fs.symlinkSync("gone", p);
+}
+
+test("replace-dependency and the gate refuse a swap log that is there but can't be read, and the log is left as it was", () => {
+  const cases = [
+    ["a dangling link", dangle, "is not a file (dangling:gone)", (logPath) => assert.equal(fs.readlinkSync(logPath), "gone")],
+    ["a directory", (logPath) => { fs.rmSync(logPath); fs.mkdirSync(logPath); }, "is not a file (dir)", (logPath) => assert.ok(fs.lstatSync(logPath).isDirectory())],
+  ];
+  for (const [what, makeUnreadable, reason, unchanged] of cases) {
+    // A failed trial leaves the original in place and an unresolved entry, so nothing on disk stops a run that
+    // mistakes the log for an empty one from trialing again and writing a new log over it.
+    const { logPath, replace, npmCalls, gate, entry } = swapProject(FAILING_INDEX);
+    replace();
+    assert.equal(entry().status, "unresolved");
+    const callsBefore = npmCalls().length;
+    makeUnreadable(logPath);
+
+    const result = replace();
+    assert.equal(result.status, 2, `${what}: ${result.stdout}`);
+    assert.ok(result.stderr.includes(JSON.stringify({ type: "replacements-unreadable", path: logPath, reason })), `${what}: ${result.stderr}`);
+    assert.equal(npmCalls().length, callsBefore, `${what}: nothing is trialed`);
+    unchanged(logPath);
+
+    const { status, artifact } = gate();
+    assert.equal(status, 1, what);
+    assert.deepEqual(artifact.mismatches.replacementLogErrors.map((error) => error.type), ["replacements-unreadable"], what);
+  }
+});
+
+test("replace-dependency refuses a candidate source that is there but can't be read, before it trials or writes anything", () => {
+  const project = swapProject(VERIFYING_INDEX);
+  const source = path.join(project.tmp, "elsewhere", "near-matches.json");
+  fs.mkdirSync(path.dirname(source));
+  dangle(source);
+  const result = project.replaceWith(["--auto-near-match", "--candidate-source", source]);
+  assert.equal(result.status, 2, result.stdout);
+  assert.ok(result.stderr.includes(`${source} is not a file (dangling:gone)`), result.stderr);
+  assert.deepEqual(project.npmCalls(), []);
+  assert.equal(fs.existsSync(project.logPath), false);
+});
+
+test("replace-dependency refuses a lock it can't open, naming it and why", { skip: EVERY_STATE_SKIP }, (t) => {
+  const project = swapProject(VERIFYING_INDEX);
+  const depsDir = path.dirname(project.logPath);
+  fs.chmodSync(depsDir, 0o000);
+  t.after(() => fs.chmodSync(depsDir, 0o755));
+  const result = project.replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.match(result.stderr, /could not open the lock .*replacements\.json\.lock \(EACCES\)/);
+  assert.deepEqual(project.npmCalls(), []);
+});
+
+test("replace-dependency refuses an app node_modules that is there but isn't a directory it can read, naming why", () => {
+  const { appDir, replace, npmCalls } = swapProject(VERIFYING_INDEX);
+  dangle(path.join(appDir, "node_modules"));
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.ok(result.stderr.includes(`${path.join(appDir, "node_modules")} is not a directory (dangling:gone)`), result.stderr);
+  assert.deepEqual(npmCalls(), []);
+});
+
+test("replace-dependency refuses an interrupted trial whose backup is there but can't be read, not as a lost original", () => {
+  const { replace, killMidVerify, backupOf } = swapProject(VERIFYING_INDEX);
+  const backup = backupOf(killMidVerify());
+  dangle(backup);
+  const result = replace();
+  assert.equal(result.status, 2, result.stdout);
+  assert.ok(result.stderr.includes(`${backup}, which is not a directory (dangling:gone)`), result.stderr);
+  assert.doesNotMatch(result.stderr, /the original is lost/);
+});
+
+test("the remove-deps gate names a required input or verification artifact that is there but can't be read, apart from one that is missing", () => {
+  const project = swapProject(VERIFYING_INDEX);
+  assert.equal(project.replace().status, 0);
+  const verificationPath = fromLogPath(project.logPath, project.entry().attempts.find((attempt) => attempt.verification?.pass).verification.path);
+  const nearMatches = path.join(project.tmp, "deps", "near-matches.json");
+  dangle(verificationPath);
+  dangle(nearMatches);
+
+  const { status, artifact } = project.gate();
+  assert.equal(status, 1);
+  assert.equal(artifact.checks.artifactsPresent, false);
+  const errors = artifact.mismatches.replacementLogErrors;
+  assert.deepEqual(errors.find((error) => error.type === "unusable-required").inputs, [{ path: nearMatches, reason: "is not a file (dangling:gone)" }]);
+  assert.equal(errors.find((error) => error.type === "verification-read").error, "is not a file (dangling:gone)");
+  assert.equal(errors.some((error) => error.type === "missing-required"), false);
+  assert.deepEqual(artifact.mismatches.missingVerificationArtifacts, []);
+});
+
+// verify-dependency-swap over before/ and after/ copies of pkg-a@1.2.3 under a new tmp dir, each laid out by its
+// function, and the artifact it writes.
+function verifyBetween(layBefore, layAfter) {
+  const tmp = mkTmpDir();
+  const [beforeDir, afterDir] = [path.join(tmp, "before"), path.join(tmp, "after")];
+  layBefore(beforeDir);
+  layAfter(afterDir);
+  const out = path.join(tmp, "verify.json");
+  const result = runNode(path.join(TOOLS_DIR, "verify-dependency-swap.mjs"), ["--pkg", "pkg-a", "--before", beforeDir, "--after", afterDir, "--expected-version", "1.2.3", "--threshold", "0.9", "--out", out], tmp);
+  return { result, beforeDir, afterDir, artifact: JSON.parse(fs.readFileSync(out, "utf8")) };
+}
+
+const pkgA = (manifestText) => (dir) => {
+  writeText(path.join(dir, "package.json"), manifestText);
+  writeText(path.join(dir, "index.js"), "module.exports=function(a){return a+1};\n");
+};
+const PKG_A = JSON.stringify({ name: "pkg-a", version: "1.2.3" });
+
+test("verify-dependency-swap reads a package.json that begins with a byte order mark as npm does", () => {
+  const { result, artifact } = verifyBetween(pkgA(`﻿${PKG_A}`), pkgA(`﻿${PKG_A}`));
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(artifact.pass, true);
+});
+
+test("verify-dependency-swap names an input that is there but can't be read, and a missing one as missing", () => {
+  const dangling = verifyBetween(pkgA(PKG_A), (dir) => { pkgA(PKG_A)(dir); dangle(path.join(dir, "package.json")); });
+  assert.equal(dangling.result.status, 1);
+  assert.deepEqual(dangling.artifact.mismatches.package, [`${path.join(dangling.afterDir, "package.json")} is not a file (dangling:gone)`]);
+
+  const missing = verifyBetween(pkgA(PKG_A), () => {});
+  assert.equal(missing.result.status, 1);
+  assert.deepEqual(missing.artifact.mismatches.package, [`${missing.afterDir} is missing`]);
+});
+
+test("verify-dependency-swap names a reachable after-side file that is there but can't be read, instead of counting it missing", () => {
+  const { result, artifact } = verifyBetween(pkgA(PKG_A), (dir) => { pkgA(PKG_A)(dir); dangle(path.join(dir, "index.js")); });
+  assert.equal(result.status, 1);
+  assert.equal(artifact.pass, false);
+  assert.deepEqual(artifact.mismatches.missingFiles, []);
+  assert.deepEqual(artifact.mismatches.unreadableFiles, [{ file: "index.js", side: "after", reason: "is not a file (dangling:gone)" }]);
 });

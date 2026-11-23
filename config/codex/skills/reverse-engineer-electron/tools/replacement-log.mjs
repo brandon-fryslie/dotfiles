@@ -4,7 +4,7 @@
 //
 // [LAW:one-source-of-truth] [LAW:single-enforcer] Every rule about the log's shape lives here and both tools
 // import it. The gate used to re-check entries by hand, which is the paired-tool drift this module exists to end.
-// [LAW:parse-dont-validate] parseLog turns the file into entries whose status decides what they carry, so a
+// [LAW:parse-dont-validate] readLog turns the file into entries whose status decides what they carry, so a
 // resolved entry always has its one pass attempt and an in-flight entry always names its original.
 //
 // The log holds one entry per copy, keyed by the copy's location: its swap location, the one every consumer of the
@@ -32,6 +32,7 @@
 import path from "path";
 import { isNonEmptyString, isPlainObject } from "./json-value.mjs";
 import { isLocation } from "./node-modules.mjs";
+import { mismatchText, readJson } from "./path-state.mjs";
 
 export const SCHEMA_VERSION = 4;
 
@@ -168,28 +169,31 @@ function parseEntry(raw) {
   return { entry: { name: raw.name, version: raw.version, status: "in-flight", attempts: raw.attempts, inFlight } };
 }
 
-// { ok: true, log } with every entry parsed into its status's shape, or { ok: false, errors } naming each problem.
-export function parseLog(text, logPath) {
-  let raw;
-  try {
-    raw = JSON.parse(text);
-  } catch (error) {
-    return { ok: false, errors: [{ type: "replacements-json", path: logPath, error: error.message }] };
-  }
-  if (!isPlainObject(raw)) return { ok: false, errors: [{ type: "replacements-type", path: logPath, expected: "object" }] };
+// [LAW:single-enforcer] The log at logPath as its writer and the gate both read it: { kind: "absent" } when nothing is
+// there, { kind: "log", log } with every entry parsed into its status's shape, or { kind: "rejected", errors } naming
+// each problem, a log that is there but can't be read among them. Only an absent log is an empty one.
+export function readLog(logPath) {
+  const read = readJson(logPath);
+  if (read.kind === "absent") return read;
+  if (read.kind === "invalid-json") return rejected([{ type: "replacements-json", path: logPath, error: read.error }]);
+  if (read.kind !== "json") return rejected([{ type: "replacements-unreadable", path: logPath, reason: mismatchText("file", read) }]);
+  return parseLog(read.value, logPath);
+}
+
+const rejected = (errors) => ({ kind: "rejected", errors });
+
+function parseLog(raw, logPath) {
+  if (!isPlainObject(raw)) return rejected([{ type: "replacements-type", path: logPath, expected: "object" }]);
   if (raw.schemaVersion !== SCHEMA_VERSION) {
-    return {
-      ok: false,
-      errors: [{
-        type: "schema-version",
-        path: logPath,
-        found: raw.schemaVersion ?? null,
-        expected: SCHEMA_VERSION,
-        detail: `an older replace-dependency wrote this log, and its records can't be read as this version's: put each swapped copy's original back over its link (backups are under the app's node_modules/.original/), or re-extract the app, then delete the log and rerun`,
-      }],
-    };
+    return rejected([{
+      type: "schema-version",
+      path: logPath,
+      found: raw.schemaVersion ?? null,
+      expected: SCHEMA_VERSION,
+      detail: `an older replace-dependency wrote this log, and its records can't be read as this version's: put each swapped copy's original back over its link (backups are under the app's node_modules/.original/), or re-extract the app, then delete the log and rerun`,
+    }]);
   }
-  if (!isPlainObject(raw.copies)) return { ok: false, errors: [{ type: "replacements-copies-missing", path: logPath }] };
+  if (!isPlainObject(raw.copies)) return rejected([{ type: "replacements-copies-missing", path: logPath }]);
 
   const copies = {};
   const errors = [];
@@ -200,6 +204,6 @@ export function parseLog(text, logPath) {
     if (error) errors.push({ ...error, location, package: isPlainObject(rawEntry) ? rawEntry.name ?? null : null });
     else copies[location] = entry;
   }
-  if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, log: { schemaVersion: raw.schemaVersion, createdAt: raw.createdAt, copies } };
+  if (errors.length > 0) return rejected(errors);
+  return { kind: "log", log: { schemaVersion: raw.schemaVersion, createdAt: raw.createdAt, copies } };
 }
