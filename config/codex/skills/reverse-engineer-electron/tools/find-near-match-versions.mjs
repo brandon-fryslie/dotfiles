@@ -105,21 +105,25 @@ function npmViewVersions(pkgName) {
   }
 }
 
-// [LAW:parse-dont-validate] The one reader of detect-dependencies' onDisk section: the packages replace-dependency can
-// trial, each with a name and a version, or why the report holds no such list. Only a node_modules detect-dependencies
-// listed in full, or one the app doesn't ship, lists every package on disk; any other is a tree it couldn't read.
+// [LAW:parse-dont-validate] The one reader of detect-dependencies' onDisk section: the copies replace-dependency can
+// trial, each with a name, a version and a location, or why the report holds no such list. Only a node_modules
+// detect-dependencies listed in full, or one the app doesn't ship, lists every trialable copy; any other is a tree it
+// couldn't read.
 function parseOnDiskPackages(report) {
   const onDisk = report?.onDisk;
-  if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version))) {
-    return { ok: false, error: "it has no onDisk.packages list of { name, version } — rerun detect-dependencies.mjs to write it" };
+  if (!Array.isArray(onDisk?.packages) || !onDisk.packages.every((pkg) => isNonEmptyString(pkg?.name) && isNonEmptyString(pkg?.version) && isNonEmptyString(pkg?.location))) {
+    return { ok: false, error: "it has no onDisk.packages list of { name, version, location } — rerun detect-dependencies.mjs to write it" };
   }
   if (!["listed", "absent"].includes(onDisk.nodeModules?.kind)) {
     const why = onDisk.nodeModules?.kind === "incomplete" ? onDisk.nodeModules.reason : `its node_modules verdict is ${JSON.stringify(onDisk.nodeModules)}`;
     return { ok: false, error: `${why} — fix it, then rerun detect-dependencies.mjs` };
   }
-  return { ok: true, packages: onDisk.packages.map(({ name, version }) => ({ name, version })) };
+  return { ok: true, packages: onDisk.packages.map(({ name, version, location }) => ({ name, version, location })) };
 }
 
+// [LAW:one-source-of-truth] One context per package name and exact version a copy of it is on disk, the key
+// replace-dependency looks a copy's candidates up by; a name with no copy on disk has one context, observed from its
+// bundles. Evidence from code and bundles is the name's, shared by each of its versions.
 function collectPackageContexts(report, onDiskPackages) {
   const byName = new Map();
 
@@ -127,8 +131,8 @@ function collectPackageContexts(report, onDiskPackages) {
     if (!byName.has(name)) {
       byName.set(name, {
         name,
-        observedVersion: null,
-        onDiskVersion: null,
+        bundleVersion: null,
+        onDiskVersions: new Set(),
         codeSpecifierCount: 0,
         moduleHits: 0,
         signals: new Set(),
@@ -139,11 +143,7 @@ function collectPackageContexts(report, onDiskPackages) {
     return byName.get(name);
   }
 
-  for (const pkg of onDiskPackages) {
-    const ctx = ensure(pkg.name);
-    ctx.onDiskVersion = pkg.version;
-    ctx.observedVersion = pkg.version;
-  }
+  for (const pkg of onDiskPackages) ensure(pkg.name).onDiskVersions.add(pkg.version);
 
   const bareSpecifiers = report?.code?.bareSpecifiers || {};
   for (const [pkgName, meta] of Object.entries(bareSpecifiers)) {
@@ -157,8 +157,8 @@ function collectPackageContexts(report, onDiskPackages) {
       const ctx = ensure(module.package);
       ctx.moduleHits += 1;
 
-      if (!ctx.observedVersion && typeof module.version === "string" && module.version.length > 0) {
-        ctx.observedVersion = module.version;
+      if (!ctx.bundleVersion && typeof module.version === "string" && module.version.length > 0) {
+        ctx.bundleVersion = module.version;
       }
 
       if (module.signal) ctx.signals.add(module.signal);
@@ -182,16 +182,16 @@ function collectPackageContexts(report, onDiskPackages) {
     }
   }
 
-  const out = Array.from(byName.values()).map((ctx) => ({
+  const out = Array.from(byName.values()).flatMap((ctx) => (ctx.onDiskVersions.size > 0 ? [...ctx.onDiskVersions].sort() : [null]).map((onDiskVersion) => ({
     name: ctx.name,
-    observedVersion: ctx.observedVersion,
-    onDiskVersion: ctx.onDiskVersion,
+    observedVersion: onDiskVersion ?? ctx.bundleVersion,
+    onDiskVersion,
     codeSpecifierCount: ctx.codeSpecifierCount,
     moduleHits: ctx.moduleHits,
     signals: Array.from(ctx.signals).sort(),
     licenseVersions: Array.from(ctx.licenseVersions).sort(compareSemverDesc),
     hashMatchVersions: Array.from(ctx.hashMatchVersions).sort(compareSemverDesc),
-  }));
+  })));
 
   out.sort((a, b) => a.name.localeCompare(b.name));
   return out;
@@ -204,7 +204,7 @@ function scoreCandidate(candidateVersion, observedVersion, ctx) {
   const parsedObserved = parseSemver(observedVersion);
   const parsedCandidate = parseSemver(candidateVersion);
 
-  if (parsedObserved && parsedCandidate && parsedObserved.normalized === parsedCandidate.normalized) {
+  if (candidateVersion === observedVersion) {
     score += 100;
     reasons.push("exact-observed-version");
   }
@@ -238,7 +238,7 @@ function scoreCandidate(candidateVersion, observedVersion, ctx) {
   }
 
   const risk =
-    parsedObserved && parsedCandidate && parsedObserved.normalized === parsedCandidate.normalized
+    candidateVersion === observedVersion
       ? "low"
       : score >= 90
         ? "medium"
@@ -252,22 +252,21 @@ function scoreCandidate(candidateVersion, observedVersion, ctx) {
   };
 }
 
+// [LAW:types-are-the-program] Candidates are versions as the registry publishes them, beside the observed version as
+// the copy holds it, so a prerelease copy is offered only versions that exist and is exact only against itself.
 function rankCandidates(ctx, registryVersions) {
   const observed = parseSemver(ctx.observedVersion || "");
   if (!observed) return [];
 
-  const filtered = [];
-  for (const version of registryVersions) {
+  // A prerelease is offered only as the copy's own version: a near match is a published release of its major.minor.
+  const sameMinor = registryVersions.filter((version) => {
     const parsed = parseSemver(version);
-    if (!parsed) continue;
-    if (parsed.major !== observed.major || parsed.minor !== observed.minor) continue;
-    filtered.push(parsed.normalized);
-  }
+    const release = !version.replace(/\+.*$/, "").includes("-");
+    return parsed !== null && release && parsed.major === observed.major && parsed.minor === observed.minor;
+  });
+  const unique = Array.from(new Set([...sameMinor, ctx.observedVersion]));
 
-  filtered.push(observed.normalized);
-  const unique = Array.from(new Set(filtered));
-
-  const scored = unique.map((version) => scoreCandidate(version, observed.normalized, ctx));
+  const scored = unique.map((version) => scoreCandidate(version, ctx.observedVersion, ctx));
   scored.sort((a, b) => b.score - a.score || compareSemverDesc(a.version, b.version));
 
   return scored;
@@ -305,8 +304,15 @@ function main() {
   const degradedReasons = [];
   const packages = [];
 
+  // The registry is asked once per name, however many versions of it the app ships.
+  const registryVersions = new Map();
+  const versionsOf = (name) => {
+    if (!registryVersions.has(name)) registryVersions.set(name, npmViewVersions(name));
+    return registryVersions.get(name);
+  };
+
   for (const ctx of packageContexts) {
-    const observed = parseSemver(ctx.observedVersion || "")?.normalized || null;
+    const observed = parseSemver(ctx.observedVersion || "") ? ctx.observedVersion : null;
 
     let versions = [];
     let source = "registry";
@@ -314,10 +320,11 @@ function main() {
       versions = registryFixture[ctx.name].filter((item) => typeof item === "string");
       source = "fixture";
     } else {
-      const registryResult = npmViewVersions(ctx.name);
+      const registryResult = versionsOf(ctx.name);
       if (!registryResult.ok) {
         degradedMode = true;
-        degradedReasons.push({ package: ctx.name, reason: registryResult.error });
+        // One reason per package, however many of its versions the app ships.
+        if (!degradedReasons.some(({ package: name }) => name === ctx.name)) degradedReasons.push({ package: ctx.name, reason: registryResult.error });
         versions = observed ? [observed] : [];
         source = "degraded-local";
       } else {
@@ -336,6 +343,7 @@ function main() {
 
     const packageResult = {
       name: ctx.name,
+      onDiskVersion: ctx.onDiskVersion,
       observedVersion: observed,
       recommendation,
       rankingEvidence: {
@@ -355,8 +363,7 @@ function main() {
 
   const unresolved = packages
     .filter((item) => item.recommendation === "no-safe-near-match")
-    .map((item) => item.name)
-    .sort((a, b) => a.localeCompare(b));
+    .map(({ name, onDiskVersion }) => ({ name, onDiskVersion }));
 
   const payload = {
     generatedAt: new Date().toISOString(),
@@ -371,7 +378,8 @@ function main() {
     packages,
     unresolved,
     summary: {
-      totalPackages: packages.length,
+      totalPackages: new Set(packages.map(({ name }) => name)).size,
+      totalPackageVersions: packages.length,
       exactRecommendations: packages.filter((item) => item.recommendation === "exact").length,
       nearMatchRecommendations: packages.filter((item) => item.recommendation === "near-match").length,
       unresolvedRecommendations: unresolved.length,
@@ -380,7 +388,7 @@ function main() {
 
   writeJson(outPath, payload);
   console.log(`Wrote ${path.relative(projectRoot, outPath)}`);
-  console.log(`- packages: ${payload.summary.totalPackages}`);
+  console.log(`- packages: ${payload.summary.totalPackages} (${payload.summary.totalPackageVersions} versions)`);
   console.log(`- exact: ${payload.summary.exactRecommendations}`);
   console.log(`- near-match: ${payload.summary.nearMatchRecommendations}`);
   console.log(`- unresolved: ${payload.summary.unresolvedRecommendations}`);
