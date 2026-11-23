@@ -49,7 +49,7 @@ IF a followup is file: anywhere else, it waits behind the whole backlog while th
 
 If you find yourself deciding whether to take a shortcut because the session is long, or whether to file a followup ticket, the follow up ticket is preferable to avoid simply ignoring the problem.  But it's much cheaper and easier to do the work NOW, because it saves multiple review cycles.  A follow up ticket over something that is part of your current work is very inefficient and divides work by cutting thru bone.  But ignoring the work lets the infection fester and ultimately it becomes more painful over the long term. 
 
-There are a few related cases that are similar, but not quite the same, as a follow up.  If you find yourself implementing the same "it's just one more case, it's fine" yet again, you need to use /skillz:something-just-came-up.  If you find some wonky ass language that makes no sense, it's time to bring in the /skillz:word-police.  And if you find yourself fixing bug after bug in what you expected to be a straightforward implementation (any time the complexity is higher than it should be), /skillz:lets-take-a-step-back so we can take another path with the benefit of hindsight.
+There are a few related cases that are similar, but not quite the same, as a follow up.  If you find yourself implementing the same "it's just one more case, it's fine" yet again, you need to use /skillz:something-just-came-up.  If you find some wonky ass language that makes no sense, it's time to bring in the /skillz:word-police.  And if you hit irreversible accidental complexity, or find a major architectural assumption is invalid, /skillz:lets-take-a-step-back so we can take another path with the benefit of hindsight.
 </follow-ups>
 
 <learn-the-mechanism>
